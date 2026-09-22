@@ -1346,11 +1346,13 @@ module Collavre
             trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({})
           )
 
+          ai_user.update!(quota_retry_count: 2, quota_blocked_until: 1.minute.ago)
           post "/api/v1/agent/reply",
             params: { topic_id: topic.id, text: "Stale answer", task_id: task.id, execution_generation: "earlier" },
             headers: auth_headers, as: :json
           assert_response :conflict
           assert_equal "delegated", task.reload.status
+          assert_equal 2, ai_user.reload.quota_retry_count
 
           post "/api/v1/agent/reply",
             params: { topic_id: topic.id, text: "Current answer", task_id: task.id,
@@ -1358,6 +1360,54 @@ module Collavre
             headers: auth_headers, as: :json
           assert_response :created
           assert_equal "done", task.reload.status
+        end
+
+        test "successful Channel replies reset probes across independent quota incidents" do
+          previous_adapter = ActiveJob::Base.queue_adapter
+          ActiveJob::Base.queue_adapter = :test
+          reg = register_agent("quota-recovery-test")
+          agent = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Quota recovery")
+          topic = creative.topics.create!(name: "Quota", user: @user)
+          CreativeShare.create!(creative: creative, user: agent, permission: "feedback")
+
+          4.times do
+            task = Collavre::Task.create!(name: "Quota probe", status: "delegated", agent: agent,
+              topic_id: topic.id, creative: creative, trigger_event_name: "comment_created",
+              trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({}))
+            Collavre::Quota::Recovery.suspend!(task, Collavre::Quota::ExceededError.new)
+            assert_equal 1, agent.reload.quota_retry_count
+            refute agent.quota_retry_exhausted?
+            travel_to agent.quota_blocked_until + 1 do
+              task.update!(status: "delegated", resume_count: 1)
+              post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Recovered", task_id: task.id,
+                execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
+                headers: auth_headers, as: :json
+              assert_response :created
+              assert_equal "done", task.reload.status
+              assert_equal 0, agent.reload.quota_retry_count
+              assert_nil agent.quota_blocked_until
+            end
+          end
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "late Channel reply preserves a newer quota block" do
+          reg = register_agent("quota-sibling-test")
+          agent = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Quota sibling")
+          topic = creative.topics.create!(name: "Quota", user: @user)
+          CreativeShare.create!(creative: creative, user: agent, permission: "feedback")
+          task = Collavre::Task.create!(name: "Late reply", status: "delegated", agent: agent,
+            topic_id: topic.id, creative: creative, trigger_event_name: "comment_created")
+          deadline = 1.hour.from_now.change(usec: 0)
+          agent.update!(quota_retry_count: 2, quota_blocked_until: deadline)
+          post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Late answer", task_id: task.id },
+            headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal 2, agent.reload.quota_retry_count
+          assert_equal deadline, agent.quota_blocked_until
         end
 
         test "reply with task_id refuses when task agent is not owned by current_user" do

@@ -1,6 +1,6 @@
 {
   "name": "collavre-claude-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP stdio plugin that connects Claude Code sessions to Collavre via channels",
   "type": "module",
   "main": "dist/index.js",

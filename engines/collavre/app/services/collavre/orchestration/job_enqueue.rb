@@ -92,6 +92,10 @@ module Collavre
           ordinary_delivery&.record!(agent, "handled")
           post_waiting_notice(agent, decision) if decision[:timing] == :delayed
           agent
+        when :suspended
+          task = Quota::PendingDispatch.call(agent, @event_name, context, decision[:resume_not_before])
+          ordinary_delivery&.record!(agent, task ? "handled" : "rejected")
+          agent if task
         when :deferred
           waiter = park_waiter(agent, context)
           ordinary_delivery&.record!(agent, waiter ? "handled" : "rejected")

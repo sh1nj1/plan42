@@ -13,6 +13,9 @@ import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
 import { resolveSessionId, defaultSessionStateDir } from "./session.js";
 import { shouldHandleDispatch } from "./dispatch-filter.js";
+import { QuotaState, quotaDirectory } from "./quota-state.js";
+const quotaState = new QuotaState(quotaDirectory(process.cwd()));
+
 import { PermissionCoordinator, type Behavior } from "./permission.js";
 
 // Native Claude Channel permission relay (CC v2.1.168+). When the
@@ -47,7 +50,7 @@ function buildServer(
   coordinator: PermissionCoordinator,
 ): Server {
   const server = new Server(
-    { name: "collavre", version: "0.1.0" },
+    { name: "collavre", version: "0.1.1" },
     {
       capabilities: {
         experimental: {
@@ -60,8 +63,8 @@ function buildServer(
         tools: {},
       },
       instructions: [
-        'Messages from Collavre arrive as <channel source="collavre" topic_id="..." author="..." comment_id="..." task_id="...">.',
-        "Reply using the reply tool, passing topic_id AND task_id from the tag",
+        'Messages from Collavre arrive as <channel source="collavre" topic_id="..." author="..." comment_id="..." task_id="..." execution_generation="...">.',
+        "Reply using the reply tool, passing topic_id, task_id, AND execution_generation from the tag",
         "(task_id correlates the reply with the exact dispatched task when",
         "multiple delegated tasks can be in flight on the same topic).",
         'Never reply to your own messages (author starts with "claude-").',
@@ -85,13 +88,14 @@ function buildServer(
               type: "string",
               description: "The message text to send",
             },
+            execution_generation: { type: "string", description: "Echo execution_generation from the dispatch tag without changing it." },
             task_id: {
               type: "number",
               description:
                 "Task ID echoed from the dispatch notification meta. Required: when topic concurrency > 1 multiple delegated tasks can coexist, and replies must correlate to the exact dispatched task — omitting this would let the server fall back to the oldest delegated task and complete the wrong one.",
             },
           },
-          required: ["topic_id", "text", "task_id"],
+          required: ["topic_id", "text", "task_id", "execution_generation"],
         },
       },
     ],
@@ -125,7 +129,14 @@ function buildServer(
       return errorResult("task_id must be a number");
     }
 
-    const result = await client.reply(topicId, text, taskId);
+    if (typeof record.execution_generation !== "string" || !record.execution_generation) {
+      return errorResult("execution_generation is required — echo it from the dispatch notification meta");
+    }
+    const result = await client.reply(topicId, text, taskId, record.execution_generation).catch(async error => {
+      await quotaState.prune(turn => client.quotaTurnCurrent(turn));
+      throw error;
+    });
+    quotaState.remove(taskId, record.execution_generation);
 
     // The dispatched turn is concluding (Claude has replied). Reset the active
     // context to the registration inbox default so a subsequent locally-
@@ -261,6 +272,10 @@ function makeEventHandler(
     // Record the active turn's topic AND delegated task so a permission_request
     // relayed during it can be surfaced into this topic and authorized as the
     // dispatched agent (work topics where this session is not primary_agent).
+    await quotaState.prune(turn => client.quotaTurnCurrent(turn));
+    if (event.task_id && event.execution_generation) {
+      quotaState.add({ task_id: event.task_id, execution_generation: event.execution_generation });
+    }
     active.topicId = topicId;
     active.taskId = event.task_id ?? null;
 
@@ -273,6 +288,7 @@ function makeEventHandler(
       };
       if (event.task_id != null) {
         meta.task_id = String(event.task_id);
+        if (event.execution_generation) meta.execution_generation = event.execution_generation;
       }
       await server.notification({
         method: "notifications/claude/channel" as const,
@@ -416,6 +432,7 @@ async function main(): Promise<void> {
   cable.subscribeToAgent(reg.agent_id, sessionId);
 
   const cleanup = async () => {
+    quotaState.clear();
     cable.disconnect();
     await client.unregister(reg.agent_id, reg.topic_id, sessionId);
     process.exit(0);

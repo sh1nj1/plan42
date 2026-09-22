@@ -1070,6 +1070,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_010000) do
     t.string "name", null: false
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
+    t.datetime "quota_blocked_until"
+    t.integer "quota_retry_count", default: 0, null: false
+    t.boolean "quota_retry_exhausted", default: false, null: false
     t.text "routing_expression"
     t.string "routing_subscription_token"
     t.boolean "searchable", default: false, null: false
