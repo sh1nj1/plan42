@@ -20,20 +20,27 @@ module Collavre
         tasks = offline_tasks(agent, expected_token, session_id)
         next unless tasks
 
-        deferred_until = tasks.map { |task| Orchestration::OfflineTaskGrace.deadline(task) }.max
-        next if deferred_until && deferred_until > Time.current
-
-        deferred_until = nil
-        %w[queued pending running delegated].each do |status|
-          tasks.where(status: status).find_each do |task|
-            Orchestration::TaskResumer.suspend!(task, reason: "agent_offline")
-          end
-        end
+        deferred_until = suspend_due_tasks(tasks)
       end
       self.class.set(wait_until: deferred_until).perform_later(agent_id, expected_token, session_id) if deferred_until
     end
 
     private
+
+    def suspend_due_tasks(tasks)
+      deadlines = []
+      %w[queued pending running delegated].each do |status|
+        tasks.where(status: status).find_each do |task|
+          deadline = Orchestration::OfflineTaskGrace.deadline(task)
+          if deadline > Time.current
+            deadlines << deadline
+          else
+            Orchestration::TaskResumer.suspend!(task, reason: "agent_offline")
+          end
+        end
+      end
+      deadlines.min
+    end
 
     def offline_tasks(agent, expected_token, session_id)
       live = AgentSubscription.live.where(agent_id: agent.id)
