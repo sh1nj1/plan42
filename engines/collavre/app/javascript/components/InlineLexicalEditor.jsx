@@ -69,6 +69,7 @@ import { updateResponsiveImages } from "../lib/responsive_images"
 import { CODE_TOKEN_THEME } from "../lib/editor/code_token_theme"
 import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, markLanguageResolved, isLanguageResolved, clearLanguageResolved } from "../lib/editor/code_languages"
 import { CreativeLinkNode } from "../lib/lexical/creative_link_node"
+import { registerCreativeLinkDrop } from "../lib/lexical/creative_link_drop"
 import { registerCreativeLinkTrigger } from "../lib/lexical/creative_link_trigger"
 import { $createToolbarLinkNode, $findLinkNode } from "../lib/lexical/link_toolbar"
 
@@ -292,6 +293,12 @@ function LinkAttributesPlugin() {
     })
   }, [editor])
 
+  return null
+}
+
+function CreativeLinkDropPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => registerCreativeLinkDrop(editor), [editor])
   return null
 }
 
@@ -1021,6 +1028,7 @@ function EditorInner({
         <InitialContentPlugin html={initialHtml} />
         <LinkAttributesPlugin />
         <CreativeLinkTriggerPlugin />
+        <CreativeLinkDropPlugin />
         <ReadyPlugin onReady={onReady} />
         <FileUploadPlugin
           onUploadStateChange={onUploadStateChange}
