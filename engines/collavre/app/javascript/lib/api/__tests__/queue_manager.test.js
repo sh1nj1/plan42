@@ -37,6 +37,159 @@ describe('ApiQueueManager', () => {
         jest.restoreAllMocks();
     });
 
+    test('retains drained cleanup IDs across storage rollbacks until durable enqueue and successful cleanup', async () => {
+        const { enqueueCreativeSnapshot, queuedCreativeCompletion } = await import('../../../modules/queued_creative_row');
+        const tree = document.createElement('div');
+        const request = { path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'attachment removed' }, deletedAttachmentIds: [71] };
+        const cleanup = jest.fn();
+        window.addEventListener('api-queue-attachments-deleted', cleanup);
+        const storage = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+        const enqueueSnapshot = (target, snapshot) => enqueueCreativeSnapshot(apiQueue, snapshot,
+            queuedCreativeCompletion(target, jest.fn()), target);
+        expect(() => enqueueSnapshot(tree, request)).toThrow('quota');
+        expect(apiQueue.queue).toEqual([]);
+        expect(apiQueue.failedItems).toEqual([]);
+        expect(cleanup).not.toHaveBeenCalled();
+        expect(() => enqueueSnapshot(tree, { ...request, deletedAttachmentIds: [71, 72] })).toThrow('quota');
+        storage.mockRestore();
+
+        const otherTree = document.createElement('div');
+        enqueueSnapshot(otherTree, { ...request, path: '/creatives/43', dedupeKey: 'creative_43', deletedAttachmentIds: null });
+        expect(apiQueue.queue[0].deletedAttachmentIds).toBeNull();
+        enqueueSnapshot(tree, { ...request, deletedAttachmentIds: [] });
+        expect(apiQueue.queue[1].deletedAttachmentIds).toEqual([71, 72]);
+        expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))[1].deletedAttachmentIds).toEqual([71, 72]);
+        expect(cleanup).not.toHaveBeenCalled();
+        mockCsrfFetch.mockResolvedValue({ ok: true, text: async () => '{}' });
+        apiQueue.processQueue.mockRestore();
+        await apiQueue.processQueue();
+        expect(cleanup).toHaveBeenCalledTimes(1);
+        expect(cleanup.mock.calls[0][0].detail.attachmentIds).toEqual([71, 72]);
+
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(async () => {});
+        enqueueSnapshot(tree, { ...request, deletedAttachmentIds: null });
+        expect(apiQueue.queue[0].deletedAttachmentIds).toBeNull();
+        window.removeEventListener('api-queue-attachments-deleted', cleanup);
+    });
+
+    test('reloads a persisted draft before merging a subsequent edit', async () => {
+        const { recoverFailedCreative, needsCreativeSaveRetry } = await import('../../../modules/failed_creative_save');
+        apiQueue.enqueue({
+            path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'offline draft', 'creative[progress]': 1 },
+            onSuccess: () => {},
+        });
+        apiQueue.initialize('test_user');
+        const tree = document.createElement('div');
+        const recovered = recoverFailedCreative(apiQueue, { id: 42, description: 'stale server', progress: 0 }, tree);
+        expect(recovered.description).toBe('offline draft');
+        expect(recovered.progress).toBe(1);
+        expect(tree.dataset.saveState).toBe('pending');
+        expect(needsCreativeSaveRetry(apiQueue, 42, tree)).toBe(true);
+        apiQueue.enqueue({
+            path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': recovered.description + ' continued' },
+        });
+        expect(apiQueue.queue).toHaveLength(1);
+        expect(apiQueue.queue[0].body).toEqual({
+            'creative[description]': 'offline draft continued', 'creative[progress]': 1,
+        });
+    });
+
+    test('invalidates stale rows when a persisted request completes before the editor opens', async () => {
+        const { needsCreativeReconciliation, fetchReconciledCreative } = await import('../queue_reconciliation');
+        apiQueue.enqueue({ path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'persisted draft' }, onSuccess: () => {} });
+        apiQueue.initialize('test_user');
+        mockCsrfFetch.mockResolvedValue({ ok: true, text: async () => '{}' });
+        apiQueue.processQueue.mockRestore();
+        await apiQueue.processQueue();
+        expect(apiQueue.queue).toEqual([]);
+        expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))).toEqual([]);
+        const row = document.createElement('div');
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(true);
+        // A Turbo session reinitializes the queue without replacing the JS singleton.
+        apiQueue.initialize('test_user');
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(true);
+        expect(await fetchReconciledCreative(apiQueue, 42, row, { fetch: async () => ({ description: 'persisted draft' }) }))
+            .toEqual({ description: 'persisted draft' });
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(false);
+    });
+
+    test.each([false, true])('reconciles an in-flight completion after a frame swap: %s', async swap => {
+        const { needsCreativeReconciliation, fetchReconciledCreative } = await import('../queue_reconciliation');
+        const detachedRow = document.createElement('div');
+        const onSuccess = jest.fn(() => { detachedRow.textContent = 'saved draft'; });
+        apiQueue.enqueue({ path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'saved draft' }, onSuccess });
+        let complete;
+        mockCsrfFetch.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+        apiQueue.processQueue.mockRestore();
+        const processing = apiQueue.processQueue();
+        const executing = apiQueue.queue[0];
+        if (swap) {
+            apiQueue.initialize('test_user');
+            expect(apiQueue.queue[0].id).toBe(executing.id);
+            expect(apiQueue.queue[0].onSuccess).toBeUndefined();
+            apiQueue.start();
+        }
+        const row = document.createElement('div');
+        row.textContent = 'stale server';
+        complete({ ok: true, text: async () => '{}' });
+        await processing;
+        expect(onSuccess).toHaveBeenCalledTimes(1);
+        expect(apiQueue.queue).toEqual([]);
+        expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(swap);
+        if (swap) {
+            await fetchReconciledCreative(apiQueue, 42, row, {
+                fetch: async () => ({ description: 'saved draft' }),
+                apply: data => { row.textContent = data.description; return true; },
+            });
+            expect(row.textContent).toBe('saved draft');
+            expect(needsCreativeReconciliation(apiQueue, 42, row)).toBe(false);
+            expect(needsCreativeReconciliation(apiQueue, 42, row.cloneNode())).toBe(true);
+            apiQueue.enqueue({ path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+                body: { 'creative[description]': row.textContent + ' continued' } });
+            expect(apiQueue.queue[0].body['creative[description]']).toBe('saved draft continued');
+            await apiQueue.waitFor('creative_42');
+        }
+    });
+
+    test.each(['failed', 'in-flight', 'reloaded'])('carries %s attachment cleanup into a successful replacement', async state => {
+        const original = { path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42', body: { description: 'draft' }, deletedAttachmentIds: [1, 2] };
+        apiQueue.enqueue(original);
+        if (state === 'failed') {
+            apiQueue.failedItems = apiQueue.queue;
+            apiQueue.queue = [];
+            apiQueue.saveFailedToLocalStorage();
+            apiQueue.saveToLocalStorage();
+            apiQueue.initialize('test_user');
+        } else if (state === 'in-flight') {
+            apiQueue.processing = true;
+        } else {
+            apiQueue.initialize('test_user');
+        }
+        apiQueue.failedItems.push({ dedupeKey: 'other', deletedAttachmentIds: [99] });
+        apiQueue.enqueue({ ...original, body: { description: 'continued' }, deletedAttachmentIds: [2, 3] });
+        const replacement = apiQueue.queue.at(-1);
+        expect(replacement.deletedAttachmentIds).toEqual([1, 2, 3]);
+        if (state === 'in-flight') {
+            expect(apiQueue.queue).toHaveLength(2);
+            apiQueue.failedItems.push(apiQueue.queue.shift());
+            apiQueue.processing = false;
+        }
+        const cleanup = jest.fn();
+        window.addEventListener('api-queue-attachments-deleted', cleanup);
+        mockCsrfFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+        apiQueue.processQueue.mockRestore();
+        await apiQueue.processQueue();
+        window.removeEventListener('api-queue-attachments-deleted', cleanup);
+        expect(cleanup).toHaveBeenCalledTimes(1);
+        expect(cleanup.mock.calls[0][0].detail.attachmentIds).toEqual([1, 2, 3]);
+        expect(apiQueue.failedItems).toEqual([{ dedupeKey: 'other', deletedAttachmentIds: [99] }]);
+    });
+
     test('should deduplicate requests and merge callbacks', () => {
         const callback1 = jest.fn();
         const callback2 = jest.fn();
@@ -265,3 +418,87 @@ describe('ApiQueueManager', () => {
         expect(stored ? JSON.parse(stored) : []).toHaveLength(0);
     });
 });
+
+describe('ordered creative saves', () => {
+    beforeEach(() => {
+        apiQueue.processing = false
+        apiQueue.clear()
+        mockCsrfFetch.mockReset()
+        jest.spyOn(console, 'error').mockImplementation(() => {})
+    })
+    afterEach(() => jest.restoreAllMocks())
+
+    test('merges partial updates without losing an unacknowledged progress change', () => {
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { progress: 1, description: 'first' } })
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })
+        expect(apiQueue.queue[0].body).toEqual({ progress: 1, description: 'second' })
+        expect(JSON.parse(localStorage.getItem(apiQueue.storageKey))[0].body).toEqual(apiQueue.queue[0].body)
+    })
+
+    test('carries executing progress into a later save after permanent failure', async () => {
+        const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { progress: 1, description: 'first' } })
+        const first = apiQueue.queue[0]
+        apiQueue.processing = true
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })
+        expect(apiQueue.queue[0]).toBe(first)
+        expect(apiQueue.queue[1].body).toEqual({ progress: 1, description: 'second' })
+        apiQueue.processing = false
+        pause.mockRestore()
+        mockCsrfFetch.mockResolvedValueOnce({ ok: false, status: 403, clone: () => ({ json: async () => ({ errors: ['Denied'] }) }) }).mockResolvedValue({ ok: true })
+        await apiQueue.processQueue()
+        expect(mockCsrfFetch.mock.calls[1][1].body.get('progress')).toBe('1')
+        expect(apiQueue.failedItems).toEqual([])
+        expect(JSON.parse(localStorage.getItem(`${apiQueue.storageKey}_failed`))).toEqual([])
+    })
+
+    test('merges durable failed fields into retries while allowing a new value to win', () => {
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.failedItems = [{ dedupeKey: 'creative_42', body: { progress: 1, description: 'failed' } }]
+        apiQueue.saveFailedToLocalStorage()
+        apiQueue.failedItems = []
+        apiQueue.loadFailedFromLocalStorage()
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'retry' } })
+        expect(apiQueue.queue[0].body).toEqual({ progress: 1, description: 'retry' })
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { progress: 0 } })
+        expect(apiQueue.queue[0].body).toEqual({ progress: 0, description: 'retry' })
+    })
+
+    test('retries the older save before sending the newer save and resolves dependent operations last', async () => {
+        const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'first' } })
+        apiQueue.processing = true
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })
+        apiQueue.processing = false
+        pause.mockRestore()
+        const acknowledged = jest.fn()
+        const waiting = apiQueue.waitFor('creative_42').then(acknowledged)
+        expect(acknowledged).not.toHaveBeenCalled()
+        mockCsrfFetch.mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValue({ ok: true })
+        await apiQueue.processQueue()
+        await waiting
+        expect(mockCsrfFetch.mock.calls.map(([, options]) => options.body.get('description'))).toEqual(['first', 'first', 'second'])
+        expect(acknowledged).toHaveBeenCalledTimes(1)
+        await expect(apiQueue.waitFor('creative_42')).resolves.toBeUndefined()
+    })
+
+    test('rejects dependent operations when the save fails validation', async () => {
+        const pause = jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ method: 'PATCH', path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'invalid' } })
+        pause.mockRestore()
+        const waiting = expect(apiQueue.waitFor('creative_42')).rejects.toMatchObject({ status: 403 })
+        mockCsrfFetch.mockResolvedValue({ ok: false, status: 403, clone: () => ({ json: async () => ({ errors: ['Denied'] }) }) })
+        await apiQueue.processQueue()
+        await waiting
+        expect(apiQueue.failedItems).toHaveLength(1)
+    })
+
+    test('rejects enqueue without replacing the previous draft when local storage is full', () => {
+        jest.spyOn(apiQueue, 'processQueue').mockImplementation(() => {})
+        apiQueue.enqueue({ path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'first' } })
+        jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+        expect(() => apiQueue.enqueue({ path: '/creatives/42', dedupeKey: 'creative_42', body: { description: 'second' } })).toThrow('quota')
+        expect(apiQueue.queue[0].body.description).toBe('first')
+    })
+})

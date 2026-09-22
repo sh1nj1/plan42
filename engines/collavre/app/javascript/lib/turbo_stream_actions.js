@@ -293,6 +293,7 @@ function handleUpdated(creative) {
     const editingId = editForm?.dataset?.creativeId
 
     rows.forEach(row => {
+        if (row.querySelector('.creative-tree[data-save-state]')) return
         if (String(creative.id) === String(editingId)) {
             if (creative.inline_editor_payload) {
                 row.dataset.pendingSyncData = JSON.stringify(adjustedCreative)
