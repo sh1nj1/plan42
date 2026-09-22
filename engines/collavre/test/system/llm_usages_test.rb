@@ -26,7 +26,7 @@ class LlmUsagesSystemTest < ApplicationSystemTestCase
     assert_selector "tfoot small", text: "1 unreported"
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height: 812, deviceScaleFactor: 1, mobile: true)
     assert page.evaluate_script("document.documentElement.scrollWidth <= window.innerWidth")
-    find("tfoot").scroll_to
+    find("tfoot").scroll_to(:center)
     page.save_screenshot(Rails.root.join("tmp", "llm-usages-mobile.png"))
   ensure
     page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
