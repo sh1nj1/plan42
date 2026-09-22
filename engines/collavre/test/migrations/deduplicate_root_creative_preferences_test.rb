@@ -2,7 +2,7 @@ require "test_helper"
 require Rails.root.join("engines/collavre/db/migrate/20260922000000_deduplicate_root_creative_preferences")
 
 class DeduplicateRootCreativePreferencesTest < ActiveSupport::TestCase
-  test "PostgreSQL locks out inserts before cleanup and unique index installation" do
+  test "PostgreSQL locks out inserts before cleanup without installing a rollout-incompatible index" do
     migration = DeduplicateRootCreativePreferences.new
     operations = []
     connection = Struct.new(:adapter_name).new("PostgreSQL")
@@ -12,7 +12,7 @@ class DeduplicateRootCreativePreferencesTest < ActiveSupport::TestCase
 
     assert_equal "LOCK TABLE user_creative_preferences IN ACCESS EXCLUSIVE MODE", operations[0]
     assert_match(/\ADELETE FROM user_creative_preferences/, operations[1])
-    assert_equal :index, operations[2]
+    assert_equal 2, operations.size
     assert_not DeduplicateRootCreativePreferences.disable_ddl_transaction
   end
 
@@ -31,8 +31,9 @@ class DeduplicateRootCreativePreferencesTest < ActiveSupport::TestCase
     refute preference.exists?(duplicate.id)
     assert preference.exists?(scoped.id)
     assert preference.exists?(other.id)
-    assert_raises(ActiveRecord::RecordNotUnique) do
-      preference.insert_all!([ { user_id: users(:one).id, expanded_status: {} } ])
+    assert_difference "Collavre::UserCreativePreference.count", 1 do
+      preference.insert_all([ { user_id: users(:one).id, expanded_status: {} } ],
+        unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
     end
   end
 end

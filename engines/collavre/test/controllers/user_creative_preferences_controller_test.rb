@@ -56,13 +56,24 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert Collavre::UserCreativePreference.exists?(user_id: @user.id, creative_id: @creative.id)
   end
 
-  test "database rejects duplicate root preferences but allows another user" do
+  test "root saves consolidate legacy duplicates and remain compatible with rollback writes" do
+    preference = Collavre::UserCreativePreference
     attributes = { user_id: @user.id, creative_id: nil, expanded_status: { "1" => true } }
-    Collavre::UserCreativePreference.create!(attributes)
-    assert_raises(ActiveRecord::RecordNotUnique) do
-      Collavre::UserCreativePreference.insert_all!([ attributes ])
+    first = preference.create!(attributes)
+    preference.insert_all([ attributes.merge(expanded_status: { "unused" => true }) ],
+      unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+    other = preference.create!(attributes.merge(user_id: users(:two).id))
+
+    post "/creative_expanded_states/toggle", params: { node_id: "2", expanded: true }, as: :json
+    assert_response :success
+    assert_equal [ first.id ], preference.where(user_id: @user.id, creative_id: nil).pluck(:id)
+    assert_equal({ "1" => true, "2" => true }, first.reload.expanded_status)
+    assert_equal({ "1" => true }, other.reload.expanded_status)
+
+    # The old image still inserts against the composite conflict target on rollback.
+    assert_difference "Collavre::UserCreativePreference.count", 1 do
+      preference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
     end
-    Collavre::UserCreativePreference.create!(attributes.merge(user_id: users(:two).id))
   end
 
   test "toggle stores expanded state" do

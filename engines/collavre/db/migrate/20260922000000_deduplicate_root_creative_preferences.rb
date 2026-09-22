@@ -1,6 +1,6 @@
 class DeduplicateRootCreativePreferences < ActiveRecord::Migration[8.0]
   def up
-    # Rails holds this lock through cleanup and index creation in the DDL transaction.
+    # Rails holds this lock through cleanup in the DDL transaction.
     if connection.adapter_name == "PostgreSQL"
       execute "LOCK TABLE user_creative_preferences IN ACCESS EXCLUSIVE MODE"
     end
@@ -13,11 +13,11 @@ class DeduplicateRootCreativePreferences < ActiveRecord::Migration[8.0]
         WHERE creative_id IS NULL GROUP BY user_id
       )
     SQL
-    add_index :user_creative_preferences, :user_id, unique: true,
-      where: "creative_id IS NULL", name: :index_root_creative_preferences_on_user_id
+    # Defer the partial unique index until the prior composite-targeted writer
+    # is no longer a rollout or rollback candidate. It cannot handle that conflict.
   end
 
   def down
-    remove_index :user_creative_preferences, name: :index_root_creative_preferences_on_user_id
+    # Removed duplicate rows cannot be reconstructed.
   end
 end

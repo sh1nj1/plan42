@@ -1010,7 +1010,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000000) do
     t.index ["creative_id", "user_id"], name: "index_user_creative_preferences_on_creative_id_and_user_id", unique: true
     t.index ["creative_id"], name: "index_user_creative_preferences_on_creative_id"
     t.index ["last_topic_id"], name: "index_user_creative_preferences_on_last_topic_id"
-    t.index ["user_id"], name: "index_root_creative_preferences_on_user_id", unique: true, where: "creative_id IS NULL"
     t.index ["user_id"], name: "index_user_creative_preferences_on_user_id"
   end
 

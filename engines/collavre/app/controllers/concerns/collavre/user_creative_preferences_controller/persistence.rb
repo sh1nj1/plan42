@@ -9,7 +9,7 @@ module Collavre
     private
 
     # insert_all uses the unique preference key as the first-insert fence.
-    # A row lock alone cannot serialize two requests that both see no row.
+    # Root inserts instead rely on the user lock held by with_preference.
     def preference_for(creative_id)
       now = Time.current
       attributes = { creative_id: creative_id, user_id: Current.user.id, expanded_status: {}, created_at: now, updated_at: now }
@@ -18,15 +18,28 @@ module Collavre
     end
 
     def insert_preference(attributes)
-      index = attributes[:creative_id].present? ? :index_user_creative_preferences_on_creative_id_and_user_id : :index_root_creative_preferences_on_user_id
+      return if attributes[:creative_id].nil? && UserCreativePreference.exists?(user_id: attributes[:user_id], creative_id: nil)
+
       UserCreativePreference.transaction(requires_new: true) do
-        UserCreativePreference.insert_all([ attributes ], unique_by: index)
+        UserCreativePreference.insert_all([ attributes ])
       end
     rescue ActiveRecord::InvalidForeignKey
       # Only the initial insert is covered, after its savepoint has rolled back.
       # Check the actual origin id being written, not the linked request id.
       Creative.find(attributes[:creative_id]) if attributes[:creative_id].present?
       raise
+    end
+
+    def with_preference(creative_id, &block)
+      return with_locked_preference(creative_id, &block) if creative_id.present?
+
+      # Fence missing root rows without a new constraint that breaks old images.
+      Current.user.class.find(Current.user.id).with_lock do
+        roots = UserCreativePreference.where(user_id: Current.user.id, creative_id: nil)
+        first_id = roots.minimum(:id)
+        roots.where.not(id: first_id).delete_all if first_id
+        with_locked_preference(nil, &block)
+      end
     end
 
     # A collapse can remove an empty row after it is found but before with_lock
@@ -37,7 +50,7 @@ module Collavre
     # times: once the row is locked the block owns the transaction, so a
     # RecordNotFound it raises itself must propagate rather than replay the
     # block, and a row that keeps vanishing must surface instead of spinning.
-    def with_preference(creative_id)
+    def with_locked_preference(creative_id)
       attempts = 0
       locked = false
 
