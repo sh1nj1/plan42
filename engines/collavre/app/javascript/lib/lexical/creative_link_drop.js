@@ -3,7 +3,7 @@ import { $isCodeNode } from '@lexical/code'
 import { $findMatchingParent } from '@lexical/utils'
 import { createDragDropRegistry } from '../dnd/registry'
 import { previewDrop } from '../dnd/preview'
-import { getCreativeLabelFromDom } from '../dnd/creative_label'
+import { getCreativeDropLabel } from '../dnd/creative_label'
 import { $createCreativeLinkNode } from './creative_link_node'
 
 function selectDropPosition(root, event) {
@@ -41,16 +41,16 @@ export function registerCreativeLinkDrop(editor) {
       accepts: (kind) => kind === 'creative' && editor.isEditable(),
       preview: previewDrop,
       dropEffect: 'copy',
-      onDrop: ({ ids, event }) => {
+      onDrop: ({ ids, payload, event }) => {
         editor.update(() => {
           const selection = selectDropPosition(root, event)
           if ($findMatchingParent(selection.anchor.getNode(), $isCodeNode)) {
-            selection.insertText(ids.map(id => `[${getCreativeLabelFromDom(id) || String(id)}](/creatives/${id}) `).join(''))
+            selection.insertText(ids.map(id => `[${getCreativeDropLabel(id, payload)}](/creatives/${id}) `).join(''))
             return
           }
           const nodes = ids.flatMap((id) => {
             const link = $createCreativeLinkNode(`/creatives/${id}`, id)
-            link.append($createTextNode(getCreativeLabelFromDom(id) || String(id)))
+            link.append($createTextNode(getCreativeDropLabel(id, payload)))
             return [link, $createTextNode(' ')]
           })
           selection.insertNodes(nodes)

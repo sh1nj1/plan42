@@ -21,10 +21,11 @@ function drag(type, value = { ids: ['12', '34', '12'] }, mime = 'application/x-c
     setData: (key, value) => data.set(key, value)
   }
   if (value.ids) {
-    writeDragData(dataTransfer, { kind: 'creative', ids: value.ids, payload: { treeId: 'tree' } })
+    writeDragData(dataTransfer, { kind: 'creative', ids: value.ids, payload: { treeId: 'tree', ...value.payload } })
   } else {
     dataTransfer.setData(mime, JSON.stringify(value))
   }
+  value.beforeDrop?.(dataTransfer)
   const event = new DragEvent(type, { bubbles: true, cancelable: true })
   Object.assign(event, { clientX: 10, clientY: 20, dataTransfer })
   root.dispatchEvent(event)
@@ -226,4 +227,48 @@ test('prefers the center description and falls back to sidebar text when unavail
   expect(getCreativeLabelFromDom('12')).toBe('')
   document.querySelector('.creative-workspace-tree-link').remove()
   expect(getCreativeLabelFromDom('12')).toBeNull()
+})
+
+
+test.each(['paragraph', 'code'])('preserves cross-window labels in a %s without source rows', kind => {
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="creative-workspace-tree-row" data-creative-id="34">
+      <a class="creative-workspace-tree-link">사이드바 &amp; &lt;img&gt;</a>
+    </div>`)
+  if (kind === 'code') {
+    editor.update(() => {
+      const code = $createCodeNode('js')
+      $getRoot().clear().append(code)
+      code.selectEnd()
+    }, { discrete: true })
+  }
+  drag('drop', {
+    ids: ['34', '12', '34', '99'],
+    payload: { sourceWindowId: 'another-window' },
+    beforeDrop: () => {
+      document.querySelector('creative-tree-row').remove()
+      document.querySelector('.creative-workspace-tree-row').remove()
+    }
+  })
+  if (kind === 'code') {
+    expect(root.querySelector('a')).toBeNull()
+    expect(root.textContent).toBe('[사이드바 & <img>](/creatives/34) [Target & title](/creatives/12) [99](/creatives/99) ')
+  } else {
+    expect([...root.querySelectorAll('a')].map(link => link.textContent)).toEqual(['사이드바 & <img>', 'Target & title', '99'])
+    expect(root.textContent).toBe('Before 사이드바 & <img> Target & title 99 after')
+    expect(root.querySelector('img')).toBeNull()
+  }
+})
+
+test.each([undefined, null, {}, { 34: 42 }, { 34: '' }])('falls back for absent or invalid carried labels: %j', creativeLabels => {
+  drag('drop', {
+    ids: ['34'],
+    beforeDrop: transfer => {
+      const mime = 'application/x-collavre-creative'
+      const payload = JSON.parse(transfer.getData(mime))
+      payload.creativeLabels = creativeLabels
+      transfer.setData(mime, JSON.stringify(payload))
+    }
+  })
+  expect(lexicalToMarkdown(editor)).toBe('Before [34](/creatives/34) after')
 })

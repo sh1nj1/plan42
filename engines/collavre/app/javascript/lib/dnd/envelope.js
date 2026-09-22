@@ -1,3 +1,4 @@
+import { getCreativeLabelFromDom } from './creative_label';
 import {
   ensureDragSessionToken,
   ensureDragWindowId,
@@ -147,6 +148,7 @@ function writeLegacyData(dataTransfer, data, token, sourceWindowId) {
       ...payload,
       creativeId,
       selectedCreativeIds: ids,
+      creativeLabels: Object.fromEntries(ids.map(id => [id, getCreativeLabelFromDom(id)])),
       token,
       sourceWindowId,
     });
