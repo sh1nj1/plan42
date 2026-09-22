@@ -11,6 +11,57 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  test "late timed out expansion cannot overwrite a newer collapse in root or nested contexts" do
+    [ nil, @creative.id ].each do |context|
+      intent = { creative_id: context, node_id: @creative.id,
+                 expansion_save_session: "00000000-0000-4000-8000-000000000001" }
+      # The first request is held before entering toggle. The browser times out
+      # and sends sequence 2, which reaches the server before sequence 1.
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: false, expansion_save_sequence: 2), as: :json
+      assert_response :success
+      assert_equal true, response.parsed_body["success"]
+      record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: context)
+      assert_empty record.expanded_status
+
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_sequence: 1), as: :json
+      assert_response :success
+      assert_equal true, response.parsed_body["stale_expansion_save"]
+      assert_empty record.reload.expanded_status
+
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_sequence: 2), as: :json
+      assert_equal false, response.parsed_body["success"]
+      assert_empty record.reload.expanded_status
+
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_sequence: 3), as: :json
+      assert_equal true, response.parsed_body["success"]
+      assert_equal({ @creative.id.to_s => true }, record.reload.expanded_status)
+    end
+  end
+
+  test "expansion ordering is independent across nodes and retains earlier browser streams" do
+    first = "00000000-0000-4000-8000-000000000001"
+    second = "00000000-0000-4000-8000-000000000002"
+    intent = { node_id: @creative.id, expansion_save_session: first, expansion_save_sequence: 5 }
+    post "/creative_expanded_states/toggle", params: intent.merge(expanded: false), as: :json
+    post "/creative_expanded_states/toggle", params: intent.merge(node_id: "another", expanded: true, expansion_save_sequence: 1), as: :json
+    assert_equal true, response.parsed_body["success"]
+    post "/creative_expanded_states/toggle", params: intent.merge(expanded: false, expansion_save_session: second, expansion_save_sequence: 1), as: :json
+    assert_equal true, response.parsed_body["success"]
+    post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_sequence: 4), as: :json
+    assert_equal false, response.parsed_body["success"]
+    record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: nil)
+    assert_equal({ "another" => true }, record.expanded_status)
+  end
+
+  test "invalid expansion ordering metadata is not applied" do
+    [ [ "invalid", 1 ], [ "00000000-0000-4000-8000-000000000001", 0 ], [ nil, 1 ] ].each do |session, sequence|
+      post "/creative_expanded_states/toggle", params: { node_id: @creative.id, expanded: true,
+        expansion_save_session: session, expansion_save_sequence: sequence }, as: :json
+      assert_response :success
+      assert_equal false, response.parsed_body["success"]
+    end
+  end
+
   test "toggle rejects a previous account intent after signing into another account" do
     old_user_id = @user.id
     delete session_path

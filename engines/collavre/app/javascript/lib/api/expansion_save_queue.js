@@ -3,8 +3,13 @@ import csrfFetch from './csrf_fetch'
 // Keep same-user writes ordered across Turbo controller replacements.
 let saveQueue = Promise.resolve()
 const SAVE_TIMEOUT_MS = 10000
+// getRandomValues also works on HTTP previews, unlike randomUUID.
+const saveSession = Array.from(crypto.getRandomValues(new Uint8Array(18)),
+  (value) => value.toString(16).padStart(2, '0')).join('')
+let saveSequence = 0
 
 export function queueExpansionSave(userId, state) {
+  const order = { expansion_save_session: saveSession, expansion_save_sequence: ++saveSequence }
   saveQueue = saveQueue.then(() => {
     if (!userId || document.body.dataset.currentUserId !== userId) return
 
@@ -15,7 +20,7 @@ export function queueExpansionSave(userId, state) {
         Accept: 'application/json',
       },
       // The cookie can change before Turbo renders the new user's body.
-      body: JSON.stringify({ ...state, expected_user_id: userId }),
+      body: JSON.stringify({ ...state, ...order, expected_user_id: userId }),
     })
   }).catch(() => {})
   return saveQueue

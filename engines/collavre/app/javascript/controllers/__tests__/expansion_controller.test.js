@@ -30,14 +30,14 @@ describe('creative expansion persistence', () => {
     controller.toggleAll({ preventDefault() {} })
     await flush()
     await controller.saveQueue
-    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expected_user_id: '10', creative_id: null, node_id: '1', expanded: true })
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true })
     const child = children.querySelector('creative-tree-row')
     child.hasChildren = true
     children.insertAdjacentHTML('beforeend', '<div id="creative-children-2" data-loaded="true"><creative-tree-row creative-id="3"></creative-tree-row></div>')
     controller.syncInitialState(child)
     await flush()
     await controller.saveQueue
-    expect(fetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toContainEqual({ expected_user_id: '10', creative_id: null, node_id: '2', expanded: true })
+    expect(fetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toContainEqual({ expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '2', expanded: true })
     controller.toggleAll({ preventDefault() {} })
     await controller.saveQueue
     expect(row.expanded).toBe(false)
@@ -54,7 +54,7 @@ describe('creative expansion persistence', () => {
     controller.toggleAll({ preventDefault() {} })
     await controller.saveQueue
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
     expect(Array.from(controller.element.querySelectorAll('creative-tree-row')).every((item) => item.expanded === false)).toBe(true)
   })
 
@@ -65,7 +65,7 @@ describe('creative expansion persistence', () => {
     controller.toggleAll({ preventDefault() {} })
     await controller.saveQueue
     expect(fetch).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
   })
 
   test('a collapse wins over an unfinished lazy expansion', async () => {
@@ -93,8 +93,8 @@ describe('creative expansion persistence', () => {
     finish({ headers: new Headers() })
     await controller.saveQueue
     expect(fetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
-      { expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
-      { expected_user_id: '10', creative_id: '9', node_id: '1', expanded: false },
+      { expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
+      { expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: '9', node_id: '1', expanded: false },
     ])
   })
   test('writes from replacement controllers wait for the previous screen queue', async () => {
@@ -115,9 +115,9 @@ describe('creative expansion persistence', () => {
     finish({ headers: new Headers() })
     await replacement.saveQueue
     expect(fetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
-      { expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
-      { expected_user_id: '10', creative_id: null, node_id: '2', expanded: true },
-      { expected_user_id: '10', creative_id: null, node_id: '1', expanded: false },
+      { expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
+      { expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '2', expanded: true },
+      { expansion_save_session: expect.any(String), expansion_save_sequence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false },
     ])
     replacement.disconnect()
   })
@@ -179,7 +179,11 @@ describe('creative expansion persistence', () => {
       await replacement.saveQueue
       expect(signal.aborted).toBe(true)
       expect(fetch).toHaveBeenCalledTimes(2)
-      expect(JSON.parse(fetch.mock.calls[1][1].body).expanded).toBe(false)
+      const earlier = JSON.parse(fetch.mock.calls[0][1].body)
+      const later = JSON.parse(fetch.mock.calls[1][1].body)
+      expect(later.expanded).toBe(false)
+      expect(later.expansion_save_session).toBe(earlier.expansion_save_session)
+      expect(later.expansion_save_sequence).toBeGreaterThan(earlier.expansion_save_sequence)
       expect(jest.getTimerCount()).toBe(0)
       replacement.disconnect()
     } finally {

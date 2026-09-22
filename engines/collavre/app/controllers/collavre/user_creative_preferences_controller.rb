@@ -12,16 +12,10 @@ module Collavre
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
-      with_preference(creative_id) do |record|
-        state = record.expanded_status || {}
+      saved = with_preference(creative_id) do |record|
+        next false unless record.accept_expansion_save?(params[:expansion_save_session], params[:expansion_save_sequence], node_id)
 
-        if expanded
-          state[node_id] = true
-        else
-          state.delete(node_id)
-        end
-
-        record.expanded_status = state
+        state = record.set_expanded(node_id, expanded)
         if empty_preference?(record, state)
           record.destroy!
         else
@@ -29,7 +23,7 @@ module Collavre
         end
       end
 
-      render json: { success: true }
+      render json: { success: !!saved, stale_expansion_save: !saved }
     end
 
     def update_last_topic
@@ -81,7 +75,7 @@ module Collavre
     end
 
     def empty_preference?(record, state)
-      state.empty? && record.last_topic_id.nil? && !record.last_topic_all_messages? &&
+      record.expansion_save_sequences.blank? && state.empty? && record.last_topic_id.nil? && !record.last_topic_all_messages? &&
         record.last_topic_revision.to_i.zero? &&
         record.last_topic_save_fence_issued.to_i.zero? && record.last_topic_save_fence_applied.to_i.zero?
     end
