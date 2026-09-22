@@ -57,6 +57,7 @@
 
 import { sendNewOrder, sendLinkedCreative, isAuthenticationRedirect } from '../../lib/api/drag_drop';
 import { serverErrorMessage } from '../../lib/api/api_error';
+import { apiQueue } from '../../lib/api/queue_manager';
 
 export const MOVE_MODES = Object.freeze({
   MOVE: 'move',
@@ -185,6 +186,15 @@ function buildResult(command, { succeeded, failures, payloads = [] }) {
   };
 }
 
+async function waitForMoveSaves(ids) {
+  const keys = ids.map(id => `creative_${id}`);
+  await Promise.all(keys.map(key => apiQueue.waitFor(key)));
+  // A failed snapshot can still restore its old parent on a later retry.
+  // Keep the move reversible until that draft has been saved successfully.
+  const failed = apiQueue.failedItems.find(item => keys.includes(item.dedupeKey));
+  if (failed) throw new Error(failed.lastError || 'Queued save failed');
+}
+
 async function executeReorder(command, api) {
   const { ids, targetId, direction } = command;
   const payload = ids.length > 1
@@ -193,6 +203,7 @@ async function executeReorder(command, api) {
 
   let response;
   try {
+    await waitForMoveSaves([...ids, targetId]);
     response = await api.sendNewOrder(payload);
   } catch (error) {
     return buildResult(command, {
