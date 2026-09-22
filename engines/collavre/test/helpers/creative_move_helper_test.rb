@@ -10,7 +10,9 @@ class CreativeMoveHelperTest < ActionView::TestCase
 
         hint = I18n.t("collavre.dnd.drag_drop_hint", raise: true)
         assert_select "dialog > form + .modal-dialog-footer:last-child" do
-          assert_select ".modal-dialog-hints", text: hint, count: 1
+          assert_select ".modal-dialog-hints.desktop-only", text: hint, count: 1
+          assert_select ".modal-dialog-hints.mobile-only",
+                        text: I18n.t("collavre.dnd.mobile_drag_drop_hint", raise: true), count: 1
         end
         assert_includes hint, "Shift"
       end

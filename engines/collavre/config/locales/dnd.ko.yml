@@ -2,6 +2,7 @@ ko:
   collavre:
     dnd:
       drag_drop_hint: "드래그 앤 드롭으로도 크리에이티브를 이동할 수 있습니다. Shift를 누른 채 드롭하면 이동 대신 링크를 만듭니다."
+      mobile_drag_drop_hint: "일부 모바일 기기·브라우저에서는 크리에이티브를 길게 누른 뒤 드래그하여 이동할 수 있습니다."
       move_title: "이동…"
       choose_destination: "대상 선택…"
       destination: "대상"
