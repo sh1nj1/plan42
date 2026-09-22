@@ -6,7 +6,7 @@ module Collavre
       attr_reader :execution_id
 
       def initialize(context:, vendor:, model:, measurement: nil)
-        @identity = Attribution.snapshot(context).merge(agent_id: context[:user]&.id, vendor: vendor, model: model.to_s)
+        @identity = Attribution.snapshot(context).merge(agent_id: Attribution.agent(context)&.id, vendor: vendor, model: model.to_s)
         @execution_id = SecureRandom.uuid
         @measurement = measurement || (vendor == "cli_proxy" ? "run" : "call")
         @sequence = 0

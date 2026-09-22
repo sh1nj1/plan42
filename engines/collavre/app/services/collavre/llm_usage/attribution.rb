@@ -59,6 +59,10 @@ module Collavre
         end
       end
 
+      def self.agent(context)
+        context[:task]&.agent || context[:agent] || context[:user]
+      end
+
       def self.standalone(context)
         comment = context[:comment]
         requester = context[:requester]
@@ -67,7 +71,7 @@ module Collavre
         else
           from_comments([ comment&.id ].compact)
         end
-        attributes(attribution.merge("owner_id" => context[:user]&.created_by_id))
+        attributes(attribution.merge("owner_id" => agent(context)&.created_by_id))
           .merge(creative_id: context[:creative]&.id, topic_id: comment&.topic_id || context[:topic_id])
       end
 

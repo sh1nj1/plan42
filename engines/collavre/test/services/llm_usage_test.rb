@@ -130,6 +130,19 @@ class LlmUsageTest < ActiveSupport::TestCase
     assert_equal "unknown", Collavre::LlmUsage::Attribution.snapshot(requester: @agent)[:requester_kind]
   end
 
+  test "explicit agent is independent of authorization user and snapshots its owner" do
+    collector = Collavre::LlmUsage::Recorder.new(
+      context: { user: @requester, agent: @agent, requester: @requester }, vendor: "openai", model: "test")
+    @agent.update!(created_by_id: @requester.id)
+    collector.finish(response)
+    row = Collavre::LlmUsage.last
+    assert_equal @agent.id, row.agent_id
+    assert_equal @owner.id, row.owner_id
+    assert_equal @requester.id, row.requester_id
+    assert_equal [ row.id ], Collavre::LlmUsage.visible_to(@requester).pluck(:id)
+    assert_equal @agent, Collavre::LlmUsage::Attribution.agent(task: @task, agent: @requester)
+  end
+
   test "run measurements and database idempotency are explicit" do
     recorder(measurement: "run").finish(response)
     original = Collavre::LlmUsage.last
