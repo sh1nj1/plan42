@@ -139,6 +139,37 @@ module Creatives
       refute_includes result.allowed_ids, @child1.id.to_s
     end
 
+    test "denied reaction matches cannot contribute ancestors or progress" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: nil, permission: :read)
+        CreativeShare.create!(creative: @child1, user: @shared_user, permission: :no_access)
+      end
+      comment = Comment.create!(creative: @child1, user: @owner, content: "Public message")
+      Collavre::CommentReaction.create!(comment: comment, user: @owner, emoji: "👍")
+      scope = Creative.where(id: [ @root.id, @child1.id, @child2.id ])
+      params = { reaction_emoji: "👍", search_mode: "tree" }
+
+      result = FilterPipeline.new(user: @shared_user, params: params, scope: scope).call
+      assert_empty result.matched_ids
+      assert_empty result.allowed_ids
+      assert_empty result.progress_map
+      assert_equal 0.0, result.overall_progress
+
+      # The owner still sees the matching descendant and its ancestor.
+      result = FilterPipeline.new(user: @owner, params: params, scope: scope).call
+      assert_equal [ @child1.id ].to_set, result.matched_ids
+      assert_equal [ @root.id, @child1.id ].map(&:to_s).to_set, result.allowed_ids
+
+      # A readable sibling must remain visible without including denied progress.
+      comment = Comment.create!(creative: @child2, user: @owner, content: "Visible message")
+      Collavre::CommentReaction.create!(comment: comment, user: @owner, emoji: "👍")
+      result = FilterPipeline.new(user: @shared_user, params: params, scope: scope).call
+      assert_equal [ @child2.id ].to_set, result.matched_ids
+      assert_equal [ @root.id, @child2.id ].map(&:to_s).to_set, result.allowed_ids
+      assert_equal({ @root.id.to_s => 0.0, @child2.id.to_s => 0.0 }, result.progress_map)
+      assert_equal 0.0, result.overall_progress
+    end
+
     test "resolve_ancestors includes linked creatives that reference matched origins" do
       origin = nil
       origin_child = nil

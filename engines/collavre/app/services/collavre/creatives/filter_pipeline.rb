@@ -15,6 +15,7 @@ module Creatives
       Filters::TagFilter,
       Filters::SearchFilter,
       Filters::CommentFilter,
+      Filters::ReactionFilter,
       Filters::CronFilter,
       Filters::DateFilter,
       Filters::AssigneeFilter
@@ -27,7 +28,8 @@ module Creatives
     end
 
     def call
-      matched_ids = apply_filters
+      # Denied matches must not reveal readable ancestors or affect progress.
+      matched_ids = filter_by_permission(apply_filters)
       return empty_result if matched_ids.empty?
 
       # 조상 포함
@@ -47,7 +49,7 @@ module Creatives
     end
 
     def any_filter_active?
-      FILTERS.any? { |klass| klass.new(params: params, scope: scope).active? }
+      FILTERS.any? { |klass| klass.new(params: params, scope: scope, user: user).active? }
     end
 
     # Public: the raw filter/search matches, skipping ancestor + progress
@@ -65,7 +67,7 @@ module Creatives
     # callers must fall back to #matched_ids.
     def search_only_relation
       active = FILTERS
-        .map { |klass| klass.new(params: params, scope: scope) }
+        .map { |klass| klass.new(params: params, scope: scope, user: user) }
         .select(&:active?)
       return nil unless active.size == 1 && active.first.is_a?(Filters::SearchFilter)
 
@@ -78,7 +80,7 @@ module Creatives
 
     def apply_filters
       active_filters = FILTERS
-        .map { |klass| klass.new(params: params, scope: scope) }
+        .map { |klass| klass.new(params: params, scope: scope, user: user) }
         .select(&:active?)
 
       # 필터가 없으면 전체 반환
