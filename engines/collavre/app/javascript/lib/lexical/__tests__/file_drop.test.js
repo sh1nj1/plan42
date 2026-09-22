@@ -1,6 +1,7 @@
 import { jest } from "@jest/globals"
-import { createEditor, $getRoot, $getSelection, $createParagraphNode, $createTextNode, DROP_COMMAND, COMMAND_PRIORITY_EDITOR } from "lexical"
+import { createEditor, $getRoot, $getSelection, $createParagraphNode, $createTextNode, DROP_COMMAND, COMMAND_PRIORITY_EDITOR, UNDO_COMMAND, REDO_COMMAND, HISTORY_PUSH_TAG } from "lexical"
 import { $generateHtmlFromNodes } from "@lexical/html"
+import { createEmptyHistoryState, registerHistory } from "@lexical/history"
 import { registerRichText } from "@lexical/rich-text"
 import { UploadAnchorNode } from "../upload_anchor_node"
 import { registerFileDrop } from "../file_drop"
@@ -90,6 +91,7 @@ describe("inline editor file drops", () => {
     expect(committed).not.toHaveBeenCalled()
     complete(0)
     await Promise.resolve()
+    await Promise.resolve()
     expect(committed).toHaveBeenCalledTimes(2)
   }
 
@@ -164,12 +166,96 @@ describe("inline editor file drops", () => {
     editor.getEditorState().read(() => expect($getRoot().getLastChild().getTextContent()).toBe("other01"))
   })
 
-  it("falls back to the document end when the captured target was deleted", async () => {
+  it("cancels insertion when the captured target was deleted", async () => {
     await prepareDocument()
     drop([new File(["a"], "a.txt"), new File(["b"], "b.txt")])
     editor.update(() => $getRoot().getLastChild().remove(), { discrete: true })
     await finishUploads()
-    editor.getEditorState().read(() => expect($getRoot().getTextContent()).toBe("target01"))
+    editor.getEditorState().read(() => expect($getRoot().getTextContent()).toBe("target"))
+  })
+
+  describe("undo history", () => {
+    let history
+    let cleanupHistory
+
+    beforeEach(() => {
+      history = createEmptyHistoryState()
+      cleanupHistory = registerHistory(editor, history, 300)
+    })
+    afterEach(() => cleanupHistory())
+
+    async function prepareDrop() {
+      await prepareDocument()
+      history.undoStack = []
+      editor.update(() => {
+        $getRoot().getLastChild().selectEnd().insertText("!")
+      }, { tag: HISTORY_PUSH_TAG, discrete: true })
+      const text = editor.getRootElement().querySelector("p").firstChild.firstChild
+      document.caretPositionFromPoint = () => ({ offsetNode: text, offset: 3 })
+      drop([new File(["a"], "a.txt"), new File(["b"], "b.txt")])
+      await Promise.resolve()
+    }
+
+    async function command(command) {
+      editor.dispatchCommand(command)
+      await Promise.resolve()
+      await Promise.resolve()
+    }
+
+    function content() {
+      return editor.getEditorState().read(() => $getRoot().getTextContent())
+    }
+
+    it("undoes the last visible edit while pending and never moves cancelled attachments", async () => {
+      await prepareDrop()
+      expect(history.undoStack).toHaveLength(1)
+      await command(UNDO_COMMAND)
+      expect(content()).toBe("target\n\nother")
+      await finishUploads()
+      expect(content()).toBe("target\n\nother")
+      expect(history.undoStack).toHaveLength(0)
+      await command(REDO_COMMAND)
+      expect(content()).toBe("target\n\nother!")
+      expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
+    })
+
+    it("undoes and redoes completed attachments in one visible step", async () => {
+      await prepareDrop()
+      await finishUploads()
+      expect(content()).toBe("tar01get\n\nother!")
+      await command(UNDO_COMMAND)
+      expect(content()).toBe("target\n\nother!")
+      expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
+      await command(UNDO_COMMAND)
+      expect(content()).toBe("target\n\nother")
+      await command(REDO_COMMAND)
+      await command(REDO_COMMAND)
+      expect(content()).toBe("tar01get\n\nother!")
+    })
+
+    it("keeps the anchor when undoing a post-drop edit", async () => {
+      await prepareDrop()
+      editor.update(() => {
+        $getRoot().getFirstChild().getFirstChild().selectStart().insertText("PREFIX")
+      }, { tag: HISTORY_PUSH_TAG, discrete: true })
+      await command(UNDO_COMMAND)
+      expect(content()).toBe("target\n\nother!")
+      await finishUploads()
+      expect(content()).toBe("tar01get\n\nother!")
+    })
+
+    it("does not add an undo step when every upload fails synchronously", async () => {
+      await prepareDocument()
+      const depth = history.undoStack.length
+      upload.mockImplementation((_file, complete) => complete(() => {}, () => {}))
+      drop([new File(["a"], "a.txt")])
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(history.undoStack).toHaveLength(depth)
+      expect(content()).toBe("target\n\nother")
+      expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
+    })
   })
 
 })
