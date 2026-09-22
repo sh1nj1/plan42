@@ -28,8 +28,8 @@ describe('server-issued expansion ordering', () => {
     const calls = [...firstCalls, ...fetch.mock.calls]
     expect(calls.map(([url]) => url.split('/').at(-1))).toEqual(['fence', 'toggle', 'fence', 'toggle'])
     const bodies = calls.map(([, options]) => JSON.parse(options.body))
-    expect(bodies[1]).toEqual({ ...intent, expected_user_id: '10', expansion_intent: expect.any(Number), expansion_save_fence: 41 })
-    expect(bodies[3]).toEqual({ ...intent, expected_user_id: '10', expanded: false, expansion_intent: expect.any(Number), expansion_save_fence: 42 })
+    expect(bodies[1]).toEqual({ ...intent, expected_user_id: '10', expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: 41 })
+    expect(bodies[3]).toEqual({ ...intent, expected_user_id: '10', expanded: false, expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: 42 })
   })
 
   test('reserves intent before a delayed fence while another tab saves', async () => {

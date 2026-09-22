@@ -13,14 +13,47 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  test "missing source and legacy intent use fences while malformed sources are rejected" do
+    params = { node_id: @creative.id, expanded: true, expansion_intent: 900,
+      intent_source: "11111111-1111-4111-8111-111111111111" }
+    post "/creative_expanded_states/toggle", params: params.merge(expansion_save_fence: expansion_fence(nil)), as: :json
+    assert response.parsed_body["success"]
+    fence = expansion_fence(nil)
+    [ "invalid", "a" * 1000, [] ].each do |source|
+      post "/creative_expanded_states/toggle", params: params.merge(expanded: false, intent_source: source,
+        expansion_save_fence: fence), as: :json
+      assert response.parsed_body["stale_expansion_save"]
+    end
+    post "/creative_expanded_states/toggle", params: params.except(:intent_source).merge(expanded: false,
+      expansion_intent: 1, expansion_save_fence: fence), as: :json
+    assert response.parsed_body["success"]
+    assert_nil Collavre::UserCreativePreference.find_by(user: @user, creative_id: nil)
+    post "/creative_expanded_states/toggle", params: params.except(:expansion_intent).merge(
+      expansion_save_fence: expansion_fence(nil)), as: :json
+    assert response.parsed_body["success"]
+  end
+
+  test "a slower device can collapse a branch saved by a faster device" do
+    [ nil, @creative.id ].each do |context|
+      params = { creative_id: context, node_id: @creative.id, expanded: true,
+        expansion_intent: 8_000_000_000_000_000, intent_source: "11111111-1111-4111-8111-111111111111" }
+      post "/creative_expanded_states/toggle", params: params.merge(expansion_save_fence: expansion_fence(context)), as: :json
+      assert response.parsed_body["success"]
+      post "/creative_expanded_states/toggle", params: params.merge(expanded: false, expansion_intent: 100,
+        intent_source: "22222222-2222-4222-8222-222222222222", expansion_save_fence: expansion_fence(context)), as: :json
+      assert response.parsed_body["success"]
+      assert_not Collavre::UserCreativePreference.find_by(user: @user, creative_id: context)&.expanded_status&.key?(@creative.id.to_s)
+    end
+  end
+
   test "delayed earlier intent with a newer fence cannot resurrect a collapse" do
     [ nil, @creative.id ].each do |context|
       intent = { creative_id: context, node_id: @creative.id, expected_user_id: @user.id }
       post "/creative_expanded_states/toggle", params: intent.merge(expanded: false,
-        expansion_save_fence: expansion_fence(context), expansion_intent: 200), as: :json
+        expansion_save_fence: expansion_fence(context), expansion_intent: 200, intent_source: "11111111-1111-4111-8111-111111111111"), as: :json
       assert_equal true, response.parsed_body["success"]
       post "/creative_expanded_states/toggle", params: intent.merge(expanded: true,
-        expansion_save_fence: expansion_fence(context), expansion_intent: 100), as: :json
+        expansion_save_fence: expansion_fence(context), expansion_intent: 100, intent_source: "11111111-1111-4111-8111-111111111111"), as: :json
       assert_equal true, response.parsed_body["stale_expansion_save"]
       assert_nil Collavre::UserCreativePreference.find_by(user: @user, creative_id: context)
     end

@@ -36,14 +36,14 @@ describe('creative expansion persistence', () => {
     controller.toggleAll({ preventDefault() {} })
     await flush()
     await controller.saveQueue
-    expect(JSON.parse(toggleFetch.mock.calls[0][1].body)).toEqual({ expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true })
+    expect(JSON.parse(toggleFetch.mock.calls[0][1].body)).toEqual({ expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true })
     const child = children.querySelector('creative-tree-row')
     child.hasChildren = true
     children.insertAdjacentHTML('beforeend', '<div id="creative-children-2" data-loaded="true"><creative-tree-row creative-id="3"></creative-tree-row></div>')
     controller.syncInitialState(child)
     await flush()
     await controller.saveQueue
-    expect(toggleFetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toContainEqual({ expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '2', expanded: true })
+    expect(toggleFetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toContainEqual({ expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '2', expanded: true })
     controller.toggleAll({ preventDefault() {} })
     await controller.saveQueue
     expect(row.expanded).toBe(false)
@@ -60,7 +60,7 @@ describe('creative expansion persistence', () => {
     controller.toggleAll({ preventDefault() {} })
     await controller.saveQueue
     expect(toggleFetch).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(toggleFetch.mock.calls[0][1].body)).toEqual({ expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
+    expect(JSON.parse(toggleFetch.mock.calls[0][1].body)).toEqual({ expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
     expect(Array.from(controller.element.querySelectorAll('creative-tree-row')).every((item) => item.expanded === false)).toBe(true)
   })
 
@@ -71,7 +71,7 @@ describe('creative expansion persistence', () => {
     controller.toggleAll({ preventDefault() {} })
     await controller.saveQueue
     expect(toggleFetch).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(toggleFetch.mock.calls[0][1].body)).toEqual({ expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
+    expect(JSON.parse(toggleFetch.mock.calls[0][1].body)).toEqual({ expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false })
   })
 
   test('lazy loading retains the token reserved when expansion was requested', async () => {
@@ -83,7 +83,7 @@ describe('creative expansion persistence', () => {
     await pending
     await controller.saveQueue
     const body = JSON.parse(toggleFetch.mock.calls[0][1].body)
-    expect(body.expansion_intent).toBeLessThan(laterIntent)
+    expect(body.expansion_intent).toBeLessThan(laterIntent.token)
   })
 
   test('a collapse wins over an unfinished lazy expansion', async () => {
@@ -111,8 +111,8 @@ describe('creative expansion persistence', () => {
     finish({ ok: true, headers: new Headers(), json: async () => ({ success: true }) })
     await controller.saveQueue
     expect(toggleFetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
-      { expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
-      { expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: '9', node_id: '1', expanded: false },
+      { expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
+      { expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: '9', node_id: '1', expanded: false },
     ])
   })
   test('writes from replacement controllers wait for the previous screen queue', async () => {
@@ -133,9 +133,9 @@ describe('creative expansion persistence', () => {
     finish({ ok: true, headers: new Headers(), json: async () => ({ success: true }) })
     await replacement.saveQueue
     expect(toggleFetch.mock.calls.map(([, options]) => JSON.parse(options.body))).toEqual([
-      { expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
-      { expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '2', expanded: true },
-      { expansion_intent: expect.any(Number), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false },
+      { expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: true },
+      { expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '2', expanded: true },
+      { expansion_intent: expect.any(Number), intent_source: expect.any(String), expansion_save_fence: expect.any(Number), expected_user_id: '10', creative_id: null, node_id: '1', expanded: false },
     ])
     replacement.disconnect()
   })

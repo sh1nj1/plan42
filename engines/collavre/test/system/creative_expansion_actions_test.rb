@@ -137,6 +137,37 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
     assert_not_empty @user.reload.expansion_save_sequences
   end
 
+  test "a slower browser source can collapse and reload after a fast source expands" do
+    page.execute_script <<~JS
+      localStorage.setItem('collavre:expansion-intent-source', '11111111-1111-4111-8111-111111111111');
+      localStorage.setItem('collavre:expansion-intent:#{@user.id}', '8000000000000000');
+    JS
+    find(row_selector(@root_creative)).hover
+    find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+    assert_selector row_selector(@child), visible: :visible
+    wait_for_expansion_saves
+    first = @user.reload.expansion_save_sequences.fetch("intents").fetch("nodes").values.first
+    assert_equal "11111111-1111-4111-8111-111111111111", first.fetch("source")
+
+    # Reload resets the document clock; replacing origin storage simulates a
+    # separate browser profile with the same authenticated account.
+    page.execute_script <<~JS
+      localStorage.setItem('collavre:expansion-intent-source', '22222222-2222-4222-8222-222222222222');
+      localStorage.removeItem('collavre:expansion-intent:#{@user.id}');
+    JS
+    page.refresh
+    assert_selector row_selector(@child), visible: :visible
+    find(row_selector(@root_creative)).hover
+    find("#{row_selector(@root_creative)} .creative-toggle-btn").click
+    refute_selector row_selector(@child), visible: :visible
+    wait_for_expansion_saves
+    last = @user.reload.expansion_save_sequences.fetch("intents").fetch("nodes").values.first
+    assert_equal "22222222-2222-4222-8222-222222222222", last.fetch("source")
+    assert_operator last.fetch("intent"), :<, first.fetch("intent")
+    page.refresh
+    refute_selector row_selector(@child), visible: :visible
+  end
+
   test "later collapse in another tab wins over a delayed earlier fence request" do
     first_tab = current_window
     second_tab = open_new_window

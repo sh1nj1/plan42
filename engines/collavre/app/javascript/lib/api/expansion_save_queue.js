@@ -9,9 +9,9 @@ export function queueExpansionSave(userId, state, intent = reserveExpansionInten
   saveQueue = saveQueue.then(async () => {
     if (!userId || document.body.dataset.currentUserId !== userId) return
 
-    const token = await intent
+    const { token, source } = (await intent) || {}
     if (!Number.isSafeInteger(token) || token <= 0) return
-    const body = { ...state, expected_user_id: userId, expansion_intent: token }
+    const body = { ...state, expected_user_id: userId, expansion_intent: token, intent_source: source }
     // Issuance only reserves an order; a timed-out reservation cannot mutate
     // expansion state. The server counter survives hard reloads and other tabs.
     const { expansion_save_fence: fence } = await saveWithTimeout('fence', body)
