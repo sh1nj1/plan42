@@ -4,6 +4,10 @@ module Collavre
     include Persistence
 
     def toggle
+      if params.key?(:expected_user_id) && params[:expected_user_id].to_s != Current.user.id.to_s
+        return render_forbidden
+      end
+
       creative_id = params[:creative_id]
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])

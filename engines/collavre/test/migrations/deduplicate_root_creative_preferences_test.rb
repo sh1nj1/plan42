@@ -2,6 +2,20 @@ require "test_helper"
 require Rails.root.join("engines/collavre/db/migrate/20260922000000_deduplicate_root_creative_preferences")
 
 class DeduplicateRootCreativePreferencesTest < ActiveSupport::TestCase
+  test "PostgreSQL locks out inserts before cleanup and unique index installation" do
+    migration = DeduplicateRootCreativePreferences.new
+    operations = []
+    connection = Struct.new(:adapter_name).new("PostgreSQL")
+    migration.define_singleton_method(:execute) { |sql| operations << sql.strip }
+    migration.define_singleton_method(:add_index) { |*args, **options| operations << :index }
+    migration.stub(:connection, connection) { migration.up }
+
+    assert_equal "LOCK TABLE user_creative_preferences IN ACCESS EXCLUSIVE MODE", operations[0]
+    assert_match(/\ADELETE FROM user_creative_preferences/, operations[1])
+    assert_equal :index, operations[2]
+    assert_not DeduplicateRootCreativePreferences.disable_ddl_transaction
+  end
+
   test "keeps the previously read root row and leaves scoped and other user preferences intact" do
     migration = DeduplicateRootCreativePreferences.new
     migration.down

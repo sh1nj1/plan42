@@ -1,16 +1,14 @@
 import { Controller } from '@hotwired/stimulus'
-import csrfFetch from '../../lib/api/csrf_fetch'
+import { queueExpansionSave } from '../../lib/api/expansion_save_queue'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
-
-// Turbo replaces controller instances while their writes may still be in flight.
-let saveQueue = Promise.resolve()
 
 export default class extends Controller {
   static targets = ['expand']
 
   connect() {
     this.rowIntents = new WeakMap()
-    this.saveQueue = saveQueue
+    this.userId = document.body.dataset.currentUserId
+    this.saveQueue = Promise.resolve()
     this.allExpanded = false
     this.currentCreativeId = null
     this.handleToggleEvent = this.handleToggleEvent.bind(this)
@@ -224,17 +222,10 @@ export default class extends Controller {
     }
     const contextId = this.currentCreativeId ?? null
 
-    this.saveQueue = saveQueue = saveQueue.then(() => csrfFetch('/creative_expanded_states/toggle', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        creative_id: contextId,
-        node_id: creativeId,
-        expanded,
-      }),
-    })).catch(() => {})
+    this.saveQueue = queueExpansionSave(this.userId, {
+      creative_id: contextId,
+      node_id: creativeId,
+      expanded,
+    })
   }
 }

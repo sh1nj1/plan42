@@ -11,6 +11,33 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email: @user.email, password: "password" }
   end
 
+  test "toggle rejects a previous account intent after signing into another account" do
+    old_user_id = @user.id
+    delete session_path
+    other = users(:two)
+    other.update!(email_verified_at: Time.current)
+    post session_path, params: { email: other.email, password: "password" }
+
+    assert_no_difference "Collavre::UserCreativePreference.count" do
+      post "/creative_expanded_states/toggle",
+        params: { node_id: @creative.id, expanded: true, expected_user_id: old_user_id }, as: :json
+      assert_response :forbidden
+    end
+
+    post "/creative_expanded_states/toggle",
+      params: { node_id: @creative.id, expanded: true, expected_user_id: other.id }, as: :json
+    assert_response :success
+    assert Collavre::UserCreativePreference.exists?(user_id: other.id, creative_id: nil)
+  end
+
+  test "toggle rejects an explicitly empty expected user" do
+    assert_no_difference "Collavre::UserCreativePreference.count" do
+      post "/creative_expanded_states/toggle",
+        params: { node_id: @creative.id, expanded: true, expected_user_id: "" }, as: :json
+      assert_response :forbidden
+    end
+  end
+
   test "root toggles reuse one preference and preserve other nodes and contexts" do
     node_ids = [ @creative.id.to_s, "98765" ]
     node_ids.each do |node_id|

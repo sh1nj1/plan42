@@ -1,5 +1,10 @@
 class DeduplicateRootCreativePreferences < ActiveRecord::Migration[8.0]
   def up
+    # Rails holds this lock through cleanup and index creation in the DDL transaction.
+    if connection.adapter_name == "PostgreSQL"
+      execute "LOCK TABLE user_creative_preferences IN ACCESS EXCLUSIVE MODE"
+    end
+
     # Keep the row read by the old client. Later duplicate inserts were unused.
     execute <<~SQL
       DELETE FROM user_creative_preferences
