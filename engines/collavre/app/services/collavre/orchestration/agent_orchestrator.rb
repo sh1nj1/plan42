@@ -28,49 +28,58 @@ module Collavre
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
         task = claim_next_waiter(topic_id, creative_id)
-        if task
-          # Fold the waiters left behind this one into it. dequeue promotes the
-          # oldest *eligible* queued task, so its same-agent siblings are all
-          # newer — they would each be promoted in turn and, because
-          # refresh_deferred_context! points every one of them at the same
-          # latest comment, replay the same answer. Absorb them here instead;
-          # the refresh below then moves the anchor forward and keeps the
-          # absorbed triggers in "merged_comment_ids".
-          coalesce_promoted!(task)
+        promote_claimed!(task, topic_id, creative_id) if task
+      rescue StandardError
+        # Whatever failed after the claim — the refresh, the enqueue — left the
+        # row pending with no job behind it, holding the slot where no recovery
+        # looks. Back in the queue, orphan recovery promotes it again.
+        Task.where(id: task.id, status: "pending").update_all(status: "queued", updated_at: Time.current) if task
+        raise
+      end
 
-          # `task` is the snapshot claim_next_waiter took, and the row can be
-          # cancelled from outside between that claim and here: deleting the
-          # comment it answers cancels a `pending` task through
-          # Comment#cancel_pending_tasks, which holds no lock this path waits
-          # on. TaskCoalescer re-reads the survivor under its own lock and
-          # declines to fold onto a cancelled row — but declining leaves this
-          # object still saying `pending`, and everything below reads it: the
-          # refresh would write a payload onto a dead row and the check at the
-          # bottom would enqueue it, where AiAgentJob reloads and returns
-          # without draining. Re-read once, here, rather than at each of them.
-          unless task.reload.status == "cancelled"
-            WaitingNoticeManager.cleanup_waiting_notices_if_drained!(task)
-            refresh_deferred_context!(task)
-            revalidate_assignment!(task) unless task.status == "cancelled"
-          end
+      def self.promote_claimed!(task, topic_id, creative_id)
+        # Fold the waiters left behind this one into it. dequeue promotes the
+        # oldest *eligible* queued task, so its same-agent siblings are all
+        # newer — they would each be promoted in turn and, because
+        # refresh_deferred_context! points every one of them at the same
+        # latest comment, replay the same answer. Absorb them here instead;
+        # the refresh below then moves the anchor forward and keeps the
+        # absorbed triggers in "merged_comment_ids".
+        coalesce_promoted!(task)
 
-          if task.status == "cancelled"
-            # The anchor was deleted under it, refresh_deferred_context! found
-            # no eligible comment, or revalidate_assignment! found the topic now
-            # assigned to another agent. Either way this waiter is dead — try
-            # the next queued task.
-            dequeue_next_for_topic(topic_id, creative_id)
-          else
-            job = AiAgentJob.perform_later(task)
-            # A rejected enqueue would leave the row pending with no job behind
-            # it, holding the slot where no recovery looks. Back in the queue,
-            # orphan recovery promotes it again.
-            if job.respond_to?(:successfully_enqueued?) && !job.successfully_enqueued?
-              Task.where(id: task.id, status: "pending").update_all(status: "queued", updated_at: Time.current)
-            end
+        # `task` is the snapshot claim_next_waiter took, and the row can be
+        # cancelled from outside between that claim and here: deleting the
+        # comment it answers cancels a `pending` task through
+        # Comment#cancel_pending_tasks, which holds no lock this path waits
+        # on. TaskCoalescer re-reads the survivor under its own lock and
+        # declines to fold onto a cancelled row — but declining leaves this
+        # object still saying `pending`, and everything below reads it: the
+        # refresh would write a payload onto a dead row and the check at the
+        # bottom would enqueue it, where AiAgentJob reloads and returns
+        # without draining. Re-read once, here, rather than at each of them.
+        unless task.reload.status == "cancelled"
+          WaitingNoticeManager.cleanup_waiting_notices_if_drained!(task)
+          refresh_deferred_context!(task)
+          revalidate_assignment!(task) unless task.status == "cancelled"
+        end
+
+        if task.status == "cancelled"
+          # The anchor was deleted under it, refresh_deferred_context! found
+          # no eligible comment, or revalidate_assignment! found the topic now
+          # assigned to another agent. Either way this waiter is dead — try
+          # the next queued task.
+          dequeue_next_for_topic(topic_id, creative_id)
+        else
+          job = AiAgentJob.perform_later(task)
+          # A rejected enqueue would leave the row pending with no job behind
+          # it, holding the slot where no recovery looks. Back in the queue,
+          # orphan recovery promotes it again.
+          if job.respond_to?(:successfully_enqueued?) && !job.successfully_enqueued?
+            Task.where(id: task.id, status: "pending").update_all(status: "queued", updated_at: Time.current)
           end
         end
       end
+      private_class_method :promote_claimed!
 
       # Promote the oldest waiter this topic can actually run, moving it
       # queued -> pending (a status that occupies the slot) so the claim is

@@ -560,6 +560,26 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
                   text: I18n.t("collavre.agent_gateways.manage")
   end
 
+  test "profile page includes the creative description alignment preference" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@regular_user)
+
+    assert_response :success
+    assert_select "input[type='checkbox'][name=?]", "user[justify_creative_descriptions]"
+  end
+
+  test "user can disable creative description justification from their profile" do
+    sign_in_as(@regular_user, password: "password")
+
+    patch collavre.user_path(@regular_user), params: {
+      user: { justify_creative_descriptions: "0" }
+    }
+
+    assert_redirected_to collavre.user_path(@regular_user)
+    refute @regular_user.reload.justify_creative_descriptions?
+  end
+
   test "admin link appears in profile for system admin" do
     sign_in_as(@admin, password: "password")
     get collavre.user_path(@admin)

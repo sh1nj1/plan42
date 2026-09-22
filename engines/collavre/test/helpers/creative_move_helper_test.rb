@@ -3,6 +3,22 @@ require "test_helper"
 class CreativeMoveHelperTest < ActionView::TestCase
   include Collavre::CreativeMoveHelper
 
+  %i[en ko].each do |locale|
+    test "move dialog renders drag and drop guidance in its footer in #{locale}" do
+      I18n.with_locale(locale) do
+        render partial: "collavre/shared/creative_move_modal"
+
+        hint = I18n.t("collavre.dnd.drag_drop_hint", raise: true)
+        assert_select "dialog > form + .modal-dialog-footer:last-child" do
+          assert_select ".modal-dialog-hints.desktop-only", text: hint, count: 1
+          assert_select ".modal-dialog-hints.mobile-only",
+                        text: I18n.t("collavre.dnd.mobile_drag_drop_hint", raise: true), count: 1
+        end
+        assert_includes hint, "Shift"
+      end
+    end
+  end
+
   # The launcher is only rendered for a signed-in viewer, so every case below
   # that expects markup has to run with a session.
   setup do

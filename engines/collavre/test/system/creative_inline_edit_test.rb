@@ -201,6 +201,28 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector "template#creatives-empty-state-template", visible: :all, count: 1
   end
 
+  test "drops multiple files as attachments and keeps them after reopening" do
+    open_inline_editor(@root_creative)
+    field = inline_editor_field
+    field.click
+    execute_script(<<~JS, field)
+      const transfer = new DataTransfer();
+      transfer.items.add(new File(["First attachment"], "first.txt", { type: "text/plain" }));
+      transfer.items.add(new File(["Second attachment"], "second.txt", { type: "text/plain" }));
+      arguments[0].dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+      arguments[0].dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    JS
+
+    assert_selector ".lexical-content-editable a", text: "first.txt", wait: 10
+    assert_selector ".lexical-content-editable a", text: "second.txt", wait: 10
+    close_inline_editor
+
+    assert_equal [ "first.txt", "second.txt" ], @root_creative.reload.files.map { |file| file.filename.to_s }.sort
+    open_inline_editor(@root_creative)
+    assert_selector ".lexical-content-editable a", text: "first.txt"
+    assert_selector ".lexical-content-editable a", text: "second.txt"
+  end
+
   test "does not duplicate attachments when re-editing inline creative" do
     fixture_path = Rails.root.join("test/fixtures/files/small.png")
 

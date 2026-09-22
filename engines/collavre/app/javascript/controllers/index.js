@@ -52,6 +52,7 @@ import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
 import DesktopProxySetupController from "./desktop_proxy_setup_controller"
+import CreativeHistoryDetailController from "./creative_history_detail_controller"
 import CreativeHistoryController from "./creative_history_controller"
 import CreativeHistoryUndoController from "./creative_history_undo_controller"
 import CronBadgeController from "./cron_badge_controller"
@@ -104,6 +105,7 @@ export {
   AgentConnectionController,
   AgentVendorController,
   DesktopProxySetupController,
+  CreativeHistoryDetailController,
   CreativeHistoryController,
   CreativeHistoryUndoController,
   CronBadgeController
@@ -170,6 +172,7 @@ export function registerControllers(application) {
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
+  application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)
   application.register("creative-history-undo", CreativeHistoryUndoController)
   application.register("cron-badge", CronBadgeController)

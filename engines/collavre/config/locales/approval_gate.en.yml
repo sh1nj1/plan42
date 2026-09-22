@@ -1,0 +1,7 @@
+en:
+  collavre:
+    approval_gate:
+      reason: "Reason (optional)"
+      native_required: "Approval requests require a running native Collavre agent turn."
+      question_required: "Enter a question for the approver."
+      invalid_approver: "Choose a human approver who can access this creative."

@@ -1,0 +1,88 @@
+<% groups = diff.groups %>
+<p class="creative-history-stats">
+  <ins>+<%= groups.sum { |group| group[:additions] } %></ins>
+  <del>−<%= groups.sum { |group| group[:deletions] } %></del>
+</p>
+<% groups.each do |group| %>
+  <details class="creative-history-diff" open>
+    <summary>
+      <%= group[:label] %>
+      <% if group[:moved] %><span class="creative-history-moved"><%= t("collavre.creative_history.moved") %></span><% end %>
+      <span>+<%= group[:additions] %> −<%= group[:deletions] %></span>
+    </summary>
+    <table class="creative-history-split">
+      <thead>
+        <tr>
+          <th scope="col"><%= t("collavre.creative_history.before") %></th>
+          <th scope="col"><%= t("collavre.creative_history.after") %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% group[:split_rows].each do |row| %>
+          <% if row[:action] == Collavre::Creatives::ChangeSetDiff::GAP_ACTION %>
+            <tr class="diff-gap">
+              <td colspan="2"><%= t("collavre.creative_history.skipped_lines", count: row[:skipped]) %></td>
+            </tr>
+          <% else %>
+            <tr class="diff-<%= row[:action] == "=" ? "same" : "changed" %>">
+              <td><%= row[:before] %></td>
+              <td><%= row[:after] %></td>
+            </tr>
+          <% end %>
+        <% end %>
+      </tbody>
+    </table>
+  </details>
+<% end %>
+
+<% if change_set.status == "draft" && creative.has_permission?(Current.user, :write) %>
+  <button type="button"
+          class="approve-comment-btn"
+          data-action="creative-history#revert"
+          data-url="<%= creative_apply_change_set_path(creative, change_set) %>"
+          data-mode="approve"
+          data-confirm="<%= t("collavre.creative_history.approve_confirm") %>"
+          data-conflict="<%= t("collavre.creative_history.approve_conflict_choice") %>"
+          data-force="<%= t("collavre.creative_history.force_apply") %>"
+          data-skip="<%= t("collavre.creative_history.skip") %>">
+    <%= t("collavre.creative_history.approve") %>
+  </button>
+  <button type="button"
+          class="deny-comment-btn"
+          data-action="creative-history#revert"
+          data-url="<%= creative_apply_change_set_path(creative, change_set) %>"
+          data-mode="reject"
+          data-confirm="<%= t("collavre.creative_history.reject_confirm") %>">
+    <%= t("collavre.creative_history.reject") %>
+  </button>
+<% elsif change_set.status == "draft" %>
+  <span class="creative-history-state"><%= t("collavre.creative_history.pending_review") %></span>
+<% elsif change_set.status == "applied" && diff.revertible? && diff.writable? %>
+  <button type="button"
+          class="creative-history-revert"
+          data-action="creative-history#revert"
+          data-url="<%= creative_apply_change_set_path(creative, change_set) %>"
+          data-mode="revert"
+          data-confirm="<%= t("collavre.creative_history.revert_confirm") %>"
+          data-conflict="<%= t("collavre.creative_history.conflict_choice") %>"
+          data-force="<%= t("collavre.creative_history.force") %>"
+          data-skip="<%= t("collavre.creative_history.skip") %>">
+    <%= t("collavre.creative_history.revert") %>
+  </button>
+<% elsif change_set.status == "reverted" %>
+  <span class="creative-history-state"><%= t("collavre.creative_history.reverted") %></span>
+<% elsif change_set.status == "rejected" %>
+  <span class="creative-history-state"><%= t("collavre.creative_history.rejected") %></span>
+<% elsif !diff.revertible? %>
+  <span class="creative-history-state"><%= t("collavre.creative_history.irreversible") %></span>
+<% end %>
+<% if diff.revertible? && diff.writable? && change_set.status.in?(%w[applied reverted]) %>
+  <button type="button"
+          class="creative-history-restore"
+          data-action="creative-history#revert"
+          data-url="<%= creative_apply_change_set_path(creative, change_set) %>"
+          data-mode="restore"
+          data-confirm="<%= t("collavre.creative_history.restore_confirm") %>">
+    <%= t("collavre.creative_history.restore") %>
+  </button>
+<% end %>

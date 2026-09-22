@@ -1,0 +1,8 @@
+<% if pending %>
+  <div class="comment-approve-hidden" data-comment-target="actionApproveControls">
+    <label for="approval-reason-<%= comment.id %>"><%= t("collavre.approval_gate.reason") %></label>
+    <textarea id="approval-reason-<%= comment.id %>" data-approval-reason rows="2"></textarea>
+  </div>
+<% elsif comment.approval_gate_reason.present? %>
+  <p><%= t("collavre.approval_gate.reason") %>: <%= comment.approval_gate_reason %></p>
+<% end %>

@@ -219,6 +219,10 @@ textarea.modal-dialog-input {
   color: var(--text-muted);
 }
 
+.modal-dialog-hints.mobile-only {
+  display: none;
+}
+
 .modal-dialog-hint {
   display: inline-flex;
   align-items: center;
@@ -367,6 +371,10 @@ textarea.modal-dialog-input {
 
   .modal-dialog-hints {
     display: none;
+  }
+
+  .modal-dialog-hints.mobile-only {
+    display: block;
   }
 }
 

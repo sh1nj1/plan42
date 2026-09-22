@@ -2,6 +2,15 @@
 en:
   collavre:
     creative_history:
+      view_diff: View changes
+      loading: Loading changes…
+      load_error: Could not load changes.
+      retry: Retry
+      states:
+        applied: Applied
+        draft: Awaiting approval
+        reverted: Reverted
+        rejected: Rejected
       read_only: History topics are read-only.
       empty: No changes have been recorded here yet.
       default_summary: Creative updated

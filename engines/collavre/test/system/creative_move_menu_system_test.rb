@@ -17,6 +17,23 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     visit collavre.creatives_path
   end
 
+  test "move guidance switches between desktop and mobile in both locales" do
+    %w[en ko].each do |locale|
+      @user.update!(locale: locale)
+      visit collavre.creatives_path(id: @source.id)
+      open_move_menu
+
+      within "dialog[open] .modal-dialog-footer" do
+        assert_selector ".desktop-only", text: I18n.t("collavre.dnd.drag_drop_hint", locale: locale)
+        assert_no_selector ".mobile-only"
+        resize_window_to(390, 844)
+        assert_selector ".mobile-only", text: I18n.t("collavre.dnd.mobile_drag_drop_hint", locale: locale)
+        assert_no_selector ".desktop-only"
+        resize_window_to(1440, 900)
+      end
+    end
+  end
+
   test "keyboard moves a creative using the shared destination picker" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu(:return)

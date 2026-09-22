@@ -250,7 +250,7 @@ module Collavre
 
         create_inbox_comment(
           approver,
-          "inbox.approval_requested",
+          approval_gate? ? "collavre.inbox.approval_gate_requested" : "inbox.approval_requested",
           {
             user: user&.display_name,
             tool_name: parsed_action_tool_name,

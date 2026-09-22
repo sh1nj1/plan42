@@ -50,6 +50,10 @@
         <button type="submit" class="modal-dialog-btn modal-dialog-btn-primary" data-creative-move-target="confirm" disabled><%= t('collavre.dnd.confirm') %></button>
       </div>
     </form>
+    <div class="modal-dialog-footer">
+      <p class="modal-dialog-hints desktop-only"><%= t('collavre.dnd.drag_drop_hint') %></p>
+      <p class="modal-dialog-hints mobile-only"><%= t('collavre.dnd.mobile_drag_drop_hint') %></p>
+    </div>
   </dialog>
   <span role="status" aria-live="polite" class="creative-move-announcement" data-creative-move-target="announcement"></span>
 </div>
