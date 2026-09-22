@@ -11,11 +11,14 @@ class DeduplicateRootCreativePreferences < ActiveRecord::Migration[8.0]
     end
 
     merge_duplicate_roots
-    # Defer the partial unique index until the prior composite-targeted writer
-    # is no longer a rollout or rollback candidate. It cannot handle that conflict.
+    add_index :user_creative_preferences, :user_id, unique: true,
+      where: "creative_id IS NULL",
+      name: "index_user_creative_preferences_on_user_id_root_unique", if_not_exists: true
   end
 
   def down
+    remove_index :user_creative_preferences,
+      name: "index_user_creative_preferences_on_user_id_root_unique", if_exists: true
     # Removed duplicate rows cannot be reconstructed.
   end
 

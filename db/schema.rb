@@ -1053,6 +1053,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000002) do
     t.index ["creative_id"], name: "index_user_creative_preferences_on_creative_id"
     t.index ["last_topic_id"], name: "index_user_creative_preferences_on_last_topic_id"
     t.index ["user_id"], name: "index_user_creative_preferences_on_user_id"
+    t.index ["user_id"], name: "index_user_creative_preferences_on_user_id_root_unique", unique: true, where: "creative_id IS NULL"
   end
 
   create_table "user_themes", force: :cascade do |t|

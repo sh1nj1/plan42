@@ -1,6 +1,8 @@
 require_relative "../application_system_test_case"
+require Rails.root.join("test/support/legacy_root_preferences")
 
 class CreativeExpansionActionsTest < ApplicationSystemTestCase
+  include LegacyRootPreferences
   setup do
     @user = User.create!(
       email: "user@example.com",
@@ -99,6 +101,7 @@ class CreativeExpansionActionsTest < ApplicationSystemTestCase
   end
 
   test "workspace restores branches split across duplicate root preferences" do
+    allow_legacy_root_duplicates!
     @user.update!(creative_workspace_enabled: true)
     grandchild = Creative.create!(description: "Grandchild", user: @user, parent: @child)
     Collavre::UserCreativePreference.create!(user: @user, expanded_status: { @root_creative.id.to_s => true })

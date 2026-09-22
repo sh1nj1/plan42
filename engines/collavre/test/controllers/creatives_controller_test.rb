@@ -1,12 +1,15 @@
 require "test_helper"
+require Rails.root.join("test/support/legacy_root_preferences")
 
 class CreativesControllerTest < ActionDispatch::IntegrationTest
+  include LegacyRootPreferences
   setup do
     users(:one).update!(creative_workspace_enabled: true)
     sign_in_as(users(:one), password: "password")
   end
 
   test "workspace restores merged root preferences without changing stored rows" do
+    allow_legacy_root_duplicates!
     root = Creative.create!(user: users(:one), description: "Root")
     child = Creative.create!(user: users(:one), parent: root, description: "Child")
     Creative.create!(user: users(:one), parent: child, description: "Leaf")
@@ -28,6 +31,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "central tree JSON restores merged roots and keeps context state separate" do
+    allow_legacy_root_duplicates!
     root = Creative.create!(user: users(:one), description: "Root")
     child = Creative.create!(user: users(:one), parent: root, description: "Child")
     leaf = Creative.create!(user: users(:one), parent: child, description: "Leaf")
@@ -54,6 +58,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "central tree JSON honors the last duplicate root value" do
+    allow_legacy_root_duplicates!
     root = Creative.create!(user: users(:one), description: "Root")
     Creative.create!(user: users(:one), parent: root, description: "Child")
     preferences = Collavre::UserCreativePreference

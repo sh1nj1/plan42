@@ -1,7 +1,9 @@
 require "test_helper"
+require Rails.root.join("test/support/legacy_root_preferences")
 require "ostruct"
 
 class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
+  include LegacyRootPreferences
   include ActionCable::TestHelper
 
   setup do
@@ -164,7 +166,8 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert Collavre::UserCreativePreference.exists?(user_id: @user.id, creative_id: @creative.id)
   end
 
-  test "root saves consolidate legacy duplicates and remain compatible with rollback writes" do
+  test "root saves consolidate legacy duplicates before the unique index is installed" do
+    allow_legacy_root_duplicates!
     preference = Collavre::UserCreativePreference
     attributes = { user_id: @user.id, creative_id: nil, expanded_status: { "1" => true } }
     first = preference.create!(attributes)
@@ -178,13 +181,14 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "1" => true, "legacy" => true, "2" => true }, first.reload.expanded_status)
     assert_equal({ "1" => true }, other.reload.expanded_status)
 
-    # The old image still inserts against the composite conflict target on rollback.
+    # Reproduce the old composite-targeted writer before index installation.
     assert_difference "Collavre::UserCreativePreference.count", 1 do
       preference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
     end
   end
 
   test "root consolidation merges every duplicate before applying the current collapse" do
+    allow_legacy_root_duplicates!
     preference = Collavre::UserCreativePreference
     first = preference.create!(user: @user, expanded_status: { "current" => true, "first" => true })
     preference.create!(user: @user, expanded_status: { "current" => true, "second" => true })
@@ -201,6 +205,7 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "root consolidation leaves later legacy inserts for the next save" do
+    allow_legacy_root_duplicates!
     preference = Collavre::UserCreativePreference
     first = preference.create!(user: @user, expanded_status: { "first" => true })
     preference.create!(user: @user, expanded_status: { "legacy" => true })
@@ -227,6 +232,7 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "failed toggles roll back root consolidation and duplicate deletion" do
+    allow_legacy_root_duplicates!
     preference = Collavre::UserCreativePreference
     first = preference.create!(user: @user, expanded_status: { "first" => true })
     duplicate = preference.create!(user: @user, expanded_status: { "legacy" => true })

@@ -1,7 +1,9 @@
 require "test_helper"
+require Rails.root.join("test/support/legacy_root_preferences")
 
 module Collavre
   class UserCreativePreferenceTest < ActiveSupport::TestCase
+    include LegacyRootPreferences
     test "expanded IDs place ancestors first regardless of save order" do
       root = Creative.create!(user: users(:one), description: "Root")
       child = Creative.create!(user: users(:one), parent: root, description: "Child")
@@ -224,6 +226,7 @@ module Collavre
     end
 
     test "root restoration handles missing and empty state and uses later duplicate values" do
+      allow_legacy_root_duplicates!
       user = users(:one)
       UserCreativePreference.where(user: user, creative_id: nil).delete_all
       assert_empty UserCreativePreference.root_expanded_ids_for(user)

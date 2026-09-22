@@ -21,7 +21,7 @@ module Collavre
     end
 
     # insert_all uses the unique preference key as the first-insert fence.
-    # Root inserts instead rely on the user lock held by with_preference.
+    # Root inserts also use the partial unique index and the user lock.
     def preference_for(creative_id)
       now = Time.current
       attributes = { creative_id: creative_id, user_id: Current.user.id, expanded_status: {}, created_at: now, updated_at: now }
@@ -35,6 +35,10 @@ module Collavre
       UserCreativePreference.transaction(requires_new: true) do
         UserCreativePreference.insert_all([ attributes ])
       end
+    rescue ActiveRecord::RecordNotUnique
+      # The savepoint has rolled back, so PostgreSQL can read the winning row.
+      # preference_for reacquires it; a concurrent deletion uses the lock retry.
+      raise unless attributes[:creative_id].nil?
     rescue ActiveRecord::InvalidForeignKey
       # Only the initial insert is covered, after its savepoint has rolled back.
       # Check the actual origin id being written, not the linked request id.
@@ -45,7 +49,7 @@ module Collavre
     def with_preference(creative_id, &block)
       return with_locked_preference(creative_id, &block) if creative_id.present?
 
-      # Fence missing root rows without a new constraint that breaks old images.
+      # Serialize root changes in addition to the database uniqueness constraint.
       Current.user.class.find(Current.user.id).with_lock do
         consolidate_root_preferences
         with_locked_preference(nil, &block)
