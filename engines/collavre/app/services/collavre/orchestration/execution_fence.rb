@@ -71,6 +71,13 @@ module Collavre
         task.trigger_event_payload.is_a?(Hash) ? task.trigger_event_payload[GENERATION_KEY] : nil
       end
 
+      # Whether the attempt that started under this generation has been set
+      # aside since: the task was resumed (generation cleared) or started again
+      # (a new one). The in-process worker's counterpart of current?.
+      def superseded?(task, attempt_generation)
+        attempt_generation.present? && generation(task) != attempt_generation
+      end
+
       # A caller that names no generation is a legacy client and is not fenced.
       # One that names a generation must name the current one.
       def current?(task, requested_generation)

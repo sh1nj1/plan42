@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_000003) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_22_000004) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1064,6 +1064,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_000003) do
     t.boolean "notifications_enabled"
     t.string "password_digest", null: false
     t.datetime "quota_blocked_until"
+    t.string "quota_probe_generation"
+    t.bigint "quota_probe_task_id"
     t.integer "quota_retry_count", default: 0, null: false
     t.boolean "quota_retry_exhausted", default: false, null: false
     t.text "routing_expression"

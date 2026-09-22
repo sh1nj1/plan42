@@ -58,6 +58,20 @@ module Collavre
         assert_not ExecutionFence.current?(task, "stale")
         assert_nil ExecutionFence.generation(Task.new(trigger_event_payload: nil))
       end
+
+      test "superseded? tells a worker its attempt was resumed or restarted" do
+        task = Task.new(trigger_event_payload: ExecutionFence.stamp({}))
+        attempt = ExecutionFence.generation(task)
+
+        assert_not ExecutionFence.superseded?(task, attempt)
+        assert_not ExecutionFence.superseded?(task, nil), "a worker from before the fence is not fenced"
+
+        task.trigger_event_payload = ExecutionFence.clear(task.trigger_event_payload)
+        assert ExecutionFence.superseded?(task, attempt), "resumed, not started again yet"
+
+        task.trigger_event_payload = ExecutionFence.stamp(task.trigger_event_payload)
+        assert ExecutionFence.superseded?(task, attempt), "started again as a new attempt"
+      end
     end
   end
 end

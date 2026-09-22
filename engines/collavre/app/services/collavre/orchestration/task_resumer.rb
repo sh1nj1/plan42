@@ -87,7 +87,10 @@ module Collavre
             :resumed
           end
 
-          ActiveRecord.after_all_transactions_commit { after_resume(task, outcome) } if outcome.in?(%i[escalated resumed])
+          if outcome.in?(%i[escalated resumed])
+            resumption = { outcome: outcome, resume_count: task.resume_count }
+            ActiveRecord.after_all_transactions_commit { after_resume(task, resumption) }
+          end
           outcome
         end
 
@@ -151,6 +154,7 @@ module Collavre
         #   would otherwise wait out the whole TTL for nothing.
         def agent_available?(agent, task: nil)
           return false if agent.blank? || quota_blocked?(agent)
+          return false if defined?(Collavre::Quota::Probe) && !Collavre::Quota::Probe.available?(agent, task)
           return false unless claude_channel_reachable?(agent, task)
 
           status = agent.agent_liveness_status
@@ -227,12 +231,20 @@ module Collavre
           nil
         end
 
-        def after_resume(task, outcome)
-          if outcome == :escalated
-            post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.expired"))
-          elsif start(task)
+        # Runs once the row lock is gone too, so a Stop, a late reply or another
+        # suspension may already have moved the task on. Only a turn still where
+        # this resume left it is started and announced.
+        def after_resume(task, resumption)
+          task.reload
+          return unless task.resume_count == resumption[:resume_count]
+
+          if resumption[:outcome] == :escalated
+            post_notice(task, "escalated", cause: I18n.t("#{NOTICE_SCOPE}.escalation_causes.expired")) if task.status == "escalated"
+          elsif task.status.in?(%w[queued pending]) && start(task)
             post_notice(task, "resumed")
           end
+        rescue ActiveRecord::RecordNotFound
+          nil
         end
 
         # @return [Array(outcome, previous_status, announce)]

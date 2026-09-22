@@ -145,6 +145,25 @@ module Collavre
         assert_raises(Collavre::TaskSuspendedError) { lifecycle.check_cancelled!(force: true) }
         assert_equal "suspended", task.reload.status
       end
+
+      test "a worker whose turn was resumed stops without acting on the new attempt" do
+        task = Task.create!(
+          name: "Resumed response",
+          status: "running",
+          trigger_event_name: "workflow",
+          trigger_event_payload: Orchestration::ExecutionFence.stamp({ "creative" => { "id" => @creative.id } }),
+          agent: @agent
+        )
+        lifecycle = AgentLifecycleManager.new(task: task, agent: @agent, creative: @creative)
+
+        # Resumed and not started yet.
+        task.update!(status: "pending", trigger_event_payload: Orchestration::ExecutionFence.clear(task.trigger_event_payload))
+        assert_raises(Collavre::TaskSuspendedError) { lifecycle.check_cancelled!(force: true) }
+
+        # Started again, then stopped: the new attempt's Stop is not this worker's.
+        task.update!(status: "cancelled", trigger_event_payload: Orchestration::ExecutionFence.stamp(task.trigger_event_payload))
+        assert_raises(Collavre::TaskSuspendedError) { lifecycle.check_cancelled!(force: true) }
+      end
     end
   end
 end

@@ -1380,6 +1380,7 @@ module Collavre
             refute agent.quota_retry_exhausted?
             travel_to agent.quota_blocked_until + 1 do
               task.update!(status: "delegated", resume_count: 1)
+              Collavre::Quota::Recovery.guard!(task)
               post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Recovered", task_id: task.id,
                 execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
                 headers: auth_headers, as: :json
