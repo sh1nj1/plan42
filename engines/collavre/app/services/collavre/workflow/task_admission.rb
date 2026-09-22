@@ -28,6 +28,17 @@ module Collavre
       end
 
       def self.start!(task)
+        if task.pending_tool_call&.dig("kind") == "approval_gate"
+          return task.with_lock do
+            next false unless task.pending_approval? && task.pending_tool_call["decision"]
+
+            start_task!(task)
+          end
+        end
+        start_task!(task)
+      end
+
+      def self.start_task!(task)
         return task.update!(status: "running") unless task.workflow?
         outcome = task.with_lock do
           next :duplicate unless task.status.in?(%w[pending pending_approval])

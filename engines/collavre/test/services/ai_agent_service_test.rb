@@ -25,6 +25,22 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
+  test "gate resumption does not mark new topic history as delivered" do
+    @task.update!(pending_tool_call: { kind: "approval_gate", decision: { decision: "approved" } })
+    @creative.comments.create!(user: @user, content: "New message while awaiting approval", topic_id: @task.topic_id)
+    client = Object.new
+    def client.chat(*)
+      yield "Continuing approved work"
+    end
+    def client.handed_off? = true
+    def client.last_handoff_failed? = false
+
+    Collavre::Orchestration::DeliveryRecord.stub(:record!, ->(*) { flunk "Unseen history must not be recorded" }) do
+      AiClient.stub(:new, client) { AiAgentService.new(@task).call }
+    end
+    assert_equal "Continuing approved work", @task.reload.reply_comment.content
+  end
+
   test "engine login failure creates an inline card without dispatching another agent" do
     workspace = Struct.new(:id).new(42)
     error = Collavre::CliProxy::EngineUnauthenticatedError.new(engine: "codex", workspace: workspace)

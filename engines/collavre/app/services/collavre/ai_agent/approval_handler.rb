@@ -5,6 +5,10 @@ module Collavre
     # Handles tool-execution approval flow when an AI agent
     # invokes a tool that requires human approval.
     class ApprovalHandler
+      def self.for(error)
+        error.is_a?(ApprovalGatePendingError) ? ApprovalGateHandler : self
+      end
+
       def initialize(task:, agent:, context:, creative: nil, reply_comment: nil)
         @task = task
         @agent = agent
