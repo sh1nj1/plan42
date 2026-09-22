@@ -37,6 +37,30 @@ describe('ApiQueueManager', () => {
         jest.restoreAllMocks();
     });
 
+    test('reloads a persisted draft before merging a subsequent edit', async () => {
+        const { recoverFailedCreative, needsCreativeSaveRetry } = await import('../../../modules/failed_creative_save');
+        apiQueue.enqueue({
+            path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': 'offline draft', 'creative[progress]': 1 },
+            onSuccess: () => {},
+        });
+        apiQueue.initialize('test_user');
+        const tree = document.createElement('div');
+        const recovered = recoverFailedCreative(apiQueue, { id: 42, description: 'stale server', progress: 0 }, tree);
+        expect(recovered.description).toBe('offline draft');
+        expect(recovered.progress).toBe(1);
+        expect(tree.dataset.saveState).toBe('pending');
+        expect(needsCreativeSaveRetry(apiQueue, 42, tree)).toBe(true);
+        apiQueue.enqueue({
+            path: '/creatives/42', method: 'PATCH', dedupeKey: 'creative_42',
+            body: { 'creative[description]': recovered.description + ' continued' },
+        });
+        expect(apiQueue.queue).toHaveLength(1);
+        expect(apiQueue.queue[0].body).toEqual({
+            'creative[description]': 'offline draft continued', 'creative[progress]': 1,
+        });
+    });
+
     test('should deduplicate requests and merge callbacks', () => {
         const callback1 = jest.fn();
         const callback2 = jest.fn();

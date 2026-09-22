@@ -1,4 +1,4 @@
-import { recoverFailedCreative, retryFailedCreativeBeforeSave } from './failed_creative_save'
+import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
@@ -436,7 +436,7 @@ function setupEditorSession() {
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       }
 
-      pendingSave = queuedCreativeStatus(tree) === 'error';
+      pendingSave = needsCreativeSaveRetry(apiQueue, creativeId, tree);
       // Dirty detection is HTML-based for the rich surface (compares the editor's
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;

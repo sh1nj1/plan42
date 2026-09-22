@@ -1,8 +1,10 @@
-// Failed queue entries survive reloads. Restore their draft before establishing
-// the editor baseline; the error state keeps a no-edit close eligible for retry.
+// Unacknowledged entries survive reloads. Restore their latest draft before
+// establishing the editor baseline, including offline and in-flight saves.
 export function recoverFailedCreative(queue, data, tree) {
   const key = `creative_${data.id}`
-  if (!queue.failedItems?.some(item => item.dedupeKey === key)) return data
+  const failed = queue.failedItems?.some(item => item.dedupeKey === key)
+  const pending = queue.queue?.some(item => item.dedupeKey === key)
+  if (!failed && !pending) return data
   const body = queue.unacknowledgedBody(key)
   const recovered = { ...data }
   for (const [field, value] of Object.entries(body)) {
@@ -11,7 +13,7 @@ export function recoverFailedCreative(queue, data, tree) {
   }
   if ('creative[description]' in body) recovered.description_raw_html = body['creative[description]']
   if ('creative[content_type_input]' in body) recovered.content_type = body['creative[content_type_input]']
-  tree.dataset.saveState = 'error'
+  tree.dataset.saveState = failed ? 'error' : 'pending'
   return recovered
 }
 
@@ -21,4 +23,12 @@ export async function retryFailedCreativeBeforeSave(queue, creativeId, retry) {
   const key = `creative_${creativeId}`
   if (queue.failedItems?.some(item => item.dedupeKey === key)) await retry()
   await queue.waitFor(key)
+}
+
+// Reloaded requests have lost their completion callbacks. A no-edit close must
+// enqueue a tracked snapshot; requests from this editor session already have one.
+export function needsCreativeSaveRetry(queue, creativeId, tree) {
+  return tree.dataset.saveState === 'error' || Boolean(queue.queue?.some(
+    item => item.dedupeKey === `creative_${creativeId}` && !item.onSuccess
+  ))
 }

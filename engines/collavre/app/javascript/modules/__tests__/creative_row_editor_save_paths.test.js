@@ -84,6 +84,7 @@ beforeEach(() => {
   get.mockReset().mockResolvedValue({})
   enqueue.mockReset()
   queue.failedItems = []
+  queue.queue = []
   queue.unacknowledgedBody.mockReset()
   unconvert.mockReset()
   waitFor.mockReset().mockResolvedValue()
@@ -702,4 +703,54 @@ test.each(['type', 'unconvert'])('%s stops if the recovered draft retry fails', 
   expect(save).not.toHaveBeenCalled()
   expect(unconvert).not.toHaveBeenCalled()
   expect(queue.failedItems).toHaveLength(1)
+})
+
+// Recreate the persisted queue and stale DOM as they appear after a reload.
+test.each([false, true])('restores a pending draft after reload (in flight: %s) before another edit', async processing => {
+  const { unacknowledgedBody } = await import('../../lib/api/queue_recovery')
+  queue.processing = processing
+  queue.queue = JSON.parse(JSON.stringify([{
+    dedupeKey: 'creative_42',
+    body: {
+      'creative[description]': '<p>offline draft</p>',
+      'creative[content_type_input]': 'markdown',
+      'creative[markdown_source]': 'offline draft',
+      'creative[markdown_editor]': 'source',
+      'creative[progress]': 1,
+    },
+  }]))
+  queue.unacknowledgedBody.mockImplementation(key => unacknowledgedBody(queue, key))
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  openRow(tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  expect(textarea.value).toBe('offline draft')
+  expect(document.getElementById('inline-creative-progress').checked).toBe(true)
+  expect(tree.dataset.saveState).toBe('pending')
+  textarea.value += ' continued'
+  textarea.dispatchEvent(new Event('input'))
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  const request = enqueue.mock.calls[0][0]
+  expect(request.body['creative[markdown_source]']).toBe('offline draft continued')
+  expect({ ...unacknowledgedBody(queue, request.dedupeKey), ...request.body }['creative[progress]']).toBe(1)
+  request.onSuccess({})
+  expect(tree.dataset.saveState).toBeUndefined()
+})
+
+test('closing a restored pending draft without edits queues it with completion tracking', async () => {
+  queue.queue = [{ dedupeKey: 'creative_42' }]
+  queue.unacknowledgedBody.mockReturnValue({
+    'creative[description]': '<p>pending draft</p>',
+    'creative[content_type_input]': 'markdown',
+    'creative[markdown_source]': 'pending draft',
+  })
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  openRow(tree)
+  document.getElementById('inline-close').click()
+  await flushPromises()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  expect(enqueue.mock.calls[0][0].body['creative[markdown_source]']).toBe('pending draft')
+  enqueue.mock.calls[0][0].onSuccess({})
+  expect(tree.dataset.saveState).toBeUndefined()
 })
