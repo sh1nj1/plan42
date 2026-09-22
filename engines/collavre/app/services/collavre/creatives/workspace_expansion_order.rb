@@ -4,6 +4,8 @@ module Collavre
     class WorkspaceExpansionOrder
       # Keep aligned with MAX_EXPANDED_BRANCHES in workspace_tree_controller.js.
       RESTORE_LIMIT = 100
+      # Bound permission/indexing work even when saved branches have become leaves.
+      INSPECTION_LIMIT = 1_000
 
       def initialize(user:, expanded_ids:)
         @user = user
@@ -14,16 +16,14 @@ module Collavre
       def call
         return [] if @expanded_ids.empty?
 
-        roots = Creative.active.where(user: @user, id: @expanded_ids.to_a).roots.pluck(:id)
-        level = roots.map { |id| [ id, Set.new ] }
+        roots = Creative.active.where(user: @user, id: @expanded_ids.to_a).roots.limit(INSPECTION_LIMIT).pluck(:id)
+        pending = roots.map { |id| [ id, Set.new ] }
         restored = Set.new
-        until level.empty? || restored.size >= RESTORE_LIMIT
-          next_level = []
-          until level.empty? || restored.size >= RESTORE_LIMIT
-            batch = level.shift(RESTORE_LIMIT - restored.size)
-            append_branches(batch, restored, next_level)
-          end
-          level = next_level
+        remaining = INSPECTION_LIMIT
+        until pending.empty? || restored.size >= RESTORE_LIMIT || remaining.zero?
+          batch = pending.shift([ RESTORE_LIMIT - restored.size, remaining ].min)
+          remaining -= batch.size
+          append_branches(batch, restored, pending)
         end
         restored.to_a
       end
@@ -45,6 +45,8 @@ module Collavre
 
           restored.add(id.to_s)
           children.each do |child_id|
+            break if next_level.size >= INSPECTION_LIMIT
+
             next_level << [ child_id, path ] if @expanded_ids.include?(child_id.to_s)
           end
         end

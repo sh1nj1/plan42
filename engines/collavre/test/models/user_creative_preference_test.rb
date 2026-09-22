@@ -158,6 +158,14 @@ module Collavre
       assert_equal expected.sort, indexed.sort
     end
 
+    test "stale saved children cannot exhaustively scan beyond the inspection budget" do
+      assert_stale_inspection_bound(nested: true)
+    end
+
+    test "stale saved roots cannot exhaustively scan beyond the inspection budget" do
+      assert_stale_inspection_bound(nested: false)
+    end
+
     test "cycle terminal shells leave room for a later live branch" do
       root = Creative.create!(user: users(:one), description: "Root")
       origin = Creative.create!(user: users(:two), description: "Origin")
@@ -205,6 +213,32 @@ module Collavre
     end
 
     private
+
+    def assert_stale_inspection_bound(nested:)
+      user = users(:one)
+      root = Creative.create!(user: user, description: "Root") if nested
+      limit = Creatives::WorkspaceExpansionOrder::INSPECTION_LIMIT
+      leaves = Creative.insert_all!(Array.new(limit + 50) do |index|
+        { user_id: user.id, parent_id: root&.id, description: "Stale leaf", sequence: index }
+      end).rows.flatten
+      saved = [ root&.id, *leaves ].compact.to_h { |id| [ id.to_s, true ] }
+      preference = UserCreativePreference.create!(user: user, expanded_status: saved)
+      indexed = []
+      index = Creatives::ChildrenIndex.new(user: user, show_archived: false)
+      original_index = index.method(:index)
+      index.define_singleton_method(:index) do |creatives|
+        indexed.concat(creatives.map(&:id))
+        original_index.call(creatives)
+      end
+
+      restored = Creatives::ChildrenIndex.stub(:new, index) { preference.expanded_ids_root_first }
+
+      assert_equal(root ? [ root.id.to_s ] : [], restored)
+      assert_equal limit, indexed.size
+      assert_not_includes indexed, leaves.last
+      assert_equal saved, preference.reload.expanded_status
+    end
+
 
     def assert_hidden_branches_do_not_displace_visible(**hidden_attributes)
       hidden = Array.new(100) { Creative.create!(**hidden_attributes, description: "Hidden branch") }
