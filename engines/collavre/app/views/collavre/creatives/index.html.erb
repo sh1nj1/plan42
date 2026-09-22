@@ -197,7 +197,7 @@
     <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
   <% end %>
   <% title_templates = [
-        content_tag(:template, data: { part: "description" }) { sanitize @parent_creative.effective_description },
+        content_tag(:template, data: { part: "description" }) { embed_youtube_iframe(@parent_creative.effective_description) },
         content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
       ] %>
   <% if @parent_creative.origin_id.present? %>

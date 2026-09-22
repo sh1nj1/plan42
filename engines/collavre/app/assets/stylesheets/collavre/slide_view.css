@@ -77,3 +77,12 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+#slide-content:has(.ppt-slide--precise) {
+  width: min(960px, 100%);
+  min-width: 0;
+}
+
+#slide-content .ppt-slide-notes {
+  display: none;
+}

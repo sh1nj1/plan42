@@ -7,7 +7,7 @@
     <% cache @creative do %>
       <% if @creative.parent %>
         <h1>
-          <%= sanitize @creative.parent.description %>
+          <%= embed_youtube_iframe(@creative.parent.description) %>
         </h1>
       <% end %>
       <div>

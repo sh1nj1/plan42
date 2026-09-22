@@ -194,6 +194,7 @@ module Collavre
         task_list_attrs = %w[type disabled checked]
         media_tags = %w[video source]
         media_attrs = %w[controls src preload width height poster]
+        ppt_attrs = %w[data-ppt-slide data-ppt-width data-ppt-height data-ppt-format]
 
         # GFM task list checkboxes (`- [ ]` / `- [x]`) render as
         # <input type="checkbox" disabled> via Commonmarker's tasklist
@@ -215,8 +216,8 @@ module Collavre
 
         self.description = ActionController::Base.helpers.sanitize(
           scrubbed.to_html,
-          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input],
-          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + %w[data-lexical style]
+          tags: Rails::HTML5::SafeListSanitizer.allowed_tags.to_a + table_tags + media_tags + %w[input u],
+          attributes: Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a + table_attrs + attachment_attrs + task_list_attrs + media_attrs + ppt_attrs + %w[data-lexical style]
         )
       end
 

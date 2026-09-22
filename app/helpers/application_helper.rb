@@ -63,8 +63,8 @@ module ApplicationHelper
   # `video`/`source` tags and `controls`/`preload`/`poster` attrs mirror that
   # sanitizer's media safelist so attached video nodes keep their native
   # playback controls (play/pause/fullscreen) when displayed.
-  EMBED_ALLOWED_TAGS = %w[iframe a p div span br strong em b i u ul ol li h1 h2 h3 h4 h5 h6 blockquote code pre img hr table thead tbody tr th td figure figcaption action-text-attachment video source].freeze
-  EMBED_ALLOWED_ATTRS = %w[src title frameborder allow allowfullscreen style href class alt width height target rel sgid content-type filename colspan rowspan controls preload poster].freeze
+  EMBED_ALLOWED_TAGS = (Rails::HTML5::SafeListSanitizer.allowed_tags.to_a | %w[iframe a p div span br strong em b i u ul ol li h1 h2 h3 h4 h5 h6 blockquote code pre img hr table thead tbody tr th td figure figcaption action-text-attachment video source]).freeze
+  EMBED_ALLOWED_ATTRS = (Rails::HTML5::SafeListSanitizer.allowed_attributes.to_a | %w[src title frameborder allow allowfullscreen style href class alt width height target rel sgid content-type filename colspan rowspan controls preload poster data-ppt-slide data-ppt-width data-ppt-height data-ppt-format]).freeze
 
   def embed_youtube_iframe(html)
     return html if html.blank?
