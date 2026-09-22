@@ -494,6 +494,34 @@ module Collavre
         assert_not TaskResumer.agent_available?(@agent)
       end
 
+      test "agent_available? defers to a quota probe when one is installed" do
+        task = task_for(status: "suspended")
+        assert TaskResumer.agent_available?(@agent, task: task)
+
+        probe = Module.new do
+          class << self
+            attr_accessor :open, :calls
+          end
+
+          def self.available?(agent, task)
+            (self.calls ||= []) << [ agent, task ]
+            open
+          end
+        end
+        created_namespace = !Collavre.const_defined?(:Quota, false)
+        Collavre.const_set(:Quota, Module.new) if created_namespace
+        Collavre::Quota.const_set(:Probe, probe)
+
+        probe.open = false
+        assert_not TaskResumer.agent_available?(@agent, task: task)
+        probe.open = true
+        assert TaskResumer.agent_available?(@agent, task: task)
+        assert_equal [ [ @agent, task ], [ @agent, task ] ], probe.calls
+      ensure
+        Collavre::Quota.send(:remove_const, :Probe) if defined?(Collavre::Quota::Probe)
+        Collavre.send(:remove_const, :Quota) if created_namespace
+      end
+
       test "a session topic's turn waits for its own session, not a sibling's" do
         agent = channel_agent
         @topic.update!(primary_agent_id: agent.id, session_id: "sess-a")

@@ -153,7 +153,7 @@ module Collavre
         #   with no liveness signal (:unknown) — e.g. after a server restart —
         #   would otherwise wait out the whole TTL for nothing.
         def agent_available?(agent, task: nil)
-          return false if agent.blank? || quota_blocked?(agent)
+          return false if agent.blank? || quota_blocked?(agent) || quota_probe_withheld?(agent, task)
           return false unless claude_channel_reachable?(agent, task)
 
           status = agent.agent_liveness_status
@@ -193,6 +193,13 @@ module Collavre
         def quota_blocked?(agent)
           (agent.respond_to?(:quota_blocked_until) && agent.quota_blocked_until&.future?) ||
             (agent.respond_to?(:quota_retry_exhausted) && agent.quota_retry_exhausted)
+        end
+
+        # Extension point for the quota engine: while a single probe task is
+        # testing whether a provider quota has recovered, the other turns of
+        # that agent wait. The check is read-only and takes no agent lock.
+        def quota_probe_withheld?(agent, task)
+          defined?(Collavre::Quota::Probe) && !Collavre::Quota::Probe.available?(agent, task)
         end
 
         def reports_liveness?(agent)
