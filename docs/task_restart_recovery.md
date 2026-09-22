@@ -36,7 +36,7 @@ The implementation targets the installed Solid Queue 1.7.0 behavior:
   async worker thread exit produces `ThreadTerminatedError`.
 - The application records the Active Job ID in the task's
   `trigger_event_payload.execution_job_id` when execution starts.
-- `RecoverInterruptedTasksJob` only recovers a non-channel `running` task with
+- `RecoverInterruptedTasksJob` only recovers a `running` task with
   a matching failed `Collavre::AiAgentJob` and one of those process
   failures. A surviving claim, missing owner metadata, missing job, ready job,
   or ordinary application error does not authorize recovery.
@@ -54,8 +54,11 @@ suspending and immediately resuming there would race the provider call.
 The recurring recovery sweep runs every minute. Known process exits can
 recover on the next sweep. Unobserved machine loss waits for Solid Queue's
 heartbeat failure detection; stale heartbeat alone is not treated as an
-application authorization to steal work. Channel turns, including the brief
-`running` dispatch phase, remain the responsibility of the presence policy.
+application authorization to steal work. Channel turns still in `running`
+are recovered when their recorded worker has a confirmed process failure;
+they have not reached delegation or broadcast. Once `delegated`, channel
+turns remain the responsibility of the presence policy. The recovery row
+lock rechecks the status so concurrent delegation prevents redispatch.
 An unsupervised worker waits for its AI pool to finish; deployments should use
 the configured supervisor to retain a bounded graceful shutdown.
 Tasks started before execution ownership was recorded retain the existing

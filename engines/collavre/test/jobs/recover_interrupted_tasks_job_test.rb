@@ -127,13 +127,50 @@ module Collavre
       assert_equal "running", @task.reload.status
     end
 
-    test "delegated and channel dispatch work belongs to the offline policy" do
+    test "online channel work resumes once when its worker dies before delegation" do
+      @agent.update!(llm_model: "claude-code", llm_vendor: "anthropic")
+      AgentSubscription.create!(agent: @agent, token: "live-channel")
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+
+      assert_no_difference "Task.count" do
+        assert_enqueued_jobs 1, only: AiAgentJob do
+          2.times { RecoverInterruptedTasksJob.perform_now }
+        end
+      end
+      assert_equal "pending", @task.reload.status
+      assert_equal 1, @task.resume_count
+      assert_equal "server_restart", @task.trigger_event_payload.dig("resume_context", "reason")
+    end
+
+    test "channel work with a healthy execution owner is not recovered" do
+      @agent.update!(llm_model: "claude-code", llm_vendor: "anthropic")
+      AgentSubscription.create!(agent: @agent, token: "healthy-channel")
+      assert_no_enqueued_jobs only: AiAgentJob do
+        RecoverInterruptedTasksJob.perform_now
+      end
+      assert_equal "running", @task.reload.status
+      assert_equal @process.id, @claim.reload.process_id
+    end
+
+    test "delegated channel work belongs to the offline policy even after worker death" do
+      @agent.update!(llm_model: "claude-code", llm_vendor: "anthropic")
+      AgentSubscription.create!(agent: @agent, token: "delegated-channel")
+      @task.update!(status: "delegated")
+      @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
+      assert_no_enqueued_jobs only: AiAgentJob do
+        RecoverInterruptedTasksJob.perform_now
+      end
+      assert_equal "delegated", @task.reload.status
+    end
+
+    test "delegation between owner lookup and row lock prevents restart recovery" do
       @agent.update!(llm_model: "claude-code", llm_vendor: "anthropic")
       @claim.failed_with(SolidQueue::Processes::ProcessMissingError.new)
-      RecoverInterruptedTasksJob.perform_now
-      assert_equal "running", @task.reload.status
-      @task.update!(status: "delegated")
-      RecoverInterruptedTasksJob.perform_now
+      SolidQueue::Job.stub(:find_by, ->(**) { @task.update!(status: "delegated"); @job.reload }) do
+        assert_no_enqueued_jobs only: AiAgentJob do
+          RecoverInterruptedTasksJob.perform_now
+        end
+      end
       assert_equal "delegated", @task.reload.status
     end
 

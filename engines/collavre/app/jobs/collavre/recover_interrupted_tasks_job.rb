@@ -24,9 +24,8 @@ module Collavre
     private
 
     def recover(task)
-      # A channel client owns its turn across server restarts. Only the offline
-      # grace/presence policy may suspend it, including its dispatch window.
-      return if task.agent&.claude_channel_agent?
+      # Running channel work has not been delegated yet and still belongs to
+      # its worker. Delegated turns are excluded by the scan and row-lock check.
       execution_job_id = task.trigger_event_payload&.fetch("execution_job_id", nil)
       return if execution_job_id.blank?
 
