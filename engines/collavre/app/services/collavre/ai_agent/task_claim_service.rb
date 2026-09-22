@@ -62,8 +62,12 @@ module Collavre
 
       # Undo a claim whose reply could not be saved: the task goes back to what
       # it was claimed from — delegated, or suspended while it waits to resume.
+      # Only while the claim still holds it: a Stop that cancelled the claimed
+      # row in the meantime wins.
       def release(task)
-        task.update!(status: claimed_from.fetch(task.id, "delegated"))
+        task.with_lock do
+          task.update!(status: claimed_from.fetch(task.id, "delegated")) if task.status == "running"
+        end
       end
 
       def link_reply(task:, comment:)
