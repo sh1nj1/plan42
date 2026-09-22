@@ -151,6 +151,27 @@ class CreativeReactionFilterTest < ActionDispatch::IntegrationTest
     assert_empty JSON.parse(response.body).fetch("creatives")
   end
 
+  test "tree reactions on denied descendants do not reveal readable ancestors" do
+    hidden = nil
+    perform_enqueued_jobs do
+      parent = Creative.create!(user: @other, description: "Shared parent")
+      hidden = Creative.create!(user: @other, parent: parent, description: "Denied child")
+      CreativeShare.create!(creative: parent, user: nil, permission: :read)
+      CreativeShare.create!(creative: hidden, user: @user, permission: :no_access)
+    end
+
+    get creatives_path(format: :json, reaction_emoji: "🎉", search_mode: "tree")
+    assert_response :success
+    assert_empty JSON.parse(response.body).fetch("creatives")
+
+    comment = Comment.create!(creative: hidden, user: @other, content: "Public message")
+    Collavre::CommentReaction.create!(comment: comment, user: @other, emoji: "🎉")
+
+    get creatives_path(format: :json, reaction_emoji: "🎉", search_mode: "tree")
+    assert_response :success
+    assert_empty JSON.parse(response.body).fetch("creatives")
+  end
+
   test "tree mode retains matching creative ancestors" do
     get creatives_path(format: :json, reaction_emoji: "👍", search_mode: "tree")
     nodes = JSON.parse(response.body).fetch("creatives")

@@ -28,7 +28,8 @@ module Creatives
     end
 
     def call
-      matched_ids = apply_filters
+      # Denied matches must not reveal readable ancestors or affect progress.
+      matched_ids = filter_by_permission(apply_filters)
       return empty_result if matched_ids.empty?
 
       # 조상 포함
