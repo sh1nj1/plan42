@@ -17,19 +17,19 @@ module Collavre
       self.expanded_status = state
     end
 
-    # Called under the preference lock. Keep per-node watermarks: a delayed save
-    # for a different branch must still apply. Never evict a watermark while an
-    # old request could remain in flight, including across Turbo replacements.
-    def accept_expansion_save?(session, sequence, node_id)
-      return true if session.nil? && sequence.nil? # Previous bundles have no ordering metadata.
-      return false unless session.to_s.match?(/\A[0-9a-f-]{36}\z/) && sequence.to_s.match?(/\A[1-9]\d{0,15}\z/)
+    # Both operations run under the preference lock, across all tabs/documents.
+    def issue_expansion_save_fence
+      order = Creatives::ExpansionSaveOrder.new(expansion_save_sequences)
+      fence = order.issue
+      self.expansion_save_sequences = order.state
+      fence
+    end
 
-      key = "#{session}:#{node_id}"
-      orders = expansion_save_sequences || {}
-      return false if orders.fetch(key, 0).to_i >= sequence.to_i
-
-      self.expansion_save_sequences = orders.merge(key => sequence.to_i)
-      true
+    def accept_expansion_save?(fence, node_id)
+      order = Creatives::ExpansionSaveOrder.new(expansion_save_sequences)
+      accepted = order.accept?(fence, node_id)
+      self.expansion_save_sequences = order.state if accepted
+      accepted
     end
 
     validates :expanded_status, presence: true, unless: -> {

@@ -3,30 +3,24 @@ import csrfFetch from './csrf_fetch'
 // Keep same-user writes ordered across Turbo controller replacements.
 let saveQueue = Promise.resolve()
 const SAVE_TIMEOUT_MS = 10000
-// getRandomValues also works on HTTP previews, unlike randomUUID.
-const saveSession = Array.from(crypto.getRandomValues(new Uint8Array(18)),
-  (value) => value.toString(16).padStart(2, '0')).join('')
-let saveSequence = 0
 
 export function queueExpansionSave(userId, state) {
-  const order = { expansion_save_session: saveSession, expansion_save_sequence: ++saveSequence }
-  saveQueue = saveQueue.then(() => {
+  saveQueue = saveQueue.then(async () => {
     if (!userId || document.body.dataset.currentUserId !== userId) return
 
-    return saveWithTimeout({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      // The cookie can change before Turbo renders the new user's body.
-      body: JSON.stringify({ ...state, ...order, expected_user_id: userId }),
-    })
+    const body = { ...state, expected_user_id: userId }
+    // Issuance only reserves an order; a timed-out reservation cannot mutate
+    // expansion state. The server counter survives hard reloads and other tabs.
+    const { expansion_save_fence: fence } = await saveWithTimeout('fence', body)
+    if (!Number.isSafeInteger(fence) || fence <= 0) return
+    if (document.body.dataset.currentUserId !== userId) return
+
+    await saveWithTimeout('toggle', { ...body, expansion_save_fence: fence })
   }).catch(() => {})
   return saveQueue
 }
 
-async function saveWithTimeout(options) {
+async function saveWithTimeout(action, body) {
   const controller = new AbortController()
   let timer
   const timeout = new Promise((_, reject) => {
@@ -36,12 +30,19 @@ async function saveWithTimeout(options) {
     }, SAVE_TIMEOUT_MS)
   })
   try {
-    // Bound the queue wait even if the transport fails to settle after abort.
-    await Promise.race([
-      csrfFetch('/creative_expanded_states/toggle', { ...options, signal: controller.signal }),
-      timeout,
-    ])
+    return await Promise.race([request(action, body, controller.signal), timeout])
   } finally {
     clearTimeout(timer)
   }
+}
+
+async function request(action, body, signal) {
+  const response = await csrfFetch(`/creative_expanded_states/${action}`, {
+    method: 'POST', signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error('Expansion save failed')
+  // Include response-body stalls in the timeout as well.
+  return response.json()
 }

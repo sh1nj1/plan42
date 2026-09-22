@@ -2,18 +2,15 @@ module Collavre
   class UserCreativePreferencesController < ApplicationController
     MAX_LAST_TOPIC_SAVE_SESSIONS = 32
     include Persistence
+    before_action :verify_expansion_user, only: [ :toggle, :issue_expansion_save_fence ]
 
     def toggle
-      if params.key?(:expected_user_id) && params[:expected_user_id].to_s != Current.user.id.to_s
-        return render_forbidden
-      end
-
       creative_id = params[:creative_id]
       node_id = params[:node_id].to_s
       expanded = ActiveModel::Type::Boolean.new.cast(params[:expanded])
 
       saved = with_preference(creative_id) do |record|
-        next false unless record.accept_expansion_save?(params[:expansion_save_session], params[:expansion_save_sequence], node_id)
+        next false unless record.accept_expansion_save?(params[:expansion_save_fence], node_id)
 
         state = record.set_expanded(node_id, expanded)
         if empty_preference?(record, state)
@@ -24,6 +21,15 @@ module Collavre
       end
 
       render json: { success: !!saved, stale_expansion_save: !saved }
+    end
+
+    def issue_expansion_save_fence
+      fence = with_preference(params[:creative_id]) do |record|
+        value = record.issue_expansion_save_fence
+        record.save!
+        value
+      end
+      render json: { expansion_save_fence: fence }
     end
 
     def update_last_topic
@@ -69,6 +75,10 @@ module Collavre
     end
 
     private
+
+    def verify_expansion_user
+      render_forbidden if params.key?(:expected_user_id) && params[:expected_user_id].to_s != Current.user.id.to_s
+    end
 
     def readable?(creative)
       creative.has_permission?(Current.user, :read) || creative.user == Current.user
