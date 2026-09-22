@@ -49,6 +49,14 @@ module Collavre
       # Whether the attempt run by this job can be run again from scratch: it
       # was still running, or it was delegated but its Channel handoff for the
       # current generation never started — nothing reached the agent.
+      # Extension point for offline recovery: once recovery has handed a dead
+      # run's turn to another execution, it tombstones that job id in the
+      # primary database. A stale copy of the job (left in a separate queue
+      # database, or retried by hand) must neither create a row nor rerun one.
+      def retired?(job_id)
+        defined?(Collavre::RetiredTaskExecution) && Collavre::RetiredTaskExecution.exists?(execution_job_id: job_id)
+      end
+
       def retryable?(task, job_id)
         payload = task.trigger_event_payload
         return false unless payload.is_a?(Hash) && payload[JOB_KEY].to_s == job_id.to_s

@@ -104,7 +104,7 @@ module Collavre
         # goes back to pending with a fresh generation to come, which the retried
         # job starts like any promoted turn. The job id is kept: it is how a
         # retried dispatch job (agent_id, context) finds its row instead of
-        # creating a second one (AiAgentJob.reclaimed_task).
+        # creating a second one (reclaimed_task).
         #
         # A delegated attempt whose handoff started or completed may already be
         # with the agent, and is left to its reply or to stuck recovery.
@@ -114,6 +114,15 @@ module Collavre
           Task.where(status: %w[running delegated])
               .where("trigger_event_payload->>'#{ExecutionFence::JOB_KEY}' = ?", execution_job_id.to_s)
               .select { |task| reclaim_task_for_retry!(task, execution_job_id.to_s) }
+        end
+
+        # The row reclaim_for_retry! handed back to this job, if any. A queue
+        # retry of a run that died runs that row — for a dispatch job
+        # (agent_id, context) too, which would otherwise create a second row for
+        # the same turn and be refused as a duplicate of it.
+        def reclaimed_task(execution_job_id)
+          Task.where(status: "pending")
+              .find_by("trigger_event_payload->>'#{ExecutionFence::JOB_KEY}' = ?", execution_job_id.to_s)
         end
 
         # Resume every suspended turn of this agent that is due. For the moment

@@ -4,7 +4,9 @@ module Collavre
 
     # Allow resuming a task that was pending approval
     def perform(agent_id_or_task, event_name = nil, context = nil, replay_identity = nil)
-      agent_id_or_task = reclaimed_task(agent_id_or_task)
+      return if Orchestration::ExecutionFence.retired?(job_id)
+
+      agent_id_or_task = Orchestration::TaskResumer.reclaimed_task(job_id) || agent_id_or_task
       if agent_id_or_task.is_a?(Task)
         # Resume existing task
         task = agent_id_or_task
@@ -249,16 +251,6 @@ module Collavre
                     %w[done failed cancelled escalated].include?(settled_task.status)
 
       Orchestration::AgentOrchestrator.dequeue_next_for_topic(settled_task.topic_id, settled_task.creative_id)
-    end
-
-    # A queue retry of a run that died runs the row that run left behind, which
-    # TaskResumer.reclaim_for_retry! handed back as pending under this job id —
-    # for a dispatch job (agent_id, context) too, which would otherwise create a
-    # second row for the same turn and be refused as a duplicate of it.
-    def reclaimed_task(agent_id_or_task)
-      Task.where(status: "pending")
-          .find_by("trigger_event_payload->>'#{Orchestration::ExecutionFence::JOB_KEY}' = ?", job_id.to_s) ||
-        agent_id_or_task
     end
 
     def fail_turn!(task, error)

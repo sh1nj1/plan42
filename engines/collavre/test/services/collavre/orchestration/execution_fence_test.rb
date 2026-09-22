@@ -72,6 +72,10 @@ module Collavre
         task.trigger_event_payload = ExecutionFence.stamp(task.trigger_event_payload)
         assert ExecutionFence.superseded?(task, attempt), "started again as a new attempt"
       end
+
+      test "retired? is false until offline recovery installs its tombstones" do
+        assert_not ExecutionFence.retired?("job-1")
+      end
     end
   end
 end

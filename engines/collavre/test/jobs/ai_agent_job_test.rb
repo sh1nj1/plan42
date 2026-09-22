@@ -1049,6 +1049,34 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert_equal "done", task.reload.status
   end
 
+  test "a job whose execution recovery retired does nothing" do
+    job = AiAgentJob.new(@agent.id, "test_event", @context)
+    retired = Module.new do
+      class << self
+        attr_accessor :job_ids
+      end
+
+      def self.exists?(execution_job_id:)
+        job_ids.include?(execution_job_id)
+      end
+    end
+    Collavre.const_set(:RetiredTaskExecution, retired)
+
+    retired.job_ids = [ job.job_id ]
+    assert_no_difference -> { Task.count } do
+      job.perform_now
+    end
+
+    retired.job_ids = []
+    assert_difference -> { Task.count }, 1 do
+      AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+        job.perform_now
+      end
+    end
+  ensure
+    Collavre.send(:remove_const, :RetiredTaskExecution) if Collavre.const_defined?(:RetiredTaskExecution, false)
+  end
+
   test "a resumed task is started under the job that runs it" do
     task = Task.create!(
       name: "Resumed", status: "pending", trigger_event_name: "comment_created", agent: @agent,
