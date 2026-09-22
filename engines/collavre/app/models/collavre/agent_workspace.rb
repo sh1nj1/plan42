@@ -19,6 +19,8 @@ module Collavre
     # because this value becomes one path segment below the worker's HOME, so
     # "/" and "." must stay out of it.
     WORKSPACE_ID_FORMAT = /\A[A-Za-z0-9][A-Za-z0-9_:@-]{0,199}\z/
+    # Doorkeeper application that owns every workspace callback token.
+    CALLBACK_APPLICATION_NAME = "Collavre Agent Gateway"
 
     validates :proxy_credential_id, :proxy_workspace_id, :manifest_token,
               :manifest_token_digest, :callback_token, presence: true
@@ -50,7 +52,7 @@ module Collavre
             end
           end
 
-          return workspace if workspace
+          return workspace.repair_callback_access_token_id! if workspace
         end
       end
 
@@ -60,6 +62,12 @@ module Collavre
         return workspace if ActiveSupport::SecurityUtils.secure_compare(supplied, workspace.manifest_token.to_s)
 
         raise ActiveRecord::RecordNotFound
+      end
+
+      # The workspace whose cli-openai-proxy uses this token to call back into
+      # /mcp. Matched by token id: application names are editable display values.
+      def for_callback_access_token(access_token)
+        access_token && find_by(callback_access_token_id: access_token.id)
       end
 
       def manifest_digest(token)
@@ -132,7 +140,7 @@ module Collavre
 
       def create_workspace!(agent:, user:, gateway:)
         transaction do
-          callback_token = issue_callback_token!(gateway: gateway, owner: user || agent)
+          callback_token, callback_access_token_id = issue_callback_token!(gateway: gateway, owner: user || agent)
 
           create!(
             agent: agent,
@@ -142,7 +150,8 @@ module Collavre
             proxy_credential_id: proxy_credential_id_for(agent, user),
             proxy_user_id: legacy_proxy_user_id_for(agent, user),
             manifest_token: SecureRandom.urlsafe_base64(32),
-            callback_token: callback_token
+            callback_token: callback_token,
+            callback_access_token_id: callback_access_token_id
           )
         end
       end
@@ -150,7 +159,7 @@ module Collavre
       def issue_callback_token!(gateway:, owner:)
         application = Doorkeeper::Application.find_or_create_by!(
           owner: gateway.owner,
-          name: "Collavre Agent Gateway",
+          name: CALLBACK_APPLICATION_NAME,
           redirect_uri: "urn:ietf:wg:oauth:2.0:oob"
         ) do |app|
           app.scopes = "public"
@@ -167,12 +176,24 @@ module Collavre
         plaintext = access_token.token
         access_token.update_column(:token, Collavre::HashedAccessTokenLookup.encode(plaintext))
 
-        plaintext
+        [ plaintext, access_token.id ]
       end
     end
 
     def config_payload(base_url:)
       { url: base_url.sub(%r{/+\z}, ""), token: callback_token }
+    end
+
+    # A container still running the pre-migration code during a Kamal rollout
+    # creates rows without the token id, after the migration's backfill ran.
+    # Every proxy run resolves its workspace before the proxy can call /mcp,
+    # so filling the id in here keeps those calls tagged.
+    def repair_callback_access_token_id!
+      return self if callback_access_token_id
+
+      token_id = Doorkeeper::AccessToken.by_token(callback_token)&.id
+      update_columns(callback_access_token_id: token_id) if token_id
+      self
     end
 
     def rotate_tokens!
@@ -187,8 +208,8 @@ module Collavre
             raise ActiveRecord::RecordNotFound unless agent_gateway_id == gateway.id
 
             old_access_token = Doorkeeper::AccessToken.by_token(callback_token)
-            new_callback_token = self.class.send(:issue_callback_token!, gateway: gateway, owner: user || workspace_agent)
-            update!(callback_token: new_callback_token)
+            new_callback_token, new_access_token_id = self.class.send(:issue_callback_token!, gateway: gateway, owner: user || workspace_agent)
+            update!(callback_token: new_callback_token, callback_access_token_id: new_access_token_id)
             old_access_token&.revoke
           end
         end

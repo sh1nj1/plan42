@@ -9,6 +9,7 @@ module Collavre
         start_usage_tracking
         @conversation = build_conversation(tools)
         install_usage_tracking(@conversation)
+        install_cli_tool_events(@conversation)
         add_messages(@conversation, contents) unless restore_approval_gate
       end
 

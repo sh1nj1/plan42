@@ -81,6 +81,29 @@ class ToolUsageTest < ActiveSupport::TestCase
     end
   end
 
+  test "mcp calls made with a workspace callback token are recorded and tagged with the workspace" do
+    workspace = Struct.new(:id).new(42)
+    pair = Collavre::Current.set(user: @requester, mcp_agent_workspace: workspace) do
+      Collavre::ToolUsage::McpCall.track("cron_list", { creative_id: 5 }) { [ { success: true }, {} ] }
+    end
+    Collavre::Current.set(user: @requester) { Collavre::ToolUsage::McpCall.track("cron_list", { creative_id: 5 }) { [ {}, {} ] } }
+
+    assert_equal [ { success: true }, {} ], pair
+    tagged, untagged = Collavre::ToolUsage.order(:id).to_a
+    assert_equal [ "mcp", 42, @requester.id ], [ tagged.source, tagged.agent_workspace_id, tagged.requester_id ]
+    assert_equal Collavre::ToolUsage.arguments_digest("creative_id" => 5), tagged.arguments_digest
+    assert_nil untagged.arguments_digest
+  end
+
+  test "arguments digest ignores key order and key type but not values" do
+    digest = Collavre::ToolUsage.arguments_digest(b: [ { y: 1.0, x: "a" } ], a: nil)
+
+    assert_equal digest, Collavre::ToolUsage.arguments_digest("a" => nil, "b" => [ { "x" => "a", "y" => 1 } ])
+    refute_equal digest, Collavre::ToolUsage.arguments_digest("a" => nil, "b" => [ { "x" => "a", "y" => 1.5 } ])
+    assert_nil Collavre::ToolUsage.arguments_digest("{\"a\"… [truncated 10 bytes]")
+    assert_nil Collavre::ToolUsage.arguments_digest(nil)
+  end
+
   test "the FastMcp tool entry point records one mcp call and the RubyLLM tool records none" do
     Collavre::Current.set(user: @requester) do
       result, = Mcp::CronList.new.call_with_schema_validation!(creative_id: 0)
@@ -89,6 +112,14 @@ class ToolUsageTest < ActiveSupport::TestCase
     end
     row = Collavre::ToolUsage.sole
     assert_equal [ "mcp", "cron_list", false ], [ row.source, row.tool_name, row.succeeded ]
+  end
+
+  test "the FastMcp tool entry point digests the arguments of a workspace call" do
+    Collavre::Current.set(user: @requester, mcp_agent_workspace: Struct.new(:id).new(42)) do
+      Mcp::CronList.new.call_with_schema_validation!(creative_id: 0)
+    end
+
+    assert_equal Collavre::ToolUsage.arguments_digest("creative_id" => 0), Collavre::ToolUsage.sole.arguments_digest
   end
 
   test "report groups by tool name within range and filters" do

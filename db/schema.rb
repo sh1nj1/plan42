@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_23_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -90,6 +90,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
   create_table "agent_workspaces", force: :cascade do |t|
     t.integer "agent_gateway_id", null: false
     t.integer "agent_id", null: false
+    t.bigint "callback_access_token_id"
     t.text "callback_token", null: false
     t.datetime "created_at", null: false
     t.string "manifest_token", null: false
@@ -103,6 +104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
     t.index ["agent_id", "agent_gateway_id"], name: "idx_agent_workspaces_shared", unique: true, where: "user_id IS NULL"
     t.index ["agent_id", "user_id", "agent_gateway_id"], name: "idx_agent_workspaces_per_user", unique: true, where: "user_id IS NOT NULL"
     t.index ["agent_id"], name: "index_agent_workspaces_on_agent_id"
+    t.index ["callback_access_token_id"], name: "index_agent_workspaces_on_callback_access_token_id", unique: true
     t.index ["manifest_token_digest"], name: "index_agent_workspaces_on_manifest_token_digest", unique: true
     t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
   end
@@ -1035,6 +1037,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
 
   create_table "tool_usages", force: :cascade do |t|
     t.bigint "agent_id"
+    t.bigint "agent_workspace_id"
+    t.string "arguments_digest"
     t.datetime "created_at", null: false
     t.bigint "creative_id"
     t.integer "duration_ms"
@@ -1053,6 +1057,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
     t.bigint "topic_id"
     t.datetime "updated_at", null: false
     t.index ["agent_id", "occurred_at"], name: "index_tool_usages_on_agent_id_and_occurred_at"
+    t.index ["agent_workspace_id", "tool_name", "occurred_at"], name: "index_tool_usages_on_workspace_tool_and_time"
     t.index ["event_key"], name: "index_tool_usages_on_event_key", unique: true
     t.index ["execution_id"], name: "index_tool_usages_on_execution_id"
     t.index ["owner_id", "occurred_at"], name: "index_tool_usages_on_owner_id_and_occurred_at"
