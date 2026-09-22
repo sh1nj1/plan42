@@ -1,4 +1,6 @@
 import { $createRangeSelection, $createTextNode, $getRoot, $getSelection, $isRangeSelection, $setSelection } from 'lexical'
+import { $isCodeNode } from '@lexical/code'
+import { $findMatchingParent } from '@lexical/utils'
 import { createDragDropRegistry } from '../dnd/registry'
 import { previewDrop } from '../dnd/preview'
 import { getCreativeLabelFromDom } from '../dnd/creative_label'
@@ -33,7 +35,7 @@ export function registerCreativeLinkDrop(editor) {
     registry?.destroy()
     registry = null
     if (!root) return
-    registry = createDragDropRegistry({ root })
+    registry = createDragDropRegistry({ root, touch: false })
     registry.registerDropZone({
       selector: '[contenteditable="true"]',
       accepts: (kind) => kind === 'creative' && editor.isEditable(),
@@ -42,6 +44,10 @@ export function registerCreativeLinkDrop(editor) {
       onDrop: ({ ids, event }) => {
         editor.update(() => {
           const selection = selectDropPosition(root, event)
+          if ($findMatchingParent(selection.anchor.getNode(), $isCodeNode)) {
+            selection.insertText(ids.map(id => `[${getCreativeLabelFromDom(id) || String(id)}](/creatives/${id}) `).join(''))
+            return
+          }
           const nodes = ids.flatMap((id) => {
             const link = $createCreativeLinkNode(`/creatives/${id}`, id)
             link.append($createTextNode(getCreativeLabelFromDom(id) || String(id)))

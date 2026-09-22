@@ -2,6 +2,7 @@
 import { jest } from '@jest/globals'
 import { createEditor, $createParagraphNode, $createTextNode, $getRoot, $setSelection } from 'lexical'
 import { registerRichText } from '@lexical/rich-text'
+import { $createCodeNode, CodeNode, CodeHighlightNode } from '@lexical/code'
 import { LinkNode } from '@lexical/link'
 import { CreativeLinkNode } from '../creative_link_node'
 import { registerCreativeLinkDrop } from '../creative_link_drop'
@@ -26,7 +27,7 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="outer"><div contenteditable="true"></div></div><creative-tree-row creative-id="12"></creative-tree-row>'
   document.querySelector('creative-tree-row').descriptionHtml = '<b>Target &amp; title</b>'
   root = document.querySelector('[contenteditable]')
-  editor = createEditor({ namespace: 'drop-test', nodes: [LinkNode, CreativeLinkNode], onError: error => { throw error } })
+  editor = createEditor({ namespace: 'drop-test', nodes: [LinkNode, CreativeLinkNode, CodeNode, CodeHighlightNode], onError: error => { throw error } })
   editor.setRootElement(root)
   editor.update(() => {
     const text = $createTextNode('Before after')
@@ -134,4 +135,34 @@ test('extracts labels from property or dataset, with empty and missing row fallb
   row.dataset.descriptionHtml = '<br>'
   expect(getCreativeLabelFromDom('12')).toBe('')
   expect(getCreativeLabelFromDom('99')).toBe(null)
+})
+
+
+test.each([['12'], ['34'], ['12', '34']])('inserts plain link text in code blocks for %j', (...ids) => {
+  editor.update(() => {
+    const text = $createTextNode('let a = 1')
+    $getRoot().clear().append($createCodeNode('js').append(text))
+    text.select(3, 3)
+  }, { discrete: true })
+  const expected = ids.map(id => `[${id === '12' ? 'Target & title' : id}](/creatives/${id}) `).join('')
+  drag('drop', { ids })
+  expect(root.querySelector('a')).toBeNull()
+  editor.getEditorState().read(() => {
+    const code = $getRoot().getFirstChild()
+    expect(code.getType()).toBe('code')
+    expect(code.getTextContent()).toBe(`let${expected} a = 1`)
+    expect(code.getChildren().every(node => ['text', 'code-highlight'].includes(node.getType()))).toBe(true)
+  })
+  expect(lexicalToMarkdown(editor)).toContain(`let${expected} a = 1`)
+})
+
+test('inserts plain link text into an empty code block', () => {
+  editor.update(() => {
+    const code = $createCodeNode('js')
+    $getRoot().clear().append(code)
+    code.selectEnd()
+  }, { discrete: true })
+  drag('drop', { ids: ['34'] })
+  expect(root.querySelector('a')).toBeNull()
+  expect(root.textContent).toBe('[34](/creatives/34) ')
 })
