@@ -754,3 +754,46 @@ test('closing a restored pending draft without edits queues it with completion t
   enqueue.mock.calls[0][0].onSuccess({})
   expect(tree.dataset.saveState).toBeUndefined()
 })
+
+
+test.each([false, true])('type change tracks restored pending saves before reopening (in flight: %s)', async processing => {
+  jest.useFakeTimers()
+  const { unacknowledgedBody } = await import('../../lib/api/queue_recovery')
+  queue.processing = processing
+  queue.queue = [{ dedupeKey: 'creative_42', body: {
+    'creative[description]': '<p>pending draft</p>',
+    'creative[content_type_input]': 'markdown',
+    'creative[markdown_source]': 'pending draft',
+    'creative[progress]': 1,
+  } }]
+  queue.unacknowledgedBody.mockImplementation(key => unacknowledgedBody(queue, key))
+  enqueue.mockImplementation(request => {
+    queue.queue.push({ ...request, body: { ...unacknowledgedBody(queue, request.dedupeKey), ...request.body } })
+  })
+  const { tree } = appendMarkdownRow('42', 'stale server')
+  openRow(tree)
+  let acknowledge
+  waitFor.mockImplementationOnce(() => new Promise(resolve => { acknowledge = resolve }))
+  selectType('Workflow')
+  await jest.advanceTimersByTimeAsync(5000)
+  expect(save).not.toHaveBeenCalled()
+  expect(enqueue).toHaveBeenCalledTimes(1)
+  const request = queue.queue.at(-1)
+  expect(request.body['creative[progress]']).toBe(1)
+  expect(request.body['creative[markdown_source]']).toBe('pending draft')
+  queue.queue = []
+  request.onSuccess({})
+  expect(tree.dataset.saveState).toBeUndefined()
+  save.mockImplementation(() => response({ id: 42, creative_type: 'workflow' }))
+  get.mockResolvedValue({ id: 42, content_type: 'markdown', markdown_source: 'pending draft', markdown_editor: 'source', description: '<p>pending draft</p>', progress: 1, creative_type: 'workflow' })
+  acknowledge()
+  await jest.advanceTimersByTimeAsync(0)
+  expect(save).toHaveBeenCalledTimes(1)
+  document.getElementById('inline-close').click()
+  await jest.advanceTimersByTimeAsync(0)
+  openRow(tree)
+  await jest.advanceTimersByTimeAsync(0)
+  expect(document.getElementById('markdown-editor-textarea').value).toBe('pending draft')
+  expect(document.getElementById('inline-creative-progress').checked).toBe(true)
+  expect(tree.dataset.saveState).toBeUndefined()
+})
