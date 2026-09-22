@@ -10,7 +10,7 @@ module Collavre
       def initialize(user:, expanded_ids:)
         @user = user
         @expanded_ids = expanded_ids.to_set
-        @children_index = ChildrenIndex.new(user: user, show_archived: false)
+        @children_index = ChildrenIndex.new(user: user, show_archived: false, candidate_limit: INSPECTION_LIMIT)
       end
 
       def call

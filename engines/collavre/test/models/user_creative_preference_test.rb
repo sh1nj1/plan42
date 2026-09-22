@@ -224,7 +224,13 @@ module Collavre
       saved = [ root&.id, *leaves ].compact.to_h { |id| [ id.to_s, true ] }
       preference = UserCreativePreference.create!(user: user, expanded_status: saved)
       indexed = []
-      index = Creatives::ChildrenIndex.new(user: user, show_archived: false)
+      index = Creatives::ChildrenIndex.new(user: user, show_archived: false, candidate_limit: limit)
+      inspected_children = []
+      original_children = index.method(:visible_child_ids_by_origin)
+      index.define_singleton_method(:visible_child_ids_by_origin) do |rows|
+        inspected_children.concat(rows.map(&:first))
+        original_children.call(rows)
+      end
       original_index = index.method(:index)
       index.define_singleton_method(:index) do |creatives|
         indexed.concat(creatives.map(&:id))
@@ -235,6 +241,8 @@ module Collavre
 
       assert_equal(root ? [ root.id.to_s ] : [], restored)
       assert_equal limit, indexed.size
+      assert_equal(root ? limit : 0, inspected_children.size)
+      assert_not_includes inspected_children, leaves.last
       assert_not_includes indexed, leaves.last
       assert_equal saved, preference.reload.expanded_status
     end
