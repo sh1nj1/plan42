@@ -177,26 +177,26 @@ module Tools
       # Tools this Creative defines (approved or pending), so authoring clients can
       # tell a rename from a collision. Top level only to avoid a query per node.
       result[:mcp_tools] = creative.effective_origin.mcp_tools.pluck(:name) if current_depth == 1
-
-      if include_comments
-        result[:recent_comments] = creative.comments.order(created_at: :desc).limit(3).map do |comment|
-          {
-            content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
-            user: comment.user&.display_name || comment.user&.name,
-            created_at: comment.created_at&.iso8601
-          }
-        end
-      end
-
-      if current_depth < depth
-        result[:children] = children.map do |child|
+      result[:recent_comments] = recent_comments(creative) if include_comments
+      result[:children] = if current_depth < depth
+        children.map do |child|
           serialize_creative(child, depth: depth, current_depth: current_depth + 1, include_comments: include_comments)
         end
       else
-        result[:children] = []
+        []
       end
 
       result
+    end
+
+    def recent_comments(creative)
+      creative.comments.order(created_at: :desc).limit(3).map do |comment|
+        {
+          content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
+          user: comment.user&.display_name || comment.user&.name,
+          created_at: comment.created_at&.iso8601
+        }
+      end
     end
   end
 end

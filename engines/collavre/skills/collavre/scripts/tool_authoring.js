@@ -63,6 +63,15 @@ function extractString(source, keyword) {
 // McpService only picks up blocks containing `extend ToolMeta`, reads
 // `tool_name`/`tool_description` by regex, and ToolMeta refuses to build a
 // schema without a Sorbet signature on the entrypoint.
+function toolNameError(name, declared) {
+  if (!name) return 'Missing `tool_name "snake_case_name"`';
+  if (declared && declared !== name) {
+    return `tool_name is read as "${name}" by the server, not "${declared}"; keep the first tool_name a plain string`;
+  }
+  if (!TOOL_NAME_PATTERN.test(name)) return `tool_name "${name}" must be snake_case`;
+  return null;
+}
+
 export function validateToolSource(source) {
   const errors = [];
   if (!source || !source.trim()) {
@@ -72,14 +81,8 @@ export function validateToolSource(source) {
   if (!/\bextend\s+T::Sig\b/.test(source)) errors.push("Missing `extend T::Sig`");
 
   const name = source.match(SERVER_TOOL_NAME)?.[1];
-  const declared = extractString(source, "tool_name");
-  if (!name) {
-    errors.push('Missing `tool_name "snake_case_name"`');
-  } else if (declared && declared !== name) {
-    errors.push(`tool_name is read as "${name}" by the server, not "${declared}"; keep the first tool_name a plain string`);
-  } else if (!TOOL_NAME_PATTERN.test(name)) {
-    errors.push(`tool_name "${name}" must be snake_case`);
-  }
+  const nameError = toolNameError(name, extractString(source, "tool_name"));
+  if (nameError) errors.push(nameError);
 
   const description = extractString(source, "tool_description");
   if (!description) errors.push('Missing `tool_description "..."`');
