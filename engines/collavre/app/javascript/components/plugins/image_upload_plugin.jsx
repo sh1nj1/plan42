@@ -33,6 +33,13 @@ function isVideoFile(file) {
     return /\.(mp4|webm|mov|m4v)$/i.test(file.name || "")
 }
 
+function uploadCompletion(editor, commitUpload, finishUpload) {
+    return (insert = () => {}) => {
+        if (commitUpload) commitUpload(insert, finishUpload)
+        else editor.update(insert, { onUpdate: finishUpload })
+    }
+}
+
 export default function FileUploadPlugin({
     onUploadStateChange,
     directUploadUrl,
@@ -46,10 +53,10 @@ export default function FileUploadPlugin({
     }, [onUploadStateChange])
 
     const startDirectUpload = useCallback(
-        (file) => {
+        (file, commitUpload) => {
             if (!file) return
 
-            const isImage = isImageFile(file)
+            const complete = uploadCompletion(editor, commitUpload, finishUpload)
 
             pendingUploads.current += 1
             if (onUploadStateChange) onUploadStateChange(true)
@@ -65,7 +72,7 @@ export default function FileUploadPlugin({
 
             if (!resolvedDirectUploadUrl || !resolvedBlobUrlTemplate || !UploadConstructor) {
                 console.error("Direct upload configuration missing")
-                finishUpload()
+                complete()
                 return
             }
 
@@ -74,7 +81,7 @@ export default function FileUploadPlugin({
             upload.create((error, attributes) => {
                 if (error) {
                     console.error("Upload failed", error)
-                    finishUpload()
+                    complete()
                     return
                 }
 
@@ -82,10 +89,10 @@ export default function FileUploadPlugin({
                     .replace(":signed_id", attributes.signed_id)
                     .replace(":filename", encodeURIComponent(attributes.filename))
 
-                editor.update(() => {
+                complete(() => {
                     let node
 
-                    if (isImage) {
+                    if (isImageFile(file)) {
                         node = $createImageNode({
                             src: url,
                             altText: attributes.filename,
@@ -118,7 +125,7 @@ export default function FileUploadPlugin({
                         root.append(paragraph)
                         paragraph.selectStart()
                     }
-                }, { onUpdate: finishUpload })
+                })
             })
         },
         [blobUrlTemplate, directUploadUrl, editor, onUploadStateChange, finishUpload]

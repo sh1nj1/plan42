@@ -72,22 +72,24 @@ describe("file upload completion", () => {
     expect(states.mock.calls).toEqual([[true], [true], [true], [false]])
     expect(JSON.stringify(editor.getEditorState().toJSON())).toContain("one.txt")
     expect(JSON.stringify(editor.getEditorState().toJSON())).toContain("two.txt")
+    const json = JSON.stringify(editor.getEditorState().toJSON())
+    expect(json.indexOf("one.txt")).toBeLessThan(json.indexOf("two.txt"))
   })
 
-  it("releases failed uploads while waiting for remaining uploads", async () => {
+  it.each([0, 1])("releases failed upload %i while waiting for remaining uploads", async failed => {
     jest.spyOn(console, "error").mockImplementation(() => {})
     await mount()
     drop()
-    await complete(0, new Error("Upload failed"))
+    await complete(failed, new Error("Upload failed"))
     expect(states).toHaveBeenLastCalledWith(true)
-    await complete(1)
+    await complete(1 - failed)
     expect(states).toHaveBeenLastCalledWith(false)
   })
 
   it("releases busy state when configuration is missing", async () => {
     jest.spyOn(console, "error").mockImplementation(() => {})
     await mount({ directUploadUrl: null })
-    drop()
+    await act(async () => drop())
     expect(callbacks).toHaveLength(0)
     expect(states).toHaveBeenLastCalledWith(false)
   })
