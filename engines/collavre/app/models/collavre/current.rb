@@ -6,6 +6,7 @@ module Collavre
     attribute :creative_share_cache
     attribute :mcp_tool_approval_required
     attribute :mcp_request
+    attribute :mcp_agent_workspace_request
     attribute :user
     attribute :agent_turn
     attribute :change_set

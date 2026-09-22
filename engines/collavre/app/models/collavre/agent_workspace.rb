@@ -19,6 +19,8 @@ module Collavre
     # because this value becomes one path segment below the worker's HOME, so
     # "/" and "." must stay out of it.
     WORKSPACE_ID_FORMAT = /\A[A-Za-z0-9][A-Za-z0-9_:@-]{0,199}\z/
+    # Doorkeeper application that owns every workspace callback token.
+    CALLBACK_APPLICATION_NAME = "Collavre Agent Gateway"
 
     validates :proxy_credential_id, :proxy_workspace_id, :manifest_token,
               :manifest_token_digest, :callback_token, presence: true
@@ -60,6 +62,11 @@ module Collavre
         return workspace if ActiveSupport::SecurityUtils.secure_compare(supplied, workspace.manifest_token.to_s)
 
         raise ActiveRecord::RecordNotFound
+      end
+
+      # True for a token a cli-openai-proxy workspace uses to call back into /mcp.
+      def callback_access_token?(access_token)
+        access_token&.application&.name == CALLBACK_APPLICATION_NAME
       end
 
       def manifest_digest(token)
@@ -150,7 +157,7 @@ module Collavre
       def issue_callback_token!(gateway:, owner:)
         application = Doorkeeper::Application.find_or_create_by!(
           owner: gateway.owner,
-          name: "Collavre Agent Gateway",
+          name: CALLBACK_APPLICATION_NAME,
           redirect_uri: "urn:ietf:wg:oauth:2.0:oob"
         ) do |app|
           app.scopes = "public"

@@ -35,4 +35,21 @@ class McpOauthMiddlewareTest < ActionDispatch::IntegrationTest
       get "/mcp/sse", headers: { "Authorization" => "Bearer #{@token.token}" }
       assert_not_equal 401, response.status
   end
+
+  test "marks requests made with a workspace callback token" do
+    marks = []
+    probe = ->(_env) { marks << Collavre::Current.mcp_agent_workspace_request; [ 200, {}, [] ] }
+    middleware = McpOauthMiddleware.new(probe)
+    gateway_app = Doorkeeper::Application.create!(name: Collavre::AgentWorkspace::CALLBACK_APPLICATION_NAME, redirect_uri: "urn:ietf:wg:oauth:2.0:oob", owner: @user, confidential: true, scopes: "public")
+    callback = Doorkeeper::AccessToken.create!(application: gateway_app, resource_owner_id: @user.id, scopes: "public")
+
+    [ callback, @token ].each do |token|
+      Collavre::Current.reset
+      middleware.call(Rack::MockRequest.env_for("/mcp/messages", "HTTP_AUTHORIZATION" => "Bearer #{token.token}"))
+    end
+
+    assert_equal [ true, false ], marks
+  ensure
+    Collavre::Current.reset
+  end
 end

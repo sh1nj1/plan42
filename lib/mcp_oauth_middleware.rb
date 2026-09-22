@@ -35,6 +35,13 @@ class McpOauthMiddleware
 
   private
 
+  def mark_mcp_request(token)
+    return unless defined?(Collavre::Current)
+
+    Collavre::Current.mcp_request = true
+    Collavre::Current.mcp_agent_workspace_request = Collavre::AgentWorkspace.callback_access_token?(token)
+  end
+
   def valid_oauth_token?(request)
     token_string = Doorkeeper::OAuth::Token.from_request(request, *Doorkeeper.configuration.access_token_methods)
     return false if token_string.blank?
@@ -46,7 +53,7 @@ class McpOauthMiddleware
         if user
           Rails.logger.info "McpOauthMiddleware: Found user #{user.id} for token"
           Current.user = user
-          Collavre::Current.mcp_request = true if defined?(Collavre::Current)
+          mark_mcp_request(token)
           true
         else
           Rails.logger.warn "McpOauthMiddleware: User missing for token #{token.resource_owner_id}"

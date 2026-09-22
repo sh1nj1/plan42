@@ -96,7 +96,8 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal({ x_cli_events: "reasoning" }, conversation.params)
     assert_equal [ %w[t1 call], %w[t1 result], %w[m1 call], %w[m1 result], %w[s1 result] ], seen
     usages = Collavre::ToolUsage.order(:id)
-    assert_equal [ [ "Bash", true ], [ "Read", false ] ], usages.map { |usage| [ usage.tool_name, usage.succeeded ] }
+    assert_equal [ [ "Bash", true ], [ "mcp__collavre__creative_retrieval_service", true ], [ "Read", false ] ],
+                 usages.map { |usage| [ usage.tool_name, usage.succeeded ] }
     assert usages.all? { |usage| usage.source == "cli_proxy" }
     assert_equal [ Collavre::LlmUsage.last.execution_id ], usages.map(&:execution_id).uniq
     assert_kind_of Integer, usages.first.duration_ms
@@ -193,14 +194,12 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal [ 250, nil ], Collavre::ToolUsage.order(:id).pluck(:duration_ms)
   end
 
-  test "Collavre MCP tools are left to the mcp source" do
-    skipped = %w[mcp__collavre__creative_retrieval_service mcp__plugin_collavre_collavre__reply
-                 collavre.creative_update_service Collavre-Dev.topic_list]
-    kept = %w[Bash Edit command_execution web_search mcp__github__get_pr github.get_pr mcp__notion__search_collavre]
+  test "Collavre MCP tools are recorded under any server alias" do
+    recorder = Collavre::ToolUsage::CliProxyRecorder.new(context: {}, execution_id: "exec-alias")
+    names = %w[mcp__collavre__topic_list mcp__workspace__topic_list workspace.topic_list]
+    names.each_with_index { |name, index| recorder.observe(event("a#{index}", "result", name, ok: false)) }
 
-    skipped.each { |name| assert Collavre::ToolUsage::CliProxyRecorder.collavre_mcp_tool?(name), name }
-    kept.each { |name| assert_not Collavre::ToolUsage::CliProxyRecorder.collavre_mcp_tool?(name), name }
-    assert_not Collavre::ToolUsage::CliProxyRecorder.collavre_mcp_tool?(nil)
+    assert_equal names, Collavre::ToolUsage.order(:id).pluck(:tool_name)
   end
 
   test "the real OpenAI provider sends x_cli_events to cli_proxy only" do

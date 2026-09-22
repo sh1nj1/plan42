@@ -11,21 +11,11 @@ module Collavre
     #   Streaming delivers them as the CLI runs the tool; a non-streaming
     #   response delivers them together, so it passes timed: false and the
     #   duration stays nil.
-    # - A Collavre MCP tool called by the CLI is skipped: it reaches Collavre's
-    #   /mcp endpoint, which records it as source "mcp". See .collavre_mcp_tool?.
+    # - Collavre MCP tools the CLI calls are recorded here too, whatever alias the
+    #   workspace registered the server under. /mcp skips calls made with a
+    #   workspace callback token, so each call is counted once. See McpCall.
     class CliProxyRecorder
       SOURCE = "cli_proxy"
-
-      # Claude Code names an MCP tool "mcp__<server>__<tool>"; Codex reports
-      # "<server>.<tool>". The server is whatever the workspace registered
-      # Collavre as ("collavre", "plugin_collavre_collavre", ...), so the rule is
-      # "the server segment contains collavre". Built-in tools (Bash, Edit,
-      # command_execution, ...) have no server segment and never match.
-      def self.collavre_mcp_tool?(name)
-        name = name.to_s
-        server = name[/\Amcp__(.+?)__/, 1] || name[/\A([^.]+)\./, 1]
-        server.to_s.downcase.include?("collavre")
-      end
 
       def initialize(context:, execution_id:)
         @recorder = Recorder.new(context: context, source: SOURCE, execution_id: execution_id)
@@ -50,7 +40,6 @@ module Collavre
 
       def record_result(event, id)
         started = @started.delete(id)
-        return if self.class.collavre_mcp_tool?(event["name"])
         return if id.present? && !@recorded.add?(id)
 
         @recorder.record(
