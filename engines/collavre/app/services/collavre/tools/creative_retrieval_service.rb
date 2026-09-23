@@ -160,7 +160,22 @@ module Tools
     def serialize_creative(creative, depth:, current_depth:, include_comments: false)
       children = creative.linked_children
 
-      result = {
+      result = creative_attributes(creative, children)
+      result[:recent_comments] = recent_comments(creative) if include_comments
+
+      if current_depth < depth
+        result[:children] = children.map do |child|
+          serialize_creative(child, depth: depth, current_depth: current_depth + 1, include_comments: include_comments)
+        end
+      else
+        result[:children] = []
+      end
+
+      result
+    end
+
+    def creative_attributes(creative, children)
+      {
         id: creative.id,
         description: Creatives::TreeFormatter.plain_description(creative),
         progress: creative.progress.to_f.round(2),
@@ -173,26 +188,16 @@ module Tools
         created_at: creative.created_at&.iso8601,
         updated_at: creative.updated_at&.iso8601
       }
+    end
 
-      if include_comments
-        result[:recent_comments] = creative.comments.order(created_at: :desc).limit(3).map do |comment|
-          {
-            content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
-            user: comment.user&.display_name || comment.user&.name,
-            created_at: comment.created_at&.iso8601
-          }
-        end
+    def recent_comments(creative)
+      creative.comments.order(created_at: :desc).limit(3).map do |comment|
+        {
+          content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
+          user: comment.user&.display_name || comment.user&.name,
+          created_at: comment.created_at&.iso8601
+        }
       end
-
-      if current_depth < depth
-        result[:children] = children.map do |child|
-          serialize_creative(child, depth: depth, current_depth: current_depth + 1, include_comments: include_comments)
-        end
-      else
-        result[:children] = []
-      end
-
-      result
     end
   end
 end

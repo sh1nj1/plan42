@@ -65,9 +65,10 @@ inline Ruby source. These protections remain active throughout this change.
    concurrent approvals and worker/restart visibility before enabling the flow.
    Keep library-level registration fixes in rails_mcp_engine where appropriate.
 
-7. Remove the two Creative serialization revert-only complexity waivers before
-   2026-10-07 by refactoring the restored serialization method. Registration
-   waivers are unnecessary because the hardened implementation is retained.
+7. Completed: separate Creative attributes and recent-comment serialization
+   from tree traversal, preserving the JSON response. Both revert-only
+   complexity waivers are removed. Registration waivers are unnecessary
+   because the hardened implementation is retained.
 
 ## Acceptance tests
 
