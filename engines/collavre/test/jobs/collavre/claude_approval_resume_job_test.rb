@@ -175,7 +175,54 @@ module Collavre
       assert_equal "queued", continuation.status
     end
 
+    test "continuation carries the human inferred from the original comment" do
+      set_origin_principal(author: @user)
+      handoff_and_decide
+      resume
+      assert_equal @user.id, continuation.trigger_event_payload["workspace_user_id"]
+      assert_equal @user, AiAgent::TaskWorkspaceUser.resolve(continuation)
+    end
+
+    test "explicit principal takes precedence over the original comment author" do
+      set_origin_principal(author: @user, principal: users(:two).id)
+      handoff_and_decide
+      resume
+      assert_equal users(:two).id, continuation.trigger_event_payload["workspace_user_id"]
+    end
+
+    test "explicit nil unknown and AI principals never fall back to the human author" do
+      [ nil, -1, @agent.id ].each do |principal|
+        set_origin_principal(author: @user, principal: principal)
+        assert_nil AiAgent::TaskWorkspaceUser.resolve(@origin)
+      end
+      set_origin_principal(author: @user, principal: nil)
+      handoff_and_decide
+      resume
+      assert continuation.trigger_event_payload.key?("workspace_user_id")
+      assert_nil continuation.trigger_event_payload["workspace_user_id"]
+    end
+
+    test "AI and missing anchor authors do not become workspace principals" do
+      set_origin_principal(author: @agent)
+      assert_nil AiAgent::TaskWorkspaceUser.resolve(@origin)
+      @origin.update!(trigger_event_payload: { "comment" => { "id" => -1 } })
+      assert_nil AiAgent::TaskWorkspaceUser.resolve(@origin)
+      @origin.update!(trigger_event_payload: nil)
+      assert_nil AiAgent::TaskWorkspaceUser.resolve(@origin)
+      handoff_and_decide
+      resume
+      assert_nil continuation.trigger_event_payload["workspace_user_id"]
+    end
+
     private
+
+    def set_origin_principal(author:, **options)
+      anchor = @creative.comments.create!(topic: @topic, user: author,
+                                          content: "Original request", skip_dispatch: true)
+      payload = anchor.dispatch_payload.deep_stringify_keys
+      payload["workspace_user_id"] = options[:principal] if options.key?(:principal)
+      @origin.update!(trigger_event_payload: payload)
+    end
 
     def decide
       @approval.decide_claude_channel_permission!(:deny, by: @user, reason: "revise")

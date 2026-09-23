@@ -397,15 +397,7 @@ module Collavre
             return
           end
 
-          payload = task.trigger_event_payload || {}
-          user =
-            if payload.key?("workspace_user_id")
-              User.find_by(id: payload["workspace_user_id"])
-            else
-              Comment.find_by(id: payload.dig("comment", "id"))&.user
-            end
-
-          user unless user&.ai_user?
+          AiAgent::TaskWorkspaceUser.resolve(task)
         end
 
         # Provisions the (agent, topic) identities for a Claude Code

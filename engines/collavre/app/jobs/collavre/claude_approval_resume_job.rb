@@ -62,7 +62,7 @@ module Collavre
       context = notice.dispatch_payload.deep_stringify_keys
       context["chat"]["mentioned_users"] = [ { "id" => comment.user_id } ]
       context["claude_approval_request_id"] = payload["request_id"]
-      context["workspace_user_id"] = origin.trigger_event_payload&.dig("workspace_user_id")
+      context["workspace_user_id"] = AiAgent::TaskWorkspaceUser.resolve(origin)&.id
       Task.create!(name: "Claude Channel approval decision", agent: comment.user,
                    creative: comment.creative, topic_id: comment.topic_id, status: "queued",
                    trigger_event_name: "claude_channel_approval", trigger_event_payload: context)
