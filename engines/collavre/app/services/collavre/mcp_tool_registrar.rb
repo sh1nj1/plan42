@@ -47,6 +47,7 @@ module Collavre
       service_class = evaluate_keeping_only_verified(source_code, class_name, expected_name)
       result = service_class.is_a?(Class) ? register_or_roll_back(writer, service_class, class_name, before_call: before_call, after_call: after_call) : service_class
       remove_tool_constants(class_name) if result[:error]
+      service_class.instance_variable_set(:@collavre_mcp_source, source_code) unless result[:error]
       result
     end
 

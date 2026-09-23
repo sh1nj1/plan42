@@ -16,6 +16,11 @@ class McpServiceFilterTest < ActiveSupport::TestCase
     McpTool.create!(creative: Creative.create!(user: @other_user, description: "Other"), name: "other_tool", source_code: "bar", approved_at: Time.current)
   end
 
+  test "pending tools are excluded even for their owner" do
+    McpTool.find_by!(name: "user_tool").update!(approved_at: nil)
+    assert_empty McpService.filter_tools([ @user_tool ], @user)
+  end
+
   test "filters tools correctly for owner" do
     all_tools = [ @system_tool, @user_tool, @other_tool ]
 

@@ -83,11 +83,35 @@ inline Ruby source. These protections remain active throughout this change.
 - Verify approved tool loading after restart and execution from another worker.
 - Verify both skill copies remain identical and examples run end to end.
 
+## Implementation status
+
+The Creative-native follow-up adds the authoring guide and executable example to
+both skill copies, and links the workflow from create/update tool descriptions.
+The example is tested through real `meta_tool` calls, queued extraction, the
+owner's approval action, and the installed rails_mcp_engine registration.
+
+Integration checks exposed two lifecycle gaps addressed in this implementation:
+
+- Meta-tool calls bypassed FastMcp's tool-list permission filter. The Collavre
+  integration now checks approval and Creative write access for get/run and
+  filters list/search results. The library still owns schema building and dispatch.
+- Registries are process-local. Before meta discovery/execution, reconcile
+  registered source with persisted approved versions, discard deleted/revoked
+  definitions, and load missing approved definitions for the caller. One failed
+  definition must not prevent loading the others. A running call is not cancelled.
+
+An empty stored description now removes extracted tools just like removing a
+code block. The guide documents asynchronous extraction, separate draft and tool
+approvals, duplicate names, rename, and whole-body updates. It does not create
+production tool Creatives automatically or bypass the owner's approval.
+
+The serialization refactor and waiver removal remain in PR #1741; this follow-up
+does not modify its serialization code or reintroduce retrieval metadata.
+
 ## Delivery boundary
 
-This change contains the partial revert, preserved server regression tests and
-this plan only. The follow-up implements the
-Creative-native workflow after review of the plan; it must not silently recreate
-PR #1721's CLI-oriented solution.
+The original PR #1739 delivered the partial revert and this plan. The follow-up
+implements the Creative-native workflow described above. CLI scaffold/create/
+update commands and a separate native authoring endpoint remain out of scope.
 
 Reference: https://github.com/vrerv/rails_mcp_engine#defining-a-tool-service

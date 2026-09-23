@@ -137,6 +137,15 @@ collavre tool run <tool_name> --json '{"k":"v"}'  # run with JSON args
 collavre tool run <tool_name> --key value         # run with flag args
 ```
 
+## Create or edit a Ruby MCP tool
+
+Use `meta_tool` to invoke `creative_create_service` or `creative_update_service`
+with a Markdown Ruby code block following the `rails_mcp_engine` DSL. The
+Creative is the source of truth; owner approval enables discovery and execution.
+Read [Ruby tool authoring](references/tool-authoring.md) for the copyable example,
+exact MCP calls, approval states, and edit workflow. Do not use CLI authoring
+commands or bypass owner approval.
+
 ## Key Concepts
 
 - **Tree structure**: Creatives nest via `parent_id`. Use `--level` to control depth.

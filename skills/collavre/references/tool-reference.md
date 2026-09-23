@@ -345,3 +345,9 @@ Introspect and dynamically run any registered MCP tool. Enables tool discovery w
 | `collavre tool search <q>` | `search` |
 | `collavre tool info <name>` | `get` |
 | `collavre tool run <name>` | `run` |
+
+## Ruby tool authoring
+
+Create and edit tool source through the Creative services above. See
+[the Creative-native workflow](tool-authoring.md) for the ToolMeta example,
+owner approval, and `meta_tool` verification.

@@ -88,13 +88,7 @@ module Collavre
 
       # Build set of tool names the user has permission to run
       # User needs write permission on the creative to run its tools
-      accessible_tool_names = if user
-                                dynamic_tools.select do |mcp_tool|
-                                  mcp_tool.creative&.has_permission?(user, :write)
-                                end.map(&:name).to_set
-      else
-                                Set.new
-      end
+      accessible_tool_names = accessible_names(dynamic_tools, user)
 
       tools.select do |tool|
         name = if tool.respond_to?(:tool_name)
@@ -113,6 +107,15 @@ module Collavre
         end
       end
     end
+
+    def self.accessible_names(dynamic_tools, user)
+      return Set.new unless user
+
+      dynamic_tools.select do |tool|
+        tool.active? && tool.creative&.has_permission?(user, :write)
+      end.map(&:name).to_set
+    end
+    private_class_method :accessible_names
 
     def self.load_active_tools
       McpTool.active.find_each do |tool|
@@ -150,7 +153,6 @@ module Collavre
 
     def update_from_creative(input_creative)
       creative = input_creative.effective_origin
-      return unless creative.description.present?
 
       # Parse HTML to find code blocks
       doc = Nokogiri::HTML.fragment(creative.description)
