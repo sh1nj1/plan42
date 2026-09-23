@@ -220,7 +220,7 @@ class McpServiceTest < ActiveSupport::TestCase
   test "filter_tools returns dynamic tools when user has write permission" do
     user = users(:one)
     creative = Creative.create!(user: user, description: "Tool creative")
-    McpTool.create!(creative: creative, name: "dynamic_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: creative, name: "dynamic_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     tools = [
       { name: "dynamic_tool", description: "Dynamic Tool" }
@@ -236,7 +236,7 @@ class McpServiceTest < ActiveSupport::TestCase
     owner = users(:one)
     other_user = users(:two)
     creative = Creative.create!(user: owner, description: "Tool creative")
-    McpTool.create!(creative: creative, name: "private_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: creative, name: "private_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     tools = [
       { name: "private_tool", description: "Private Tool" }
@@ -251,7 +251,7 @@ class McpServiceTest < ActiveSupport::TestCase
     owner = users(:one)
     shared_user = users(:two)
     creative = Creative.create!(user: owner, description: "Shared tool creative")
-    McpTool.create!(creative: creative, name: "shared_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: creative, name: "shared_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     # Grant write permission to shared_user and run jobs to propagate cache
     perform_enqueued_jobs do
@@ -272,7 +272,7 @@ class McpServiceTest < ActiveSupport::TestCase
     owner = users(:one)
     reader = users(:two)
     creative = Creative.create!(user: owner, description: "Read-only creative")
-    McpTool.create!(creative: creative, name: "readonly_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: creative, name: "readonly_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     # Grant only read permission and run jobs to propagate cache
     perform_enqueued_jobs do
@@ -291,7 +291,7 @@ class McpServiceTest < ActiveSupport::TestCase
   test "filter_tools handles mixed system and dynamic tools" do
     user = users(:one)
     creative = Creative.create!(user: user, description: "Tool creative")
-    McpTool.create!(creative: creative, name: "user_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: creative, name: "user_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     tools = [
       { name: "system_tool", description: "System Tool" },
