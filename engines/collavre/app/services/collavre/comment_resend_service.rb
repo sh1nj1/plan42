@@ -103,7 +103,10 @@ module Collavre
     end
 
     def release_task(task, status)
-      AgentSessionAbort.call(agent: task.agent, task: task, creative: task.creative, comment: abort_context(task))
+      # Unstarted tasks cannot own the stable topic session; aborting it could stop an earlier turn.
+      unless %w[queued pending].include?(status)
+        AgentSessionAbort.call(agent: task.agent, task: task, creative: task.creative, comment: abort_context(task))
+      end
       Comment.remove_waiter_notices!(creative_id: task.creative_id, topic_id: task.topic_id, task_ids: task.id)
       Comment.remove_stranded_waiting_notices!(creative_id: task.creative_id, topic_id: task.topic_id)
       if Task::HELD_SLOT_WITHOUT_WORKER.include?(status)

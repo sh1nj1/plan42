@@ -131,6 +131,39 @@ module Collavre
       assert_equal "cancelled", task.reload.status
     end
 
+    %w[queued pending running delegated pending_approval suspended].each do |status|
+      test "resending a #{status} source only aborts a session for started work" do
+        earlier_task = Task.create!(name: "Earlier turn", agent: users(:ai_bot), creative: @creative,
+                                   topic_id: @topic.id, status: "running",
+                                   trigger_event_payload: { "comment" => { "id" => @earlier.id } })
+        @earlier.update!(task: earlier_task)
+        task = Task.create!(name: "Selected turn", agent: users(:ai_bot), creative: @creative,
+                            topic_id: @topic.id, status: status,
+                            trigger_event_payload: { "comment" => { "id" => @comment.id } })
+        aborted, released, dequeued = [], [], []
+        tracker = Object.new
+        tracker.define_singleton_method(:release!) { |id| released << id }
+        replacement = nil
+
+        AgentSessionAbort.stub :call, ->(**args) { aborted << args[:task].id } do
+          Orchestration::ResourceTracker.stub :for, tracker do
+            Orchestration::AgentOrchestrator.stub :dequeue_next_for_topic, ->(*args) { dequeued << args } do
+              replacement = resend
+            end
+          end
+        end
+
+        assert_equal "cancelled", task.reload.status
+        assert_equal "running", earlier_task.reload.status
+        assert Comment.exists?(@earlier.id)
+        assert replacement.persisted?
+        assert_equal %w[queued pending].include?(status) ? [] : [ task.id ], aborted
+        held_slot = Task::HELD_SLOT_WITHOUT_WORKER.include?(status)
+        assert_equal held_slot ? [ task.id ] : [], released
+        assert_equal held_slot ? [ [ @topic.id, @creative.id ] ] : [], dequeued
+      end
+    end
+
     test "resend before reply creation prevents a stale worker from inserting an answer" do
       task = Task.create!(name: "Running", agent: users(:ai_bot), creative: @creative,
                           topic_id: @topic.id, status: "running",
@@ -362,7 +395,7 @@ module Collavre
         end
 
         tracker.verify
-        assert_equal [ reply_task.id, source_task.id ], aborted
+        assert_equal [ source_task.id ], aborted
         assert_equal [ [ @topic.id, @creative.id ] ] * 2, dequeued
         assert_equal "cancelled", source_task.reload.status
         assert_equal "cancelled", reply_task.reload.status
