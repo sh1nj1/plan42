@@ -28,7 +28,13 @@ module Collavre
     private_class_method :load_missing
 
     def self.allowed?(name)
-      McpService.filter_tools([ { name: name } ], Current.user).any?
+      return true if McpToolRegistry.system_names.include?(name)
+
+      tool = McpTool.find_by(name: name)
+      return false unless tool&.active? && Current.user
+
+      # Execution cannot wait for asynchronous share-cache invalidation.
+      Creatives::PermissionChecker.current_allowed?(tool.creative_id, Current.user, :write)
     end
   end
 end

@@ -302,6 +302,33 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     assert_equal I18n.t("collavre.mcp_tools.unavailable"), @meta.call(action: "call", tool_name: @name)[:error]
   end
 
+  %i[downgrade delete].each do |revocation|
+    test "#{revocation} of an inherited share blocks execution before cache propagation" do
+      creative = create_tool
+      approve(creative)
+      writer = users(:two)
+      share = nil
+      perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+        share = CreativeShare.create!(creative: @parent, user: writer, permission: :write)
+      end
+      Current.user = writer
+      assert_equal({ name: "Soonoh" }, run_tool)
+      Collavre::PermissionCacheJob.stub(:perform_later, nil) do
+        revocation == :delete ? share.destroy! : share.update!(permission: :read)
+      end
+      assert creative.has_permission?(writer, :write), "the asynchronous cache must still grant write"
+      service = @meta.find_schema(@name).fetch(:service_class)
+      service.stub(:new, -> { flunk "tool executed using revoked cached access" }) do
+        %w[run call].each do |action|
+          result = @meta.call(action: action, tool_name: @name, arguments: { name: "Soonoh" })
+          assert_equal I18n.t("collavre.mcp_tools.unavailable"), result[:error]
+        end
+      end
+      Current.user = @owner
+      assert_equal({ name: "Soonoh" }, run_tool)
+    end
+  end
+
   test "approval resume cannot execute after write access is revoked" do
     creative = create_tool
     approve(creative)
@@ -313,7 +340,8 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     comment = Comment.create!(creative: Creative.create!(user: reader, description: "Execution approval"),
                               user: reader, approver: reader, content: "Run tool",
                               action: { action: "execute_tool", tool_name: @name, arguments: { name: "Soonoh" } }.to_json)
-    perform_enqueued_jobs(only: Collavre::PermissionCacheJob) { share.update!(permission: :read) }
+    Collavre::PermissionCacheJob.stub(:perform_later, nil) { share.update!(permission: :read) }
+    assert creative.has_permission?(reader, :write), "the asynchronous cache must still grant write"
     Current.user = reader
     service = @meta.find_schema(@name).fetch(:service_class)
     service.stub(:new, -> { flunk "tool executed after access was revoked" }) do
