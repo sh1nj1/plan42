@@ -18,6 +18,8 @@ const quotaState = new QuotaState(quotaDirectory(process.cwd()));
 
 import { PermissionCoordinator } from "./permission.js";
 import { ApprovalWaiter, newApprovalRequestId, resolveApprovalWaitMs } from "./approval.js";
+import { replyWithApprovalHandoff } from "./approval-reply.js";
+import type { CollavreConfig } from "./config.js";
 import { runApprovalRequest } from "./approval-tool.js";
 import { randomUUID } from "crypto";
 
@@ -52,6 +54,7 @@ function buildServer(
   coordinator: PermissionCoordinator,
   approvalWaiter: ApprovalWaiter,
   approvalWaitMs: number,
+  config: CollavreConfig,
 ): Server {
   const server = new Server(
     { name: "collavre", version: "0.1.1" },
@@ -180,27 +183,12 @@ function buildServer(
     if (typeof record.execution_generation !== "string" || !record.execution_generation) {
       return errorResult("execution_generation is required — echo it from the dispatch notification meta");
     }
-    const result = await client.reply(topicId, text, taskId, record.execution_generation).catch(async error => {
+    const result = await replyWithApprovalHandoff(config, topicId, text, taskId, record.execution_generation, approvalWaiter, coordinator, active).catch(async error => {
       await quotaState.prune(turn => client.quotaTurnCurrent(turn));
       throw error;
     });
     quotaState.remove(taskId, record.execution_generation);
 
-    // The dispatched turn is concluding (Claude has replied). Reset the active
-    // context to the registration inbox default so a subsequent locally-
-    // initiated turn's permission prompt surfaces in the inbox rather than
-    // leaking into this just-finished work topic.
-    active.topicId = active.defaultTopicId;
-    active.taskId = null;
-
-    // Drop any permission requests still pending from this finished turn. They
-    // were answered via the local TUI dialog (Claude Code sends no per-request
-    // resolution signal), so a later click on the now-stale Collavre approval
-    // comment must not be claimed and forwarded to a turn that is already over.
-    coordinator.clear();
-    // Same for approval requests: a decision clicked after the turn ended has no
-    // tool call left to unblock, and a still-parked call must not outlive its turn.
-    approvalWaiter.clear();
 
     return {
       content: [
@@ -239,7 +227,7 @@ async function main(): Promise<void> {
     defaultTopicId: null,
     sessionTopicId: null,
   };
-  const server = buildServer(client, active, coordinator, approvalWaiter, approvalWaitMs);
+  const server = buildServer(client, active, coordinator, approvalWaiter, approvalWaitMs, config);
 
   // Surface relayed tool-permission prompts into the active topic so the user
   // can approve/deny from Collavre. Registered before connect so the handler

@@ -71,3 +71,29 @@ test("an approval decision resolves the waiting tool call instead of being sent 
   state.clear();
   rmSync(directory, { recursive: true, force: true });
 });
+
+test("continuation clears the old approval after a lost reply response", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "approval-handoff-"));
+  const state = new QuotaState(directory);
+  const sent: unknown[] = [];
+  const server = { notification: async (n: unknown) => { sent.push(n); } } as unknown as Server;
+  const client = { quotaTurnCurrent: async () => true } as unknown as CollavreClient;
+  const active = { topicId: 2, taskId: 1, defaultTopicId: 2, sessionTopicId: 2 };
+  const coordinator = new PermissionCoordinator();
+  const waiter = new ApprovalWaiter();
+  waiter.open("old");
+  waiter.open("other");
+  coordinator.add("old");
+  coordinator.add("other");
+  const handler = makeEventHandler(server, client, coordinator, waiter, active, false, state);
+  try {
+    await handler({
+      type: "dispatch", task_id: 3, approval_request_id: "old",
+      comment: { id: 4, topic_id: 2, creative_id: 5, author_id: 6, author_name: "Claude", content: "Decision" },
+    });
+    assert.deepEqual(waiter.openIds(), ["other"]);
+    assert.deepEqual(coordinator.pendingIds(), ["other"]);
+    assert.equal(active.taskId, 3);
+    assert.equal(sent.length, 1);
+  } finally { state.clear(); rmSync(directory, { recursive: true, force: true }); }
+});

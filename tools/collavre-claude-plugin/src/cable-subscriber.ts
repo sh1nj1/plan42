@@ -8,6 +8,8 @@ export interface AgentEvent {
   // exact dispatched task (required when topic concurrency > 1).
   task_id?: number | null;
   execution_generation?: string;
+  // A continuation acknowledges the completed turn's server-owned approval.
+  approval_request_id?: string;
   // session_topic marks whether the dispatched topic is a Session-mapped topic.
   // Used to ignore dispatches belonging to a sibling session that shares this
   // agent's stream. Absent when talking to a legacy server.

@@ -1,6 +1,7 @@
 en:
   collavre:
     claude_channel:
+      approval_resume: "Approval decision for request %{request_id}.\nQuestion: %{question}\nDecision: %{decision}\nDecided by: %{decided_by}\nReason: %{reason}\nContinue the work using this decision. A denial does not authorize the proposed action."
       permission:
         message: |
           🔐 **Tool Permission Required**

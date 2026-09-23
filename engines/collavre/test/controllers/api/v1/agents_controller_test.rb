@@ -746,6 +746,38 @@ module Collavre
           assert_equal "approval-1", task.pending_tool_call&.dig("request_id")
         end
 
+        test "reply commits an unread approval handoff with exact task ownership" do
+          previous_adapter = ActiveJob::Base.queue_adapter
+          reg = register_agent("approval-handoff")
+          topic = Topic.find(reg["topic_id"])
+          agent = User.find(reg["agent_id"])
+          task = Task.create!(name: "Approval turn", status: "delegated", agent: agent,
+                              topic_id: topic.id, creative_id: topic.creative_id)
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, task_id: task.id, permission_request_id: "handoff-1",
+                      approval_question: "Deploy?" }, headers: auth_headers, as: :json
+          assert_response :created
+          approval = Comment.find(response.parsed_body["comment_id"])
+          assert_equal task.id.to_s, JSON.parse(approval.action)["origin_task_id"].to_s
+
+          ActiveJob::Base.queue_adapter = :test
+          # The decision arrives after pending but before the final reply.
+          approval.decide_claude_channel_permission!(:allow, by: @user)
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Waiting for approval",
+                      pending_approval_ids: [ "handoff-1" ] }, headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal "done", task.reload.status
+          assert JSON.parse(approval.reload.action)["turn_finished"]
+          assert_difference("Task.count", 1) { ClaudeApprovalResumeJob.perform_now(approval.id) }
+          continuation = Task.find(JSON.parse(approval.reload.action)["resume_task_id"])
+          assert_equal "pending", continuation.status
+          assert_equal agent.id, continuation.agent_id
+          assert_no_difference("Task.count") { ClaudeApprovalResumeJob.perform_now(approval.id) }
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
         test "an approval request can route the decision to another human who can read the creative" do
           reg = register_agent("notify-approval-approver-test")
           topic_id = reg["topic_id"]

@@ -161,7 +161,7 @@ module Collavre
           result = AiAgent::TaskReplyService.new(
             topic: topic, current_user: current_user, text: params[:text], requested_task_id: params[:task_id],
             agent_resolver: method(:resolve_reply_agent), task_claimer: method(:claim_delegated_task),
-            claim_service: task_claim_service
+            claim_service: task_claim_service, pending_approval_ids: params[:pending_approval_ids]
           ).call
           dispatch_a2a(result.agent, result.comment.reload, task: result.task) if result.comment
           render json: result.body, status: result.status

@@ -99,13 +99,28 @@ Differences from the native gate:
   is left in the topic.
 - A single tool call does not wait forever: it stays open for
   60s by default, or 80% of the Claude Code process's existing
-  `MCP_TOOL_TIMEOUT` (clamped to 1s–1h) when that is set. It then returns
+  `MCP_TOOL_TIMEOUT` (clamped to 1ms–1h) when that is set. It then returns
   `pending` with the `request_id`. The human has no
   deadline — the model either calls again with that `request_id` to keep waiting,
   or ends its turn saying it is blocked. A decision made in between is cached and
   delivered by the next call.
-- Requests are dropped when the turn ends (the `reply` tool fires): a decision
-  clicked afterwards has no tool call left to unblock.
+- Ending with `reply` hands unread requests to the server atomically with the
+  reply. This includes decisions cached after a pending result but not yet read
+  by the model. Decisions already returned by the tool are excluded.
+- After both the reply and decision are committed, Collavre posts a decision
+  message and queues one new task for the requesting agent in the same topic.
+  It includes the question, decision, reason, and decider. The completed task
+  stays completed; this is a new channel turn, not a restored tool call.
+- The approval comment stores the original and continuation task IDs. Duplicate
+  jobs and reconnect recovery reuse that task. Decisions arriving just before,
+  during, or after reply therefore take the same path. Reconnecting also recovers
+  an interrupted enqueue; existing offline-task recovery handles an offline
+  continuation. No local request tracking needs to survive the completed turn.
+- Continuations use the ordinary topic queue and retain their decision message
+  rather than coalescing with unrelated chat. A cancelled origin, removed topic,
+  or lost agent feedback access does not create a continuation. Server and plugin
+  must both be upgraded: the reply payload carries `pending_approval_ids`.
+  Native tool-permission prompts retain their existing end-of-turn cleanup.
 
 Delegated OpenClaw processes are not covered. Existing Claude Channel permission
 prompts and automatic tool approvals retain their separate behavior.
