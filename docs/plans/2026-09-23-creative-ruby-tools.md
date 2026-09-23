@@ -90,15 +90,23 @@ both skill copies, and links the workflow from create/update tool descriptions.
 The example is tested through real `meta_tool` calls, queued extraction, the
 owner's approval action, and the installed rails_mcp_engine registration.
 
-Integration checks exposed two lifecycle gaps addressed in this implementation:
+Integration and review checks exposed lifecycle gaps addressed in this implementation:
 
 - Meta-tool calls bypassed FastMcp's tool-list permission filter. The Collavre
-  integration now checks approval and Creative write access for get/run and
+  integration now checks approval and Creative write access for get/run/call and
   filters list/search results. The library still owns schema building and dispatch.
 - Registries are process-local. Before meta discovery/execution, reconcile
   registered source with persisted approved versions, discard deleted/revoked
   definitions, and load missing approved definitions for the caller. One failed
   definition must not prevent loading the others. A running call is not cancelled.
+  Refresh reads registered names once from DSL metadata instead of rebuilding
+  every schema for every active tool.
+- System tool names are reserved during Creative extraction, with an EN/KO
+  explanation posted to the Creative. Existing conflicting rows cannot hide,
+  replace, or unregister application tools; registry ownership takes precedence.
+- Approval resumption uses `action: "call"`, which the installed gem does not
+  dispatch. Normalize this alias to `run` before the same approval/write-access
+  gate, and test both successful calls and a revoked writer's approval resume.
 
 An empty stored description now removes extracted tools just like removing a
 code block. The guide documents asynchronous extraction, separate draft and tool

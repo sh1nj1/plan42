@@ -11,6 +11,7 @@ module Collavre
              arguments: T.nilable(T::Hash[T.untyped, T.untyped])).returns(T::Hash[Symbol, T.untyped])
     end
     def call(action:, tool_name: nil, query: nil, arguments: nil)
+      action = "run" if action == "call"
       allowed = Collavre::McpToolRegistrar.synchronize do
         Collavre::McpToolAccess.refresh
         !%w[get run].include?(action) || Collavre::McpToolAccess.allowed?(tool_name)

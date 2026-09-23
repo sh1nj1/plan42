@@ -14,12 +14,13 @@ module Collavre
 
         McpService.delete_tool(name)
       end
-      active.each_value { |tool| load_missing(tool) }
+      known_names = McpToolRegistry.names
+      active.each_value { |tool| load_missing(tool, known_names) }
     end
 
-    def self.load_missing(tool)
+    def self.load_missing(tool, known_names)
       return unless tool.creative.has_permission?(Current.user, :write)
-      return if ::Tools::MetaToolService.new.find_schema(tool.name)
+      return if known_names.include?(tool.name)
 
       McpService.register_tool_from_source(tool.source_code, expected_name: tool.name)
     rescue StandardError => e

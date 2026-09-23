@@ -202,6 +202,83 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     assert_equal users(:two), Current.user
   end
 
+  test "system tool names are rejected at extraction without disabling meta execution" do
+    creative = create_tool(markdown.gsub(@name, "meta_tool"))
+    assert_empty creative.mcp_tools
+    assert_includes creative.comments.last.content, I18n.t("collavre.mcp_tools.reserved_name", tool_name: "meta_tool")
+    [ @owner, users(:two) ].each do |user|
+      Current.user = user
+      assert_includes @meta.call(action: "list").fetch(:tools).map { |tool| tool[:name] }, "meta_tool"
+      assert_equal "meta_tool", @meta.call(action: "run", tool_name: "meta_tool", arguments: { action: "get", tool_name: "meta_tool" }).dig(:result, :tool, :name)
+    end
+  end
+
+  test "legacy system-name rows cannot hide replace or delete system tools" do
+    creative = create_tool
+    source = creative.mcp_tools.sole.source_code.gsub(@name, "meta_tool")
+    row = McpTool.create!(creative: creative, name: "meta_tool", source_code: source)
+    [ @owner, users(:two), nil ].each do |user|
+      Current.user = user
+      assert_includes McpService.filter_tools([ Mcp::MetaTool ], user), Mcp::MetaTool
+      assert_equal "meta_tool", @meta.call(action: "get", tool_name: "meta_tool").dig(:tool, :name)
+    end
+    Current.user = @owner
+    assert_raises(RuntimeError) { row.approve! }
+    assert_not row.reload.active?
+    row.destroy!
+    assert_equal "meta_tool", @meta.call(action: "get", tool_name: "meta_tool").dig(:tool, :name)
+  end
+
+  test "call alias enforces current permissions and executes only while allowed" do
+    creative = create_tool
+    approve(creative)
+    assert_equal({ name: "Soonoh" }, @meta.call(action: "call", tool_name: @name, arguments: { name: "Soonoh" }).fetch(:result))
+    reader = users(:two)
+    share = nil
+    perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+      share = CreativeShare.create!(creative: creative, user: reader, permission: :write)
+    end
+    Current.user = reader
+    assert_equal({ name: "Soonoh" }, @meta.call(action: "call", tool_name: @name, arguments: { name: "Soonoh" }).fetch(:result))
+    perform_enqueued_jobs(only: Collavre::PermissionCacheJob) { share.update!(permission: :read) }
+    assert_equal I18n.t("collavre.mcp_tools.unavailable"), @meta.call(action: "call", tool_name: @name, arguments: { name: "Soonoh" })[:error]
+    Current.user = nil
+    assert_equal I18n.t("collavre.mcp_tools.unavailable"), @meta.call(action: "call", tool_name: @name)[:error]
+    Current.user = @owner
+    creative.mcp_tools.sole.update!(approved_at: nil)
+    assert_equal I18n.t("collavre.mcp_tools.unavailable"), @meta.call(action: "call", tool_name: @name)[:error]
+  end
+
+  test "approval resume cannot execute after write access is revoked" do
+    creative = create_tool
+    approve(creative)
+    reader = users(:two)
+    share = nil
+    perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+      share = CreativeShare.create!(creative: creative, user: reader, permission: :write)
+    end
+    comment = Comment.create!(creative: Creative.create!(user: reader, description: "Execution approval"),
+                              user: reader, approver: reader, content: "Run tool",
+                              action: { action: "execute_tool", tool_name: @name, arguments: { name: "Soonoh" } }.to_json)
+    perform_enqueued_jobs(only: Collavre::PermissionCacheJob) { share.update!(permission: :read) }
+    Current.user = reader
+    service = @meta.find_schema(@name).fetch(:service_class)
+    service.stub(:new, -> { flunk "tool executed after access was revoked" }) do
+      Collavre::Comments::ActionExecutor.new(comment: comment, executor: reader).call
+    end
+    assert comment.reload.action_executed_at
+    assert creative.mcp_tools.sole.active?
+  end
+
+  test "refresh does not build schemas for already loaded tools" do
+    creative = create_tool
+    approve(creative)
+    ToolSchema::Builder.stub(:build, ->(*) { flunk "refresh rebuilt a schema for a loaded tool" }) do
+      Collavre::McpToolRegistrar.synchronize { Collavre::McpToolAccess.refresh }
+    end
+    assert_equal({ name: "Soonoh" }, run_tool)
+  end
+
   test "skill copies and the executable example are identical" do
     %w[SKILL.md references/tool-authoring.md references/tool-reference.md].each do |path|
       assert_equal Rails.root.join("skills/collavre", path).read,

@@ -83,7 +83,7 @@ module Collavre
       end
 
       # Check strict loading? No, simple where is fine.
-      dynamic_tools = McpTool.where(name: registered_names).includes(:creative)
+      dynamic_tools = McpTool.where(name: registered_names - McpToolRegistry.system_names.to_a).includes(:creative)
       dynamic_tool_names = dynamic_tools.pluck(:name).to_set
 
       # Build set of tool names the user has permission to run
@@ -195,6 +195,7 @@ module Collavre
       return unless tool_name_match
 
       tool_name = tool_name_match[1]
+      return notify_reserved_name(creative, tool_name) if McpToolRegistry.system_names.include?(tool_name)
 
       mcp_tool = McpTool.find_or_initialize_by(creative: creative, name: tool_name)
 
@@ -221,6 +222,12 @@ module Collavre
       end
 
       tool_name
+    end
+
+    def notify_reserved_name(creative, tool_name)
+      Comment.create!(creative: creative, user: nil,
+                      content: I18n.t("collavre.mcp_tools.reserved_name", tool_name: tool_name))
+      nil
     end
 
     def notify_approval_needed(creative, tool)
