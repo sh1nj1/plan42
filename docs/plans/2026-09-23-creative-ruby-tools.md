@@ -56,6 +56,9 @@ be evaluated explicitly before deploying replacement authoring workflows.
    concurrent approvals and worker/restart visibility before enabling the flow.
    Keep library-level registration fixes in rails_mcp_engine where appropriate.
 
+7. Remove the four revert-only complexity waivers before 2026-10-07 by
+   refactoring the restored registration and Creative serialization methods.
+
 ## Acceptance tests
 
 - Create through the real Creative service, execute queued jobs, verify the
