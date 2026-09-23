@@ -33,6 +33,17 @@ module Collavre
         end
       end
 
+      { "en" => "requested your decision", "ko" => "판단을 요청했습니다" }.each do |locale, phrase|
+        test "Claude approval request sends a decision notification in #{locale}" do
+          @owner.update!(locale: locale)
+          comment = create_request(action: "claude_channel_permission", kind: "approval_request", request_id: "claude-gate")
+          delivery = approval_delivery(comment)
+          assert_includes delivery.message, phrase
+          refute_includes delivery.message, "unknown"
+          assert_notification(comment, delivery)
+        end
+      end
+
       %w[en ko].each do |locale|
         test "ordinary tool approval keeps its notification in #{locale}" do
           @owner.update!(locale: locale)

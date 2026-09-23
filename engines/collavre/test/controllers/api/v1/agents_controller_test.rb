@@ -816,6 +816,18 @@ module Collavre
           end
         end
 
+        test "an approval request rejects an AI token owner as the default approver" do
+          reg = register_agent("notify-ai-default-approver")
+          @user.update!(llm_vendor: "openai")
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: reg["topic_id"], permission_request_id: "ai-default", approval_question: "Ship it?" },
+              headers: auth_headers, as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.invalid_approver"), JSON.parse(response.body)["error"]
+        end
+
         test "an approval request needs both a question and a request id" do
           reg = register_agent("notify-approval-invalid-test")
           topic_id = reg["topic_id"]

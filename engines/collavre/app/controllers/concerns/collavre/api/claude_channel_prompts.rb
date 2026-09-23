@@ -111,9 +111,7 @@ module Collavre
       # native gate's: a human (never an AI user) who can read the creative.
       def resolve_approval_request_approver(creative)
         id = params[:approver_user_id].presence
-        return current_user if id.blank?
-
-        approver = User.find_by(id: id)
+        approver = id ? User.find_by(id: id) : current_user
         unless approver && !approver.ai_user? &&
             (creative.user == approver || creative.has_permission?(approver, :read))
           raise InvalidApprovalRequest, I18n.t("collavre.approval_gate.invalid_approver")
