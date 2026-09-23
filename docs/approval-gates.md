@@ -108,6 +108,12 @@ Differences from the native gate:
   leaves delivery uncertain, so the plugin retains the request ID for replay
   and re-await instead of creating a duplicate question. Explicit validation or
   authentication rejections release the ID because no question was saved.
+- If an undecided gate is deleted, the plugin receives no deletion event.
+  After confirming deletion, call `approval_request` with the same `request_id`
+  and `abandon: true` to release the local wait and reconnect replay tracking.
+  This permits a new question without restarting the session. It does not
+  approve an action, decide or delete any server comment, or hand off a
+  continuation. Do not use it merely because a person has not answered yet.
 - Ending with `reply` hands unread requests to the server atomically with the
   reply. This includes decisions cached after a pending result but not yet read
   by the model. Decisions already returned by the tool are excluded.

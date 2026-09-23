@@ -175,3 +175,50 @@ test("relay time is included in the call's wait budget", async () => {
   assert.match(result.content[0].text, /^pending/);
   assert.ok(elapsed < 1250, `must return before the MCP timeout, took ${elapsed}ms`);
 });
+
+test("abandon releases an orphan after timeout and permits a fresh approval in the same session", async () => {
+  const { deps, waiter, coordinator, relayed } = harness();
+  await runApprovalRequest({ question: "deleted question?" }, deps);
+  const result = await runApprovalRequest({ request_id: "approval-1", abandon: true }, deps);
+  assert.match(result.content[0].text, /^abandoned/);
+  assert.match(result.content[0].text, /not approval/);
+  assert.match(result.content[0].text, /does not delete or decide a server gate/);
+  assert.deepEqual(waiter.openIds(), []);
+  assert.deepEqual(coordinator.pendingIds(), []);
+  assert.equal(waiter.settle("approval-1", { behavior: "allow" }), false);
+  assert.equal(coordinator.claim("approval-1"), false);
+  const next = await runApprovalRequest({ question: "new question?" }, deps);
+  assert.match(next.content[0].text, /request_id="approval-2"/);
+  assert.equal(relayed.length, 2);
+});
+
+test("abandon releases a parked re-await without reporting approval or pending", async () => {
+  const { deps, waiter, coordinator } = harness();
+  await runApprovalRequest({ question: "deleted?" }, deps);
+  deps.waitMs = 5000;
+  const waiting = runApprovalRequest({ request_id: "approval-1" }, deps);
+  await runApprovalRequest({ request_id: "approval-1", abandon: true }, deps);
+  const result = await waiting;
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /No open approval request/);
+  assert.deepEqual(waiter.openIds(), []);
+  assert.deepEqual(coordinator.pendingIds(), []);
+});
+
+test("abandon requires an explicit boolean and a locally tracked id", async () => {
+  const { deps, waiter, coordinator, relayed } = harness();
+  await runApprovalRequest({ question: "keep this gate" }, deps);
+  for (const args of [
+    { abandon: true },
+    { request_id: "foreign", abandon: true },
+    { request_id: "approval-1", abandon: "true" },
+  ]) {
+    assert.equal((await runApprovalRequest(args, deps)).isError, true);
+  }
+  assert.deepEqual(waiter.openIds(), ["approval-1"]);
+  assert.deepEqual(coordinator.pendingIds(), ["approval-1"]);
+  assert.equal(relayed.length, 1);
+  waiter.settle("approval-1", { behavior: "deny" });
+  const result = await runApprovalRequest({ request_id: "approval-1", abandon: false }, deps);
+  assert.match(result.content[0].text, /^denied/);
+});

@@ -67,8 +67,23 @@ export async function runApprovalRequest(
 ): Promise<ApprovalToolResult> {
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
 
+  if (record.abandon !== undefined && typeof record.abandon !== "boolean") {
+    return fail("abandon must be a boolean.");
+  }
+
   // Re-await: continue waiting on a request whose previous wait window elapsed.
   const resume = typeof record.request_id === "string" ? record.request_id.trim() : "";
+  if (record.abandon === true) {
+    if (!resume) return fail("request_id is required to abandon a local approval wait.");
+    if (!deps.waiter.has(resume)) return fail(formatApprovalUnknown(resume));
+    deps.waiter.cancel(resume);
+    deps.coordinator.claim(resume);
+    return ok(
+      `abandoned — local wait released for request_id="${resume}". ` +
+      "This is not approval; do not perform the proposed action. " +
+      "This only clears local tracking and does not delete or decide a server gate.",
+    );
+  }
   if (resume) {
     if (!deps.waiter.has(resume)) return fail(formatApprovalUnknown(resume));
     return await awaitDecision(resume, deps);
@@ -89,7 +104,8 @@ export async function runApprovalRequest(
     return fail(
       `An approval request is already open (request_id="${alreadyOpen}"). ` +
         `Call approval_request with request_id="${alreadyOpen}" to wait for that decision ` +
-        "instead of raising another one.",
+        "instead of raising another one. If you confirmed its gate was deleted, " +
+        "call approval_request with that request_id and abandon=true to release the local wait.",
     );
   }
 
@@ -154,7 +170,10 @@ async function awaitDecision(
   remainingMs = deps.waitMs,
 ): Promise<ApprovalToolResult> {
   const decision = await deps.waiter.wait(requestId, remainingMs);
-  if (!decision) return ok(formatApprovalPending(requestId, deps.waitMs));
+  if (!decision) {
+    if (!deps.waiter.has(requestId)) return fail(formatApprovalUnknown(requestId));
+    return ok(formatApprovalPending(requestId, deps.waitMs));
+  }
 
   deps.log?.(`[collavre] approval_request ${decision.behavior} (request_id=${requestId})`);
   return ok(formatApprovalDecision(decision));

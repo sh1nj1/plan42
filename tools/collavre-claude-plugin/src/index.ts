@@ -115,19 +115,26 @@ function buildServer(
           "someone decides, returning approved or denied plus their optional reason and who decided. " +
           "Denial is a normal result: do not perform the denied action, reconsider the plan instead. " +
           "There is no deadline on the human — if the wait window elapses the call returns pending with a " +
-          "request_id; call it again with that request_id to keep waiting, or end your turn saying you are blocked.",
+          "request_id; call it again with that request_id to keep waiting, or end your turn saying you are blocked. " +
+          "If you confirm the gate was deleted, pass request_id and abandon=true to release local tracking. " +
+          "Abandoning does not grant approval or change a server gate.",
         inputSchema: {
           type: "object" as const,
           properties: {
             question: {
               type: "string",
               description:
-                "The concrete decision you need from the human. Markdown supported. Omit only when resuming via request_id.",
+                "The concrete decision you need from the human. Markdown supported. Omit when resuming or abandoning via request_id.",
             },
             approver_user_id: {
               type: "number",
               description:
                 "Optional: route the decision to this Collavre user instead of the person running this session. Must be a human who can read the creative.",
+            },
+            abandon: {
+              type: "boolean",
+              description:
+                "Release only this session's local wait for request_id after confirming its gate was deleted. Does not approve, deny, or delete a server gate.",
             },
             request_id: {
               type: "string",

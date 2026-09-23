@@ -120,7 +120,7 @@ export class ApprovalWaiter {
     return [...this.entries.keys()];
   }
 
-  // Stop tracking a request that never reached the topic (the relay failed), so
+  // Stop tracking a rejected relay or an explicitly abandoned local wait, so
   // it does not block the next one as an "open" request.
   cancel(requestId: string): void {
     this.resolveEntry(requestId, null);
@@ -202,6 +202,7 @@ export function formatApprovalPending(requestId: string, waitMs: number): string
   return [
     `pending — nobody has decided yet (waited ${Math.round(waitMs / 1000)}s). The request stays open in Collavre.`,
     `To keep waiting, call approval_request again with request_id="${requestId}" (no question needed).`,
+    `If you confirmed the gate was deleted, call approval_request with request_id="${requestId}" and abandon=true to release local tracking. This is not approval.`,
     "To stop waiting, end your turn and tell the human you are blocked on their decision.",
   ].join("\n");
 }
@@ -212,7 +213,7 @@ export function formatApprovalPending(requestId: string, waitMs: number): string
 export function formatApprovalUnknown(requestId: string): string {
   return (
     `No open approval request with request_id="${requestId}" in this session. ` +
-    "It was already decided and reported, or the turn it belonged to has ended. " +
+    "It was already decided and reported, abandoned locally, or its turn ended. This is not approval. " +
     "Ask again with a question to raise a new request."
   );
 }
