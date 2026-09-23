@@ -64,21 +64,36 @@ module Collavre
       # Quoting comments otherwise cascade-delete, including other people's messages.
       Comment.where(quoted_comment_id: removed.map(&:id)).update_all(quoted_comment_id: nil)
       removed.each(&:destroy!)
-      cancel_source_tasks
+      cancel_source_tasks_and_permissions
       @replacement.save!
     end
 
-    def cancel_source_tasks
+    def cancel_source_tasks_and_permissions
       Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
         status = @comment.cancel_task_for_withdrawn_source(task)
         @cancelled_tasks << [ task, status ] if status
       end
+      @cancelled_tasks.each { |task, _status| remove_cancelled_permission(task) }
     end
 
     def cancel_reply_tasks(replies)
       Task.where(id: replies.filter_map(&:task_id)).filter_map do |task|
         status = task.cancel_if_active!
         [ task, status ] if status
+      end
+    end
+
+    def remove_cancelled_permission(task)
+      request_id = task.pending_tool_call&.dig("request_id").presence
+      return unless request_id
+
+      Comment.where(creative_id: task.creative_id, topic_id: task.topic_id,
+                    user_id: task.agent_id, action_executed_at: nil).where.not(action: [ nil, "" ]).lock.each do |prompt|
+        next unless prompt.claude_channel_permission_request_id == request_id
+
+        # Preserve human replies that quote the discarded permission request.
+        Comment.where(quoted_comment_id: prompt.id).update_all(quoted_comment_id: nil)
+        prompt.destroy!
       end
     end
 

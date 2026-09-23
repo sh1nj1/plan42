@@ -56,6 +56,37 @@ module Collavre
       assert_not Comment.exists?(reply.id)
     end
 
+    test "removes only pending permission prompts belonging to cancelled tasks and preserves quotes" do
+      task, prompt = source_permission
+      human = create_message(users(:two), "Quoted permission", quoted_comment: prompt)
+      other = create_message(users(:ai_bot), "Other request", action: permission_action("other"))
+      decided = create_message(users(:ai_bot), "Decided", action: prompt.action, action_executed_at: Time.current)
+      other_topic = @creative.topics.create!(user: @user, name: "Other")
+      elsewhere = create_message(users(:ai_bot), "Elsewhere", topic: other_topic, action: prompt.action)
+      other_agent = create_message(@user, "Other author", action: prompt.action)
+      native = create_message(users(:ai_bot), "Native action", action: { action: "execute_tool", request_id: "source-permission" }.to_json)
+
+      resend
+
+      assert_equal "cancelled", task.reload.status
+      assert_not Comment.exists?(prompt.id)
+      assert_nil human.reload.quoted_comment_id
+      [ other, decided, elsewhere, other_agent, native ].each { |c| assert Comment.exists?(c.id) }
+    end
+
+    test "rolls back cancelled permission prompt deletion and its human quote" do
+      task, prompt = source_permission
+      human = create_message(users(:two), "Quoted permission", quoted_comment: prompt)
+      @comment.update_columns(content: "")
+
+      assert_raises(ActiveRecord::RecordInvalid) { resend }
+
+      assert Comment.exists?(prompt.id)
+      assert_equal prompt.id, human.reload.quoted_comment_id
+      assert_equal "delegated", task.reload.status
+      assert_nil prompt.reload.action_executed_at
+    end
+
     test "preserves images mentions and quoted text" do
       quote = create_message(users(:two), "Quoted", created_at: @comment.created_at - 1.second)
       @comment.update!(content: "@AI Bot: look", quoted_comment: quote, quoted_text: "Quoted")
@@ -383,6 +414,20 @@ module Collavre
     end
 
     private
+
+    def permission_action(request_id)
+      { action: Comment::ClaudeChannelPermission::ACTION_TYPE, request_id: request_id, tool_name: "Bash" }.to_json
+    end
+
+    def source_permission
+      task = Task.create!(name: "Source permission", agent: users(:ai_bot), creative: @creative,
+                          topic_id: @topic.id, status: "delegated",
+                          trigger_event_payload: { "comment" => { "id" => @comment.id } },
+                          pending_tool_call: { "request_id" => "source-permission" })
+      prompt = create_message(users(:ai_bot), "Allow Bash?", approver: @user,
+                              action: permission_action("source-permission"))
+      [ task, prompt ]
+    end
 
     def create_message(user, content, **attrs)
       @creative.comments.create!({ user: user, content: content, topic: @topic }.merge(attrs))
