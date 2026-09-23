@@ -192,15 +192,7 @@ module Collavre
     end
 
     def create_reply_comment_if_needed
-      return nil unless @original_comment
-
-      @original_comment.creative.comments.create!(
-        content: Comment::STREAMING_PLACEHOLDER_CONTENT,
-        user: @agent,
-        topic_id: @original_comment.topic_id,
-        task: @task,
-        skip_dispatch: true  # A2A routing handled by A2aDispatcher after finalization
-      )
+      AiAgent::ReplyPlaceholder.call(original_comment: @original_comment, agent: @agent, task: @task)
     end
 
     def build_ai_client(system_prompt)

@@ -74,6 +74,66 @@ module Collavre
       assert_equal "cancelled", task.reload.status
     end
 
+    test "resend before reply creation prevents a stale worker from inserting an answer" do
+      task = Task.create!(name: "Running", agent: users(:ai_bot), creative: @creative,
+                          topic_id: @topic.id, status: "running",
+                          trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      worker = AiAgentService.new(task)
+      resend
+
+      assert_no_difference("Comment.count") do
+        assert_nil worker.send(:create_reply_comment_if_needed)
+      end
+      assert_equal "cancelled", task.reload.status
+    end
+
+    test "rechecks the source after waiting for the resend topic lock" do
+      task = Task.create!(name: "Running", agent: users(:ai_bot), creative: @creative,
+                          topic_id: @topic.id, status: "running",
+                          trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      worker = AiAgentService.new(task)
+      mutation = Comments::TopicMutation.method(:call)
+      waiting = true
+      wrapper = ->(topic_id, creative_id, &block) do
+        # Model resend committing while the worker waits to acquire the lock.
+        if waiting
+          waiting = false
+          resend
+        end
+        mutation.call(topic_id, creative_id, &block)
+      end
+      Comments::TopicMutation.stub :call, wrapper do
+        assert_nil worker.send(:create_reply_comment_if_needed)
+      end
+      assert_not Comment.exists?(@comment.id)
+      assert_nil task.reload.reply_comment
+      assert_equal "cancelled", task.status
+    end
+
+    test "reply creation holds the resend topic lock until its placeholder is saved" do
+      task = Task.create!(name: "Running", agent: users(:ai_bot), creative: @creative,
+                          topic_id: @topic.id, status: "running",
+                          trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      worker = AiAgentService.new(task)
+      mutation = Comments::TopicMutation.method(:call)
+      locked = false
+      wrapper = ->(topic_id, creative_id, &block) do
+        assert_equal [ @topic.id, @creative.id ], [ topic_id, creative_id ]
+        mutation.call(topic_id, creative_id) do
+          locked = true
+          block.call
+          assert task.reload.reply_comment, "Placeholder must exist before releasing the topic lock"
+        end
+      end
+      reply = Comments::TopicMutation.stub(:call, wrapper) { worker.send(:create_reply_comment_if_needed) }
+      assert locked, "Reply creation must serialize with resend"
+      assert_equal task.id, reply.task_id
+      # Once the worker releases the lock, resend's snapshot includes its reply.
+      resend
+      assert_not Comment.exists?(reply.id)
+      assert_equal "cancelled", task.reload.status
+    end
+
     test "rejects another author and AI authors" do
       assert_raises(CommentResendService::NotAllowed) { resend(user: users(:two)) }
       @comment.update!(user: users(:ai_bot))
