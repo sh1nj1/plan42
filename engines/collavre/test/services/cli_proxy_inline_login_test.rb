@@ -41,6 +41,8 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
     secret = "sensitive-provider-message"
     response = Struct.new(:status, :body).new(401, @body)
     conversation = Object.new
+    conversation.define_singleton_method(:with_params) { |**_params| conversation }
+    conversation.define_singleton_method(:after_message) { |&_callback| conversation }
     conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new(response, secret) }
     client = Collavre::AiClient.new(vendor: "cli_proxy", model: "paperclip/codex_local", system_prompt: "", log_interactions: false)
     client.instance_variable_set(:@cli_proxy_identity, { workspace: @workspace })
@@ -64,6 +66,8 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
   test "AiClient raises login requirement only for a configured CLI proxy and keeps handoff evidence" do
     response = Struct.new(:status, :body).new(401, @body)
     conversation = Object.new
+    conversation.define_singleton_method(:with_params) { |**_params| conversation }
+    conversation.define_singleton_method(:after_message) { |&_callback| conversation }
     conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new(response, "Login required") }
     [ "cli_proxy", "openai" ].each do |vendor|
       client = Collavre::AiClient.new(vendor: vendor, model: "paperclip/codex_local", system_prompt: "", log_interactions: false)
