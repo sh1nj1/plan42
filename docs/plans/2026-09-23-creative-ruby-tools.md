@@ -9,12 +9,17 @@ Creative owner's approval, agents discover and invoke the resulting tool through
 
 ## Revert scope
 
-Revert merge commit `3111f8f86408a1bf927c8c3dce744f8eaa886c73` (PR #1721)
-in full, including CLI authoring commands, bundled authoring documentation,
-retrieval metadata, the custom registrar, and their tests. Preserve later changes.
-This restores the pre-PR registration implementation; it also removes that PR's
-collision, rollback, and concurrent-approval protections. Those protections must
-be evaluated explicitly before deploying replacement authoring workflows.
+Partially revert merge commit `3111f8f86408a1bf927c8c3dce744f8eaa886c73`
+(PR #1721). Remove CLI scaffold/create/update commands, authoring helpers and
+CLI documentation from both skill copies, plus CLI-specific tests. Revert the
+retrieval metadata addition and its tests. Preserve later changes.
+
+Keep the server registration protections: `McpToolRegistrar`, expected-name
+validation, class/constant collision checks, failed-registration cleanup,
+serialized approvals, transaction rollback cleanup, and per-tool rescue during
+active-tool loading. Keep model/service approval tests and move the registrar
+regression tests out of the deleted CLI test into a standalone service test with
+inline Ruby source. These protections remain active throughout this change.
 
 ## Existing path to reuse
 
@@ -51,13 +56,15 @@ be evaluated explicitly before deploying replacement authoring workflows.
 5. Document this exact MCP workflow and copyable Ruby example in both Collavre
    skill copies. Make the workflow discoverable in relevant tool descriptions
    if needed; keep the change focused on Creative-native authoring.
-6. Address only verified lifecycle gaps with separate regression tests. Review
+6. Preserve the existing registration protections and regression tests. Address
+   only verified additional lifecycle gaps with separate tests. Review
    duplicate names/classes, failed registration cleanup, approval rollback,
    concurrent approvals and worker/restart visibility before enabling the flow.
    Keep library-level registration fixes in rails_mcp_engine where appropriate.
 
-7. Remove the four revert-only complexity waivers before 2026-10-07 by
-   refactoring the restored registration and Creative serialization methods.
+7. Remove the two Creative serialization revert-only complexity waivers before
+   2026-10-07 by refactoring the restored serialization method. Registration
+   waivers are unnecessary because the hardened implementation is retained.
 
 ## Acceptance tests
 
@@ -74,7 +81,8 @@ be evaluated explicitly before deploying replacement authoring workflows.
 
 ## Delivery boundary
 
-This change contains the revert and this plan only. The follow-up implements the
+This change contains the partial revert, preserved server regression tests and
+this plan only. The follow-up implements the
 Creative-native workflow after review of the plan; it must not silently recreate
 PR #1721's CLI-oriented solution.
 
