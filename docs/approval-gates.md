@@ -94,9 +94,9 @@ Differences from the native gate:
 - The approver defaults to the token holder running the session (a native gate
   defaults to the triggering comment's author). `approver_user_id` overrides it
   and is validated the same way: a human with read access to the creative.
-- One undecided request per session at a time. A second question while one is
-  open is refused and names the open `request_id` instead, so no duplicate gate
-  is left in the topic.
+- One locally tracked request at a time. A second question while one is
+  open is refused and names the open `request_id` instead. Requests handed to
+  the server at reply no longer block a later turn from asking another question.
 - A single tool call does not wait forever: it stays open for
   60s by default, or 80% of the Claude Code process's existing
   `MCP_TOOL_TIMEOUT` (clamped to 1ms–1h) when that is set. It then returns
@@ -104,6 +104,10 @@ Differences from the native gate:
   deadline — the model either calls again with that `request_id` to keep waiting,
   or ends its turn saying it is blocked. A decision made in between is cached and
   delivered by the next call.
+- The wait budget includes the HTTP relay. A network failure or server error
+  leaves delivery uncertain, so the plugin retains the request ID for replay
+  and re-await instead of creating a duplicate question. Explicit validation or
+  authentication rejections release the ID because no question was saved.
 - Ending with `reply` hands unread requests to the server atomically with the
   reply. This includes decisions cached after a pending result but not yet read
   by the model. Decisions already returned by the tool are excluded.
@@ -122,5 +126,6 @@ Differences from the native gate:
   must both be upgraded: the reply payload carries `pending_approval_ids`.
   Native tool-permission prompts retain their existing end-of-turn cleanup.
 
-Delegated OpenClaw processes are not covered. Existing Claude Channel permission
+Codex CLI, delegated OpenClaw processes, and plain external MCP sessions are
+not covered by this Claude Channel integration. Existing Claude Channel permission
 prompts and automatic tool approvals retain their separate behavior.
