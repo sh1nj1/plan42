@@ -56,6 +56,55 @@ module Tools
       end
     end
 
+    test "json depth limit preserves node attributes and child counts" do
+      Label.create!(creative_id: @parent.id, value: "important", owner_id: @user.id)
+      @parent.reload
+
+      Current.set(user: @user) do
+        service = Tools::CreativeRetrievalService.new
+        node = service.call(id: @parent.id, level: 1, format: "json").first
+
+        assert_equal({
+          id: @parent.id, description: "Parent Creative", progress: 0.5,
+          parent_id: nil, tags: [ "important" ], linked: false, origin_id: nil,
+          has_children: true, children_count: 2,
+          created_at: @parent.created_at.iso8601, updated_at: @parent.updated_at.iso8601,
+          children: []
+        }, node)
+
+        tree = service.call(id: @parent.id, level: 2, format: "json").first
+        assert_equal [ @child.id, @child2.id ].sort, tree[:children].map { |child| child[:id] }.sort
+        tree[:children].each do |child|
+          assert_equal @parent.id, child[:parent_id]
+          assert_equal false, child[:has_children]
+          assert_equal 0, child[:children_count]
+          assert_empty child[:children]
+          refute child.key?(:recent_comments)
+        end
+      end
+    end
+
+    test "json comments preserve newest three plain previews and optional authors" do
+      now = Time.current.change(usec: 0)
+      Comment.create!(creative: @child, user: @user, content: "Old comment", created_at: now - 4.minutes)
+      Comment.create!(creative: @child, user: @user, content: "<p>Third comment</p>", created_at: now - 3.minutes)
+      Comment.create!(creative: @child, user: @user, content: "<p>#{'x' * 220}</p>", created_at: now - 2.minutes)
+      Comment.create!(creative: @child, user: nil, content: "<p>System comment</p>", created_at: now - 1.minute)
+
+      Current.set(user: @user) do
+        tree = Tools::CreativeRetrievalService.new.call(
+          id: @parent.id, level: 2, format: "json", include_comments: true
+        ).first
+        assert_empty tree[:recent_comments]
+        comments = tree[:children].find { |child| child[:id] == @child.id }[:recent_comments]
+        assert_equal [
+          { content: "System comment", user: nil, created_at: (now - 1.minute).iso8601 },
+          { content: "#{'x' * 197}...", user: @user.display_name, created_at: (now - 2.minutes).iso8601 },
+          { content: "Third comment", user: @user.display_name, created_at: (now - 3.minutes).iso8601 }
+        ], comments
+      end
+    end
+
     test "search by query text returns flat list" do
       Current.set(user: @user) do
         service = Tools::CreativeRetrievalService.new
