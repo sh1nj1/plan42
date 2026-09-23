@@ -13,6 +13,49 @@ module Collavre
         @task = Task.create!(name: "Test", status: "running", agent: @agent)
       end
 
+      test "does not recreate a reply after its source is deleted" do
+        original = @creative.comments.create!(content: "Request", user: @user, topic: @topic)
+        original.destroy!
+        assert_no_difference([ "Comment.count", "TaskAction.count" ]) do
+          assert_nil finalize_without_placeholder(original)
+        end
+      end
+
+      test "rechecks source existence after acquiring the topic lock" do
+        original = @creative.comments.create!(content: "Request", user: @user, topic: @topic)
+        mutation = Comments::TopicMutation.method(:call)
+        wrapper = ->(topic_id, creative_id, &block) do
+          original.destroy!
+          mutation.call(topic_id, creative_id, &block)
+        end
+        result = Comments::TopicMutation.stub(:call, wrapper) { finalize_without_placeholder(original) }
+        assert_nil result
+        assert_not Comment.exists?(task: @task)
+      end
+
+      test "creates final reply and action while holding the topic lock" do
+        original = @creative.comments.create!(content: "Request", user: @user, topic: @topic)
+        mutation = Comments::TopicMutation.method(:call)
+        locked = false
+        wrapper = ->(topic_id, creative_id, &block) do
+          assert_equal [ @topic.id, @creative.id ], [ topic_id, creative_id ]
+          mutation.call(topic_id, creative_id) do
+            locked = true
+            block.call
+            assert_equal "Final answer", @task.reload.reply_comment.content
+            assert_equal 1, @task.task_actions.where(action_type: "reply_created").count
+          end
+        end
+        result = Comments::TopicMutation.stub(:call, wrapper) { finalize_without_placeholder(original) }
+        assert locked
+        assert_equal "Final answer", result.content
+      end
+
+      def finalize_without_placeholder(original)
+        ResponseFinalizer.new(task: @task, agent: @agent, original_comment: original,
+                              reply_comment: nil, response_content: "Final answer").finalize
+      end
+
       # In the review workflow the agent's reply placeholder is destroyed and its
       # content folded into the quoted comment, which becomes the survivor.
       test "review workflow folds the reply into the surviving quoted comment" do

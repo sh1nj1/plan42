@@ -174,22 +174,24 @@ module Collavre
         # spawning a new delegated task for the agent's own message.
         def notify
           topic = Topic.find_by(id: params[:topic_id])
-          unless topic
-            render json: { error: "Topic not found" }, status: :not_found
-            return
-          end
+          return render json: { error: "Topic not found" }, status: :not_found unless topic
 
           creative = topic.creative&.effective_origin
-          unless creative
-            render json: { error: "Creative not found" }, status: :not_found
-            return
-          end
+          return render json: { error: "Creative not found" }, status: :not_found unless creative
 
           unless creative.has_permission?(current_user, :feedback)
             render json: { error: "Not authorized" }, status: :forbidden
             return
           end
 
+          # Authorize, persist the prompt, and park its task under the same lock
+          # as resend, so a discarded turn cannot publish a late approval UI.
+          applied = Comments::TopicMutation.call(topic.id, creative.id) { persist_notification(creative, topic) }
+          render json: { error: "Topic not found" }, status: :not_found unless applied
+        end
+        private
+
+        def persist_notification(creative, topic)
           # The poster must be this session's own Claude Channel agent, owned by
           # the token holder — so /notify can't be used to ventriloquize an
           # unrelated agent or post into a topic the caller doesn't drive.
@@ -219,7 +221,6 @@ module Collavre
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
         end
-        private
 
         # Build a structured tool-permission comment that reuses the native
         # approval UI (approver gate + approve/deny buttons). The prompt text is

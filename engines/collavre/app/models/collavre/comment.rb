@@ -264,8 +264,6 @@ module Collavre
       # Include approval-paused and delegated work: both can resume side effects
       # after withdrawal and keep holding the topic/agent slot without a worker.
       Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
-        next unless dispatch_source_ids(task).include?(id)
-
         # An un-started task can be the survivor of a coalesced burst, answering
         # several comments at once. Cancelling it because its anchor was deleted
         # would throw away the absorbed comments too — they have no task of their
@@ -273,9 +271,7 @@ module Collavre
         # (session-backed agents receive only the trigger). Re-anchor onto the
         # newest surviving merged comment instead; only a task with nothing left
         # to say is cancelled.
-        next if reanchor_coalesced_task(task)
-
-        previous_status = cancel_source_task(task)
+        previous_status = cancel_task_for_withdrawn_source(task)
         next unless previous_status
 
         # A waiter cancelled here leaves the queue without ever being promoted,

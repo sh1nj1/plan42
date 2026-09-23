@@ -670,6 +670,69 @@ module Collavre
             "the delegated task must be parked as awaiting a permission decision"
         end
 
+        test "notify rejects a permission prompt cancelled while acquiring the topic lock" do
+          reg = register_agent("notify-perm-race")
+          topic = Topic.find(reg["topic_id"])
+          task = Task.create!(name: "Discarded turn", status: "delegated",
+                              agent_id: reg["agent_id"], topic_id: topic.id, creative: topic.creative)
+          original_lock = Orchestration::TopicSlot.method(:lock_matches_context?)
+          acquired = false
+          lock = lambda do |topic_id, creative_id|
+            acquired = true
+            task.update!(status: "cancelled")
+            original_lock.call(topic_id, creative_id)
+          end
+
+          Orchestration::TopicSlot.stub :lock_matches_context?, lock do
+            assert_no_difference "Comment.count" do
+              post "/api/v1/agent/notify",
+                params: { topic_id: topic.id, task_id: task.id, permission_request_id: "discarded" },
+                headers: auth_headers, as: :json
+            end
+          end
+          assert acquired
+          assert_response :forbidden
+          assert_nil task.reload.pending_tool_call
+        end
+
+        test "notify rejects a topic whose lock context disappeared" do
+          reg = register_agent("notify-missing-lock")
+          Orchestration::TopicSlot.stub :lock_matches_context?, false do
+            assert_no_difference "Comment.count" do
+              post "/api/v1/agent/notify",
+                params: { topic_id: reg["topic_id"], permission_request_id: "missing" },
+                headers: auth_headers, as: :json
+            end
+          end
+          assert_response :not_found
+        end
+
+        test "notify saves permission and parks task inside the topic mutation" do
+          reg = register_agent("notify-perm-lock")
+          topic = Topic.find(reg["topic_id"])
+          task = Task.create!(name: "Active turn", status: "delegated",
+                              agent_id: reg["agent_id"], topic_id: topic.id, creative: topic.creative)
+          mutation = Comments::TopicMutation.method(:call)
+          observed = false
+          wrapper = lambda do |topic_id, creative_id, &block|
+            assert_equal [ topic.id, topic.creative_id ], [ topic_id, creative_id ]
+            mutation.call(topic_id, creative_id) do
+              block.call
+              prompt = Comment.find_by!(topic_id: topic.id, user_id: task.agent_id)
+              assert_equal "locked", prompt.claude_channel_permission_request_id
+              assert_equal "locked", task.reload.pending_tool_call["request_id"]
+              observed = true
+            end
+          end
+          Comments::TopicMutation.stub :call, wrapper do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic.id, task_id: task.id, permission_request_id: "locked" },
+              headers: auth_headers, as: :json
+          end
+          assert_response :created
+          assert observed
+        end
+
         test "notify with permission_request_id builds a structured approval comment" do
           # The plugin sends only tool_name + arguments; the server renders the
           # (localized) prompt text server-side and attaches the approve/deny
