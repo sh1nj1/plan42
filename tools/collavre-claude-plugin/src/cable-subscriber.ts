@@ -17,6 +17,12 @@ export interface AgentEvent {
   // per-agent stream; the plugin acts only on request_ids it surfaced.
   request_id?: string;
   behavior?: "allow" | "deny";
+  // Present only on an agent-initiated approval_request decision (a relayed tool
+  // prompt has no reason box): the approver's optional note and identity, relayed
+  // to the model as part of the blocked tool call's result.
+  reason?: string;
+  decided_by?: number;
+  decided_by_name?: string;
   // Absent on `permission_decision` events (a decision carries no comment).
   comment?: {
     id: number;

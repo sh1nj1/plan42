@@ -495,6 +495,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  def approval_request_comment(request_id: "approval-1", question: "Deploy to production?", topic: nil)
+    @creative.comments.create!(
+      content: question,
+      topic: topic,
+      user: claude_channel_agent,
+      approver: @user,
+      action: JSON.pretty_generate({
+        "action" => Collavre::Comment::ClaudeChannelPermission::ACTION_TYPE,
+        "kind" => Collavre::Comment::ClaudeChannelPermission::KIND_APPROVAL_REQUEST,
+        "request_id" => request_id,
+        "question" => question
+      }),
+      skip_default_user: true,
+      skip_dispatch: true
+    )
+  end
+
   test "approving a Claude Channel permission relays allow and does not run ActionExecutor" do
     comment = claude_channel_permission_comment(request_id: "req-allow")
 
@@ -1760,5 +1777,44 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   def participant_json(user)
     JSON.parse(response.body).fetch("users").find { |entry| entry["id"] == user.id }
+  end
+
+  test "deciding an agent-initiated approval request relays the reason and the decider" do
+    comment = approval_request_comment(request_id: "approval-deny")
+
+    payload = capture_broadcasts("agent:user:#{comment.user_id}") do
+      post deny_creative_comment_path(@creative, comment), params: { reason: "  too risky  " }
+    end.first
+
+    assert_response :success
+    assert_equal "deny", payload["behavior"]
+    assert_equal "too risky", payload["reason"]
+    assert_equal @user.id, payload["decided_by"]
+    assert_equal @user.display_name, payload["decided_by_name"]
+    # the decided comment shows the reason in place of the reason box
+    assert_includes @response.body, "too risky"
+    assert_equal "too risky", comment.reload.claude_channel_permission_reason
+  end
+
+  test "an undecided approval request renders the reason box for the approver" do
+    topic = @creative.topics.create!(name: "Approval topic", user: @user)
+    approval_request_comment(request_id: "approval-pending", topic: topic)
+
+    get creative_comments_path(@creative), params: { topic_id: topic.id }
+
+    assert_response :success
+    assert_select "[data-approval-reason]", count: 1
+  end
+
+  test "a reason posted against a relayed tool prompt is ignored" do
+    comment = claude_channel_permission_comment(request_id: "req-no-reason")
+
+    payload = capture_broadcasts("agent:user:#{comment.user_id}") do
+      post approve_creative_comment_path(@creative, comment), params: { reason: "ignored" }
+    end.first
+
+    assert_response :success
+    assert_equal %w[type request_id behavior agent_id].sort, payload.keys.sort
+    assert_nil comment.reload.claude_channel_permission_reason
   end
 end

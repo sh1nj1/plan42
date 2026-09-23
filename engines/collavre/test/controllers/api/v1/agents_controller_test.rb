@@ -709,6 +709,104 @@ module Collavre
           refute comment.action_executed_at.present?, "a freshly surfaced prompt is undecided"
         end
 
+        test "notify with approval_question builds an agent-initiated approval request" do
+          # The Claude Channel counterpart of the native approval_request gate:
+          # the agent's own question becomes the comment body verbatim (no
+          # server-rendered template) and rides the permission rail so the
+          # decision reaches the tool call it is blocking.
+          reg = register_agent("notify-approval-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch", status: "delegated", trigger_event_name: "comment_created",
+            agent: ai_user, topic_id: topic_id, creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id, task_id: task.id, text: "",
+              permission_request_id: "approval-1", approval_question: "  Deploy **now**?  "
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert comment.claude_channel_approval_request?
+          assert_equal "Deploy **now**?", comment.content, "the question is the comment body, verbatim"
+          assert_equal "approval-1", comment.claude_channel_permission_request_id
+          assert_equal @user.id, comment.approver_id, "the token holder decides their session's requests"
+          assert_equal ai_user.id, comment.user_id
+          refute comment.action_executed_at.present?
+          # Parked exactly like a relayed tool prompt: the human's decision must
+          # reach the blocked session instead of queuing behind the topic slot.
+          assert_equal "delegated", task.reload.status
+          assert_equal "approval-1", task.pending_tool_call&.dig("request_id")
+        end
+
+        test "an approval request can route the decision to another human who can read the creative" do
+          reg = register_agent("notify-approval-approver-test")
+          topic_id = reg["topic_id"]
+          creative = Topic.find(topic_id).creative.effective_origin
+          approver = users(:two)
+          CreativeShare.create!(creative: creative, user: approver, permission: "read")
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id, permission_request_id: "approval-2",
+              approval_question: "Ship it?", approver_user_id: approver.id
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal approver.id, Comment.find(JSON.parse(response.body)["comment_id"]).approver_id
+        end
+
+        test "an approval request rejects an approver who cannot see the creative or is an AI" do
+          reg = register_agent("notify-approval-bad-approver-test")
+          topic_id = reg["topic_id"]
+
+          [ users(:two).id, users(:ai_bot).id, 0 ].each do |approver_id|
+            assert_no_difference -> { Comment.count } do
+              post "/api/v1/agent/notify",
+                params: {
+                  topic_id: topic_id, permission_request_id: "approval-3",
+                  approval_question: "Ship it?", approver_user_id: approver_id
+                },
+                headers: auth_headers,
+                as: :json
+            end
+            assert_response :unprocessable_entity
+            assert_equal I18n.t("collavre.approval_gate.invalid_approver"), JSON.parse(response.body)["error"]
+          end
+        end
+
+        test "an approval request needs both a question and a request id" do
+          reg = register_agent("notify-approval-invalid-test")
+          topic_id = reg["topic_id"]
+
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic_id, permission_request_id: "approval-4", approval_question: "   " },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.question_required"), JSON.parse(response.body)["error"]
+
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic_id, approval_question: "Ship it?" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.request_id_required"), JSON.parse(response.body)["error"]
+        end
+
         test "notify renders the permission prompt in the token holder's locale" do
           # The prompt text is persisted server-side via I18n at notify time, so
           # it must be rendered in the token holder's locale — the API base

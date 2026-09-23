@@ -4,6 +4,7 @@ import type { AgentEvent } from "./cable-subscriber.js";
 import { shouldHandleDispatch } from "./dispatch-filter.js";
 import type { QuotaState } from "./quota-state.js";
 import type { PermissionCoordinator, Behavior } from "./permission.js";
+import type { ApprovalWaiter } from "./approval.js";
 const PERMISSION_DECISION_METHOD = "notifications/claude/channel/permission";
 
 // Tracks the most recently forwarded dispatch so an incoming permission_request
@@ -47,6 +48,7 @@ export function makeEventHandler(
   server: Server,
   client: CollavreClient,
   coordinator: PermissionCoordinator,
+  approvalWaiter: ApprovalWaiter,
   active: ActiveContext,
   debug: boolean,
   quotaState: QuotaState,
@@ -59,6 +61,27 @@ export function makeEventHandler(
     if (event.type === "permission_decision") {
       const { request_id, behavior } = event;
       if (!request_id || (behavior !== "allow" && behavior !== "deny")) return;
+
+      // An agent-initiated approval_request: the decision is the result of a
+      // tool call THIS session is parked on, not a Claude Code permission
+      // prompt — resolve the waiting call instead of forwarding a
+      // permission_decision notification (Claude Code has no prompt to resolve
+      // and would reject the unknown request_id). Also consumed from the
+      // coordinator so the resubscribe replay stops asking for it.
+      if (approvalWaiter.has(request_id)) {
+        coordinator.claim(request_id);
+        approvalWaiter.settle(request_id, {
+          behavior,
+          reason: event.reason,
+          decided_by: event.decided_by,
+          decided_by_name: event.decided_by_name,
+        });
+        process.stderr.write(
+          `[collavre] Approval decision: ${behavior} (request_id=${request_id})\n`,
+        );
+        return;
+      }
+
       if (!coordinator.claim(request_id)) {
         if (debug) {
           process.stderr.write(

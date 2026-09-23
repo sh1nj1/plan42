@@ -11,7 +11,8 @@ module Collavre
         "Provide a concrete question and optionally a human approver ID (defaults to the triggering comment author). " \
         "The original call receives approved or denied, reason, and decided_by after the person responds. " \
         "Denial is a normal result; reconsider the plan instead of performing the denied action. No automatic expiration. " \
-        "Available through native agent tools or meta_tool run; external MCP sessions are not supported."
+        "Available through native agent tools or meta_tool run; external MCP sessions are not supported " \
+        "(a Claude Channel session asks through its own plugin's approval_request tool instead)."
       tool_param :question, description: "The concrete question for the human approver. Markdown supported."
       tool_param :approver_user_id, description: "Human approver with access to this creative.", required: false
 

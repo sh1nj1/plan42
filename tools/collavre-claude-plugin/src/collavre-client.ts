@@ -161,6 +161,52 @@ export class CollavreClient {
     return res.json() as Promise<{ comment_id: number }>;
   }
 
+  // Raise an agent-initiated approval request in a topic: the server builds a
+  // structured approval comment whose body is `question` verbatim (with the
+  // approver gate and approve/deny buttons) and parks the in-flight delegated
+  // task, exactly as it does for a relayed tool-permission prompt. requestId
+  // rides the same permission_request_id rail, so the human's decision comes
+  // back over the agent stream and unblocks the waiting tool call.
+  //
+  // approverUserId routes the decision to someone other than the token holder;
+  // the server rejects an approver who cannot read the creative.
+  async requestApproval(params: {
+    topicId: number;
+    requestId: string;
+    question: string;
+    taskId?: number;
+    approverUserId?: number;
+  }): Promise<{ comment_id: number }> {
+    const body: Record<string, unknown> = {
+      topic_id: params.topicId,
+      text: "",
+      approval_question: params.question,
+      permission_request_id: params.requestId,
+    };
+    if (params.taskId !== undefined && params.taskId !== null) {
+      body.task_id = params.taskId;
+    }
+    if (params.approverUserId !== undefined) {
+      body.approver_user_id = params.approverUserId;
+    }
+
+    const res = await fetch(`${this.baseUrl}/api/v1/agent/notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const respBody = await res.text();
+      throw new Error(`Approval request failed (${res.status}): ${respBody}`);
+    }
+
+    return res.json() as Promise<{ comment_id: number }>;
+  }
+
   async unregister(
     agentId: number,
     topicId?: number,

@@ -189,9 +189,16 @@
     <%= turbo_frame_tag "inline_agent_login_#{comment.id}", src: collavre.inline_agent_login_path(comment_id: comment.id), loading: :lazy %>
   <% end %>
 
-  <%= render "collavre/comments/approval_gate", comment: comment, pending: has_pending_action if comment.approval_gate? %>
+  <%# Both gate kinds share the reason box / decided-reason line: the native gate
+      and the Claude Channel approval_request (whose reason lives in the relayed
+      action payload rather than the paused task's decision). %>
+  <% if comment.approval_gate? %>
+    <%= render "collavre/comments/approval_gate", comment: comment, pending: has_pending_action, reason: comment.approval_gate_reason %>
+  <% elsif comment.claude_channel_approval_request? %>
+    <%= render "collavre/comments/approval_gate", comment: comment, pending: has_pending_action, reason: comment.claude_channel_permission_reason %>
+  <% end %>
 
-  <% if comment.approval_action? && !comment.approval_gate? %>
+  <% if comment.approval_action? && !comment.approval_gate? && !comment.claude_channel_approval_request? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>

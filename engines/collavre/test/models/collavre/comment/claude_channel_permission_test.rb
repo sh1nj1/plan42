@@ -42,6 +42,24 @@ module Collavre
         )
       end
 
+      def approval_request_comment(request_id: "approval-1", question: "Deploy to production?")
+        Comment.create!(
+          creative: @creative,
+          topic: @topic,
+          user: @agent,
+          approver: @user,
+          content: question,
+          action: JSON.pretty_generate({
+            "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
+            "kind" => Comment::ClaudeChannelPermission::KIND_APPROVAL_REQUEST,
+            "request_id" => request_id,
+            "question" => question
+          }),
+          skip_default_user: true,
+          skip_dispatch: true
+        )
+      end
+
       test "claude_channel_permission? is true only for the permission action type" do
         assert permission_comment.claude_channel_permission?
 
@@ -97,6 +115,77 @@ module Collavre
         assert_equal "req-7", payload["request_id"]
         assert_equal "allow", payload["behavior"]
         assert_equal @agent.id, payload["agent_id"]
+      end
+
+      test "an agent-initiated approval request is distinguished from a relayed tool prompt" do
+        assert approval_request_comment.claude_channel_approval_request?
+        assert approval_request_comment.claude_channel_permission?, "it rides the same decision rail"
+        refute permission_comment.claude_channel_approval_request?
+      end
+
+      test "decide! persists the approver's reason alongside the decision" do
+        comment = approval_request_comment
+
+        comment.decide_claude_channel_permission!(:deny, by: @user, reason: "  too risky  ")
+
+        comment.reload
+        assert comment.claude_channel_permission_denied?
+        assert_equal "too risky", comment.claude_channel_permission_reason
+      end
+
+      test "a blank reason is not persisted" do
+        comment = approval_request_comment
+        comment.decide_claude_channel_permission!(:allow, by: @user, reason: "   ")
+        assert_nil comment.reload.claude_channel_permission_reason
+      end
+
+      test "an approval decision relays the reason and the decider to the blocked agent" do
+        comment = approval_request_comment(request_id: "approval-7")
+
+        payload = capture_broadcasts("agent:user:#{@agent.id}") do
+          assert comment.broadcast_claude_channel_permission_decision(
+            "deny", reason: "not now", decided_by: @user
+          )
+        end.first
+
+        assert_equal "approval-7", payload["request_id"]
+        assert_equal "deny", payload["behavior"]
+        assert_equal "not now", payload["reason"]
+        assert_equal @user.id, payload["decided_by"]
+        assert_equal @user.display_name, payload["decided_by_name"]
+      end
+
+      test "a relayed tool prompt's broadcast payload is unchanged (no reason/decider keys)" do
+        payload = capture_broadcasts("agent:user:#{@agent.id}") do
+          permission_comment(request_id: "req-9").broadcast_claude_channel_permission_decision("allow")
+        end.first
+
+        assert_equal %w[type request_id behavior agent_id].sort, payload.keys.sort
+      end
+
+      test "the resubscribe replay redelivers the complete approval decision" do
+        comment = approval_request_comment(request_id: "approval-replay")
+        comment.decide_claude_channel_permission!(:allow, by: @user, reason: "go ahead")
+
+        payload = capture_broadcasts("agent:user:#{@agent.id}") do
+          assert comment.rebroadcast_claude_channel_permission_decision
+        end.first
+
+        assert_equal "allow", payload["behavior"]
+        assert_equal "go ahead", payload["reason"]
+        assert_equal @user.id, payload["decided_by"]
+      end
+
+      test "replay finds an approval request by its namespaced request_id" do
+        comment = approval_request_comment(request_id: "approval-abc")
+        comment.decide_claude_channel_permission!(:deny, by: @user, reason: "no")
+
+        payload = capture_broadcasts("agent:user:#{@agent.id}") do
+          Comment.replay_claude_channel_permission_decisions_for(@agent.id, [ "approval-abc" ])
+        end.first
+
+        assert_equal "approval-abc", payload["request_id"]
+        assert_equal "no", payload["reason"]
       end
     end
   end

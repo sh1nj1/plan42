@@ -64,8 +64,47 @@ moving it to another topic or creative, cancels a still-undecided gate task and
 releases its agent reservation and topic slot. An already-decided gate keeps
 resuming normally.
 
-This version supports native Collavre LLM turns, including their dynamic meta-tool
-calls. External MCP sessions and delegated Claude Channel/OpenClaw processes do
-not have a native conversation to restore and cannot use this tool to suspend;
-the tool returns an explicit error there. Existing Claude Channel permission
+The native `approval_request` tool supports native Collavre LLM turns, including
+their dynamic meta-tool calls. Plain external MCP sessions have no conversation to
+restore and cannot suspend on it; the tool returns an explicit error there.
+
+## Claude Channel sessions
+
+A Claude Code session's conversation lives inside the Claude Code process, so
+Collavre cannot snapshot and resume it. What it *can* block is the tool call
+itself, which is exactly what the native tool-permission relay already does — so
+a Claude Channel session asks through its own plugin tool, `approval_request`,
+which rides that same rail:
+
+1. The plugin posts the question to `POST /api/v1/agent/notify` with
+   `approval_question` plus a `permission_request_id`, and holds the MCP tool call
+   open.
+2. The server builds an approval comment whose body is the question verbatim,
+   with the approver gate and the same approve/deny buttons plus reason field, and
+   parks the in-flight delegated task (`pending_tool_call`) so the decision reaches
+   the blocked session instead of queuing behind the topic's concurrency slot.
+3. The decision is broadcast over the agent stream with the reason and who
+   decided. The plugin resolves the waiting tool call, so the model sees an
+   ordinary tool result — `approved`/`denied` with `reason` and `decided_by` — and
+   loses no context. A decision clicked while the WebSocket was down is
+   redelivered by the same pull-on-resubscribe replay as a tool prompt.
+
+Differences from the native gate:
+
+- The approver defaults to the token holder running the session (a native gate
+  defaults to the triggering comment's author). `approver_user_id` overrides it
+  and is validated the same way: a human with read access to the creative.
+- One undecided request per session at a time. A second question while one is
+  open is refused and names the open `request_id` instead, so no duplicate gate
+  is left in the topic.
+- A single tool call does not wait forever: it stays open for
+  `COLLAVRE_APPROVAL_WAIT_MS` (default 60s, or 80% of `MCP_TOOL_TIMEOUT` when
+  that is set) and then returns `pending` with the `request_id`. The human has no
+  deadline — the model either calls again with that `request_id` to keep waiting,
+  or ends its turn saying it is blocked. A decision made in between is cached and
+  delivered by the next call.
+- Requests are dropped when the turn ends (the `reply` tool fires): a decision
+  clicked afterwards has no tool call left to unblock.
+
+Delegated OpenClaw processes are not covered. Existing Claude Channel permission
 prompts and automatic tool approvals retain their separate behavior.

@@ -2,6 +2,7 @@ en:
   collavre:
     approval_gate:
       reason: "Reason (optional)"
-      native_required: "Approval requests require a running native Collavre agent turn."
+      native_required: "Approval requests require a running native Collavre agent turn. A Claude Channel session must use its plugin's approval_request tool instead."
       question_required: "Enter a question for the approver."
+      request_id_required: "An approval request needs a request id to correlate the decision."
       invalid_approver: "Choose a human approver who can access this creative."
