@@ -427,11 +427,11 @@ module Collavre
       end
     end
 
-    [ :notices, :resource, :dequeue ].each do |failure_stage|
-      test "continues task cleanup and dispatch when #{failure_stage} cleanup fails" do
+    %w[delegated pending_approval].product([ :abort, :notices, :stranded_notices, :resource, :dequeue ]).each do |status, failure_stage|
+      test "continues #{status} task cleanup and dispatch when #{failure_stage} cleanup fails" do
         tasks = 2.times.map do |index|
           task = Task.create!(name: "Reply #{index}", agent: users(:ai_bot), creative: @creative,
-                              topic_id: @topic.id, status: "delegated")
+                              topic_id: @topic.id, status: status)
           create_message(users(:ai_bot), "Partial #{index}", task: task)
           task
         end
@@ -445,14 +445,16 @@ module Collavre
           fail_cleanup.call(:resource)
           events << [ :release, id ]
         end
-        AgentSessionAbort.stub :call, ->(**args) { current_task_id = args[:task].id; events << [ :abort, current_task_id ] } do
+        AgentSessionAbort.stub :call, ->(**args) { current_task_id = args[:task].id; events << [ :abort, current_task_id ]; fail_cleanup.call(:abort) } do
           Comment.stub :remove_waiter_notices!, ->(**) { fail_cleanup.call(:notices) } do
-            Orchestration::ResourceTracker.stub :for, tracker do
-              Orchestration::AgentOrchestrator.stub :dequeue_next_for_topic, ->(*) { fail_cleanup.call(:dequeue); events << :dequeue } do
-                Rails.logger.stub :warn, ->(message) { warnings << message } do
-                  SystemEvents::Dispatcher.stub :dispatch, ->(*) { events << :dispatch } do
-                    replacement = resend
-                    assert replacement.persisted?
+            Comment.stub :remove_stranded_waiting_notices!, ->(**) { fail_cleanup.call(:stranded_notices) } do
+              Orchestration::ResourceTracker.stub :for, tracker do
+                Orchestration::AgentOrchestrator.stub :dequeue_next_for_topic, ->(*) { fail_cleanup.call(:dequeue); events << :dequeue } do
+                  Rails.logger.stub :warn, ->(message) { warnings << message } do
+                    SystemEvents::Dispatcher.stub :dispatch, ->(*) { events << :dispatch } do
+                      replacement = resend
+                      assert replacement.persisted?
+                    end
                   end
                 end
               end
@@ -460,6 +462,9 @@ module Collavre
           end
         end
         assert_equal [ [ :abort, tasks.last.id ], [ :release, tasks.last.id ], :dequeue, :dispatch ], events.last(4)
+        assert_includes events, [ :release, tasks.first.id ] unless failure_stage == :resource
+        assert_equal(failure_stage == :dequeue ? 1 : 2, events.count(:dequeue))
+        warnings.select! { |message| message.include?("[CommentResendService]") }
         assert_equal 1, warnings.size
         assert_includes warnings.first, "task_id=#{tasks.first.id}"
         assert_includes warnings.first, "RuntimeError"
