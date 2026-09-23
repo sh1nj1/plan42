@@ -15,4 +15,12 @@
 #   reason: "Vendor protocol handshake is a single linear sequence; splitting it hides the order."
 #   expires: "2026-11-09"
 
-waivers: []
+waivers:
+  - key: "engines/collavre/app/services/collavre/tools/creative_retrieval_service.rb | Metrics/AbcSize | Collavre::Tools::CreativeRetrievalService#serialize_creative"
+    owner: "Codex (Creative-native Ruby tools follow-up)"
+    reason: "Exact revert of PR #1721 restores this pre-existing complexity; resolve in docs/plans/2026-09-23-creative-ruby-tools.md follow-up."
+    expires: "2026-10-07"
+  - key: "engines/collavre/app/services/collavre/tools/creative_retrieval_service.rb | Metrics/MethodLength | Collavre::Tools::CreativeRetrievalService#serialize_creative"
+    owner: "Codex (Creative-native Ruby tools follow-up)"
+    reason: "Exact revert of PR #1721 restores this pre-existing complexity; resolve in docs/plans/2026-09-23-creative-ruby-tools.md follow-up."
+    expires: "2026-10-07"

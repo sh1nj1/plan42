@@ -137,17 +137,6 @@ collavre tool run <tool_name> --json '{"k":"v"}'  # run with JSON args
 collavre tool run <tool_name> --key value         # run with flag args
 ```
 
-### Author a new tool (meta-skill) as a Creative
-```bash
-collavre tool scaffold --name weekly_digest --desc "Summarize a week" > weekly_digest.rb
-collavre tool create --parent 123 --file weekly_digest.rb --dry-run   # validate + preview
-collavre tool create --parent 123 --file weekly_digest.rb             # pending owner approval
-collavre tool update 456 --file weekly_digest.rb                      # replace source (re-approval)
-```
-A Creative whose description holds a Ruby block with `extend ToolMeta` becomes a
-tool once its owner approves it. Read
-[references/tool-authoring.md](references/tool-authoring.md) before writing one.
-
 ## Key Concepts
 
 - **Tree structure**: Creatives nest via `parent_id`. Use `--level` to control depth.
