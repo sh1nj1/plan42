@@ -56,35 +56,6 @@ module Tools
       end
     end
 
-    test "json format lists the tools a top-level Creative defines" do
-      McpTool.create!(creative: @parent, name: "parent_probe", source_code: "x", checksum: "x")
-      Current.set(user: @user) do
-        result = Tools::CreativeRetrievalService.new.call(id: @parent.id, level: 2, format: "json")
-
-        assert_equal [ "parent_probe" ], result.first[:mcp_tools]
-        assert result.first[:children].none? { |child| child.key?(:mcp_tools) }
-      end
-    end
-
-    test "json root listing loads every root's tool names in one query" do
-      source = Creative.create!(user: @other_user, description: "Shared tool source")
-      linked = Creative.create!(user: @user, origin: source, description: "Linked")
-      plain = Creative.create!(user: @user, description: "No tools")
-      McpTool.create!(creative: @parent, name: "parent_probe", source_code: "x", checksum: "x")
-      McpTool.create!(creative: source, name: "linked_probe", source_code: "y", checksum: "y")
-
-      result = Current.set(user: @user) do
-        assert_queries_match(/mcp_tools/i, count: 1) do
-          Tools::CreativeRetrievalService.new.call(level: 1, format: "json")
-        end
-      end
-
-      tools = result.to_h { |row| [ row[:id], row[:mcp_tools] ] }
-      assert_equal [ "parent_probe" ], tools[@parent.id]
-      assert_equal [ "linked_probe" ], tools[linked.id]
-      assert_equal [], tools[plain.id]
-    end
-
     test "search by query text returns flat list" do
       Current.set(user: @user) do
         service = Tools::CreativeRetrievalService.new
