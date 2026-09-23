@@ -105,8 +105,9 @@ code block. The guide documents asynchronous extraction, separate draft and tool
 approvals, duplicate names, rename, and whole-body updates. It does not create
 production tool Creatives automatically or bypass the owner's approval.
 
-The serialization refactor and waiver removal remain in PR #1741; this follow-up
-does not modify its serialization code or reintroduce retrieval metadata.
+The serialization refactor and waiver removal shipped in PR #1741. This
+follow-up is based on that merged change and does not modify serialization or
+reintroduce retrieval metadata.
 
 ## Delivery boundary
 
