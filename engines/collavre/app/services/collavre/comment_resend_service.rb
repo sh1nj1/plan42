@@ -23,8 +23,9 @@ module Collavre
       applied = Comments::TopicMutation.call(@topic_id, @creative.id) do
         @comment.lock!
         validate!
-        replace!
+        # Register before saving the replacement so the old session is aborted before dispatch.
         Comment.connection.add_transaction_record(Cleanup.new(-> { @cancelled_tasks.each { |task, status| release_task(task, status) } }))
+        replace!
       end
       raise NotAllowed unless applied
 

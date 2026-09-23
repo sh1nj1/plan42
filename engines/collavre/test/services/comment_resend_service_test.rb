@@ -187,6 +187,34 @@ module Collavre
     end
 
     [ false, true ].each do |nested|
+      test "aborts the old session before replacement dispatch with nested transaction #{nested}" do
+        task = Task.create!(name: "Source", agent: users(:ai_bot), creative: @creative,
+                            topic_id: @topic.id, status: "delegated",
+                            trigger_event_payload: { "comment" => { "id" => @comment.id } })
+        events = []
+        tracker = Minitest::Mock.new
+        tracker.expect(:release!, nil, [ task.id ])
+        AgentSessionAbort.stub :call, ->(**args) { events << [ :abort, args[:task].id ] } do
+          Orchestration::ResourceTracker.stub :for, tracker do
+            Orchestration::AgentOrchestrator.stub :dequeue_next_for_topic, ->(*) { events << :dequeue } do
+              SystemEvents::Dispatcher.stub :dispatch, ->(*) { events << :dispatch } do
+                if nested
+                  Comment.transaction do
+                    resend
+                    assert_empty events
+                  end
+                else
+                  resend
+                end
+              end
+            end
+          end
+        end
+        tracker.verify
+        assert_equal [ [ :abort, task.id ], :dequeue, :dispatch ], events
+        assert_equal "cancelled", task.reload.status
+      end
+
       test "cleans up cancelled tasks when dispatch fails after commit with nested transaction #{nested}" do
         source_task = Task.create!(name: "Source", agent: users(:ai_bot), creative: @creative,
                                    topic_id: @topic.id, status: "delegated",
