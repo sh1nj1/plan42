@@ -213,6 +213,21 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     end
   end
 
+  test "reserved-name notices remain authorless and never dispatch with a current user" do
+    creative = create_tool(markdown.gsub(@name, "meta_tool"))
+    creative.comments.destroy_all
+    Current.user = @owner
+    dispatched = []
+    Collavre::SystemEvents::Dispatcher.stub(:dispatch, ->(*args, **kwargs) { dispatched << [ args, kwargs ] }) do
+      McpService.new.update_from_creative(creative)
+    end
+
+    notice = creative.comments.reload.sole
+    assert_nil notice.user_id
+    assert_equal I18n.t("collavre.mcp_tools.reserved_name", tool_name: "meta_tool"), notice.content
+    assert_empty dispatched
+  end
+
   test "repeated saves with a reserved name notify only once per name" do
     body = markdown.gsub(@name, "meta_tool")
     creative = create_tool(body)

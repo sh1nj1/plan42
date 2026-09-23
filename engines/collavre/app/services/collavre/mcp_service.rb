@@ -228,7 +228,7 @@ module Collavre
       message = I18n.t("collavre.mcp_tools.reserved_name", tool_name: tool_name)
       return nil if creative.comments.exists?(content: message)
 
-      Comment.create!(creative: creative, user: nil, content: message)
+      Comment.create!(creative: creative, user: nil, content: message, skip_default_user: true, skip_dispatch: true)
       nil
     end
 
