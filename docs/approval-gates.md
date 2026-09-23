@@ -98,8 +98,9 @@ Differences from the native gate:
   open is refused and names the open `request_id` instead, so no duplicate gate
   is left in the topic.
 - A single tool call does not wait forever: it stays open for
-  `COLLAVRE_APPROVAL_WAIT_MS` (default 60s, or 80% of `MCP_TOOL_TIMEOUT` when
-  that is set) and then returns `pending` with the `request_id`. The human has no
+  60s by default, or 80% of the Claude Code process's existing
+  `MCP_TOOL_TIMEOUT` (clamped to 1s–1h) when that is set. It then returns
+  `pending` with the `request_id`. The human has no
   deadline — the model either calls again with that `request_id` to keep waiting,
   or ends its turn saying it is blocked. A decision made in between is cached and
   delivered by the next call.

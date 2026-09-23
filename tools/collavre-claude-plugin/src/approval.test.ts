@@ -74,20 +74,14 @@ test("capacity eviction releases the oldest abandoned request", async () => {
   assert.deepEqual(w.openIds(), ["approval-new"]);
 });
 
-test("the wait window prefers an explicit override, then the client tool timeout", () => {
+test("the wait window follows the client tool timeout", () => {
   assert.equal(resolveApprovalWaitMs({}), 60_000);
-  assert.equal(resolveApprovalWaitMs({ COLLAVRE_APPROVAL_WAIT_MS: "5000" }), 5_000);
-  // stay inside Claude Code's own tool timeout so we report pending ourselves
   assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: "100000" }), 80_000);
-  assert.equal(
-    resolveApprovalWaitMs({ COLLAVRE_APPROVAL_WAIT_MS: "5000", MCP_TOOL_TIMEOUT: "100000" }),
-    5_000,
-  );
-  // garbage and out-of-range values fall back / clamp rather than hanging or spinning
-  assert.equal(resolveApprovalWaitMs({ COLLAVRE_APPROVAL_WAIT_MS: "nope" }), 60_000);
-  assert.equal(resolveApprovalWaitMs({ COLLAVRE_APPROVAL_WAIT_MS: "-1" }), 60_000);
-  assert.equal(resolveApprovalWaitMs({ COLLAVRE_APPROVAL_WAIT_MS: "1" }), 1_000);
-  assert.equal(resolveApprovalWaitMs({ COLLAVRE_APPROVAL_WAIT_MS: "999999999" }), 3_600_000);
+  for (const value of ["", " ", "nope", "-1", "0", "Infinity"]) {
+    assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: value }), 60_000);
+  }
+  assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: "1" }), 1_000);
+  assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: "999999999" }), 3_600_000);
 });
 
 test("request ids are namespaced so they cannot collide with a tool prompt id", () => {

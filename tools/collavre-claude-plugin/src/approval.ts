@@ -165,9 +165,6 @@ function numericEnv(value: string | undefined): number | null {
 export function resolveApprovalWaitMs(env: Record<string, string | undefined>): number {
   const clamp = (ms: number) => Math.min(MAX_WAIT_MS, Math.max(MIN_WAIT_MS, ms));
 
-  const explicit = numericEnv(env.COLLAVRE_APPROVAL_WAIT_MS);
-  if (explicit) return clamp(explicit);
-
   // Claude Code aborts an MCP tool call that outruns MCP_TOOL_TIMEOUT. Return
   // "still pending" a little before that so the model gets an actionable result
   // (with the request_id to re-await) instead of a cancelled tool call.

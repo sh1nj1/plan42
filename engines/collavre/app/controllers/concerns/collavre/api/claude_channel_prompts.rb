@@ -170,7 +170,7 @@ module Collavre
         # heading or ```fence and escape into live markdown. Flatten line breaks
         # to whitespace so the whole summary stays inside the one blockquote line
         # (inline backticks there are harmless — a fence must start a line).
-        flattened = description.gsub(/\s*\R\s*/, " ").strip
+        flattened = description.gsub(/[[:space:]]+/, " ").strip
         I18n.t("collavre.claude_channel.permission.description", text: flattened)
       end
 
@@ -183,7 +183,7 @@ module Collavre
       # backslash-escape markdown metacharacters so the name always renders
       # literally. The raw name is still kept in the action payload.
       def format_permission_tool_name(tool_name)
-        flattened = tool_name.gsub(/\s*\R\s*/, " ").strip
+        flattened = tool_name.gsub(/[[:space:]]+/, " ").strip
         flattened.gsub(/([\\`*_{}\[\]()#+\-.!~>|<])/) { "\\#{$1}" }
       end
 

@@ -938,6 +938,27 @@ module Collavre
             "the preview content itself must still be shown to the approver"
         end
 
+        test "notify reports validation errors without posting an empty notice" do
+          reg = register_agent("notify-empty-test")
+          assert_no_difference("Comment.count") do
+            post "/api/v1/agent/notify",
+              params: { topic_id: reg["topic_id"], text: " " },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert JSON.parse(response.body)["errors"].present?
+        end
+
+        test "permission formatting handles long whitespace and Unicode line separators" do
+          controller = Collavre::Api::V1::AgentsController.new
+          whitespace = " " * 100_000
+          input = "Bash#{whitespace}end\r\nnext\u2028last"
+          assert_equal "Bash end next last", controller.send(:format_permission_tool_name, input)
+          assert_equal I18n.t("collavre.claude_channel.permission.description", text: "Bash end next last"),
+            controller.send(:format_permission_description, input)
+        end
+
         test "notify keeps a multi-line permission description inside its blockquote" do
           # description is the same untrusted, markdown-rendered surface as the
           # arguments preview: it is interpolated into a "> %{text}" blockquote, so
