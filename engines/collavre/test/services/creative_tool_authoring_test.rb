@@ -192,6 +192,16 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     assert_equal({ name: "false" }, run_tool)
   end
 
+  test "available tools uses its explicit user without leaking Current changes" do
+    creative = create_tool
+    approve(creative)
+    Current.user = users(:two)
+    assert_includes McpService.available_tools(@owner).map { |tool| tool[:name] }, @name
+    assert_equal users(:two), Current.user
+    assert_not_includes McpService.available_tools(nil).map { |tool| tool[:name] }, @name
+    assert_equal users(:two), Current.user
+  end
+
   test "skill copies and the executable example are identical" do
     %w[SKILL.md references/tool-authoring.md references/tool-reference.md].each do |path|
       assert_equal Rails.root.join("skills/collavre", path).read,

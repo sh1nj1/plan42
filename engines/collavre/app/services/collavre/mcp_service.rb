@@ -131,7 +131,9 @@ module Collavre
       return [] unless defined?(RailsMcpEngine)
 
       RailsMcpEngine::Engine.build_tools!
-      result = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      result = Current.set(user: user) do
+        ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      end
       tool_list = Array(result[:tools])
       filter_tools(tool_list, user)
     rescue StandardError => e
