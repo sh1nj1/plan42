@@ -11,16 +11,17 @@ module Collavre
              arguments: T.nilable(T::Hash[T.untyped, T.untyped])).returns(T::Hash[Symbol, T.untyped])
     end
     def call(action:, tool_name: nil, query: nil, arguments: nil)
-      Collavre::McpToolRegistrar.synchronize do
+      allowed = Collavre::McpToolRegistrar.synchronize do
         Collavre::McpToolAccess.refresh
-        if %w[get run].include?(action) && !Collavre::McpToolAccess.allowed?(tool_name)
-          return { error: I18n.t("collavre.mcp_tools.unavailable") }
-        end
-
-        result = super
-        result[:tools] = Collavre::McpService.filter_tools(result[:tools], Collavre::Current.user) if result[:tools]
-        result
+        !%w[get run].include?(action) || Collavre::McpToolAccess.allowed?(tool_name)
       end
+      return { error: I18n.t("collavre.mcp_tools.unavailable") } unless allowed
+
+      # Only registry reconciliation is serialized. A tool may wait for a human
+      # approval or external I/O; it must not hold up every other meta call.
+      result = super
+      result[:tools] = Collavre::McpService.filter_tools(result[:tools], Collavre::Current.user) if result[:tools]
+      result
     end
   end
 end

@@ -185,6 +185,13 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     assert_equal({ name: "Soonoh" }, run_tool)
   end
 
+  test "tool execution does not hold the registry lock while waiting on external work" do
+    body = markdown.sub("{ name: name }", "{ name: Collavre::McpToolRegistrar::REGISTRY_LOCK.mon_owned?.to_s }")
+    creative = create_tool(body)
+    approve(creative)
+    assert_equal({ name: "false" }, run_tool)
+  end
+
   test "skill copies and the executable example are identical" do
     %w[SKILL.md references/tool-authoring.md references/tool-reference.md].each do |path|
       assert_equal Rails.root.join("skills/collavre", path).read,
