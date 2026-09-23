@@ -19,7 +19,6 @@ module Collavre
     end
 
     def self.load_missing(tool, known_names)
-      return unless tool.creative.has_permission?(Current.user, :write)
       return if known_names.include?(tool.name)
 
       McpService.register_tool_from_source(tool.source_code, expected_name: tool.name)

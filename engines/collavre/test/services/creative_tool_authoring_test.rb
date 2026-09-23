@@ -213,6 +213,44 @@ class CreativeToolAuthoringTest < ActiveSupport::TestCase
     end
   end
 
+  test "repeated saves with a reserved name notify only once per name" do
+    body = markdown.gsub(@name, "meta_tool")
+    creative = create_tool(body)
+    3.times { |index| update_tool(creative, "Revision #{index}\n#{body}") }
+    message = I18n.t("collavre.mcp_tools.reserved_name", tool_name: "meta_tool")
+    assert_equal 1, creative.comments.where(content: message).count
+    assert_empty creative.mcp_tools.reload
+
+    update_tool(creative, body.gsub("meta_tool", "creative_update_service"))
+    other_message = I18n.t("collavre.mcp_tools.reserved_name", tool_name: "creative_update_service")
+    assert_equal 1, creative.comments.where(content: other_message).count
+    assert_equal 1, creative.comments.where(content: message).count
+  end
+
+  test "anonymous and read-only refresh preserve approved wrappers for direct execution" do
+    creative = create_tool
+    approve(creative)
+    reader = users(:two)
+    perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+      CreativeShare.create!(creative: creative, user: reader, permission: :read)
+    end
+    tool = creative.mcp_tools.sole
+    original_source = tool.source_code
+    [ nil, reader ].each_with_index do |caller, index|
+      # Only the database changes, as when another worker approves a new source.
+      source = original_source.sub("{ name: name }", "{ name: name + #{index.to_s.inspect} }")
+      tool.update_columns(source_code: source)
+      Current.user = caller
+      names = @meta.call(action: "list").fetch(:tools).map { |entry| entry[:name] }
+      assert_not_includes names, @name
+      assert @meta.call(action: "run", tool_name: @name, arguments: { name: "Soonoh" })[:error]
+      Current.user = @owner
+      wrapper = Tools::MetaToolService.ruby_llm_tools([ @name ]).first
+      assert_not_nil wrapper
+      assert_equal({ name: "Soonoh#{index}" }, wrapper.new.execute(name: "Soonoh"))
+    end
+  end
+
   test "legacy system-name rows cannot hide replace or delete system tools" do
     creative = create_tool
     source = creative.mcp_tools.sole.source_code.gsub(@name, "meta_tool")

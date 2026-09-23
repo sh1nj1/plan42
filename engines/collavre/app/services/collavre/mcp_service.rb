@@ -225,8 +225,10 @@ module Collavre
     end
 
     def notify_reserved_name(creative, tool_name)
-      Comment.create!(creative: creative, user: nil,
-                      content: I18n.t("collavre.mcp_tools.reserved_name", tool_name: tool_name))
+      message = I18n.t("collavre.mcp_tools.reserved_name", tool_name: tool_name)
+      return nil if creative.comments.exists?(content: message)
+
+      Comment.create!(creative: creative, user: nil, content: message)
       nil
     end
 

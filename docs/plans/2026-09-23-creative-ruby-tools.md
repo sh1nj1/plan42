@@ -97,12 +97,15 @@ Integration and review checks exposed lifecycle gaps addressed in this implement
   filters list/search results. The library still owns schema building and dispatch.
 - Registries are process-local. Before meta discovery/execution, reconcile
   registered source with persisted approved versions, discard deleted/revoked
-  definitions, and load missing approved definitions for the caller. One failed
+  definitions, and load missing approved definitions independently of the caller.
+  Caller permissions control visibility and execution, not process-wide registry
+  population, so read-only/anonymous requests preserve authorized RubyLLM access. One failed
   definition must not prevent loading the others. A running call is not cancelled.
   Refresh reads registered names once from DSL metadata instead of rebuilding
   every schema for every active tool.
 - System tool names are reserved during Creative extraction, with an EN/KO
-  explanation posted to the Creative. Existing conflicting rows cannot hide,
+  explanation posted once per message to the Creative, including repeated autosaves.
+  Existing conflicting rows cannot hide,
   replace, or unregister application tools; registry ownership takes precedence.
 - Approval resumption uses `action: "call"`, which the installed gem does not
   dispatch. Normalize this alias to `run` before the same approval/write-access
