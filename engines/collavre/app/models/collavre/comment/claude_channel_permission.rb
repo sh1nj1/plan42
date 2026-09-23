@@ -12,6 +12,10 @@ module Collavre
     module ClaudeChannelPermission
       extend ActiveSupport::Concern
 
+      included do
+        after_update_commit :resume_finished_claude_approval, if: :claude_channel_approval_request?
+      end
+
       ACTION_TYPE = "claude_channel_permission"
 
       # Discriminates the two prompt shapes sharing this action payload:
@@ -173,6 +177,14 @@ module Collavre
       end
 
       private
+
+      def resume_finished_claude_approval
+        payload = claude_channel_permission_action
+        return unless payload["turn_finished"] && payload["decision"]
+        return if payload["resume_task_id"]
+
+        ClaudeApprovalResumeJob.perform_later(id)
+      end
 
       def claude_channel_permission_action
         return nil if action.blank?

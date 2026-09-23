@@ -102,7 +102,8 @@ module Collavre
       # back with it, tells the resumed attempt's reply from a late one of the
       # interrupted attempt (Orchestration::ExecutionFence).
       def task_fields
-        { task_id: @task&.id, execution_generation: @task && Orchestration::ExecutionFence.generation(@task) }
+        { task_id: @task&.id, execution_generation: @task && Orchestration::ExecutionFence.generation(@task),
+          approval_request_id: @context["claude_approval_request_id"] }.compact
       end
 
       # True when the dispatched topic is a Claude Channel Session topic (it

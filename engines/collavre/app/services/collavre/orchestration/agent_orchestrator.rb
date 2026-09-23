@@ -207,7 +207,7 @@ module Collavre
         # the user withdrew — or that was moved out of this turn's scope — while
         # it waited would still be delivered, and still drive an in-place
         # revision of the agent's comment.
-        if review_anchor?(context)
+        if fixed_reply_anchor?(task, context)
           task.update!(status: "cancelled") unless anchor_still_in_turn?(context)
           return
         end
@@ -410,6 +410,11 @@ module Collavre
       # mention — so an anchor cannot be delivered under rules the rest of the
       # payload is filtered by: public_only, no approval surface, and still in
       # this turn's creative/topic.
+      def self.fixed_reply_anchor?(task, context)
+        task.trigger_event_name == "claude_channel_approval" || review_anchor?(context)
+      end
+      private_class_method :fixed_reply_anchor?
+
       def self.anchor_still_in_turn?(context)
         anchor_id = context.dig("comment", "id")
         return false if anchor_id.blank?

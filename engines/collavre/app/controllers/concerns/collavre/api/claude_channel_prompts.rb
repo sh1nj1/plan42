@@ -96,7 +96,8 @@ module Collavre
             "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
             "kind" => Comment::ClaudeChannelPermission::KIND_APPROVAL_REQUEST,
             "request_id" => params[:permission_request_id].to_s,
-            "question" => question
+            "question" => question,
+            "origin_task_id" => params[:task_id].presence
           }),
           skip_default_user: true,
           skip_dispatch: true

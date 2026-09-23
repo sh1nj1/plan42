@@ -134,6 +134,13 @@ export function makeEventHandler(
       return;
     }
 
+    // The reply may have committed even when its HTTP response was lost.
+    // The continuation is also an acknowledgment of that exact handoff.
+    if (event.approval_request_id) {
+      approvalWaiter.cancel(event.approval_request_id);
+      coordinator.claim(event.approval_request_id);
+    }
+
     process.stderr.write(
       `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id}) task_id=${event.task_id ?? "none"}\n`,
     );
