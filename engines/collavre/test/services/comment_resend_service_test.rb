@@ -132,7 +132,7 @@ module Collavre
     end
 
     %w[queued pending running delegated pending_approval suspended].each do |status|
-      test "resending a #{status} source only aborts a session for started work" do
+      test "resending a #{status} source only aborts a session for work that can still own it" do
         earlier_task = Task.create!(name: "Earlier turn", agent: users(:ai_bot), creative: @creative,
                                    topic_id: @topic.id, status: "running",
                                    trigger_event_payload: { "comment" => { "id" => @earlier.id } })
@@ -157,11 +157,33 @@ module Collavre
         assert_equal "running", earlier_task.reload.status
         assert Comment.exists?(@earlier.id)
         assert replacement.persisted?
-        assert_equal %w[queued pending].include?(status) ? [] : [ task.id ], aborted
+        assert_equal %w[queued pending suspended].include?(status) ? [] : [ task.id ], aborted
         held_slot = Task::HELD_SLOT_WITHOUT_WORKER.include?(status)
         assert_equal held_slot ? [ task.id ] : [], released
         assert_equal held_slot ? [ [ @topic.id, @creative.id ] ] : [], dequeued
       end
+    end
+
+    test "resending a suspended source does not abort the running successor on the same session" do
+      agent = users(:ai_bot)
+      task = Task.create!(name: "Suspended turn", agent: agent, creative: @creative,
+                          topic_id: @topic.id, status: "suspended",
+                          trigger_event_payload: { "comment" => { "id" => @comment.id } })
+      later = create_message(@user, "Successor request")
+      successor = Task.create!(name: "Running successor", agent: agent, creative: @creative,
+                               topic_id: @topic.id, status: "running",
+                               trigger_event_payload: { "comment" => { "id" => later.id } })
+      aborted = []
+
+      AgentSessionAbort.stub :call, ->(**args) { aborted << args[:task].id } do
+        resend
+      end
+
+      assert_empty aborted
+      assert_equal "cancelled", task.reload.status
+      assert_equal "running", successor.reload.status
+      assert Comment.exists?(later.id)
+      assert_not Comment.exists?(@comment.id)
     end
 
     test "resend before reply creation prevents a stale worker from inserting an answer" do
