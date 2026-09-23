@@ -95,6 +95,9 @@ module Collavre
         Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         Orchestration::AgentOrchestrator.dequeue_next_for_topic(task.topic_id, task.creative_id)
       end
+    rescue StandardError => e
+      # A failed cleanup must not suppress other tasks or the replacement's dispatch.
+      Rails.logger.warn("[CommentResendService] Cleanup failed task_id=#{task.id} error=#{e.class}")
     end
   end
 end

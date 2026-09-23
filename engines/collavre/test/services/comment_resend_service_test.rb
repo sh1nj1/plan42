@@ -255,6 +255,47 @@ module Collavre
       end
     end
 
+    [ :notices, :resource, :dequeue ].each do |failure_stage|
+      test "continues task cleanup and dispatch when #{failure_stage} cleanup fails" do
+        tasks = 2.times.map do |index|
+          task = Task.create!(name: "Reply #{index}", agent: users(:ai_bot), creative: @creative,
+                              topic_id: @topic.id, status: "delegated")
+          create_message(users(:ai_bot), "Partial #{index}", task: task)
+          task
+        end
+        events, warnings = [], []
+        current_task_id = nil
+        fail_cleanup = ->(stage) do
+          raise "Cleanup unavailable" if failure_stage == stage && current_task_id == tasks.first.id
+        end
+        tracker = Object.new
+        tracker.define_singleton_method(:release!) do |id|
+          fail_cleanup.call(:resource)
+          events << [ :release, id ]
+        end
+        AgentSessionAbort.stub :call, ->(**args) { current_task_id = args[:task].id; events << [ :abort, current_task_id ] } do
+          Comment.stub :remove_waiter_notices!, ->(**) { fail_cleanup.call(:notices) } do
+            Orchestration::ResourceTracker.stub :for, tracker do
+              Orchestration::AgentOrchestrator.stub :dequeue_next_for_topic, ->(*) { fail_cleanup.call(:dequeue); events << :dequeue } do
+                Rails.logger.stub :warn, ->(message) { warnings << message } do
+                  SystemEvents::Dispatcher.stub :dispatch, ->(*) { events << :dispatch } do
+                    replacement = resend
+                    assert replacement.persisted?
+                  end
+                end
+              end
+            end
+          end
+        end
+        assert_equal [ [ :abort, tasks.last.id ], [ :release, tasks.last.id ], :dequeue, :dispatch ], events.last(4)
+        assert_equal 1, warnings.size
+        assert_includes warnings.first, "task_id=#{tasks.first.id}"
+        assert_includes warnings.first, "RuntimeError"
+        assert_not Comment.exists?(@comment.id)
+        tasks.each { |task| assert_equal "cancelled", task.reload.status }
+      end
+    end
+
     private
 
     def create_message(user, content, **attrs)
