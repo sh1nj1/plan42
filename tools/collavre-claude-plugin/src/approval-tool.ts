@@ -11,6 +11,7 @@ import {
   formatApprovalUnknown,
   type ApprovalWaiter,
 } from "./approval.js";
+import { ApprovalRelayRejectedError } from "./collavre-client.js";
 import type { PermissionCoordinator } from "./permission.js";
 
 export interface ApprovalRelayParams {
@@ -19,6 +20,7 @@ export interface ApprovalRelayParams {
   question: string;
   taskId?: number;
   approverUserId?: number;
+  signal?: AbortSignal;
 }
 
 export interface ApprovalToolDeps {
@@ -103,36 +105,55 @@ export async function runApprovalRequest(
     return fail("approver_user_id must be a positive integer user id.");
   }
 
+  const deadline = performance.now() + deps.waitMs;
   const requestId = deps.newRequestId();
   deps.coordinator.add(requestId);
   deps.waiter.open(requestId);
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await deps.relay({
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error("Approval relay timed out; delivery is unconfirmed"));
+      }, deps.waitMs);
+    });
+    await Promise.race([deps.relay({
       topicId,
       requestId,
       question,
       taskId: deps.active.taskId ?? undefined,
       approverUserId,
-    });
+      signal: controller.signal,
+    }), timeout]);
   } catch (err) {
-    // The request never reached the topic, so nothing can decide it: stop
-    // tracking it rather than leaving it to block the next request.
-    deps.waiter.cancel(requestId);
-    deps.coordinator.claim(requestId);
-    return fail(
-      `Failed to raise the approval request: ${err instanceof Error ? err.message : String(err)}`,
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof ApprovalRelayRejectedError) {
+      deps.waiter.cancel(requestId);
+      deps.coordinator.claim(requestId);
+      return fail(`Failed to raise the approval request: ${message}`);
+    }
+    // The server may have saved the comment before the response was lost.
+    // Keep its id for replay and re-await; a new request could duplicate it.
+    return ok(
+      `Approval delivery is unconfirmed: ${message}. ` +
+      `Keep request_id="${requestId}"; do not create a duplicate request. ` +
+      "Check the topic for the approval question and re-await this id if it is present.",
     );
+  } finally {
+    clearTimeout(timer);
   }
 
   deps.log?.(`[collavre] approval_request raised in topic #${topicId} (request_id=${requestId})`);
-  return await awaitDecision(requestId, deps);
+  return await awaitDecision(requestId, deps, Math.max(0, deadline - performance.now()));
 }
 
 async function awaitDecision(
   requestId: string,
   deps: ApprovalToolDeps,
+  remainingMs = deps.waitMs,
 ): Promise<ApprovalToolResult> {
-  const decision = await deps.waiter.wait(requestId, deps.waitMs);
+  const decision = await deps.waiter.wait(requestId, remainingMs);
   if (!decision) return ok(formatApprovalPending(requestId, deps.waitMs));
 
   deps.log?.(`[collavre] approval_request ${decision.behavior} (request_id=${requestId})`);

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { ApprovalRelayRejectedError } from "../dist/collavre-client.js";
 import { ApprovalWaiter } from "../dist/approval.js";
 import { PermissionCoordinator } from "../dist/permission.js";
 import { runApprovalRequest, type ApprovalRelayParams } from "../dist/approval-tool.js";
@@ -13,7 +14,8 @@ function harness(overrides: { relay?: (p: ApprovalRelayParams) => Promise<unknow
     relay:
       overrides.relay ??
       (async (params: ApprovalRelayParams) => {
-        relayed.push(params);
+        const { signal: _signal, ...body } = params;
+        relayed.push(body);
         return { comment_id: 1 };
       }),
     waiter,
@@ -121,7 +123,7 @@ test("an explicit approver and a task-less session are both relayed faithfully",
 test("a failed relay stops tracking the request so the next one is not blocked", async () => {
   const { deps, waiter, coordinator } = harness({
     relay: async () => {
-      throw new Error("Approval request failed (403): Not authorized");
+      throw new ApprovalRelayRejectedError("Approval request failed (403): Not authorized");
     },
   });
 
@@ -131,4 +133,45 @@ test("a failed relay stops tracking the request so the next one is not blocked",
   // nothing is waiting on a question that never reached the topic
   assert.deepEqual(waiter.openIds(), []);
   assert.deepEqual(coordinator.pendingIds(), []);
+});
+
+
+test("a lost relay response retains the saved request for replay and prevents duplicates", async () => {
+  const { deps, waiter, coordinator } = harness({
+    relay: async () => { throw new Error("connection lost after save"); },
+  });
+  const pending = await runApprovalRequest({ question: "ok?" }, deps);
+  assert.match(pending.content[0].text, /delivery is unconfirmed/);
+  assert.match(pending.content[0].text, /approval-1/);
+  assert.deepEqual(coordinator.pendingIds(), ["approval-1"]);
+  assert.equal((await runApprovalRequest({ question: "again?" }, deps)).isError, true);
+  waiter.settle("approval-1", { behavior: "deny", reason: "later" });
+  const result = await runApprovalRequest({ request_id: "approval-1" }, deps);
+  assert.match(result.content[0].text, /^denied/);
+  assert.match(result.content[0].text, /later/);
+});
+
+test("a hung relay is bounded and retains its id because delivery is uncertain", async () => {
+  let signal: AbortSignal | undefined;
+  const { deps, coordinator } = harness({ relay: async params => {
+    signal = params.signal;
+    return new Promise(() => {});
+  } });
+  const result = await runApprovalRequest({ question: "ok?" }, deps);
+  assert.match(result.content[0].text, /delivery is unconfirmed/);
+  assert.equal(signal?.aborted, true);
+  assert.deepEqual(coordinator.pendingIds(), ["approval-1"]);
+});
+
+test("relay time is included in the call's wait budget", async () => {
+  const { deps } = harness({ relay: async () => {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return { comment_id: 1 };
+  } });
+  deps.waitMs = 1000;
+  const started = performance.now();
+  const result = await runApprovalRequest({ question: "ok?" }, deps);
+  const elapsed = performance.now() - started;
+  assert.match(result.content[0].text, /^pending/);
+  assert.ok(elapsed < 1250, `must return before the MCP timeout, took ${elapsed}ms`);
 });

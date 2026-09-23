@@ -80,7 +80,7 @@ test("the wait window follows the client tool timeout", () => {
   for (const value of ["", " ", "nope", "-1", "0", "Infinity"]) {
     assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: value }), 60_000);
   }
-  assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: "1" }), 1_000);
+  assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: "1" }), 1);
   assert.equal(resolveApprovalWaitMs({ MCP_TOOL_TIMEOUT: "999999999" }), 3_600_000);
 });
 

@@ -42,6 +42,9 @@ export function buildRegisterBody(params: RegisterParams): RegisterBody {
   return body;
 }
 
+// Only validation/authentication rejections prove no comment was saved.
+export class ApprovalRelayRejectedError extends Error {}
+
 export class CollavreClient {
   private baseUrl: string;
   private token: string;
@@ -176,6 +179,7 @@ export class CollavreClient {
     question: string;
     taskId?: number;
     approverUserId?: number;
+    signal?: AbortSignal;
   }): Promise<{ comment_id: number }> {
     const body: Record<string, unknown> = {
       topic_id: params.topicId,
@@ -197,11 +201,16 @@ export class CollavreClient {
         Authorization: `Bearer ${this.token}`,
       },
       body: JSON.stringify(body),
+      signal: params.signal,
     });
 
     if (!res.ok) {
       const respBody = await res.text();
-      throw new Error(`Approval request failed (${res.status}): ${respBody}`);
+      const message = `Approval request failed (${res.status}): ${respBody}`;
+      if ([400, 401, 403, 404, 422].includes(res.status)) {
+        throw new ApprovalRelayRejectedError(message);
+      }
+      throw new Error(message);
     }
 
     return res.json() as Promise<{ comment_id: number }>;

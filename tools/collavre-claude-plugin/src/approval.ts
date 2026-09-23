@@ -153,7 +153,7 @@ export class ApprovalWaiter {
 // (Claude Code cancels a call that outlives its own tool timeout) and the model
 // re-awaits the same request_id afterwards.
 const DEFAULT_WAIT_MS = 60_000;
-const MIN_WAIT_MS = 1_000;
+const MIN_WAIT_MS = 1;
 const MAX_WAIT_MS = 3_600_000;
 
 function numericEnv(value: string | undefined): number | null {
