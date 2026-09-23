@@ -282,22 +282,29 @@ function parseArgs(argv) {
   return { args, positional };
 }
 
-// Fix Ruby hash-style output to valid JSON
+// Ruby `inspect` escapes JSON rejects: `\#` (before `{`, `$`, `@`) and `\e`.
+function rubyStringToJson(literal) {
+  return literal.replace(/\\(.)/g, (escape, ch) => {
+    if (ch === "#") return "#";
+    if (ch === "e") return "\\u001b";
+    return escape;
+  });
+}
+
+// Fix Ruby hash-style output to valid JSON. Only text outside string literals
+// is rewritten, so descriptions holding Ruby code like `{ error: nil }` survive.
 function fixRubyHash(text) {
   if (!text) return text;
-  // Ruby symbol keys: {id: 1} → {"id": 1}
-  // Also handles nested arrays/hashes
   try {
-    // Try parsing as JSON first
     JSON.parse(text);
     return text;
   } catch {
-    // Convert Ruby hash syntax to JSON
-    // First, quote symbol keys: word: → "word":
-    let fixed = text
-      .replace(/(?<=[\{,\s])(\w+):\s/g, '"$1": ');
-    // Replace nil → null only outside quoted strings
-    fixed = fixed.replace(/"(?:[^"\\]|\\.)*"|(\bnil\b)/g, (match, nil) => nil ? "null" : match);
+    // Symbol keys `{id: 1}` → `{"id": 1}`, `"k" => v` → `"k": v`, nil → null
+    const fixed = text.replace(/"(?:[^"\\]|\\.)*"|(?<=[{,\s])(\w+):\s|\s*=>\s*|\bnil\b/g, (match, key) => {
+      if (match.startsWith('"')) return rubyStringToJson(match);
+      if (key) return `"${key}": `;
+      return match.trim() === "=>" ? ": " : "null";
+    });
     try {
       JSON.parse(fixed);
       return fixed;

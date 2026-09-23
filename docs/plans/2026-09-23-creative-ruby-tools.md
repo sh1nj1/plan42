@@ -12,7 +12,10 @@ Creative owner's approval, agents discover and invoke the resulting tool through
 Partially revert merge commit `3111f8f86408a1bf927c8c3dce744f8eaa886c73`
 (PR #1721). Remove CLI scaffold/create/update commands, authoring helpers and
 CLI documentation from both skill copies, plus CLI-specific tests. Revert the
-retrieval metadata addition and its tests. Preserve later changes.
+retrieval metadata addition and its tests. Preserve later changes. Keep the shared
+CLI JSON output conversion for Ruby inspect results, including string-key hash
+rockets, Ruby string escapes, and literal source text inside descriptions. Cover
+this output path in both skill copies with standalone regression tests.
 
 Keep the server registration protections: `McpToolRegistrar`, expected-name
 validation, class/constant collision checks, failed-registration cleanup,
