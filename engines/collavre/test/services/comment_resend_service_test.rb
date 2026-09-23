@@ -30,6 +30,32 @@ module Collavre
       assert_operator replacement.created_at, :>=, human.created_at
     end
 
+    test "preserves later permission actions and their delegated task" do
+      human = create_message(users(:two), "Later request")
+      task = Task.create!(name: "Permission", agent: users(:ai_bot), creative: @creative,
+                          topic_id: @topic.id, status: "delegated",
+                          trigger_event_payload: { "comment" => { "id" => human.id } },
+                          pending_tool_call: { "request_id" => "permission-123" })
+      prompt = create_message(users(:ai_bot), "Allow tool?",
+                              approver: @user,
+                              action: { action: Comment::ClaudeChannelPermission::ACTION_TYPE,
+                                        request_id: "permission-123", tool_name: "Bash" }.to_json)
+      reply = create_message(users(:ai_bot), "Ordinary reply")
+      aborted = []
+      AgentSessionAbort.stub :call, ->(**args) { aborted << args[:task].id } do
+        resend
+      end
+
+      assert Comment.exists?(human.id)
+      assert prompt.reload.approval_action?
+      assert_nil prompt.task_id
+      assert_nil prompt.action_executed_at
+      assert_equal "delegated", task.reload.status
+      assert_equal "permission-123", task.pending_tool_call["request_id"]
+      assert_not_includes aborted, task.id
+      assert_not Comment.exists?(reply.id)
+    end
+
     test "preserves images mentions and quoted text" do
       quote = create_message(users(:two), "Quoted", created_at: @comment.created_at - 1.second)
       @comment.update!(content: "@AI Bot: look", quoted_comment: quote, quoted_text: "Quoted")

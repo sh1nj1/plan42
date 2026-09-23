@@ -51,7 +51,7 @@ module Collavre
     end
 
     def replace!
-      replies = @creative.comments.where(topic_id: @topic_id).visible_to(@user)
+      replies = @creative.comments.where(topic_id: @topic_id).visible_to(@user).without_approval_action
                          .where(user_id: Collavre.user_class.ai_agents.select(:id))
                          .where("comments.id > ?", @comment.id)
                          .order(:id).lock.to_a
