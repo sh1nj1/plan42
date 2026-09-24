@@ -63,6 +63,71 @@ module Collavre
       assert_equal "pending", request[:status]
     end
 
+    test "callback workspace permits collaborator only for their own agent turn" do
+      collaborator = users(:two)
+      perform_enqueued_jobs(only: PermissionCacheJob) do
+        CreativeShare.create!(creative: @creative, user: collaborator, permission: "feedback")
+      end
+      @task.update!(trigger_event_payload: @task.trigger_event_payload.merge("workspace_user_id" => collaborator.id))
+      Current.user = collaborator
+      Current.mcp_agent_workspace = AgentWorkspace.new(agent: @agent, user: collaborator)
+      assert_equal "pending", request[:status]
+      assert_equal collaborator, gate.approver
+      Current.mcp_agent_workspace = AgentWorkspace.new(agent: @user, user: collaborator)
+      assert request[:error]
+      Current.mcp_agent_workspace = AgentWorkspace.new(agent: @agent, user: @user)
+      assert request[:error]
+      Current.mcp_agent_workspace = AgentWorkspace.new(agent: @agent, user: collaborator)
+      @task.update!(trigger_event_payload: @task.trigger_event_payload.merge("workspace_user_id" => @user.id))
+      assert request[:error]
+    end
+
+    test "creator callback uses dispatch fallback but respects explicit absent principal" do
+      @task.update!(trigger_event_payload: {})
+      Current.mcp_agent_workspace = AgentWorkspace.new(agent: @agent, user: @user)
+      assert_equal "pending", request(approver_user_id: @user.id)[:status]
+      @task.update!(trigger_event_payload: { "workspace_user_id" => nil })
+      assert request(approver_user_id: @user.id)[:error]
+    end
+
+    test "shared callback workspace permits its agent" do
+      Current.user = @agent
+      Current.mcp_agent_workspace = AgentWorkspace.new(agent: @agent)
+      assert_equal "pending", request[:status]
+    end
+
+    test "task lookup excludes historical action comments through indexed origin ID" do
+      request
+      historical = gate.dup
+      historical.async_approval_task_id = @task.id + 1
+      historical.save!
+      assert_equal [ gate.id ], @task.async_approval_gates.pluck(:id)
+      assert_match(/async_approval_task_id/, @task.async_approval_gates.to_sql)
+      assert ActiveRecord::Base.connection.index_exists?(:comments, :async_approval_task_id)
+    end
+
+    %w[queued pending running].each do |status|
+      %w[destroy move].each do |operation|
+        test "#{operation} gate cancels only unstarted #{status} continuation" do
+          request
+          decide
+          @task.update!(status: "done")
+          approval = gate
+          resume
+          next_task = continuation
+          next_task.update!(status: status)
+          if operation == "destroy"
+            approval.destroy!
+          else
+            approval.update!(topic: @creative.topics.create!(name: "Withdrawn", user: @user))
+          end
+          assert_equal(status == "running" ? "running" : "cancelled", next_task.reload.status)
+          assert @task.reload.done?
+          assert_no_difference("Task.count") { AsyncApprovalResumeJob.perform_now(approval.id) }
+        end
+      end
+    end
+
     test "foreign callers absent callers native agents and inactive tasks are rejected" do
       Current.user = users(:two)
       assert request[:error]

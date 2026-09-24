@@ -146,7 +146,8 @@ including incremental session prompts. Send that ID with the question:
 {"action":"run","tool_name":"approval_request","arguments":{"task_id":123,"question":"Publish the reviewed release?"}}
 ```
 
-The MCP caller must be the task's agent or its creator, and both caller and agent
+Gateway callbacks must match the task's agent and workspace principal. Other MCP
+callers must be the task's agent or its creator. Both caller and agent
 must have feedback access to the creative. The task must be running and belong
 to an existing topic. The default approver is the task's effective human
 workspace principal; an explicitly absent principal requires an explicit
@@ -175,7 +176,10 @@ recovery flag; the sweep reads only flagged comments. It clears the flag when
 a continuation has started or finished, or when the origin/gate can no longer
 resume. Historical gates therefore leave the recovery scan permanently.
 
+Task completion finds gates through an indexed origin-task ID.
 Deleting or moving a gate withdraws it without cancelling the running Codex turn.
+Any queued or pending continuation is cancelled; an already-running continuation
+is not interrupted.
 A deleted gate needs no local cleanup because Codex retains no waiting tool call.
 Cancelled/failed origins, private or moved gates, missing topics, and revoked
 agent feedback access do not start a continuation. Denial is delivered as a

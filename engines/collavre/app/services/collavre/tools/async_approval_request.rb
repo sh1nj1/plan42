@@ -21,7 +21,7 @@ module Collavre
       def authorize!(task)
         caller = Current.user
         unless caller && task.running? && task.agent.cli_proxy_agent? &&
-            (task.agent == caller || task.agent.created_by_id == caller.id) &&
+            authorized_caller?(task, caller) &&
             Topic.exists?(id: task.topic_id, creative_id: task.creative_id)
           raise ArgumentError, I18n.t("collavre.approval_gate.invalid_task")
         end
@@ -29,9 +29,24 @@ module Collavre
         TopicAuthorizer.authorize_creative!(task.creative, :feedback, user: task.agent)
       end
 
+      def authorized_caller?(task, caller)
+        workspace = Current.mcp_agent_workspace
+        return task.agent == caller || task.agent.created_by_id == caller.id unless workspace
+
+        workspace.agent_id == task.agent_id && (workspace.user || workspace.agent) == caller &&
+          (workspace.user_id.nil? || workspace_principal(task) == caller)
+      end
+
+      def workspace_principal(task)
+        principal = AiAgent::TaskWorkspaceUser.resolve(task)
+        return principal if task.trigger_event_payload&.key?("workspace_user_id")
+
+        principal || task.agent.creator
+      end
+
       def create_gate(task, question, approver)
         Comment.create!(creative: task.creative, topic_id: task.topic_id, user: task.agent,
-          approver: approver, content: question, private: false,
+          approver: approver, content: question, private: false, async_approval_task_id: task.id,
           action: { action: "approval_gate", mode: "async", task_id: task.id,
                     request_id: SecureRandom.uuid }.to_json)
       end

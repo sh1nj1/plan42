@@ -10,11 +10,7 @@ module Collavre
       end
 
       def async_approval_gates
-        Comment.where(creative_id: creative_id, topic_id: topic_id, user_id: agent_id)
-               .where.not(action: nil).select do |comment|
-          payload = comment.approval_gate_action
-          payload && payload["mode"] == "async" && payload["task_id"] == id
-        end
+        Comment.where(async_approval_task_id: id, creative_id: creative_id, topic_id: topic_id, user_id: agent_id)
       end
 
       private

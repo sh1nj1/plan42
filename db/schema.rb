@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_24_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -229,6 +229,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_060000) do
     t.integer "action_executed_by_id"
     t.integer "approver_id"
     t.boolean "async_approval_recovery_pending", default: false, null: false
+    t.bigint "async_approval_task_id"
     t.integer "comment_versions_count", default: 0, null: false
     t.text "content", null: false
     t.datetime "created_at", null: false
@@ -251,6 +252,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_060000) do
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["async_approval_recovery_pending"], name: "index_comments_on_pending_async_approval"
+    t.index ["async_approval_task_id"], name: "index_comments_on_async_approval_task_id"
     t.index ["creative_id", "created_at"], name: "index_comments_on_creative_id_and_created_at"
     t.index ["creative_id", "id"], name: "index_comments_on_creative_id_and_id"
     t.index ["creative_id", "private", "approver_id", "topic_id"], name: "index_comments_on_creative_private_approver_id_and_topic"
