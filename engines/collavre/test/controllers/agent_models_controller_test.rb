@@ -1,6 +1,8 @@
 require "test_helper"
 
 class AgentModelsControllerTest < ActionDispatch::IntegrationTest
+  include ActiveJob::TestHelper
+
   setup do
     @owner = users(:two)
     @agent = users(:ai_bot)
@@ -20,6 +22,33 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
     assert_equal vendor, @agent.llm_vendor
     assert_not_equal "changed", @agent.name
     assert Collavre::LlmModel.exists?(llm_vendor: vendor, name: "custom-model")
+  end
+
+  test "suggestion failure rolls back the model and does not enqueue a fast sync" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @owner, name: "Atomic model gateway", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion"
+    )
+    @agent.update!(llm_vendor: "cli_proxy", agent_gateway: gateway,
+                   llm_model: "paperclip/claude_local", codex_fast_mode: true)
+    previous_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    failed_write = lambda do |vendor:, name:, creator:|
+      Collavre::LlmModel.create!(llm_vendor: vendor, name: name, creator: creator)
+      raise ActiveRecord::StatementInvalid, "Simulated suggestion failure"
+    end
+
+    assert_no_enqueued_jobs(only: Collavre::AgentProvisioningSyncJob) do
+      Collavre::LlmModel.stub :remember!, failed_write do
+        assert_raises(ActiveRecord::StatementInvalid) do
+          patch user_agent_model_path(@agent), params: { user: { llm_model: "paperclip/codex_local" } }
+        end
+      end
+    end
+    assert_equal "paperclip/claude_local", @agent.reload.llm_model
+    assert_not Collavre::LlmModel.exists?(llm_vendor: "cli_proxy", name: "paperclip/codex_local")
+  ensure
+    ActiveJob::Base.queue_adapter = previous_adapter if previous_adapter
   end
 
   test "admin may change another owner's agent" do

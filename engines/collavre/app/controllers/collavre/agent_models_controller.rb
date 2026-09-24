@@ -10,14 +10,22 @@ module Collavre
       model = params.require(:user).permit(:llm_model)[:llm_model].to_s.strip
       if model.blank? || model.length > LlmModel::MAX_NAME_LENGTH
         @agent.errors.add(:llm_model, :invalid)
-      elsif @agent.update(llm_model: model)
-        LlmModel.remember!(vendor: @agent.llm_vendor, name: model, creator: Current.user)
-        @saved = true
+      else
+        @saved = save_model(model)
       end
       render_editor(status: @agent.errors.any? ? :unprocessable_entity : :ok)
     end
 
     private
+
+    def save_model(model)
+      User.transaction do
+        next false unless @agent.update(llm_model: model)
+
+        LlmModel.remember!(vendor: @agent.llm_vendor, name: model, creator: Current.user)
+        true
+      end
+    end
 
     def set_authorized_agent
       @agent = User.find(params[:user_id])
