@@ -17,6 +17,7 @@ import CreativesWorkflowRuleController from "./creatives/workflow_rule_controlle
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
+import CommentsRunOptionsController from "./comments/run_options_controller"
 import CommentsPresenceController from "./comments/presence_controller"
 import CommentsMentionMenuController from "./comments/mention_menu_controller"
 import CommentsTopicsController from "./comments/topics_controller"
@@ -137,6 +138,7 @@ export function registerControllers(application) {
   registerCreativeControllers(application)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
+  application.register("comments--run-options", CommentsRunOptionsController)
   application.register("comments--presence", CommentsPresenceController)
   application.register("comments--mention-menu", CommentsMentionMenuController)
   application.register("comments--topics", CommentsTopicsController)

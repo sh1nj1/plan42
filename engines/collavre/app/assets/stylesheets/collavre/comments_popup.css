@@ -904,6 +904,11 @@ body.chat-fullscreen {
     color: var(--color-badge-bg);
 }
 
+.comment-status-label.agent-run-options-label {
+    background-color: color-mix(in srgb, var(--color-muted) 15%, transparent);
+    color: var(--color-muted);
+}
+
 .comment-status-label.approved-label {
     background-color: color-mix(in srgb, var(--color-complete) 20%, transparent);
     color: var(--color-complete);
@@ -1022,6 +1027,36 @@ body.chat-fullscreen {
     transform: translateY(4px);
     transition: opacity 0.2s ease, transform 0.2s ease;
     pointer-events: none;
+}
+
+.agent-run-options-toggle.active {
+    color: var(--color-complete);
+}
+
+.agent-run-options-panel {
+    clear: both;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em 1em;
+    margin-top: 0.25em;
+    font-size: 0.9em;
+}
+
+.agent-run-options-panel[hidden] {
+    display: none;
+}
+
+.agent-run-options-panel .agent-run-options-help {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--color-muted);
+}
+
+.agent-run-options-panel label {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
 }
 
 .comment-attachment-list {

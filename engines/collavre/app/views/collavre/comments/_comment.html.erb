@@ -37,6 +37,10 @@
       <% present_user_ids = defined?(present_user_ids) ? present_user_ids : nil %>
       <%= render "collavre/comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
     </span>
+    <% if (run_options = comment.agent_run_options).present? %>
+      <% run_label = [ run_options["model"]&.delete_prefix(Collavre::CliProxy::RunOptions::MODEL_PREFIX), run_options["reasoning_effort"] ].compact.join(" · ") %>
+      <span class="comment-status-label agent-run-options-label" title="<%= t('collavre.comments.agent_run_options.chip_title', options: run_label) %>">⚙ <%= run_label %></span>
+    <% end %>
     <% if comment.private? %>
       <span class="comment-status-label private-label">🔒 <%= t('collavre.comments.private') %></span>
     <% end %>

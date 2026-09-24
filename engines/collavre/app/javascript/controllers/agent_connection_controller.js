@@ -21,6 +21,8 @@ export default class extends AgentAuthController {
     error: String,
     manifestUnregistered: String,
     lastError: String,
+    fastModeExpected: Boolean,
+    fastModePending: String,
     statusLabels: Object,
     itemTypeLabels: Object
   }
@@ -160,11 +162,21 @@ export default class extends AgentAuthController {
     } else if (!data.manifest_url) {
       notice.className = "agent-connection-notice agent-connection-notice--warning"
       notice.textContent = this.manifestUnregisteredValue
+    } else if (this.fastModePending(data)) {
+      notice.className = "agent-connection-notice agent-connection-notice--warning"
+      notice.textContent = this.fastModePendingValue
     } else {
       this.manifestTarget.replaceChildren()
       return
     }
     this.manifestTarget.replaceChildren(notice)
+  }
+
+  // The proxy keeps Fast mode in memory, so a restart turns it off until the
+  // manifest is fetched again. Only a proxy that reports runtime can say so.
+  fastModePending(data) {
+    if (!this.fastModeExpectedValue || !data.runtime) return false
+    return data.runtime.codex?.fast_mode !== true
   }
 
   provisionButton(label, action, item) {

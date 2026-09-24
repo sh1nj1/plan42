@@ -26,6 +26,11 @@ ko:
         vendor_label: LLM 벤더
         vendor_help: 이 에이전트에 사용할 AI 제공업체를 선택하세요
         model_label: 모델
+        reasoning_effort_label: Thinking 레벨
+        reasoning_effort_blank: 프록시 기본값
+        reasoning_effort_help: 이 에이전트의 기본 추론 강도입니다. 채팅의 실행 옵션에서 메시지별로 바꿀 수 있습니다.
+        codex_fast_mode_label: Codex Fast 모드
+        codex_fast_mode_help: 워크스페이스 매니페스트에 실려 프록시가 sync할 때 적용됩니다. Codex local(gpt-5.4 이상) 전용이며 사용량이 더 듭니다.
         remove_model: 모델 목록에서 삭제
         remove_model_failed: 모델을 목록에서 삭제하지 못했습니다.
         api_key_label: API Key

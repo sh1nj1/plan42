@@ -1,0 +1,88 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class UserRunOptionsTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
+  setup do
+    @previous_queue_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
+    @owner = users(:two)
+    @gateway = Collavre::AgentGateway.create!(
+      owner: @owner,
+      name: "Run options gateway",
+      base_url: "https://proxy.example.com",
+      admin_key: "admin",
+      completion_key: "completion"
+    )
+    @agent = Collavre::User.create!(
+      name: "Run options agent",
+      email: "run-options-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "cli_proxy",
+      llm_model: "paperclip/codex_local",
+      created_by_id: @owner.id,
+      agent_gateway: @gateway
+    )
+  end
+
+  teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
+
+  test "reasoning effort must be a known level and blank means none" do
+    @agent.reasoning_effort = " xhigh "
+    assert @agent.valid?
+    assert_equal "xhigh", @agent.reasoning_effort
+
+    @agent.reasoning_effort = ""
+    assert @agent.valid?
+    assert_nil @agent.reasoning_effort
+
+    @agent.reasoning_effort = "turbo"
+    assert_not @agent.valid?
+    assert @agent.errors.of_kind?(:reasoning_effort, :inclusion)
+  end
+
+  test "effective fast mode needs codex_local" do
+    assert_not @agent.effective_codex_fast_mode?
+
+    @agent.codex_fast_mode = true
+    assert @agent.effective_codex_fast_mode?
+
+    @agent.llm_model = "paperclip/codex_custom/openai/gpt-5"
+    assert_not @agent.effective_codex_fast_mode?
+  end
+
+  test "a change to the published fast setting enqueues a workspace sync" do
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
+      @agent.update!(codex_fast_mode: true)
+    end
+
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
+      @agent.update!(llm_model: "paperclip/claude_local")
+    end
+  end
+
+  test "changes that leave the published fast setting alone do not sync" do
+    assert_no_enqueued_jobs(only: Collavre::AgentProvisioningSyncJob) do
+      @agent.update!(llm_model: "paperclip/codex_local/gpt-5.5")
+      @agent.update!(reasoning_effort: "high")
+      @agent.update!(llm_model: "paperclip/claude_local", codex_fast_mode: true)
+    end
+  end
+
+  test "a non-proxy agent never syncs" do
+    agent = Collavre::User.create!(
+      name: "Plain agent",
+      email: "plain-run-options-agent@ai.local",
+      password: SecureRandom.hex(24),
+      llm_vendor: "openai",
+      llm_model: "paperclip/codex_local",
+      created_by_id: @owner.id
+    )
+
+    assert_no_enqueued_jobs(only: Collavre::AgentProvisioningSyncJob) do
+      agent.update!(codex_fast_mode: true)
+    end
+  end
+end

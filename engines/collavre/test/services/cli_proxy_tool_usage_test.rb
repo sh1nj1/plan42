@@ -68,8 +68,9 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     end
   end
 
-  def client_with(chunks, vendor: "cli_proxy", log: true, ask_events: [])
-    client = Collavre::AiClient.new(vendor: vendor, model: "paperclip/claude_local", system_prompt: nil, log_interactions: log)
+  def client_with(chunks, vendor: "cli_proxy", log: true, ask_events: [], reasoning_effort: nil)
+    client = Collavre::AiClient.new(vendor: vendor, model: "paperclip/claude_local", system_prompt: nil,
+                                    log_interactions: log, context: { reasoning_effort: reasoning_effort })
     conversation = Conversation.new(chunks, ask_events: ask_events)
     client.define_singleton_method(:build_conversation) { |_tools| conversation }
     [ client, conversation ]
@@ -102,6 +103,14 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal [ Collavre::LlmUsage.last.execution_id ], usages.map(&:execution_id).uniq
     assert_kind_of Integer, usages.first.duration_ms
     assert_nil usages.last.duration_ms, "a result whose call never streamed has no duration"
+  end
+
+  test "cli_proxy sends the run's reasoning effort with the cli events request" do
+    client, conversation = client_with(run_chunks, reasoning_effort: "high")
+
+    client.chat([ { role: "user", text: "hi" } ])
+
+    assert_equal({ x_cli_events: "reasoning", reasoning_effort: "high" }, conversation.params)
   end
 
   test "other vendors neither request nor record cli events" do

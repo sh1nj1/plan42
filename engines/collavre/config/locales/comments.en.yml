@@ -46,6 +46,14 @@ en:
       login_first: Please sign in first.
       connected: Github account connected successfully.
     comments:
+      agent_run_options:
+        button_title: Run options for CLI Proxy agents
+        help: Applies to CLI Proxy agents mentioned in your messages in this topic. The agent's own settings are unchanged.
+        effort_label: Thinking level
+        model_label: Model (same adapter only)
+        agent_default: Agent default
+        reset: Reset
+        chip_title: "Run options: %{options}"
       close: Close
       reaction_invalid: Invalid reaction.
       invalid_topic: Topic does not belong to this creative.

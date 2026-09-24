@@ -46,6 +46,14 @@ ko:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
     comments:
+      agent_run_options:
+        button_title: CLI Proxy 에이전트 실행 옵션
+        help: 이 토픽에서 보내는 메시지로 호출되는 CLI Proxy 에이전트에 적용됩니다. 에이전트 설정 자체는 바뀌지 않습니다.
+        effort_label: Thinking 레벨
+        model_label: 모델 (같은 어댑터만)
+        agent_default: 에이전트 기본값
+        reset: 초기화
+        chip_title: "실행 옵션: %{options}"
       close: 닫기
       reaction_invalid: 잘못된 리액션입니다.
       invalid_topic: 토픽이 이 크리에이티브에 속하지 않습니다.

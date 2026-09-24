@@ -62,4 +62,29 @@
       <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'llm-model-suggestions') %>
     </div>
   </div>
+
+  <% run_source = local_assigns[:agent_source] %>
+  <div class="form-group" data-agent-vendor-target="runOptions">
+    <%= form.label :reasoning_effort, t("collavre.users.new_ai.reasoning_effort_label") %>
+    <%= form.select :reasoning_effort,
+                    options_for_select(Collavre::CliProxy::RunOptions::ALL_EFFORTS, run_source&.reasoning_effort),
+                    { include_blank: t("collavre.users.new_ai.reasoning_effort_blank") },
+                    class: "stacked-form-control",
+                    data: {
+                      agent_vendor_target: "effort",
+                      efforts: Collavre::CliProxy::RunOptions::EFFORTS.to_json
+                    } %>
+    <small class="form-text text-muted"><%= t("collavre.users.new_ai.reasoning_effort_help") %></small>
+  </div>
+
+  <div class="form-group" data-agent-vendor-target="fastMode">
+    <label>
+      <%= form.check_box :codex_fast_mode,
+                         { checked: run_source&.codex_fast_mode? || false,
+                           data: { agent_vendor_target: "fastModeCheckbox" } },
+                         "1", "0" %>
+      <%= t("collavre.users.new_ai.codex_fast_mode_label") %>
+    </label>
+    <small class="form-text text-muted"><%= t("collavre.users.new_ai.codex_fast_mode_help") %></small>
+  </div>
 </div>
