@@ -66,8 +66,9 @@ This application limit is enforced when saving rules (including on SQLite).
 Existing topics are reused, and missing topics are created. Archived, History, session, and inbox
 System topics cannot be destinations. The instruction uses the triggering message's
 author, preserves workspace attribution, and never reparses mentions or runs the
-workflow matcher again. The selected responders execute against that persisted
-message, so their replies and activity logs appear in its topic. The original
+workflow matcher again. Dispatch-suppressed instruction comments also leave any
+trigger loop awaiting user input unchanged. The selected responders execute
+against that persisted message, so their replies and activity logs appear in its topic. The original
 message stays in place and is provided as authorized source context to the AI.
 The source text is frozen at admission. Its creative links participate in prompt
 context resolution after source authorization and linked-creative read permission

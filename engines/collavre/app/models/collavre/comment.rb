@@ -187,7 +187,7 @@ module Collavre
     include DispatchRevocation
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
-    after_create_commit :resume_trigger_loop_if_awaiting
+    after_create_commit :resume_trigger_loop_if_awaiting, unless: :skip_dispatch
 
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative

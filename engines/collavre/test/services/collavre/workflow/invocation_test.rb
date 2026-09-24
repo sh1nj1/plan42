@@ -51,6 +51,20 @@ module Collavre
         assert_equal @owner, AiAgent::TaskWorkspaceUser.resolve(task)
       end
 
+      test "instruction in trigger topic leaves awaiting loop untouched" do
+        destination = @creative.topics.find_by!(name: "Main")
+        loop_data = { "state" => "awaiting_user", "trigger_topic_id" => destination.id,
+                      "current_iteration" => 2, "max_iterations" => 10 }
+        @creative.update!(data: @creative.data.merge("trigger" => { "loop" => loop_data }))
+
+        assert_difference "Comment.count", 1 do
+          execution = execute
+          assert_equal destination.id, invocation(execution).topic_id
+          assert_equal 1, execution.admissions.count
+        end
+        assert_equal loop_data, @creative.reload.data.dig("trigger", "loop")
+      end
+
       test "named topic is reused and missing topics are created once" do
         configure("topic_name" => "Analysis")
         assert_difference "Topic.count", 1 do
