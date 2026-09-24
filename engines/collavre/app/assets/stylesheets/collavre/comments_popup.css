@@ -2416,3 +2416,21 @@ li:hover .topic-create-option {
     cursor: pointer;
     font-size: 1.2rem;
 }
+
+.comment-agent-model-editor {
+    padding: var(--space-2);
+    border-top: 1px solid var(--color-border);
+}
+
+.comment-agent-model-editor label,
+.comment-agent-model-editor input[type="text"] {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.comment-agent-model-editor p {
+    margin: var(--space-1) 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
+}

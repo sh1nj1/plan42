@@ -46,11 +46,16 @@ en:
       login_first: Please sign in first.
       connected: Github account connected successfully.
     comments:
+      agent_model:
+        label: "Agent model"
+        help: "Changes this agent’s default model for all chats."
+        save: "Save model"
+        saved: "Model saved."
+        error: "Could not save the model. Please try again."
       agent_run_options:
         button_title: Run options for CLI Proxy agents
         help: Applies to CLI Proxy agents mentioned in your messages in this topic. The agent's own settings are unchanged.
         effort_label: Thinking level
-        model_label: Model (same adapter only)
         agent_default: Agent default
         reset: Reset
         chip_title: "Run options: %{options}"

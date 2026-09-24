@@ -1,6 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 
-// Per-message run options for CLI Proxy agents (model, reasoning effort).
+// Per-message run options for CLI Proxy agents (reasoning effort).
 // The fields sit inside the comment form, so FormData sends them with every
 // message. A choice is remembered per topic in localStorage and never touches
 // the agent's own defaults. The full-message view (no topic selected) posts to
@@ -17,7 +17,7 @@ export function appendRunOptions(form, formData) {
 }
 
 export default class extends Controller {
-  static targets = ['panel', 'toggle', 'effort', 'model']
+  static targets = ['panel', 'toggle', 'effort']
 
   connect() {
     this.topicId = null
@@ -42,7 +42,7 @@ export default class extends Controller {
   // before the fields are cleared, so the choice goes back afterwards — from
   // storage, or from the values captured here when there is no topic key.
   afterReset() {
-    const current = { reasoning_effort: this.effortTarget.value, model: this.modelTarget.value.trim() }
+    const current = { reasoning_effort: this.effortTarget.value }
     setTimeout(() => this.restore(current), 0)
   }
 
@@ -59,7 +59,6 @@ export default class extends Controller {
 
   reset() {
     this.effortTarget.value = ''
-    this.modelTarget.value = ''
     this.change()
   }
 
@@ -72,9 +71,9 @@ export default class extends Controller {
   persist() {
     const key = this.storageKey()
     if (!key) return
-    const value = { reasoning_effort: this.effortTarget.value, model: this.modelTarget.value.trim() }
+    const value = { reasoning_effort: this.effortTarget.value }
     try {
-      if (value.reasoning_effort || value.model) {
+      if (value.reasoning_effort) {
         localStorage.setItem(key, JSON.stringify(value))
       } else {
         localStorage.removeItem(key)
@@ -96,12 +95,11 @@ export default class extends Controller {
     this.effortTarget.value = stored.reasoning_effort || ''
     // A stored effort the <select> no longer offers leaves no option selected.
     if (this.effortTarget.value !== (stored.reasoning_effort || '')) this.effortTarget.value = ''
-    this.modelTarget.value = stored.model || ''
     this.render()
   }
 
   render() {
-    const active = Boolean(this.effortTarget.value || this.modelTarget.value.trim())
+    const active = Boolean(this.effortTarget.value)
     this.toggleTarget.classList.toggle('active', active)
   }
 }

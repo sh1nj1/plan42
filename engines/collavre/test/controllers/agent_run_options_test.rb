@@ -25,7 +25,7 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     post creative_comments_path(@creative), params: {
       comment: {
         content: "Run this deeper",
-        agent_run_options: { reasoning_effort: " high ", model: "", extra: "dropped" }
+        agent_run_options: { reasoning_effort: " high ", model: "paperclip/claude_local/opus", extra: "dropped" }
       }
     }
 
@@ -74,8 +74,8 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_select "form#new-comment-form[data-controller~='comments--run-options']" do
       assert_select "button.agent-run-options-toggle[aria-controls='agent-run-options-panel']"
       assert_select "select[name='comment[agent_run_options][reasoning_effort]'] option[value='xhigh']"
-      assert_select "input[name='comment[agent_run_options][model]'][list='agent-run-options-models']"
-      assert_select "datalist#agent-run-options-models option[value='paperclip/claude_local/opus']"
+      assert_select "input[name='comment[agent_run_options][model]']", count: 0
+      assert_select "datalist#agent-run-options-models", count: 0
     end
   end
 

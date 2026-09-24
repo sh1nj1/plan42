@@ -1,5 +1,3 @@
-<% run_option_models = (Collavre::User::SUPPORTED_LLM_MODELS.grep(/\Apaperclip\//) +
-     Collavre::LlmModel.where(llm_vendor: "cli_proxy").ordered.pluck(:name)).uniq %>
 <div id="agent-run-options-panel" class="agent-run-options-panel" data-comments--run-options-target="panel" hidden>
   <p class="agent-run-options-help"><%= t("collavre.comments.agent_run_options.help") %></p>
   <label>
@@ -13,19 +11,6 @@
       <% end %>
     </select>
   </label>
-  <label>
-    <%= t("collavre.comments.agent_run_options.model_label") %>
-    <input type="text" name="comment[agent_run_options][model]" list="agent-run-options-models"
-           autocomplete="off" maxlength="<%= Collavre::CliProxy::RunOptions::MAX_VALUE_LENGTH %>"
-           placeholder="<%= t("collavre.comments.agent_run_options.agent_default") %>"
-           data-comments--run-options-target="model"
-           data-action="change->comments--run-options#change">
-  </label>
-  <datalist id="agent-run-options-models">
-    <% run_option_models.each do |name| %>
-      <option value="<%= name %>"></option>
-    <% end %>
-  </datalist>
   <button type="button" class="creative-action-btn" data-action="click->comments--run-options#reset">
     <%= t("collavre.comments.agent_run_options.reset") %>
   </button>

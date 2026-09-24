@@ -46,9 +46,9 @@ class AiAgentRunOptionsTest < ActiveSupport::TestCase
 
     options, reply = run_turn_for(comment)
 
-    assert_equal "paperclip/claude_local/opus", options[:model]
+    assert_equal "paperclip/claude_local/sonnet", options[:model]
     assert_equal "max", options[:context][:reasoning_effort]
-    assert_equal({ "model" => "paperclip/claude_local/opus", "reasoning_effort" => "max" }, reply&.reload&.agent_run_options)
+    assert_equal({ "model" => "paperclip/claude_local/sonnet", "reasoning_effort" => "max" }, reply&.reload&.agent_run_options)
   end
 
   test "without message options the agent defaults are used" do

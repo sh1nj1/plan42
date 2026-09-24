@@ -57,7 +57,6 @@ describe('FormController - Review Quote Chips', () => {
             <option value="">Agent default</option>
             <option value="max">max</option>
           </select>
-          <input name="comment[agent_run_options][model]" value="" />
         </form>
       </div>
     `
@@ -388,7 +387,6 @@ describe('FormController - Review Quote Chips', () => {
         controller.creativeId = '123'
         controller._mainTopicId = '55'
         container.querySelector('select').value = 'max'
-        container.querySelector('input[name="comment[agent_run_options][model]"]').value = 'paperclip/claude_local/opus'
 
         controller._sendQuestionQuote({ id: 'q1', commentId: 42, text: 'Why?', type: 'question', feedback: 'Explain' })
 
@@ -400,7 +398,7 @@ describe('FormController - Review Quote Chips', () => {
         expect(body.get('comment[quoted_comment_id]')).toBe('42')
         expect(body.get('comment[topic_id]')).toBe('55')
         expect(body.get('comment[agent_run_options][reasoning_effort]')).toBe('max')
-        expect(body.get('comment[agent_run_options][model]')).toBe('paperclip/claude_local/opus')
+        expect(body.get('comment[agent_run_options][model]')).toBeNull()
         expect(body.get('comment[quoted_text]')).toBeNull()
         await new Promise((resolve) => setTimeout(resolve, 0))
       } finally {

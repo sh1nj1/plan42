@@ -46,11 +46,16 @@ ko:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
     comments:
+      agent_model:
+        label: "에이전트 모델"
+        help: "이 에이전트의 모든 채팅에 적용되는 기본 모델을 변경합니다."
+        save: "모델 저장"
+        saved: "모델을 저장했습니다."
+        error: "모델을 저장하지 못했습니다. 다시 시도해 주세요."
       agent_run_options:
         button_title: CLI Proxy 에이전트 실행 옵션
         help: 이 토픽에서 보내는 메시지로 호출되는 CLI Proxy 에이전트에 적용됩니다. 에이전트 설정 자체는 바뀌지 않습니다.
         effort_label: Thinking 레벨
-        model_label: 모델 (같은 어댑터만)
         agent_default: 에이전트 기본값
         reset: 초기화
         chip_title: "실행 옵션: %{options}"

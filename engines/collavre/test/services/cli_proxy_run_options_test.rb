@@ -24,13 +24,13 @@ class CliProxyRunOptionsTest < ActiveSupport::TestCase
     assert_equal({ "model" => "paperclip/claude_local/sonnet" }, options.to_h)
   end
 
-  test "message options override agent defaults within the same adapter" do
+  test "messages override effort but cannot override the model" do
     options = RunOptions.resolve(
       agent: agent(effort: "low"),
       message_options: { "model" => " paperclip/claude_local/opus ", "reasoning_effort" => "max" }
     )
 
-    assert_equal "paperclip/claude_local/opus", options.model
+    assert_equal "paperclip/claude_local/sonnet", options.model
     assert_equal "max", options.reasoning_effort
   end
 
@@ -66,7 +66,7 @@ class CliProxyRunOptionsTest < ActiveSupport::TestCase
     assert_equal({ "reasoning_effort" => "high" },
                  RunOptions.sanitize_message_options({ reasoning_effort: " high ", other: "drop" }))
     params = ActionController::Parameters.new(model: "paperclip/claude_local/opus")
-    assert_equal({ "model" => "paperclip/claude_local/opus" }, RunOptions.sanitize_message_options(params))
+    assert_nil RunOptions.sanitize_message_options(params)
   end
 
   test "adapter and fast mode support follow the model id" do

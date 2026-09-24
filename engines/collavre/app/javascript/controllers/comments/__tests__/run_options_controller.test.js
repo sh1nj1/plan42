@@ -17,14 +17,11 @@ describe('comments--run-options', () => {
         <button type="button" data-comments--run-options-target="toggle"
                 data-action="click->comments--run-options#toggle" aria-expanded="false">⚙</button>
         <div data-comments--run-options-target="panel" hidden>
-          <select name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort"
-                  data-action="change->comments--run-options#change">
+          <select name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" data-action="change->comments--run-options#change">
             <option value="">Agent default</option>
             <option value="high">high</option>
             <option value="max">max</option>
           </select>
-          <input name="comment[agent_run_options][model]" data-comments--run-options-target="model"
-                 data-action="change->comments--run-options#change">
           <button type="button" class="reset" data-action="click->comments--run-options#reset">Reset</button>
         </div>
       </form>
@@ -32,7 +29,6 @@ describe('comments--run-options', () => {
 
   const form = () => popup.querySelector('form')
   const effort = () => popup.querySelector('select')
-  const model = () => popup.querySelector('input')
   const toggle = () => popup.querySelector('[data-comments--run-options-target="toggle"]')
   const switchTopic = (topicId, mainTopicId = null) => popup.dispatchEvent(
     new CustomEvent('comments--topics:change', { detail: { topicId, mainTopicId } })
@@ -59,18 +55,13 @@ describe('comments--run-options', () => {
     switchTopic(7)
     expect(effort().value).toBe('')
     effort().value = 'high'
-    model().value = 'opus'
     effort().dispatchEvent(new Event('change'))
     document.body.dataset.currentUserId = '2'
     switchTopic(7)
     expect(effort().value).toBe('')
-    expect(model().value).toBe('')
-    model().value = 'sonnet'
-    model().dispatchEvent(new Event('change'))
     document.body.dataset.currentUserId = '1'
     switchTopic(7)
     expect(effort().value).toBe('high')
-    expect(model().value).toBe('opus')
   })
 
   test('does not persist without a signed-in user', () => {
@@ -79,6 +70,13 @@ describe('comments--run-options', () => {
     effort().value = 'high'
     effort().dispatchEvent(new Event('change'))
     expect(localStorage.length).toBe(0)
+  })
+
+  test('ignores stored model overrides', () => {
+    localStorage.setItem(`${STORAGE_PREFIX}7:user:1`, JSON.stringify({ model: 'opus', reasoning_effort: 'high' }))
+    switchTopic(7)
+    expect(effort().value).toBe('high')
+    expect(new FormData(form()).has('comment[agent_run_options][model]')).toBe(false)
   })
 
   test('toggles the panel', () => {
@@ -92,21 +90,18 @@ describe('comments--run-options', () => {
   test('remembers the choice per topic and restores it on switch', () => {
     switchTopic(7)
     effort().value = 'high'
-    model().value = ' paperclip/claude_local/opus '
     effort().dispatchEvent(new Event('change'))
 
     expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}7:user:1`)))
-      .toEqual({ reasoning_effort: 'high', model: 'paperclip/claude_local/opus' })
+      .toEqual({ reasoning_effort: 'high' })
     expect(toggle().classList.contains('active')).toBe(true)
 
     switchTopic(8)
     expect(effort().value).toBe('')
-    expect(model().value).toBe('')
     expect(toggle().classList.contains('active')).toBe(false)
 
     switchTopic(7)
     expect(effort().value).toBe('high')
-    expect(model().value).toBe('paperclip/claude_local/opus')
   })
 
   test('refills the fields after the form resets itself on send', async () => {
@@ -132,15 +127,13 @@ describe('comments--run-options', () => {
   test('the full-message view uses the main topic, so creatives do not share a choice', () => {
     switchTopic('', 100)
     effort().value = 'max'
-    model().value = 'paperclip/claude_local/opus'
     effort().dispatchEvent(new Event('change'))
     expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}100:user:1`)))
-      .toEqual({ reasoning_effort: 'max', model: 'paperclip/claude_local/opus' })
+      .toEqual({ reasoning_effort: 'max' })
 
     // Another creative's full-message view starts from the agent defaults.
     switchTopic('', 200)
     expect(effort().value).toBe('')
-    expect(model().value).toBe('')
 
     // Selecting the main topic explicitly shares the full-message choice.
     switchTopic(100, 100)

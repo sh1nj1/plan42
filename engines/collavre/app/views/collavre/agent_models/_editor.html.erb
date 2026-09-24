@@ -1,0 +1,18 @@
+<% list_id = "avatar-agent-models-#{SecureRandom.hex(6)}" %>
+<%= form_with url: collavre.user_agent_model_path(@agent), method: :patch,
+              data: { action: "submit->comment-agent-model#save", turbo: false, error: t("collavre.comments.agent_model.error") } do |form| %>
+  <label>
+    <%= t("collavre.comments.agent_model.label") %>
+    <input type="text" name="user[llm_model]" value="<%= @agent.llm_model %>"
+           required maxlength="<%= Collavre::LlmModel::MAX_NAME_LENGTH %>"
+           list="<%= list_id %>" autocomplete="off">
+  </label>
+  <datalist id="<%= list_id %>">
+    <% Collavre::LlmModel.where(llm_vendor: @agent.llm_vendor).suggestions.each do |model| %>
+      <option value="<%= model.name %>"></option>
+    <% end %>
+  </datalist>
+  <p><%= t("collavre.comments.agent_model.help") %></p>
+  <%= form.submit t("collavre.comments.agent_model.save") %>
+  <p role="status"><%= @saved ? t("collavre.comments.agent_model.saved") : @agent.errors.full_messages.to_sentence %></p>
+<% end %>

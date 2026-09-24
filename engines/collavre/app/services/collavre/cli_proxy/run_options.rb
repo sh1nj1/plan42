@@ -3,7 +3,7 @@
 module Collavre
   module CliProxy
     # Per-run options a CLI Proxy agent turn is sent with: the model and the
-    # reasoning effort. Each resolves as message override > agent default >
+    # reasoning effort. Effort resolves as message override > agent default >
     # proxy default (nil, meaning the request omits the field).
     #
     # Codex Fast mode is deliberately not here. The proxy takes it from the
@@ -20,7 +20,7 @@ module Collavre
       }.freeze
       ALL_EFFORTS = EFFORTS.values.flatten.uniq.freeze
       FAST_MODE_ADAPTERS = %w[codex_local].freeze
-      MESSAGE_KEYS = %w[model reasoning_effort].freeze
+      MESSAGE_KEYS = %w[reasoning_effort].freeze
       MAX_VALUE_LENGTH = 255
 
       attr_reader :model, :reasoning_effort
@@ -64,7 +64,7 @@ module Collavre
 
       def initialize(agent:, message_options: nil)
         overrides = self.class.sanitize_message_options(message_options) || {}
-        @model = pick_model(agent.llm_model.to_s.strip, overrides["model"])
+        @model = agent.llm_model.to_s.strip
         @reasoning_effort = pick_effort(overrides["reasoning_effort"], agent.reasoning_effort)
       end
 
@@ -74,17 +74,6 @@ module Collavre
       end
 
       private
-
-      # A message may change the CLI model but never the adapter: another
-      # adapter means another engine, with its own login and its own Fast mode.
-      def pick_model(default_model, requested)
-        return default_model if requested.blank?
-
-        adapter = self.class.adapter_for(default_model)
-        return default_model unless adapter && self.class.adapter_for(requested) == adapter
-
-        requested
-      end
 
       def pick_effort(*candidates)
         allowed = self.class.efforts_for(model)
