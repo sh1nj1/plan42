@@ -44,6 +44,8 @@ module Collavre
 
       def abandon_approval_gate_task
         payload = approval_gate_action
+        return if payload["mode"] == "async"
+
         task = Task.find_by(id: payload["task_id"])
         return unless task&.agent_id == user_id
 

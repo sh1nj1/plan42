@@ -132,6 +132,46 @@ Differences from the native gate:
   must both be upgraded: the reply payload carries `pending_approval_ids`.
   Native tool-permission prompts retain their existing end-of-turn cleanup.
 
-Codex CLI, delegated OpenClaw processes, and plain external MCP sessions are
-not covered by this Claude Channel integration. Existing Claude Channel permission
+Delegated OpenClaw processes and plain external MCP sessions without an active
+Collavre task are not covered by this integration. Existing Claude Channel permission
 prompts and automatic tool approvals retain their separate behavior.
+
+## Codex CLI approval through MCP
+
+Codex CLI (`cli_proxy`) turns use the same `approval_request` tool discovered
+through `meta_tool`. Collavre supplies the current `task_id` in each trigger,
+including incremental session prompts. Send that ID with the question:
+
+```json
+{"action":"run","tool_name":"approval_request","arguments":{"task_id":123,"question":"Publish the reviewed release?"}}
+```
+
+The MCP caller must be the task's agent or its creator, and both caller and agent
+must have feedback access to the creative. The task must be running and belong
+to an existing topic. The default approver is the task's effective human
+workspace principal; an explicitly absent principal requires an explicit
+`approver_user_id`. Every approver must be human and have read access.
+
+The tool persists a gate and immediately returns `status: pending`, `request_id`,
+and an instruction to end the turn. The agent must not perform the proposed
+action while pending. It ends normally; no worker or topic slot is held waiting
+for the person. One gate per task is reused on retries, including a decision
+that arrives before the original turn finishes.
+
+After both a human decision and successful turn completion, Collavre posts the
+question, decision, reason, and decider in the same topic and queues a new turn
+for only the requesting agent. This reconstructs context from Collavre messages;
+it does not restore a provider tool-call stack. Decisions arriving before or
+after completion follow the same path. The stored continuation task ID prevents
+duplicate tasks, and approval continuations cannot be coalesced with unrelated
+chat or reassigned by a topic's primary-agent setting. The original workspace
+principal is preserved, including explicit absence.
+
+Deleting or moving a gate withdraws it without cancelling the running Codex turn.
+A deleted gate needs no local cleanup because Codex retains no waiting tool call.
+Cancelled/failed origins, private or moved gates, missing topics, and revoked
+agent feedback access do not start a continuation. Denial is delivered as a
+normal decision and does not authorize the proposed action.
+
+This requires the server version containing Codex support. Claude Channel still
+uses its plugin tool; native Collavre turns keep their original pause/resume path.

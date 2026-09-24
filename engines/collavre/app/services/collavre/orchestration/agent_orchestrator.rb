@@ -411,7 +411,7 @@ module Collavre
       # payload is filtered by: public_only, no approval surface, and still in
       # this turn's creative/topic.
       def self.fixed_reply_anchor?(task, context)
-        task.trigger_event_name == "claude_channel_approval" || review_anchor?(context)
+        task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_anchor?(context)
       end
       private_class_method :fixed_reply_anchor?
 

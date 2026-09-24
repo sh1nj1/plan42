@@ -149,7 +149,7 @@ module Collavre
       AiAgent::MessageBuilder.new(
         agent: @agent,
         context: @context,
-        original_comment: @original_comment
+        original_comment: @original_comment, task: @task
       ).build
     end
 
