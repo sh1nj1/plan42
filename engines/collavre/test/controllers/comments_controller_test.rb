@@ -1383,9 +1383,12 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # Create a tool owned by another user
     other_user = users(:two)
     other_creative = Creative.create!(user: other_user, description: "Other user's creative")
-    McpTool.create!(creative: other_creative, name: "private_test_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: other_creative, name: "private_test_tool", source_code: "class Foo; end", approved_at: Time.current)
 
-    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    mock_tools = [ { name: "private_test_tool", description: "Private tool" } ]
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(mock_tools, user) }) do
+      get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    end
 
     assert_response :success
     json = JSON.parse(response.body)
@@ -1400,7 +1403,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     # Create a tool owned by the current user
     my_creative = Creative.create!(user: @user, description: "My creative")
-    McpTool.create!(creative: my_creative, name: "my_test_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: my_creative, name: "my_test_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     # Stub available_tools to return a tool list that includes the user's tool
     mock_tools = [
@@ -1418,6 +1421,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # Should include the user's own tool
     my_tool = json.find { |cmd| cmd["name"] == "my_test_tool" }
     assert_not_nil my_tool, "User's own tool should be present"
+  end
+
+  test "commands excludes unapproved dynamic tools even when user has write permission" do
+    skip "RailsMcpEngine not available" unless defined?(RailsMcpEngine)
+
+    my_creative = Creative.create!(user: @user, description: "My creative")
+    McpTool.create!(creative: my_creative, name: "unapproved_test_tool", source_code: "class Foo; end")
+    mock_tools = [ { name: "unapproved_test_tool", description: "Unapproved tool" } ]
+
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(mock_tools, user) }) do
+      get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    end
+
+    assert_response :success
+    unapproved_tool = response.parsed_body.find { |cmd| cmd["name"] == "unapproved_test_tool" }
+    assert_nil unapproved_tool, "Unapproved tool should not be present even for its owner"
   end
 
   test "commands requires read permission on creative" do
