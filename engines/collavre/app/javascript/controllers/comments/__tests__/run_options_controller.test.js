@@ -34,8 +34,8 @@ describe('comments--run-options', () => {
   const effort = () => popup.querySelector('select')
   const model = () => popup.querySelector('input')
   const toggle = () => popup.querySelector('[data-comments--run-options-target="toggle"]')
-  const switchTopic = (topicId) => popup.dispatchEvent(
-    new CustomEvent('comments--topics:change', { detail: { topicId } })
+  const switchTopic = (topicId, mainTopicId = null) => popup.dispatchEvent(
+    new CustomEvent('comments--topics:change', { detail: { topicId, mainTopicId } })
   )
 
   beforeEach(async () => {
@@ -91,12 +91,44 @@ describe('comments--run-options', () => {
   })
 
   test('reset clears the choice and its storage', () => {
+    switchTopic(7)
     effort().value = 'max'
     effort().dispatchEvent(new Event('change'))
     popup.querySelector('.reset').click()
 
     expect(effort().value).toBe('')
-    expect(localStorage.getItem(`${STORAGE_PREFIX}main`)).toBeNull()
+    expect(localStorage.getItem(`${STORAGE_PREFIX}7`)).toBeNull()
+  })
+
+  test('the full-message view uses the main topic, so creatives do not share a choice', () => {
+    switchTopic('', 100)
+    effort().value = 'max'
+    model().value = 'paperclip/claude_local/opus'
+    effort().dispatchEvent(new Event('change'))
+    expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}100`)))
+      .toEqual({ reasoning_effort: 'max', model: 'paperclip/claude_local/opus' })
+
+    // Another creative's full-message view starts from the agent defaults.
+    switchTopic('', 200)
+    expect(effort().value).toBe('')
+    expect(model().value).toBe('')
+
+    // Selecting the main topic explicitly shares the full-message choice.
+    switchTopic(100, 100)
+    expect(effort().value).toBe('max')
+  })
+
+  test('with no topic at all nothing is stored, but a send keeps the choice', async () => {
+    effort().value = 'high'
+    effort().dispatchEvent(new Event('change'))
+    expect(localStorage.length).toBe(0)
+
+    form().reset()
+    await tick()
+    expect(effort().value).toBe('high')
+
+    switchTopic('', null)
+    expect(effort().value).toBe('')
   })
 
   test('ignores unreadable storage and unknown stored efforts', () => {

@@ -3,14 +3,25 @@ import { Controller } from '@hotwired/stimulus'
 // Per-message run options for CLI Proxy agents (model, reasoning effort).
 // The fields sit inside the comment form, so FormData sends them with every
 // message. A choice is remembered per topic in localStorage and never touches
-// the agent's own defaults.
+// the agent's own defaults. The full-message view (no topic selected) posts to
+// the creative's main topic, so it shares that topic's choice; with no topic
+// at all nothing is remembered, since a shared key would leak across creatives.
 export const STORAGE_PREFIX = 'collavre:agent-run-options:topic:'
+
+// A regular submit sends the panel with FormData(form); sends that build their
+// own FormData (question quotes) copy the fields over with this.
+export function appendRunOptions(form, formData) {
+  new FormData(form).forEach((value, name) => {
+    if (name.startsWith('comment[agent_run_options]')) formData.append(name, value)
+  })
+}
 
 export default class extends Controller {
   static targets = ['panel', 'toggle', 'effort', 'model']
 
   connect() {
     this.topicId = null
+    this.mainTopicId = null
     this.handleTopicChange = this.handleTopicChange.bind(this)
     this.popup = this.element.closest('#comments-popup') || document
     this.popup.addEventListener('comments--topics:change', this.handleTopicChange)
@@ -23,13 +34,16 @@ export default class extends Controller {
 
   handleTopicChange(event) {
     this.topicId = event.detail?.topicId || null
+    this.mainTopicId = event.detail?.mainTopicId || null
     this.restore()
   }
 
   // The comment form resets itself after every send. The reset event fires
-  // before the fields are cleared, so the stored choice goes back afterwards.
+  // before the fields are cleared, so the choice goes back afterwards — from
+  // storage, or from the values captured here when there is no topic key.
   afterReset() {
-    setTimeout(() => this.restore(), 0)
+    const current = { reasoning_effort: this.effortTarget.value, model: this.modelTarget.value.trim() }
+    setTimeout(() => this.restore(current), 0)
   }
 
   toggle() {
@@ -50,16 +64,19 @@ export default class extends Controller {
   }
 
   storageKey() {
-    return `${STORAGE_PREFIX}${this.topicId || 'main'}`
+    const topicId = this.topicId || this.mainTopicId
+    return topicId ? `${STORAGE_PREFIX}${topicId}` : null
   }
 
   persist() {
+    const key = this.storageKey()
+    if (!key) return
     const value = { reasoning_effort: this.effortTarget.value, model: this.modelTarget.value.trim() }
     try {
       if (value.reasoning_effort || value.model) {
-        localStorage.setItem(this.storageKey(), JSON.stringify(value))
+        localStorage.setItem(key, JSON.stringify(value))
       } else {
-        localStorage.removeItem(this.storageKey())
+        localStorage.removeItem(key)
       }
     } catch (_error) {
       // Storage may be unavailable (private mode); the choice still applies
@@ -67,10 +84,11 @@ export default class extends Controller {
     }
   }
 
-  restore() {
-    let stored = {}
+  restore(unkeyed = {}) {
+    const key = this.storageKey()
+    let stored = unkeyed
     try {
-      stored = JSON.parse(localStorage.getItem(this.storageKey()) || '{}') || {}
+      if (key) stored = JSON.parse(localStorage.getItem(key) || '{}') || {}
     } catch (_error) {
       stored = {}
     }
