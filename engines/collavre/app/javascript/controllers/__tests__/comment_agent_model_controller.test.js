@@ -5,7 +5,7 @@ import Controller from '../comment_agent_model_controller'
 import { createUserMenu } from '../../comments/user_menu'
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
-const editor = '<form data-error="Save failed"><input name="user[llm_model]" value="opus"><input type="submit"><p role="status"></p></form>'
+const editor = '<form data-error="Save failed"><input name="user[llm_model]" value="opus"><select name="user[reasoning_effort]"><option value="low" selected>low</option></select><input type="submit"><p role="status"></p></form>'
 
 describe('avatar agent model editor', () => {
   let app, controller
@@ -38,14 +38,21 @@ describe('avatar agent model editor', () => {
     expect(document.querySelector('form')).toBeNull()
     expect(controller.loading).toBe(false)
   })
-  test('sends only model form fields and shows the saved response', async () => {
+  test('saves agent defaults without sending or changing the chat override', async () => {
     controller.editor.innerHTML = editor
+    const chat = document.createElement('input')
+    chat.name = 'comment[agent_run_options][reasoning_effort]'
+    chat.value = 'high'
+    document.body.appendChild(chat)
     fetch.mockResolvedValue({ headers: new Headers(), ok: true, text: async () => '<p role="status">Saved</p>' })
     await controller.save({ target: document.querySelector('form'), preventDefault() {}, stopPropagation() {} })
     const [url, request] = fetch.mock.calls[0]
     expect(url).toBe('/users/9/agent-model')
     expect(request.method).toBe('PATCH')
     expect(request.body.get('user[llm_model]')).toBe('opus')
+    expect(request.body.get('user[reasoning_effort]')).toBe('low')
+    expect(request.body.has(chat.name)).toBe(false)
+    expect(chat.value).toBe('high')
     expect(controller.editor.textContent).toBe('Saved')
   })
   test.each([422, 403, 500, 'network'])('handles failure %s without false success', async status => {
@@ -54,7 +61,7 @@ describe('avatar agent model editor', () => {
     if (status === 'network') fetch.mockRejectedValue(new Error('offline'))
     else fetch.mockResolvedValue({ headers: new Headers(), ok: false, status, text: async () => '<p role="status">Invalid model</p>' })
     await controller.save({ target: form, preventDefault() {}, stopPropagation() {} })
-    expect(controller.editor.textContent).toBe(status === 422 ? 'Invalid model' : 'Save failed')
+    expect(controller.editor.querySelector('[role="status"]').textContent).toBe(status === 422 ? 'Invalid model' : 'Save failed')
     expect(form.querySelector('[type="submit"]').disabled).toBe(false)
   })
   test('clicks inside the editor leave the avatar popup open', () => {

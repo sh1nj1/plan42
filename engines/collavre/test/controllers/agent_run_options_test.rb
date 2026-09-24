@@ -25,6 +25,20 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "message overrides do not change the saved agent thinking default" do
+    agent = cli_proxy_agent
+    agent.update!(reasoning_effort: "low")
+    post creative_comments_path(@creative), params: {
+      comment: { content: "Message override", agent_run_options: { reasoning_effort: "high" } }
+    }
+    assert_response :success
+    comment = Collavre::Comment.order(:id).last
+    assert_equal "high", comment.agent_run_options["reasoning_effort"]
+    assert_equal "low", agent.reload.reasoning_effort
+    assert_equal "high", Collavre::CliProxy::RunOptions.resolve(agent: agent, message_options: comment.agent_run_options).reasoning_effort
+    assert_equal "low", Collavre::CliProxy::RunOptions.resolve(agent: agent).reasoning_effort
+  end
+
   test "a new message keeps only the known run options" do
     post creative_comments_path(@creative), params: {
       comment: {

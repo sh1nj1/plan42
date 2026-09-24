@@ -29,7 +29,9 @@ module Collavre
 
     def model_attributes(model)
       attributes = { llm_model: model }
-      if @agent.cli_proxy_agent? && !CliProxy::RunOptions.efforts_for(model).include?(@agent.reasoning_effort)
+      if @agent.cli_proxy_agent? && params[:user].key?(:reasoning_effort)
+        attributes[:reasoning_effort] = params[:user][:reasoning_effort].to_s.strip.presence
+      elsif @agent.cli_proxy_agent? && !CliProxy::RunOptions.efforts_for(model).include?(@agent.reasoning_effort)
         attributes[:reasoning_effort] = nil
       end
       attributes

@@ -47,12 +47,11 @@ en:
       connected: Github account connected successfully.
     comments:
       agent_model:
-        message_thinking: "Thinking for this message"
         label: "Agent model"
-        help: "Changes this agent’s default model for all chats."
-        save: "Save model"
-        saved: "Model saved."
-        error: "Could not save the model. Please try again."
+        help: "Saves this agent’s default model and Thinking level for all chats, independently of the chat’s temporary choice."
+        save: "Save agent settings"
+        saved: "Agent settings saved."
+        error: "Could not save agent settings. Please try again."
       agent_run_options:
         button_title: Run options for CLI Proxy agents
         help: Applies to CLI Proxy agents mentioned in your messages in this topic. The agent's own settings are unchanged.

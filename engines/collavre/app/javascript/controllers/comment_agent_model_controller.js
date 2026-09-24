@@ -32,24 +32,8 @@ export default class extends Controller {
 
   renderEditor(html) {
     this.editor.innerHTML = html
-    this.runOptions?.render()
     const popup = this.application.getControllerForElementAndIdentifier(this.element, 'popup-menu')
     if (popup?.isOpen()) popup.place()
-  }
-
-  get runOptions() {
-    const form = this.element.closest('#comments-popup')?.querySelector('[data-controller~="comments--run-options"]')
-    return form && this.application.getControllerForElementAndIdentifier(form, 'comments--run-options')
-  }
-
-  thinking(event) {
-    event.preventDefault()
-    event.stopPropagation()
-    this.runOptions?.openFrom(event.currentTarget)
-  }
-
-  thinkingKeydown(event) {
-    this.runOptions?.keydown(event)
   }
 
   keepOpen(event) {

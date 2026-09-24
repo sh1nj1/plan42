@@ -10,7 +10,7 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as @owner, password: "password"
   end
 
-  test "CLI avatar offers message thinking without an agent settings field" do
+  test "CLI avatar reads and saves agent thinking independently of message options" do
     gateway = Collavre::AgentGateway.create!(
       owner: @owner, name: "Thinking avatar", base_url: "https://proxy.example.com",
       admin_key: "admin", completion_key: "completion"
@@ -21,11 +21,21 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
       @owner.update!(locale: locale)
       get user_agent_model_path(@agent)
       assert_response :success
-      assert_select "button[type='button'][data-thinking-toggle]", text: I18n.t("collavre.comments.agent_model.message_thinking", locale: locale)
-      assert_select "[name='user[reasoning_effort]']", count: 0
-      assert_select "button[data-thinking-toggle] svg.thinking-icon"
+      assert_select "select[name='user[reasoning_effort]'] option[selected][value='high']"
+      assert_select "[data-thinking-toggle]", count: 0
+      assert_select "select[name='user[reasoning_effort]'] option[value='max']", count: 0
       assert_equal "high", @agent.reload.reasoning_effort
     end
+    patch user_agent_model_path(@agent), params: { user: { llm_model: @agent.llm_model, reasoning_effort: "low" },
+                                                  comment: { agent_run_options: { reasoning_effort: "xhigh" } } }
+    assert_response :success
+    assert_equal "low", @agent.reload.reasoning_effort
+    patch user_agent_model_path(@agent), params: { user: { llm_model: @agent.llm_model, reasoning_effort: "max" } }
+    assert_response :unprocessable_entity
+    assert_equal "low", @agent.reload.reasoning_effort
+    patch user_agent_model_path(@agent), params: { user: { llm_model: @agent.llm_model, reasoning_effort: "" } }
+    assert_response :success
+    assert_nil @agent.reload.reasoning_effort
   end
 
   test "owner can read and update the agent default without changing other settings" do
@@ -34,10 +44,11 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='user[llm_model]'][value=?]", @agent.llm_model
     assert_includes response.headers["Cache-Control"], "no-store"
     vendor = @agent.llm_vendor
-    patch user_agent_model_path(@agent), params: { user: { llm_model: " custom-model ", llm_vendor: "changed", name: "changed" } }
+    patch user_agent_model_path(@agent), params: { user: { llm_model: " custom-model ", llm_vendor: "changed", name: "changed", reasoning_effort: "high" } }
     assert_response :success
     assert_equal "custom-model", @agent.reload.llm_model
     assert_equal vendor, @agent.llm_vendor
+    assert_nil @agent.reasoning_effort
     assert_not_equal "changed", @agent.name
     assert Collavre::LlmModel.exists?(llm_vendor: vendor, name: "custom-model")
   end
@@ -128,9 +139,10 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
     old_model = @agent.llm_model
     get user_agent_model_path(@agent)
     assert_response :forbidden
-    patch user_agent_model_path(@agent), params: { user: { llm_model: "unauthorized" } }
+    patch user_agent_model_path(@agent), params: { user: { llm_model: "unauthorized", reasoning_effort: "high" } }
     assert_response :forbidden
     assert_equal old_model, @agent.reload.llm_model
+    assert_nil @agent.reasoning_effort
   end
 
   test "human profiles and signed-out requests cannot change models" do

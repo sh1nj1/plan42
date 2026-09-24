@@ -138,11 +138,8 @@ export default class extends Controller {
 
   render() {
     const levels = { none: 0, minimal: 1, low: 1, medium: 2, high: 3, xhigh: 4, max: 4 }
-    const buttons = [this.toggleTarget, ...this.popup.querySelectorAll('[data-thinking-toggle]')]
-    buttons.forEach(button => {
-      button.style.setProperty('--thinking-level', levels[this.effortTarget.value] || 0)
-      button.title = this.effortTarget.selectedOptions[0]?.textContent || ''
-      button.classList.toggle('active', Boolean(this.effortTarget.value))
-    })
+    this.toggleTarget.style.setProperty('--thinking-level', levels[this.effortTarget.value] || 0)
+    this.toggleTarget.title = this.effortTarget.selectedOptions[0]?.textContent || ''
+    this.toggleTarget.classList.toggle('active', Boolean(this.effortTarget.value))
   }
 }

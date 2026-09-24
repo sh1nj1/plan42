@@ -5,15 +5,15 @@
                        selected_model: @agent.llm_model } do %>
     <input type="hidden" value="<%= @agent.llm_vendor %>" data-llm-model-target="vendor">
   <% end %>
+  <% if @agent.cli_proxy_agent? %>
+    <% effort_id = "agent-thinking-#{SecureRandom.hex(6)}" %>
+    <%= form.label :reasoning_effort, t("collavre.users.new_ai.reasoning_effort_label"), for: effort_id %>
+    <%= form.select :reasoning_effort,
+                    options_for_select(Collavre::CliProxy::RunOptions.efforts_for(@agent.llm_model), @agent.reasoning_effort),
+                    { include_blank: t("collavre.users.new_ai.reasoning_effort_blank") },
+                    id: effort_id, class: "stacked-form-control" %>
+  <% end %>
   <p><%= t("collavre.comments.agent_model.help") %></p>
   <%= form.submit t("collavre.comments.agent_model.save") %>
   <p role="status"><%= @saved ? t("collavre.comments.agent_model.saved") : @agent.errors.full_messages.to_sentence %></p>
-<% end %>
-<% if @agent.cli_proxy_agent? %>
-  <button type="button" class="creative-action-btn agent-run-options-toggle" data-thinking-toggle
-          data-action="click->comment-agent-model#thinking keydown->comment-agent-model#thinkingKeydown mousedown->comment-agent-model#keepOpen touchstart->comment-agent-model#keepOpen"
-          aria-expanded="false" aria-controls="agent-run-options-panel">
-    <%= render "collavre/comments/thinking_icon" %>
-    <%= t("collavre.comments.agent_model.message_thinking") %>
-  </button>
 <% end %>

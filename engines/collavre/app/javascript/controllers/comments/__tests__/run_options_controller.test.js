@@ -15,7 +15,7 @@ describe('comments--run-options', () => {
   const FIXTURE = `
     <div id="comments-popup">
       <div data-controller="comment-agent-model">
-        <button type="button" data-thinking-toggle data-action="click->comment-agent-model#thinking keydown->comment-agent-model#thinkingKeydown">Thinking for this message</button>
+        <button type="button" data-thinking-toggle style="--thinking-level: 1">Agent default: low</button>
       </div>
       <form data-controller="comments--run-options" data-action="reset->comments--run-options#afterReset">
         <button type="button" data-comments--run-options-target="toggle"
@@ -63,7 +63,7 @@ describe('comments--run-options', () => {
       controller.selectEffort(value)
       expect(toggle().style.getPropertyValue('--thinking-level')).toBe(`${fill}`)
       expect(toggle().classList.contains('active')).toBe(true)
-      expect(popup.querySelector('[data-thinking-toggle]').style.getPropertyValue('--thinking-level')).toBe(`${fill}`)
+      expect(popup.querySelector('[data-thinking-toggle]').style.getPropertyValue('--thinking-level')).toBe('1')
       expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe(value)
       expect(popup.querySelector('[role="status"]')).toBeNull()
     })
@@ -73,25 +73,17 @@ describe('comments--run-options', () => {
     expect(toggle().classList.contains('active')).toBe(false)
   })
 
-  test('avatar opens the shared popup and changes message effort without saving agent settings', () => {
+  test('chat selection and topic restore never change the avatar default display', () => {
     const avatar = popup.querySelector('[data-thinking-toggle]')
-    avatar.click()
-    expect(avatar.getAttribute('aria-expanded')).toBe('true')
-    expect(popup.querySelectorAll('[data-popup-list] li')).toHaveLength(3)
-    avatar.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    avatar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    const original = avatar.outerHTML
+    const controller = application.getControllerForElementAndIdentifier(form(), 'comments--run-options')
+    switchTopic(7)
+    controller.selectEffort('high')
+    switchTopic(8)
+    switchTopic(7)
     expect(effort().value).toBe('high')
-    expect(avatar.getAttribute('aria-expanded')).toBe('false')
-    expect(avatar.style.getPropertyValue('--thinking-level')).toBe('3')
-    expect(toggle().style.getPropertyValue('--thinking-level')).toBe('3')
-    expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe('high')
+    expect(avatar.outerHTML).toBe(original)
     expect(new FormData(form()).has('user[reasoning_effort]')).toBe(false)
-    avatar.click()
-    toggle().click()
-    expect(avatar.getAttribute('aria-expanded')).toBe('false')
-    expect(toggle().getAttribute('aria-expanded')).toBe('true')
-    toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    expect(toggle().getAttribute('aria-expanded')).toBe('false')
   })
 
   test('isolates accounts and ignores legacy unscoped options', () => {
