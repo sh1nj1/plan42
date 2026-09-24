@@ -102,6 +102,9 @@ module Collavre
           ).finalize
 
           assert_equal quoted.id, result.id
+          versions = quoted.comment_versions.order(:version_number)
+          assert_equal [ previous_options, current_options ], versions.map(&:agent_run_options)
+          assert_equal [ "agent draft", "revised content" ], versions.map(&:content)
           assert_equal current_options, quoted.reload.agent_run_options
           assert_equal "revised content", quoted.content
           assert_equal @task.id, quoted.task_id

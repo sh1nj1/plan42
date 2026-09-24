@@ -40,7 +40,7 @@ module Collavre
       private
 
       def finalize_reply_comment(review_handler)
-        if @original_comment&.review_message? && review_handler.handle(@response_content, task: @task)
+        if @original_comment&.review_message? && review_handler.handle(@response_content, task: @task, agent_run_options: @reply_comment.agent_run_options)
           # Review workflow: update quoted comment in place (no new comment created)
           @review_flow = true
           review_handler.add_completion_reaction
@@ -48,8 +48,8 @@ module Collavre
           reassociate_activity_logs(@reply_comment, surviving)
           # Run row survives via ON DELETE SET NULL, so no run-id bookkeeping here.
           @reply_comment.destroy!
-          # The visible reply belongs to the latest revision's task and run options.
-          surviving.update!(task: @task, agent_run_options: @reply_comment.agent_run_options)
+          # The visible reply belongs to the latest revision's task.
+          surviving.update!(task: @task)
           surviving
         else
           # Normal comment workflow

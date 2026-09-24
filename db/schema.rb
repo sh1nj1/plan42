@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_24_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_24_010000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -212,6 +212,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_000000) do
   end
 
   create_table "comment_versions", force: :cascade do |t|
+    t.json "agent_run_options"
     t.integer "comment_id", null: false
     t.text "content", null: false
     t.datetime "created_at", null: false
