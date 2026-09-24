@@ -24,6 +24,32 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
     assert Collavre::LlmModel.exists?(llm_vendor: vendor, name: "custom-model")
   end
 
+  test "avatar uses the shared searchable model picker with vendor history and unique ids" do
+    remembered = Collavre::LlmModel.remember!(vendor: @agent.llm_vendor, name: "previous-model", creator: @owner)
+    Collavre::LlmModel.remember!(vendor: "other-vendor", name: "unrelated-model", creator: @owner)
+    ids = 2.times.map do
+      get user_agent_model_path(@agent)
+      assert_response :success
+      picker = css_select("[data-controller='llm-model']").first
+      models = JSON.parse(picker["data-llm-model-models-value"])
+      assert_includes models.map { |model| model["name"] }, remembered.name
+      assert_not_includes models.map { |model| model["name"] }, "unrelated-model"
+      assert_equal llm_model_path(remembered), models.find { |model| model["id"] == remembered.id }["delete_url"]
+      menu_id = picker["data-llm-model-menu-id-value"]
+      assert_select "##{menu_id} .common-popup-list"
+      assert_select "input[data-llm-model-target='vendor'][value=?]", @agent.llm_vendor
+      assert_select "input[name='user[llm_model]'][data-llm-model-target='input']"
+      assert_select "datalist", count: 0
+      menu_id
+    end
+    assert_not_equal(*ids)
+
+    patch user_agent_model_path(@agent), params: { user: { llm_model: "newly-entered-model" } }
+    assert_response :success
+    picker = css_select("[data-controller='llm-model']").first
+    assert_includes JSON.parse(picker["data-llm-model-models-value"]).map { |model| model["name"] }, "newly-entered-model"
+  end
+
   test "suggestion failure rolls back the model and does not enqueue a fast sync" do
     gateway = Collavre::AgentGateway.create!(
       owner: @owner, name: "Atomic model gateway", base_url: "https://proxy.example.com",
