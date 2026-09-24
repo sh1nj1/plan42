@@ -118,6 +118,7 @@ module Collavre
           # would then get a branch reporting a message it cannot show them.
           approver_id: original.approver_id,
           review_type: original.review_type,
+          agent_run_options: original.agent_run_options,
           skip_default_user: true,
           skip_dispatch: true
         )

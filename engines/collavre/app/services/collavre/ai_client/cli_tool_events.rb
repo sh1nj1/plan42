@@ -33,12 +33,18 @@ module Collavre
 
         # with_params replaces rather than merges, so the run's reasoning effort
         # rides on this one call.
-        effort = context&.dig(:reasoning_effort).presence
+        effort = cli_reasoning_effort
         chat.with_params(**REQUEST_PARAMS, **(effort ? { reasoning_effort: effort } : {}))
         # Non-streaming responses (#ask) carry their events on the final message.
         # A streamed message is rebuilt by RubyLLM without them, so the events
         # seen per chunk are never dispatched twice.
         chat.after_message { |message| dispatch_cli_tool_events(message, timed: false) }
+      end
+
+      def cli_reasoning_effort
+        candidates = [ context&.dig(:reasoning_effort), context&.dig(:user)&.reasoning_effort ]
+        allowed = CliProxy::RunOptions.efforts_for(model)
+        candidates.map { |value| value.to_s.strip }.find { |value| allowed.include?(value) }
       end
 
       def observe_chunk(chunk)

@@ -113,6 +113,39 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal({ x_cli_events: "reasoning", reasoning_effort: "high" }, conversation.params)
   end
 
+  test "compression and merge clients send the configured agent effort" do
+    agent = users(:ai_bot)
+    agent.assign_attributes(llm_vendor: "cli_proxy", llm_model: "paperclip/claude_local", reasoning_effort: "high")
+    arguments = [ agent, creatives(:tshirt), nil, users(:one) ]
+    clients = [
+      Collavre::CompressJob.new.send(:build_client, *arguments, "Summarize"),
+      Collavre::MergeCommentsJob.new.send(:build_client, *arguments)
+    ]
+    clients.each do |client|
+      conversation = Conversation.new([])
+      client.define_singleton_method(:build_conversation) { |_tools| conversation }
+      client.chat([])
+      assert_equal({ x_cli_events: "reasoning", reasoning_effort: "high" }, conversation.params)
+    end
+  end
+
+  test "client effort prefers a valid override and filters defaults for its actual model" do
+    agent = users(:ai_bot)
+    agent.reasoning_effort = "max"
+    [ [ "high", "high" ], [ nil, "max" ], [ "invalid", "max" ] ].each do |override, expected|
+      client, conversation = client_with([], reasoning_effort: override)
+      client.send(:context)[:user] = agent
+      client.chat([])
+      assert_equal expected, conversation.params[:reasoning_effort]
+    end
+
+    client, conversation = client_with([])
+    client.send(:context)[:user] = agent
+    client.instance_variable_set(:@model, "paperclip/codex_local")
+    client.chat([])
+    assert_equal({ x_cli_events: "reasoning" }, conversation.params)
+  end
+
   test "other vendors neither request nor record cli events" do
     client, conversation = client_with(run_chunks, vendor: "openai")
     seen = []
