@@ -17,6 +17,11 @@ import { QuotaState, quotaDirectory } from "./quota-state.js";
 const quotaState = new QuotaState(quotaDirectory(process.cwd()));
 
 import { PermissionCoordinator } from "./permission.js";
+import { ApprovalWaiter, newApprovalRequestId, resolveApprovalWaitMs } from "./approval.js";
+import { replyWithApprovalHandoff } from "./approval-reply.js";
+import type { CollavreConfig } from "./config.js";
+import { runApprovalRequest } from "./approval-tool.js";
+import { randomUUID } from "crypto";
 
 // Native Claude Channel permission relay (CC v2.1.168+). When the
 // `claude/channel/permission` capability is declared, Claude Code relays each
@@ -47,6 +52,9 @@ function buildServer(
   client: CollavreClient,
   active: ActiveContext,
   coordinator: PermissionCoordinator,
+  approvalWaiter: ApprovalWaiter,
+  approvalWaitMs: number,
+  config: CollavreConfig,
 ): Server {
   const server = new Server(
     { name: "collavre", version: "0.1.1" },
@@ -67,6 +75,8 @@ function buildServer(
         "(task_id correlates the reply with the exact dispatched task when",
         "multiple delegated tasks can be in flight on the same topic).",
         'Never reply to your own messages (author starts with "claude-").',
+        "Before doing something the human should sign off on (irreversible, out of scope, or ambiguous),",
+        "ask with the approval_request tool: it posts your question with Approve/Deny buttons and waits for their decision.",
       ].join("\n"),
     },
   );
@@ -97,10 +107,59 @@ function buildServer(
           required: ["topic_id", "text", "task_id", "execution_generation"],
         },
       },
+      {
+        name: "approval_request",
+        description:
+          "Ask the human in Collavre to approve or deny something before you act, and wait for their answer. " +
+          "The question is posted into the current topic with Approve / Deny buttons and this call blocks until " +
+          "someone decides, returning approved or denied plus their optional reason and who decided. " +
+          "Denial is a normal result: do not perform the denied action, reconsider the plan instead. " +
+          "There is no deadline on the human — if the wait window elapses the call returns pending with a " +
+          "request_id; call it again with that request_id to keep waiting, or end your turn saying you are blocked. " +
+          "If you confirm the gate was deleted, pass request_id and abandon=true to release local tracking. " +
+          "Abandoning does not grant approval or change a server gate.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            question: {
+              type: "string",
+              description:
+                "The concrete decision you need from the human. Markdown supported. Omit when resuming or abandoning via request_id.",
+            },
+            approver_user_id: {
+              type: "number",
+              description:
+                "Optional: route the decision to this Collavre user instead of the person running this session. Must be a human who can read the creative.",
+            },
+            abandon: {
+              type: "boolean",
+              description:
+                "Release only this session's local wait for request_id after confirming its gate was deleted. Does not approve, deny, or delete a server gate.",
+            },
+            request_id: {
+              type: "string",
+              description:
+                "Optional: keep waiting on an approval request you already raised (returned in a pending result). Omit to raise a new request.",
+            },
+          },
+        },
+      },
     ],
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    if (req.params.name === "approval_request") {
+      return await runApprovalRequest(req.params.arguments, {
+        relay: params => client.requestApproval(params),
+        waiter: approvalWaiter,
+        coordinator,
+        active,
+        waitMs: approvalWaitMs,
+        newRequestId: () => newApprovalRequestId(randomUUID),
+        log: message => process.stderr.write(`${message}\n`),
+      });
+    }
+
     if (req.params.name !== "reply") {
       return errorResult(`Unknown tool: ${req.params.name}`);
     }
@@ -131,24 +190,12 @@ function buildServer(
     if (typeof record.execution_generation !== "string" || !record.execution_generation) {
       return errorResult("execution_generation is required — echo it from the dispatch notification meta");
     }
-    const result = await client.reply(topicId, text, taskId, record.execution_generation).catch(async error => {
+    const result = await replyWithApprovalHandoff(config, topicId, text, taskId, record.execution_generation, approvalWaiter, coordinator, active).catch(async error => {
       await quotaState.prune(turn => client.quotaTurnCurrent(turn));
       throw error;
     });
     quotaState.remove(taskId, record.execution_generation);
 
-    // The dispatched turn is concluding (Claude has replied). Reset the active
-    // context to the registration inbox default so a subsequent locally-
-    // initiated turn's permission prompt surfaces in the inbox rather than
-    // leaking into this just-finished work topic.
-    active.topicId = active.defaultTopicId;
-    active.taskId = null;
-
-    // Drop any permission requests still pending from this finished turn. They
-    // were answered via the local TUI dialog (Claude Code sends no per-request
-    // resolution signal), so a later click on the now-stale Collavre approval
-    // comment must not be claimed and forwarded to a turn that is already over.
-    coordinator.clear();
 
     return {
       content: [
@@ -179,13 +226,15 @@ async function main(): Promise<void> {
   );
 
   const coordinator = new PermissionCoordinator();
+  const approvalWaiter = new ApprovalWaiter();
+  const approvalWaitMs = resolveApprovalWaitMs(process.env);
   const active: ActiveContext = {
     topicId: null,
     taskId: null,
     defaultTopicId: null,
     sessionTopicId: null,
   };
-  const server = buildServer(client, active, coordinator);
+  const server = buildServer(client, active, coordinator, approvalWaiter, approvalWaitMs, config);
 
   // Surface relayed tool-permission prompts into the active topic so the user
   // can approve/deny from Collavre. Registered before connect so the handler
@@ -240,7 +289,7 @@ async function main(): Promise<void> {
   const cable = new CableSubscriber(
     config.url,
     config.token,
-    makeEventHandler(server, client, coordinator, active, debug, quotaState),
+    makeEventHandler(server, client, coordinator, approvalWaiter, active, debug, quotaState),
     debug,
   );
 

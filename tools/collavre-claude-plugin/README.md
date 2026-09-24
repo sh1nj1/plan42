@@ -17,8 +17,8 @@ Collavre.
 
 - **Two-way chat**: post a comment on a Collavre topic → it lands in the Claude Code session as a
   channel message; Claude replies into the topic with the `reply` tool. The plugin ships a
-  `PreToolUse` hook that auto-approves the `reply` tool, so answering the channel needs **no
-  allowlist setup** — replies go out without a permission prompt. (Only `reply` is auto-approved;
+  `PreToolUse` hook that auto-approves the `reply` and `approval_request` tools, so answering the channel needs **no
+  allowlist setup** — replies go out without a permission prompt. (Only `reply` and `approval_request` are auto-approved;
   side-effecting tools are not — see below.)
 - **Remote permission approvals**: when Claude hits a side-effecting tool that needs permission, a
   structured approval comment with **approve / deny** buttons is posted to the topic. The topic
@@ -58,8 +58,8 @@ claude mcp add --scope local collavre -- \
 > `claude mcp add --scope local` so the server is discoverable as `server:collavre`.
 >
 > ⚠️ Registering via `claude mcp add` adds a bare **MCP server**, not a plugin, so the
-> `hooks/hooks.json` hooks (SessionStart build + `reply` auto-approve) are **not** loaded. Build
-> `dist/` yourself and pass `--allowedTools "mcp__collavre__reply"` to silence the per-reply
+> `hooks/hooks.json` hooks (SessionStart build + `reply` + `approval_request` auto-approve) are **not** loaded. Build
+> `dist/` yourself and pass `--allowedTools "mcp__collavre__reply,mcp__collavre__approval_request"` to silence the per-reply
 > prompt. See **[Testing unmerged changes against a preview server](#testing-unmerged-changes-against-a-preview-server)**
 > for the full dev loop. `claude plugin install` loads the hooks and needs neither workaround.
 
@@ -110,7 +110,7 @@ sibling session that is still live under the same agent.
 tools/collavre-claude-plugin/
 ├── .claude-plugin/plugin.json   # Claude Code plugin manifest (channels, hooks, userConfig)
 ├── .mcp.json                    # MCP stdio server entry (node dist/index.js)
-├── hooks/hooks.json             # SessionStart (install+build) + PreToolUse (auto-approve reply)
+├── hooks/hooks.json             # SessionStart (install+build) + PreToolUse (auto-approve reply and approval_request)
 ├── src/
 │   ├── index.ts                 # MCP server: tools (`reply`), channel + permission wiring
 │   ├── config.ts                # config + agent-name / session-id resolution
@@ -119,7 +119,7 @@ tools/collavre-claude-plugin/
 │   ├── cable-subscriber.ts      # ActionCable WebSocket subscriber
 │   ├── dispatch-filter.ts       # sibling-session dispatch filtering
 │   ├── permission.ts            # native permission-relay coordinator
-│   ├── hook-decision.ts         # pure PreToolUse decision (auto-approve `reply` only)
+│   ├── hook-decision.ts         # pure PreToolUse decision (auto-approve `reply` and `approval_request` only)
 │   ├── pretooluse-hook.ts       # PreToolUse hook entry (stdin → decision → stdout)
 │   └── *.test.ts                # node:test unit tests
 └── scripts/diagnose.ts          # standalone pipeline diagnostic
@@ -199,15 +199,15 @@ The two files that govern a dev session — keep them straight:
 
 ```bash
 claude --dangerously-load-development-channels server:collavre \
-       --allowedTools "mcp__collavre__reply"
+       --allowedTools "mcp__collavre__reply,mcp__collavre__approval_request"
 ```
 
 - `--dangerously-load-development-channels server:collavre` wires the channel to the
   already-registered `collavre` MCP server (the production channel path requires a real plugin
   install; this flag is the dev equivalent).
-- `--allowedTools "mcp__collavre__reply"` is needed **only on this raw-MCP dev path**: the
-  `PreToolUse` reply auto-approve hook ships in `hooks/hooks.json`, which — as in step 1 — is not
-  loaded by `claude mcp add`. Under a real plugin install the hook auto-approves `reply` and this
+- `--allowedTools "mcp__collavre__reply,mcp__collavre__approval_request"` is needed **only on this raw-MCP dev path**: the
+  `PreToolUse` chat/decision-request auto-approve hook ships in `hooks/hooks.json`, which — as in step 1 — is not
+  loaded by `claude mcp add`. Under a real plugin install the hook auto-approves both tools and this
   flag is unnecessary. Without either, every channel reply raises a `mcp__collavre__reply`
   permission prompt.
 

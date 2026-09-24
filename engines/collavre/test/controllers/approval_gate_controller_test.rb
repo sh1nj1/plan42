@@ -34,6 +34,17 @@ class ApprovalGateControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Claude approval request renders as an approver-only gate" do
+    @comment.update!(action: { action: "claude_channel_permission", kind: "approval_request", request_id: "claude-gate" }.to_json)
+    get creative_comments_path(@creative), params: { topic_id: @task.topic_id }
+    assert_response :success
+    assert_select "#comment_#{@comment.id}[data-approval-gate=true]" do
+      assert_select ".approve-comment-btn", count: 1
+      assert_select ".deny-comment-btn", count: 1
+      assert_select "textarea[data-approval-reason]", count: 1
+    end
+  end
+
   %w[approve deny].each do |action|
     test "#{action} records reason and returns decided UI once" do
       assert_enqueued_with(job: Collavre::ApprovalGateResumeJob) do

@@ -5,6 +5,8 @@ class QuotaClientTest < ActiveSupport::TestCase
     client = Collavre::AiClient.new(vendor: "cli_proxy", model: "test", system_prompt: "", log_interactions: false)
     response = Faraday::Response.new(status: 400, body: { "error" => { "code" => "insufficient_quota" } })
     conversation = Object.new
+    conversation.define_singleton_method(:with_params) { |**_params| conversation }
+    conversation.define_singleton_method(:after_message) { |&_callback| conversation }
     conversation.define_singleton_method(:complete) { raise RubyLLM::Error.new(response) }
     conversation.define_singleton_method(:messages) { [] }
     conversation.define_singleton_method(:tools) { [] }
@@ -20,6 +22,8 @@ class QuotaClientTest < ActiveSupport::TestCase
     client = Collavre::AiClient.new(vendor: "openai", model: "test", system_prompt: "", log_interactions: false)
     response = Faraday::Response.new(status: 429, body: { "error" => { "code" => "insufficient_quota" } })
     conversation = Object.new
+    conversation.define_singleton_method(:with_params) { |**_params| conversation }
+    conversation.define_singleton_method(:after_message) { |&_callback| conversation }
     conversation.define_singleton_method(:complete) { raise RubyLLM::Error.new(response) }
     conversation.define_singleton_method(:messages) { [] }
     conversation.define_singleton_method(:tools) { [] }
