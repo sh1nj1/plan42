@@ -23,6 +23,7 @@ module Collavre
         @comment = Comment.create!(creative: @creative, topic: @topic, user: @owner, content: "Start", skip_dispatch: true)
         @policy = OrchestratorPolicy.create!(policy_type: "matching", config: { "workflow_routing" => "on" })
         @rule = create_workflow_rule(parent: @workflow, handler: { "type" => "agent", "agent_ids" => [ @agent.id ] })
+        @rule.update!(data: @rule.data.deep_merge("workflow_rule" => { "topic_name" => @topic.name }))
         @context = @comment.dispatch_payload.deep_stringify_keys.merge("event_name" => "comment_created",
           "event" => SystemEvents::Envelope.root("comment_created", source: "comment_callback").to_h)
       end
@@ -669,7 +670,7 @@ module Collavre
       test "deleting an input preserves its durable scope stop and never reanchors" do
         execution = execute
         task = materialize(execution, status: "queued")
-        original_id = @comment.id
+        original_id = task.trigger_event_payload.dig("comment", "id")
         Comment.create!(creative: @creative, topic: @topic, user: @owner, content: "Surviving source", skip_dispatch: true)
         @comment.destroy!
         assert_equal "cancelled", task.reload.status

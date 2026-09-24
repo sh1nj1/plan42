@@ -14,7 +14,7 @@ module Collavre
 
         @snapshots = {}
         parsed = rule_creatives.filter_map do |creative|
-          @snapshots[creative.id] = creative.data&.dig("workflow_rule")&.deep_dup if creative.data.is_a?(Hash)
+          @snapshots[creative.id] = snapshot(creative)
           Rule.from(creative)
         end
         warn_discarded(parsed.length - MAX_RULES) if parsed.length > MAX_RULES
@@ -37,6 +37,11 @@ module Collavre
       end
 
       private
+
+      def snapshot(creative)
+        payload = creative.data&.dig("workflow_rule") if creative.data.is_a?(Hash)
+        payload.deep_dup.merge("instruction" => creative.description.dup) if payload.is_a?(Hash)
+      end
 
       def workflow_creatives
         return @workflow_creatives if defined?(@workflow_creatives)

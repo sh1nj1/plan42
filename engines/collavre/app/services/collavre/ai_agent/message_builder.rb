@@ -137,12 +137,12 @@ module Collavre
         # absorbed comment's own dispatch would have supplied.
         contents = [ @context.dig("comment", "content") ] + merged_trigger.blocks.map(&:text)
         contents = contents.compact
-        return if contents.empty?
+        return if contents.empty? && workflow_referenced_ids.empty?
 
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
-        referenced_ids = contents.flat_map { |c| referenced_creative_ids(c) }.uniq
+        referenced_ids = (contents.flat_map { |c| referenced_creative_ids(c) } + workflow_referenced_ids).uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = load_prompt_context_creatives(referenced_ids)
 
@@ -160,6 +160,13 @@ module Collavre
             kind: :referenced_creative,
             parts: [ { text: "Referenced Creative (id: #{creative.id}):\n#{markdown}" } ]
           }
+        end
+      end
+
+      def workflow_referenced_ids
+        text = Workflow::SourceMessage.content(@context, @agent)
+        referenced_creative_ids(text).select do |id|
+          Creatives::PermissionChecker.current_allowed?(id, @agent, :read)
         end
       end
 
@@ -224,7 +231,7 @@ module Collavre
         # limited window lets a burst eat every history slot — a burst as large as
         # the limit would leave no conversation at all and mark the turn
         # first_message. Dropping them first lets older messages backfill.
-        excluded_ids = (merged_comment_ids + [ @context.dig("comment", "id") ]).compact.map(&:to_i)
+        excluded_ids = history_excluded_ids
         scope = scope.where.not(id: excluded_ids) if excluded_ids.any?
 
         scope.order(created_at: :desc)
@@ -261,6 +268,11 @@ module Collavre
         count
       end
 
+      def history_excluded_ids
+        (merged_comment_ids + [ @context.dig("comment", "id"),
+          Workflow::SourceMessage.comment_id(@context, @agent) ]).compact.map(&:to_i)
+      end
+
       def append_trigger_message(messages)
         payload_text = trigger_payload_text
 
@@ -292,17 +304,20 @@ module Collavre
 
         merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
-        if @original_comment&.images&.attached?
-          @original_comment.images.each do |image|
-            trigger_parts << { image: image.blob }
-          end
-        end
-
+        append_trigger_images(trigger_parts)
         messages << { role: "user", kind: :trigger, parts: trigger_parts }
       end
 
+      def append_trigger_images(parts)
+        if @original_comment&.images&.attached?
+          @original_comment.images.each { |image| parts << { image: image.blob } }
+        end
+        Workflow::SourceMessage.images(@context, @agent).each { |blob| parts << { image: blob } }
+      end
+
       def trigger_payload_text
-        @context.dig("comment", "content") || @context.except(SystemEvents::Envelope::KEY).to_json
+        text = @context.dig("comment", "content") || @context.except(SystemEvents::Envelope::KEY).to_json
+        Workflow::SourceMessage.prepend_to(text, @context, @agent)
       end
 
       def merged_trigger

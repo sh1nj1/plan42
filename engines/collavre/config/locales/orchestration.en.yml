@@ -37,6 +37,7 @@ en:
           unknown_emit: "Unknown emitted workflow event: %{event}."
           unknown_condition: "Unknown workflow condition: %{condition}."
           invalid_liquid: "This workflow rule has invalid Liquid syntax."
+          topic_name_too_long: "Execution topic name must be %{count} characters or fewer."
           invalid_structure: "This workflow rule has malformed data."
   admin:
     orchestration:

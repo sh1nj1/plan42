@@ -13,19 +13,28 @@ module Collavre
       end
 
       def reason
-        scope_reason || mode_reason || rule_reason
+        scope_reason || invocation_reason || mode_reason || rule_reason
       end
 
       def scope_reason
         creative = Creative.active.find_by(id: @chain.creative_id)
-        topic = Topic.find_by(id: @chain.topic_id) unless @chain.topic_id.zero?
-        return "scope_changed" unless creative && (@chain.topic_id.zero? || (topic && !topic.archived? && topic.creative_id == creative.id))
+        topic_id = @context.dig("topic", "id").to_i
+        topic = Topic.find_by(id: topic_id) unless topic_id.zero?
+        return "scope_changed" unless creative && (topic_id.zero? || (topic && !topic.archived? && topic.creative_id == creative.id))
         comment_reason(Comment.find_by(id: @context.dig("comment", "id")))
       end
 
-      def comment_reason(comment)
-        return "scope_changed" unless comment && comment.creative_id == @chain.creative_id && comment.topic_id.to_i == @chain.topic_id
+      def comment_reason(comment, topic_id: @context.dig("topic", "id").to_i)
+        return "scope_changed" unless comment && comment.creative_id == @chain.creative_id && comment.topic_id.to_i == topic_id
         "permission_revoked" if comment.private? || comment.approval_action? || comment.waiting_notice?
+      end
+
+      def invocation_reason
+        invocation = @context["invocation"]
+        return unless invocation
+        topic = Topic.find_by(id: invocation.dig("topic", "id"))
+        return "scope_changed" unless Invocation.usable_topic?(topic, @chain.creative_id)
+        comment_reason(Comment.find_by(id: invocation.dig("comment", "id")), topic_id: topic.id)
       end
 
       def owner

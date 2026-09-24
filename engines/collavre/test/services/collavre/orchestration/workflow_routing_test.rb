@@ -301,7 +301,7 @@ module Collavre
         matcher = Matcher.new(@context)
         assert_equal [ @other ], matcher.match
         assert_equal rule.id, matcher.workflow_rule.creative_id
-        assert_equal rule.data["workflow_rule"], matcher.workflow_snapshot
+        assert_equal rule.data["workflow_rule"].merge("instruction" => rule.description), matcher.workflow_snapshot
       end
 
       %w[none human].each do |handler|

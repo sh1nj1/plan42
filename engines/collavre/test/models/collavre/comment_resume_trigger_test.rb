@@ -59,6 +59,16 @@ module Collavre
       assert_includes resume_comment.content, "🔄"
     end
 
+    test "dispatch-suppressed human comment does not resume awaiting_user loop" do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Suppressed comment dispatched" }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Synthetic instruction", topic: @topic,
+            user: @human, skip_dispatch: true)
+        end
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     # An approval surface (approve button / approved label = action payload) is a
     # human decision surface, not a "user resumed" signal. Even authored by a
     # human, it must not resume the loop — otherwise the auto-posted @agent

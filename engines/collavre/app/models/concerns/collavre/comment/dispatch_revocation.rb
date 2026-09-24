@@ -40,7 +40,8 @@ module Collavre
 
       def dispatch_source_ids(task)
         payload = task.trigger_event_payload || {}
-        (Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) + [ payload.dig("comment", "id") ])
+        (Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
+          [ payload.dig("comment", "id"), task.workflow_execution&.context&.dig("comment", "id") ])
           .compact.map(&:to_i).uniq
       end
 

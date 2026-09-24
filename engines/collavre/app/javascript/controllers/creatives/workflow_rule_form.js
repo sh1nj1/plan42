@@ -36,6 +36,7 @@ export default class WorkflowRuleForm {
     this.element.querySelectorAll('[data-field="handler.type"]').forEach(radio => {
       radio.checked = radio.value === rule.handler?.type
     })
+    this.field('topic-name').value = typeof rule.topic_name === 'string' ? rule.topic_name : ''
     this.renderAgents(rule.handler)
     this.renderSources(rule, conditions)
     this.field('author').value = conditions.author_agent === true ? 'yes' : conditions.author_agent === false ? 'no' : 'any'

@@ -710,6 +710,19 @@ module Collavre
           "a comment inlined in the trigger must not be sent twice"
       end
 
+      test "ordinary trigger images remain available without a workflow admission" do
+        @comment.images.attach(
+          io: StringIO.new(one_pixel_png), filename: "original.png", content_type: "image/png"
+        )
+        context = {
+          "comment" => { "id" => @comment.id, "content" => @comment.content },
+          "creative" => { "id" => @creative.id }
+        }
+        messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+        trigger = messages.find { |message| message[:kind] == :trigger }
+        assert_equal @comment.images.map(&:blob), trigger[:parts].filter_map { |part| part[:image] }
+      end
+
       test "merged comments carry their image attachments into the trigger" do
         merged = @creative.comments.create!(
           content: "with a picture", user: @user, topic_id: @comment.topic_id
