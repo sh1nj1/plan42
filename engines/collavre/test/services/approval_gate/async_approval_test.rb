@@ -111,6 +111,79 @@ module Collavre
       assert_difference("Task.count", 1) { resume }
     end
 
+    test "sweep recovers a committed decision with no queued resume and is idempotent" do
+      request
+      @task.update!(status: "done")
+      decide
+      clear_enqueued_jobs
+
+      assert_difference("Task.count", 1) { AsyncApprovalSweepJob.perform_now }
+      assert_equal @agent.id, continuation.agent_id
+      assert_enqueued_with(job: AiAgentJob, args: [ continuation ])
+      assert_no_difference("Task.count") { AsyncApprovalSweepJob.perform_now }
+    end
+
+    test "sweep retries dispatch after continuation creation survives enqueue failure" do
+      request
+      @task.update!(status: "done")
+      decide
+      AiAgentJob.stub(:perform_later, ->(*) { raise "Queue unavailable" }) do
+        AsyncApprovalSweepJob.perform_now
+      end
+      saved_id = continuation.id
+      assert continuation.queued?
+      clear_enqueued_jobs
+
+      assert_no_difference("Task.count") { AsyncApprovalSweepJob.perform_now }
+      assert_equal saved_id, continuation.id
+      assert_enqueued_with(job: AiAgentJob, args: [ continuation ])
+    end
+
+    test "sweep isolates failures and retries on the next pass" do
+      request
+      @task.update!(status: "done")
+      decide
+      other_gate = gate.dup
+      other_gate.save!
+      attempted = []
+      AsyncApprovalResumeJob.stub(:perform_now, ->(id) { attempted << id; raise "Queue unavailable" }) do
+        AsyncApprovalSweepJob.perform_now
+      end
+      assert_includes attempted, gate.id
+      assert_includes attempted, other_gate.id
+      other_gate.destroy!
+      assert_difference("Task.count", 1) { AsyncApprovalSweepJob.perform_now }
+    end
+
+    test "sweep skips undecided native and malformed gates and waits for turn completion" do
+      request
+      assert_no_difference("Task.count") { AsyncApprovalSweepJob.perform_now }
+      decide
+      assert_no_difference("Task.count") { AsyncApprovalSweepJob.perform_now }
+      native = gate.dup
+      native.action = { action: "approval_gate", decision: "approved" }.to_json
+      native.save!
+      malformed = gate.dup
+      malformed.action = "approval_gate invalid JSON"
+      malformed.save!(validate: false)
+      called = []
+      AsyncApprovalResumeJob.stub(:perform_now, ->(id) { called << id }) { AsyncApprovalSweepJob.perform_now }
+      assert_equal [ gate.id ], called
+      @task.update!(status: "done")
+      assert_difference("Task.count", 1) { AsyncApprovalSweepJob.perform_now }
+      continuation.update!(status: "done")
+      assert_no_enqueued_jobs(only: AiAgentJob) { AsyncApprovalSweepJob.perform_now }
+    end
+
+    test "async approval recovery is scheduled in every running environment" do
+      config = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true)
+      %w[production desktop development].each do |environment|
+        recovery = config.fetch(environment).fetch("async_approval_recovery")
+        assert_equal "Collavre::AsyncApprovalSweepJob", recovery.fetch("class")
+        assert_equal "every minute", recovery.fetch("schedule")
+      end
+    end
+
     test "unauthorized decision and cancelled origin cannot resume" do
       request
       assert_raises(Comments::ApprovalGateDecision::InvalidDecision) do

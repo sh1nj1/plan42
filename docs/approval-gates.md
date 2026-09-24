@@ -165,7 +165,12 @@ it does not restore a provider tool-call stack. Decisions arriving before or
 after completion follow the same path. The stored continuation task ID prevents
 duplicate tasks, and approval continuations cannot be coalesced with unrelated
 chat or reassigned by a topic's primary-agent setting. The original workspace
-principal is preserved, including explicit absence.
+principal is preserved, including explicit absence. A recurring sweep runs every
+minute in production, development, and desktop environments to recover committed
+decisions whose resume enqueue was interrupted. It also retries dispatch of an
+already-created queued or pending continuation; the persisted task ID prevents
+another continuation from being created. One failed recovery does not block other
+gates, and the next sweep retries it.
 
 Deleting or moving a gate withdraws it without cancelling the running Codex turn.
 A deleted gate needs no local cleanup because Codex retains no waiting tool call.
