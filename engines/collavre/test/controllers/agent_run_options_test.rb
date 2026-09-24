@@ -4,10 +4,14 @@ require "test_helper"
 
 class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
   setup do
+    @previous_queue_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
     @user = users(:one)
     @creative = creatives(:tshirt)
     sign_in_as @user, password: "password"
   end
+
+  teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
 
   def cli_proxy_agent(model: "paperclip/codex_local")
     gateway = Collavre::AgentGateway.create!(
@@ -124,6 +128,73 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_nil agent.reload.reasoning_effort
     assert_equal "cli_proxy", agent.llm_vendor
+  end
+
+  test "update_ai retains the workspace and syncs Fast off when leaving CLI Proxy" do
+    agent = cli_proxy_agent
+    agent.update_columns(codex_fast_mode: true)
+    gateway = agent.agent_gateway
+    workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: nil)
+    token = workspace.manifest_token
+    callback_token = workspace.callback_token
+
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ agent.id ]) do
+      patch update_ai_user_path(agent), params: {
+        user: { llm_vendor: "openai", llm_model: "gpt-5", agent_gateway_id: "" }
+      }
+      assert_response :redirect
+    end
+    assert_equal gateway.id, agent.reload.agent_gateway_id
+    assert_equal token, workspace.reload.manifest_token
+    assert_equal callback_token, workspace.callback_token
+
+    client = Minitest::Mock.new
+    client.expect :provision_sync, {}
+    factory = lambda do |gateway:, workspace:|
+      assert_equal agent.agent_gateway_id, gateway.id
+      assert_equal token, workspace.manifest_token
+      client
+    end
+    Collavre::CliProxy::Client.stub :new, factory do
+      Collavre::AgentProvisioningSyncJob.perform_now(agent.id)
+    end
+    client.verify
+    get agent_provision_manifest_path(agent_id: agent.id, token: token)
+    assert_response :success
+    refute response.parsed_body.key?("runtime")
+
+    refute gateway.destroy
+    assert Collavre::AgentWorkspace.exists?(workspace.id)
+    refute gateway.update(completion_key: nil)
+
+    patch update_ai_user_path(agent), params: {
+      user: { llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", codex_fast_mode: "0", agent_gateway_id: gateway.id }
+    }
+    assert_response :redirect
+    assert_equal workspace.id, Collavre::AgentWorkspace.resolve!(agent: agent.reload, user: nil).id
+    refute agent.effective_codex_fast_mode?
+  end
+
+  test "non CLI updates cannot assign or replace a gateway through a hidden field" do
+    agent = cli_proxy_agent
+    original_gateway = agent.agent_gateway
+    foreign_gateway = Collavre::AgentGateway.create!(
+      owner: users(:two), name: "Foreign proxy", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion"
+    )
+    [ { llm_vendor: "openai", agent_gateway_id: foreign_gateway.id },
+      { name: "Still retained", agent_gateway_id: foreign_gateway.id } ].each do |attributes|
+      patch update_ai_user_path(agent), params: { user: attributes }
+      assert_response :redirect
+      assert_equal original_gateway.id, agent.reload.agent_gateway_id
+    end
+
+    patch update_ai_user_path(agent), params: {
+      user: { llm_vendor: "cli_proxy", agent_gateway_id: foreign_gateway.id }
+    }
+    assert_response :unprocessable_entity
+    assert_equal original_gateway.id, agent.reload.agent_gateway_id
+    assert_equal "openai", agent.llm_vendor
   end
 
   test "agent settings explain thinking precedence and allow clearing the default" do

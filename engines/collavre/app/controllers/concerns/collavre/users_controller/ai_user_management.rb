@@ -178,8 +178,10 @@ module Collavre
           gateways.active.find_by(id: ai_params[:agent_gateway_id])
         end
         ai_params[:agent_gateway_id] = gateway&.id
-      elsif effective_vendor != "cli_proxy" && ai_params.key?(:llm_vendor)
-        ai_params[:agent_gateway_id] = nil
+      elsif effective_vendor != "cli_proxy"
+        # Keep the registered manifest reachable so retained workspaces can sync Fast off.
+        # Ignore the hidden gateway field until the agent returns to CLI Proxy.
+        ai_params.delete(:agent_gateway_id)
       end
     end
 
