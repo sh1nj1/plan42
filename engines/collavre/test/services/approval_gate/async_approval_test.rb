@@ -168,6 +168,28 @@ module Collavre
       end
     end
 
+    %w[before after].each do |timing|
+      test "enqueue failure preserves completed turn and recovers decision #{timing} completion" do
+        request
+        decide if timing == "before"
+        clear_enqueued_jobs
+
+        AsyncApprovalResumeJob.stub(:perform_later, ->(*) { raise "Queue unavailable" }) do
+          @task.update!(status: "done")
+        end
+        assert @task.reload.done?
+        assert_nil gate.reload.approval_gate_action["resume_task_id"]
+        decide if timing == "after"
+        assert gate.reload.async_approval_recovery_pending?
+        clear_enqueued_jobs
+
+        assert_difference("Task.count", 1) { AsyncApprovalSweepJob.perform_now }
+        assert_equal @agent.id, continuation.agent_id
+        assert_enqueued_with(job: AiAgentJob, args: [ continuation ])
+        assert_no_difference("Task.count") { AsyncApprovalSweepJob.perform_now }
+      end
+    end
+
     test "decision after completion creates continuation" do
       request
       @task.update!(status: "done")

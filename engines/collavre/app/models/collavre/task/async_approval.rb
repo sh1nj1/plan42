@@ -18,7 +18,12 @@ module Collavre
       def resume_async_approvals
         return unless agent.cli_proxy_agent?
 
-        async_approval_gates.each { |comment| AsyncApprovalResumeJob.perform_later(comment.id) }
+        async_approval_gates.each do |comment|
+          AsyncApprovalResumeJob.perform_later(comment.id)
+        rescue StandardError => e
+          # The committed decision is retried by AsyncApprovalSweepJob.
+          Rails.logger.error("[AsyncApproval] Resume enqueue failed for task #{id}, comment #{comment.id}: #{e.class}")
+        end
       end
     end
   end
