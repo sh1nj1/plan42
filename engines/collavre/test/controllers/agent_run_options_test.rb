@@ -78,7 +78,9 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_select "form#new-comment-form[data-controller~='comments--run-options']" do
       assert_select "button.agent-run-options-toggle[aria-controls='agent-run-options-panel']" do
         assert_select "[aria-label=?]", I18n.t("collavre.comments.agent_run_options.button_title")
-        assert_select "svg.thinking-icon[aria-hidden='true'][focusable='false']"
+        assert_select "svg.thinking-icon[aria-hidden='true'][focusable='false']" do
+          assert_select "rect.thinking-battery-segment", count: 4
+        end
       end
       assert_select "select[hidden][name='comment[agent_run_options][reasoning_effort]'] option[value='xhigh']"
       assert_select "input[name='comment[agent_run_options][model]']", count: 0

@@ -55,19 +55,22 @@ describe('comments--run-options', () => {
     delete document.body.dataset.currentUserId
   })
 
-  test('fills the button from the bottom for each effort without a footer warning', () => {
+  test('shows four battery levels for every effort without changing submitted values', () => {
     const controller = application.getControllerForElementAndIdentifier(form(), 'comments--run-options')
-    const levels = { none: 0, minimal: 16, low: 33, medium: 50, high: 67, xhigh: 83, max: 100 }
+    const levels = { none: 0, minimal: 1, low: 1, medium: 2, high: 3, xhigh: 4, max: 4 }
     Object.entries(levels).forEach(([value, fill]) => {
       if (![...effort().options].some(option => option.value === value)) effort().add(new Option(value, value))
       controller.selectEffort(value)
-      expect(toggle().style.getPropertyValue('--thinking-fill')).toBe(`${fill}%`)
+      expect(toggle().style.getPropertyValue('--thinking-level')).toBe(`${fill}`)
+      expect(toggle().classList.contains('active')).toBe(true)
+      expect(popup.querySelector('[data-thinking-toggle]').style.getPropertyValue('--thinking-level')).toBe(`${fill}`)
       expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe(value)
       expect(popup.querySelector('[role="status"]')).toBeNull()
     })
     controller.selectEffort('')
-    expect(toggle().style.getPropertyValue('--thinking-fill')).toBe('0%')
+    expect(toggle().style.getPropertyValue('--thinking-level')).toBe('0')
     expect(toggle().title).toBe('Agent default')
+    expect(toggle().classList.contains('active')).toBe(false)
   })
 
   test('avatar opens the shared popup and changes message effort without saving agent settings', () => {
@@ -79,8 +82,8 @@ describe('comments--run-options', () => {
     avatar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(effort().value).toBe('high')
     expect(avatar.getAttribute('aria-expanded')).toBe('false')
-    expect(avatar.style.getPropertyValue('--thinking-fill')).toBe('67%')
-    expect(toggle().style.getPropertyValue('--thinking-fill')).toBe('67%')
+    expect(avatar.style.getPropertyValue('--thinking-level')).toBe('3')
+    expect(toggle().style.getPropertyValue('--thinking-level')).toBe('3')
     expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe('high')
     expect(new FormData(form()).has('user[reasoning_effort]')).toBe(false)
     avatar.click()

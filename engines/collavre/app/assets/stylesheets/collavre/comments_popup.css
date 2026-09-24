@@ -1029,16 +1029,15 @@ body.chat-fullscreen {
     pointer-events: none;
 }
 
-.agent-run-options-toggle .thinking-icon {
-    border-radius: 3px;
-    background-image: linear-gradient(to top,
-        color-mix(in srgb, var(--color-complete) 35%, transparent) 0 var(--thinking-fill, 0%),
-        transparent var(--thinking-fill, 0%) 100%);
+.agent-run-options-toggle .thinking-battery-segment {
+    opacity: clamp(0.18, calc(var(--thinking-level, 0) - var(--segment) + 1), 1);
 }
 
 .agent-run-options-toggle.active .thinking-icon {
+    color: var(--color-complete);
     outline: 1px solid var(--color-complete);
     outline-offset: 1px;
+    border-radius: 3px;
 }
 
 .agent-run-options-panel {
