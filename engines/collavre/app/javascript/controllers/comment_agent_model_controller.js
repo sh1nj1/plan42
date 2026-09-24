@@ -37,13 +37,18 @@ export default class extends Controller {
   }
 
   modelChanged(event) {
+    if (event.target.name === 'user[reasoning_effort]' && event.type === 'change') {
+      event.target.dataset.intended = event.target.value
+    }
     if (event.target.name !== 'user[llm_model]') return
     const select = event.target.form.querySelector('[name="user[reasoning_effort]"]')
     if (!select) return
     const adapter = event.target.value.trim().match(/^paperclip\/([^/]+)/)?.[1]
     const engine = { claude_local: 'claude', codex_local: 'codex', codex_custom: 'codex_custom' }[adapter]
     const efforts = JSON.parse(select.dataset.efforts || '{}')[engine] || []
-    const selected = select.value
+    // Filtering during model typing must not overwrite the user's selection.
+    select.dataset.intended ??= select.value
+    const selected = select.dataset.intended
     const blank = select.options[0].cloneNode(true)
     select.replaceChildren(blank, ...efforts.map(effort => new Option(effort, effort)))
     select.value = efforts.includes(selected) ? selected : ''

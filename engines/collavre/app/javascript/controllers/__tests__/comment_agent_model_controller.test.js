@@ -83,6 +83,7 @@ describe('avatar agent model editor', () => {
     expect(select.value).toBe('')
     expect(select.options[0].text).toBe('Default')
     select.value = 'low'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
     model.value = 'paperclip/codex_local'
     model.dispatchEvent(new Event('change', { bubbles: true }))
     expect(select.value).toBe('low')
@@ -100,6 +101,35 @@ describe('avatar agent model editor', () => {
     expect(chat.value).toBe('high')
     select.remove()
     expect(() => controller.modelChanged({ target: model })).not.toThrow()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  test('restores intended effort after partial model input and respects explicit changes', async () => {
+    controller.renderEditor(editor)
+    const form = controller.editor.querySelector('form')
+    form.dataset.action = 'input->comment-agent-model#modelChanged change->comment-agent-model#modelChanged'
+    const model = form.querySelector('input')
+    const select = form.querySelector('select')
+    select.dataset.efforts = JSON.stringify({ codex: ['low', 'high'], claude: ['low', 'high'] })
+    select.innerHTML = '<option value="">Default</option><option value="high" selected>high</option>'
+    await tick()
+    const typeModel = value => {
+      model.value = value
+      model.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    typeModel('paperclip/codex_loca')
+    expect(select.value).toBe('')
+    typeModel('paperclip/codex_local')
+    expect(select.value).toBe('high')
+    typeModel('paperclip/claude_loca')
+    typeModel('paperclip/claude_local')
+    expect(select.value).toBe('high')
+    for (const effort of ['low', '']) {
+      select.value = effort
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      typeModel('paperclip/codex_loca')
+      typeModel('paperclip/codex_local')
+      expect(select.value).toBe(effort)
+    }
     expect(fetch).not.toHaveBeenCalled()
   })
   test('clicks inside the editor leave the avatar popup open', () => {
