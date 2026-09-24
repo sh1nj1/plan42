@@ -8,6 +8,7 @@ module Collavre
       ].freeze
 
       included do
+        attribute :skip_create_notifications, :boolean, default: false
         before_update :advance_notification_revision, if: :notification_relevant_change?
         after_create_commit :enqueue_create_notifications, if: :notification_eligible_on_create?
       end
@@ -84,7 +85,7 @@ module Collavre
       end
 
       def notification_eligible_on_create?
-        regular_notification_eligible? || approval_notification_eligible?
+        !skip_create_notifications? && (regular_notification_eligible? || approval_notification_eligible?)
       end
 
       def regular_notification_eligible?

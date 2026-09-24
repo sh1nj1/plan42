@@ -34,7 +34,7 @@ module Collavre
         message = Comment.find(row.context.dig("comment", "id"))
         assert_equal "Main", message.topic.name
         assert_equal @creative.id, message.creative_id
-        assert_equal @rule.description, message.content
+        assert_equal "@#{@agent.name}: #{@rule.description}", message.content
         assert_equal @owner.id, message.user_id
         assert_not message.review_message?
         assert_equal @source.id, execution.context.dig("comment", "id")
@@ -49,6 +49,58 @@ module Collavre
         assert_equal message.id, task.trigger_event_payload.dig("comment", "id")
         assert_equal execution.id, task.workflow_execution_id
         assert_equal @owner, AiAgent::TaskWorkspaceUser.resolve(task)
+      end
+
+      test "mentions use admitted identities even with duplicate names and partial rejection" do
+        other = users(:two)
+        other.update!(name: @agent.name, llm_vendor: @agent.llm_vendor, llm_model: @agent.llm_model)
+        rejected = users(:three)
+        scheduler = Object.new
+        decisions = [ { agent: @agent, timing: :immediate }, { agent: other, timing: :delayed, delay: 60 },
+                      { agent: rejected, timing: :rejected } ]
+        scheduler.define_singleton_method(:schedule) { |*, **| decisions }
+        execution = nil
+        assert_difference "Comment.count", 1 do
+          Orchestration::Scheduler.stub(:new, scheduler) { execution = execute }
+        end
+        assert_equal "@#{@agent.name}: @#{other.name}: #{@rule.description}", invocation(execution).content
+        assert_equal [ @agent.id, other.id ].sort, execution.admissions.pluck(:agent_id).sort
+        execution.admissions.each do |row|
+          assert_equal [ @agent.id, other.id ], row.context.dig("chat", "mentioned_users").pluck("id")
+          assert_equal @agent.id, row.context.dig("chat", "mentioned_user", "id")
+        end
+        assert_no_difference [ "Comment.count", "Execution.count", "Outbox.count" ] do
+          2.times { Recovery.execution(execution) }
+        end
+      end
+
+      test "generated mentions do not notify same named humans or rejected agents" do
+        human, rejected = users(:two), users(:three)
+        human.update!(name: @agent.name)
+        rejected.update!(name: @agent.name, llm_vendor: @agent.llm_vendor, llm_model: @agent.llm_model)
+        [ human, rejected ].each do |recipient|
+          CreativeShare.create!(creative: @creative, user: recipient, shared_by: @owner, permission: :feedback)
+          CreativeSharesCache.find_or_create_by!(creative: @creative, user: recipient, permission: :feedback)
+        end
+        scheduler = Object.new
+        decisions = [ { agent: @agent, timing: :immediate }, { agent: rejected, timing: :rejected } ]
+        scheduler.define_singleton_method(:schedule) { |*, **| decisions }
+        execution = nil
+        assert_no_enqueued_jobs only: CommentNotificationJob do
+          Orchestration::Scheduler.stub(:new, scheduler) { execution = execute }
+        end
+        message = invocation(execution)
+        assert_equal "@#{@agent.name}: #{@rule.description}", message.content
+        assert_includes message.mentioned_users, human
+        assert_includes message.mentioned_users, rejected
+        assert_equal [ @agent.id ], execution.admissions.pluck(:agent_id)
+        assert_empty Comment.where(quoted_comment_id: message.id)
+        assert_no_enqueued_jobs only: CommentNotificationJob do
+          2.times { Recovery.execution(execution) }
+        end
+        assert_enqueued_jobs 1, only: CommentNotificationJob do
+          @creative.comments.create!(topic: message.topic, user: @owner, content: message.content, skip_dispatch: true)
+        end
       end
 
       test "instruction in trigger topic leaves awaiting loop untouched" do
@@ -93,7 +145,7 @@ module Collavre
           2.times { assert_equal execution.id, execute.id }
           2.times { Recovery.execution(execution) }
         end
-        assert_equal "Analyze the article and save the result.", original.reload.content
+        assert_equal "@#{@agent.name}: Analyze the article and save the result.", original.reload.content
       end
 
       test "selection freezes instruction with handler and destination before admission" do
@@ -107,7 +159,7 @@ module Collavre
 
         outcome = Admission.new(@context, selection).call
         execution = Execution.find(outcome.workflow_execution_id)
-        assert_equal original, invocation(execution).content
+        assert_equal "@#{@agent.name}: #{original}", invocation(execution).content
         assert_equal "Selected destination", invocation(execution).topic.name
         assert_equal "agent", execution.handler
         assert_equal [ @agent.id ], execution.admissions.pluck(:agent_id)
@@ -242,7 +294,7 @@ module Collavre
         @rule.update!(description: "@Another agent: analyze this")
         execution = execute
         assert_equal [ @agent.id ], execution.admissions.pluck(:agent_id)
-        assert_equal [], execution.admissions.first.context.dig("chat", "mentioned_users")
+        assert_equal [ @agent.id ], execution.admissions.first.context.dig("chat", "mentioned_users").pluck("id")
         assert_equal 1, Execution.count
       end
 
