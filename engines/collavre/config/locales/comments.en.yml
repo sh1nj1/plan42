@@ -137,6 +137,10 @@ en:
       add_participant: Add user
       select_all: All
       selection_count: "{count}/{total} selected"
+      resend: "Resend"
+      resend_description: "Delete subsequent AI messages and resend this message. User messages are kept. Private messages and slash commands cannot be resent."
+      resend_failed: "Failed to resend the message."
+      resend_not_allowed: "This message cannot be resent."
       selection_delete: Delete
       selection_move: Move
       selection_topic_move: Move to topic

@@ -1,0 +1,5 @@
+en:
+  collavre:
+    mcp_tools:
+      unavailable: "Tool not found or not approved for your access."
+      reserved_name: "Tool '%{tool_name}' is reserved by the application. Choose another tool name."

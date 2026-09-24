@@ -137,16 +137,14 @@ collavre tool run <tool_name> --json '{"k":"v"}'  # run with JSON args
 collavre tool run <tool_name> --key value         # run with flag args
 ```
 
-### Author a new tool (meta-skill) as a Creative
-```bash
-collavre tool scaffold --name weekly_digest --desc "Summarize a week" > weekly_digest.rb
-collavre tool create --parent 123 --file weekly_digest.rb --dry-run   # validate + preview
-collavre tool create --parent 123 --file weekly_digest.rb             # pending owner approval
-collavre tool update 456 --file weekly_digest.rb                      # replace source (re-approval)
-```
-A Creative whose description holds a Ruby block with `extend ToolMeta` becomes a
-tool once its owner approves it. Read
-[references/tool-authoring.md](references/tool-authoring.md) before writing one.
+## Create or edit a Ruby MCP tool
+
+Use `meta_tool` to invoke `creative_create_service` or `creative_update_service`
+with a Markdown Ruby code block following the `rails_mcp_engine` DSL. The
+Creative is the source of truth; owner approval enables discovery and execution.
+Read [Ruby tool authoring](references/tool-authoring.md) for the copyable example,
+exact MCP calls, approval states, and edit workflow. Do not use CLI authoring
+commands or bypass owner approval.
 
 ## Key Concepts
 

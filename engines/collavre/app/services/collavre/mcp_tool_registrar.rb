@@ -24,6 +24,8 @@ module Collavre
     # can use the class name once this one is gone.
     def self.delete(tool_name)
       synchronize do
+        return { error: I18n.t("collavre.mcp_tools.reserved_name", tool_name: tool_name) } if McpToolRegistry.system_names.include?(tool_name)
+
         service_class = ::Tools::MetaToolService.new.find_schema(tool_name)&.dig(:service_class)
         deleted = ::Tools::MetaToolWriteService.new.delete_tool(tool_name)
         remove_constant(service_class.name) if owner_of(service_class) == tool_name
@@ -38,6 +40,8 @@ module Collavre
     # approval therefore removes the service constant too; left behind with an
     # owner mark, it would block every later tool using the same class name.
     def self.register(writer, source_code, expected_name, before_call:, after_call:)
+      return { error: I18n.t("collavre.mcp_tools.reserved_name", tool_name: expected_name) } if McpToolRegistry.system_names.include?(expected_name)
+
       class_name = writer.send(:extract_class_name, source_code)
       return { error: "class_name is required for register" } if class_name.blank?
 
@@ -47,6 +51,7 @@ module Collavre
       service_class = evaluate_keeping_only_verified(source_code, class_name, expected_name)
       result = service_class.is_a?(Class) ? register_or_roll_back(writer, service_class, class_name, before_call: before_call, after_call: after_call) : service_class
       remove_tool_constants(class_name) if result[:error]
+      service_class.instance_variable_set(:@collavre_mcp_source, source_code) unless result[:error]
       result
     end
 

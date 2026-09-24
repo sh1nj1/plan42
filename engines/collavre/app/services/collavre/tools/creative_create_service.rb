@@ -7,7 +7,7 @@ module Tools
     extend ToolMeta
 
     tool_name "creative_create_service"
-    tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field is written as Markdown. A parent with inherited ai_write_policy=review stores a draft in History for approval."
+    tool_description "Create a new Creative (task/content block) in the hierarchical structure. Creatives function like tasks in a tree structure, with automatic progress calculation.\n\nUse this to:\n- Create new tasks under a parent Creative\n- Add sub-items to organize work\n- Build hierarchical project structures\n\nNote: The description field is written as Markdown. A parent with inherited ai_write_policy=review stores a draft in History for approval. To create a Ruby MCP tool, put a fenced ruby code block using the rails_mcp_engine ToolMeta DSL in description. Saving only requests owner approval; discover and run the approved tool with meta_tool."
 
     tool_param :description, description: "The content/title of the Creative, written in Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Plain text is stored as-is. Example: '# Title\\n\\n- item one\\n- item two'.", required: true
     tool_param :parent_id, description: "ID of the parent Creative. Required to create under a specific parent. If omitted, creates a root Creative.", required: false
