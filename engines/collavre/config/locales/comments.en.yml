@@ -57,7 +57,7 @@ en:
         help: Applies to CLI Proxy agents mentioned in your messages in this topic. The agent's own settings are unchanged.
         effort_label: Thinking level
         agent_default: Agent default
-        reset: Reset
+        priority_help: "Applied in order: chat setting → agent default → local Codex/Claude settings. Higher levels allow deeper reasoning and may take longer. Levels unsupported by the model are skipped."
         chip_title: "Run options: %{options}"
       close: Close
       reaction_invalid: Invalid reaction.

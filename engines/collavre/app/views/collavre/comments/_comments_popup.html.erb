@@ -222,7 +222,7 @@
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('collavre.comments.search_button') %></button>
     <button class="creative-action-btn agent-run-options-toggle" type="button"
             data-comments--run-options-target="toggle"
-            data-action="click->comments--run-options#toggle"
+            data-action="click->comments--run-options#toggle keydown->comments--run-options#keydown mousedown->comments--run-options#keepOpen touchstart->comments--run-options#keepOpen"
             aria-expanded="false" aria-controls="agent-run-options-panel"
             title="<%= t('collavre.comments.agent_run_options.button_title') %>">⚙</button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>

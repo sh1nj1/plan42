@@ -73,9 +73,12 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "form#new-comment-form[data-controller~='comments--run-options']" do
       assert_select "button.agent-run-options-toggle[aria-controls='agent-run-options-panel']"
-      assert_select "select[name='comment[agent_run_options][reasoning_effort]'] option[value='xhigh']"
+      assert_select "select[hidden][name='comment[agent_run_options][reasoning_effort]'] option[value='xhigh']"
       assert_select "input[name='comment[agent_run_options][model]']", count: 0
       assert_select "datalist#agent-run-options-models", count: 0
+      assert_select "#agent-run-options-panel.common-popup ul[data-popup-list]"
+      assert_select "#agent-run-options-panel input, #agent-run-options-panel select", count: 0
+      assert_select ".agent-run-options-help", text: I18n.t("collavre.comments.agent_run_options.priority_help")
     end
   end
 

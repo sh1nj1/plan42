@@ -1,17 +1,12 @@
-<div id="agent-run-options-panel" class="agent-run-options-panel" data-comments--run-options-target="panel" hidden>
+<%# Hidden select preserves form submission and rejects obsolete stored values. %>
+<select name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" hidden>
+  <option value=""><%= t("collavre.comments.agent_run_options.agent_default") %></option>
+  <% Collavre::CliProxy::RunOptions::ALL_EFFORTS.each do |effort| %>
+    <option value="<%= effort %>"><%= effort %></option>
+  <% end %>
+</select>
+<div id="agent-run-options-panel" class="common-popup agent-run-options-panel" data-comments--run-options-target="panel" style="display:none;">
   <p class="agent-run-options-help"><%= t("collavre.comments.agent_run_options.help") %></p>
-  <label>
-    <%= t("collavre.comments.agent_run_options.effort_label") %>
-    <select name="comment[agent_run_options][reasoning_effort]"
-            data-comments--run-options-target="effort"
-            data-action="change->comments--run-options#change">
-      <option value=""><%= t("collavre.comments.agent_run_options.agent_default") %></option>
-      <% Collavre::CliProxy::RunOptions::ALL_EFFORTS.each do |effort| %>
-        <option value="<%= effort %>"><%= effort %></option>
-      <% end %>
-    </select>
-  </label>
-  <button type="button" class="creative-action-btn" data-action="click->comments--run-options#reset">
-    <%= t("collavre.comments.agent_run_options.reset") %>
-  </button>
+  <p class="agent-run-options-help"><%= t("collavre.comments.agent_run_options.priority_help") %></p>
+  <ul class="common-popup-list" data-popup-list></ul>
 </div>

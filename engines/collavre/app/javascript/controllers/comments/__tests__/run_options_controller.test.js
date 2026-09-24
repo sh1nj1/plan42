@@ -15,14 +15,14 @@ describe('comments--run-options', () => {
     <div id="comments-popup">
       <form data-controller="comments--run-options" data-action="reset->comments--run-options#afterReset">
         <button type="button" data-comments--run-options-target="toggle"
-                data-action="click->comments--run-options#toggle" aria-expanded="false">⚙</button>
-        <div data-comments--run-options-target="panel" hidden>
-          <select name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" data-action="change->comments--run-options#change">
+                data-action="click->comments--run-options#toggle keydown->comments--run-options#keydown mousedown->comments--run-options#keepOpen touchstart->comments--run-options#keepOpen" aria-expanded="false">⚙</button>
+        <div data-comments--run-options-target="panel" style="display:none">
+          <select hidden name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" data-action="change->comments--run-options#change">
             <option value="">Agent default</option>
             <option value="high">high</option>
             <option value="max">max</option>
           </select>
-          <button type="button" class="reset" data-action="click->comments--run-options#reset">Reset</button>
+          <p>Chat → agent → local defaults</p><ul data-popup-list></ul>
         </div>
       </form>
     </div>`
@@ -79,12 +79,45 @@ describe('comments--run-options', () => {
     expect(new FormData(form()).has('comment[agent_run_options][model]')).toBe(false)
   })
 
-  test('toggles the panel', () => {
+  test('opens the common list immediately and closes on the same button', async () => {
     toggle().click()
-    expect(popup.querySelector('[data-comments--run-options-target="panel"]').hidden).toBe(false)
+    expect(popup.querySelector('[data-popup-list]').children).toHaveLength(3)
+    expect(popup.querySelector('select').hidden).toBe(true)
+    await tick(30)
+    toggle().dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(toggle().getAttribute('aria-expanded')).toBe('true')
     toggle().click()
-    expect(popup.querySelector('[data-comments--run-options-target="panel"]').hidden).toBe(true)
+    expect(popup.querySelector('[data-comments--run-options-target="panel"]').style.display).toBe('none')
+  })
+
+  test('selects a level directly, submits it and marks it when reopened', () => {
+    switchTopic(7)
+    toggle().click()
+    popup.querySelectorAll('[data-popup-list] li')[1].click()
+    expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe('high')
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    toggle().click()
+    expect(popup.querySelectorAll('[data-popup-list] li')[1].textContent).toBe('✓ high')
+  })
+
+  test('supports keyboard selection and escape without submitting the form', () => {
+    toggle().click()
+    toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(effort().value).toBe('high')
+    toggle().click()
+    toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  test('closes on outside click and topic change', async () => {
+    toggle().click()
+    await tick(30)
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    toggle().click()
+    switchTopic(8)
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
   })
 
   test('remembers the choice per topic and restores it on switch', () => {
@@ -118,7 +151,8 @@ describe('comments--run-options', () => {
     switchTopic(7)
     effort().value = 'max'
     effort().dispatchEvent(new Event('change'))
-    popup.querySelector('.reset').click()
+    toggle().click()
+    popup.querySelector('[data-popup-list] li').click()
 
     expect(effort().value).toBe('')
     expect(localStorage.getItem(`${STORAGE_PREFIX}7:user:1`)).toBeNull()

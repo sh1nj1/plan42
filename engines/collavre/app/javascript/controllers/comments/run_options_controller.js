@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import CommonPopup, { elementAnchor } from '../../lib/common_popup'
 
 // Per-message run options for CLI Proxy agents (reasoning effort).
 // The fields sit inside the comment form, so FormData sends them with every
@@ -25,14 +26,21 @@ export default class extends Controller {
     this.handleTopicChange = this.handleTopicChange.bind(this)
     this.popup = this.element.closest('#comments-popup') || document
     this.popup.addEventListener('comments--topics:change', this.handleTopicChange)
+    this.menu = new CommonPopup(this.panelTarget, {
+      renderItem: (item) => item.html,
+      onSelect: (item) => this.selectEffort(item.value),
+      onClose: () => this.toggleTarget.setAttribute('aria-expanded', 'false')
+    })
     this.restore()
   }
 
   disconnect() {
+    this.menu.hide()
     this.popup.removeEventListener('comments--topics:change', this.handleTopicChange)
   }
 
   handleTopicChange(event) {
+    this.menu.hide()
     this.topicId = event.detail?.topicId || null
     this.mainTopicId = event.detail?.mainTopicId || null
     this.restore()
@@ -47,19 +55,40 @@ export default class extends Controller {
   }
 
   toggle() {
-    const open = this.panelTarget.hidden
-    this.panelTarget.hidden = !open
-    this.toggleTarget.setAttribute('aria-expanded', String(open))
+    if (this.menu.isOpen()) return this.menu.hide()
+    const items = Array.from(this.effortTarget.options, (option) => {
+      const label = document.createElement('span')
+      label.textContent = `${option.selected ? '✓ ' : ''}${option.textContent}`
+      return { value: option.value, html: label.outerHTML }
+    })
+    this.menu.setItems(items)
+    this.menu.setActiveIndex(this.effortTarget.selectedIndex)
+    this.menu.showAt(elementAnchor(this.toggleTarget))
+    this.toggleTarget.setAttribute('aria-expanded', 'true')
+    this.toggleTarget.focus()
+  }
+
+  keepOpen(event) {
+    event.stopPropagation()
+  }
+
+  keydown(event) {
+    if (this.menu.handleKey(event)) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }
+
+  selectEffort(value) {
+    this.effortTarget.value = value
+    this.change()
+    this.menu.hide()
+    this.toggleTarget.focus()
   }
 
   change() {
     this.persist()
     this.render()
-  }
-
-  reset() {
-    this.effortTarget.value = ''
-    this.change()
   }
 
   storageKey() {
