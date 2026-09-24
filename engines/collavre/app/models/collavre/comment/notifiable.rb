@@ -92,7 +92,7 @@ module Collavre
       end
 
       def approval_notification_eligible?
-        approver.present? && approval_action? && !creative&.inbox?
+        approver.present? && approval_action? && !suppress_inbox_notification?
       end
 
       def enqueue_create_notifications
@@ -246,7 +246,7 @@ module Collavre
       def notify_approver(kind)
         return unless approver.present? && approval_action?
         return if approver == user
-        return if creative&.inbox? # Don't notify about inbox comments
+        return if suppress_inbox_notification?
 
         create_inbox_comment(
           approver,

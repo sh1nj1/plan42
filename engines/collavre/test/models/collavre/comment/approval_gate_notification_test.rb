@@ -58,6 +58,37 @@ module Collavre
         end
       end
 
+      test "Claude approval in an inbox session notifies another human approver" do
+        requester = users(:three)
+        @creative = Creative.inbox_for(requester)
+        topic = @creative.topics.create!(name: "Claude session", user: requester, session_id: "approval-session")
+        CreativeShare.create!(creative: @creative, user: @owner, permission: :read)
+
+        comment = nil
+        perform_enqueued_jobs(only: CommentNotificationJob) do
+          comment = @creative.comments.create!(
+            topic: topic, user: @agent, approver: @owner, content: "Publish?",
+            action: { action: "claude_channel_permission", kind: "approval_request", request_id: "inbox-gate" }.to_json
+          )
+        end
+
+        delivery = approval_delivery(comment)
+        refute_includes delivery.message, "unknown"
+        assert_notification(comment, delivery)
+      end
+
+      test "approval notifications in the inbox System topic stay suppressed" do
+        comment = @inbox.comments.create!(
+          topic: @inbox.system_topic, user: @agent, approver: @owner, content: "Publish?",
+          action: { action: "claude_channel_permission", kind: "approval_request", request_id: "system-gate" }.to_json
+        )
+
+        refute comment.notification_event["approval_notification"]
+        assert_no_difference -> { CommentNotificationDelivery.count } do
+          comment.deliver_notifications("created", comment.notification_event.merge("approval_notification" => true))
+        end
+      end
+
       private
 
       def create_request(payload)
