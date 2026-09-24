@@ -20,11 +20,19 @@ module Collavre
 
     def save_model(model)
       User.transaction do
-        next false unless @agent.update(llm_model: model)
+        next false unless @agent.update(model_attributes(model))
 
         LlmModel.remember!(vendor: @agent.llm_vendor, name: model, creator: Current.user)
         true
       end
+    end
+
+    def model_attributes(model)
+      attributes = { llm_model: model }
+      if @agent.cli_proxy_agent? && !CliProxy::RunOptions.efforts_for(model).include?(@agent.reasoning_effort)
+        attributes[:reasoning_effort] = nil
+      end
+      attributes
     end
 
     def set_authorized_agent

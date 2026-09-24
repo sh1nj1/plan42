@@ -106,7 +106,7 @@ module Collavre
         comments_data: serialize_comments(comments),
         result_comment: target_comment
       )
-      target_comment.update!(content: merged_content)
+      target_comment.update!(content: merged_content, agent_run_options: nil)
       creative.comments.where(id: comments[1..].map(&:id)).destroy_all
     end
   end

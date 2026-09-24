@@ -51,6 +51,28 @@ class Collavre::MergeCommentsJobTest < ActiveSupport::TestCase
     assert_not Collavre::Comment.exists?(@comment3.id)
   end
 
+  test "merge clears stale human and AI run metadata while preserving snapshot originals" do
+    [ @user, @ai_agent ].each do |author|
+      original_options = { "model" => "old-model", "reasoning_effort" => "high" }
+      first = @creative.comments.create!(user: author, content: "Original", topic: @topic,
+                                         agent_run_options: original_options)
+      second = @creative.comments.create!(user: @user, content: "More", topic: @topic)
+      client = Minitest::Mock.new
+      client.expect(:chat, "Merged") do |_messages, &block|
+        block.call("Merged")
+        true
+      end
+      Collavre::AiClient.stub(:new, client) do
+        Collavre::MergeCommentsJob.perform_now(@creative.id, [ first.id, second.id ], @user.id)
+      end
+      assert_equal "Merged", first.reload.content
+      assert_nil first.agent_run_options
+      snapshot = Collavre::CommentSnapshot.find_by!(result_comment: first)
+      assert_equal original_options, snapshot.comments_data.first["agent_run_options"]
+      client.verify
+    end
+  end
+
   test "does nothing when fewer than 2 comments" do
     Collavre::MergeCommentsJob.perform_now(@creative.id, [ @comment1.id ], @user.id)
 
