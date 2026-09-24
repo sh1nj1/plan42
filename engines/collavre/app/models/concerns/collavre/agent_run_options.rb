@@ -10,7 +10,7 @@ module Collavre
     included do
       normalizes :reasoning_effort, with: ->(effort) { effort.to_s.strip.presence }
       validates :reasoning_effort, inclusion: { in: ->(agent) { agent.llm_vendor.to_s.strip.downcase == "cli_proxy" ? CliProxy::RunOptions.efforts_for(agent.llm_model) : CliProxy::RunOptions::ALL_EFFORTS } }, allow_nil: true
-      after_update_commit :sync_codex_fast_mode, if: :codex_fast_mode_runtime_changed?
+      after_update_commit :sync_codex_fast_mode, if: :provisioning_sync_needed?
     end
 
     # The Fast setting the workspace manifest publishes. Only codex_local
@@ -23,6 +23,11 @@ module Collavre
 
     # The proxy reads Fast mode from the manifest only when it syncs, and would
     # otherwise pick a change up at its next hourly refetch.
+    def provisioning_sync_needed?
+      leaving = saved_change_to_llm_vendor? && llm_vendor_before_last_save.to_s.strip.downcase == "cli_proxy" && !cli_proxy_agent?
+      leaving || codex_fast_mode_runtime_changed?
+    end
+
     def codex_fast_mode_runtime_changed?
       return false unless saved_change_to_codex_fast_mode? || saved_change_to_llm_model? || saved_change_to_llm_vendor?
 

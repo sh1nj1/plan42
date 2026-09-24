@@ -180,7 +180,7 @@ module Collavre
         ai_params[:agent_gateway_id] = gateway&.id
       elsif effective_vendor != "cli_proxy"
         # Keep the registered manifest reachable so retained workspaces can sync Fast off.
-        # Ignore the hidden gateway field until the agent returns to CLI Proxy.
+        # The sync job detaches it after cleanup; ignore the hidden gateway field here.
         ai_params.delete(:agent_gateway_id)
       end
     end

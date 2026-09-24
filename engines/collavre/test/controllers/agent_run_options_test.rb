@@ -163,7 +163,7 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "update_ai retains the workspace and syncs Fast off when leaving CLI Proxy" do
+  test "update_ai retains the workspace until Fast off sync then detaches the gateway" do
     agent = cli_proxy_agent
     agent.update_columns(codex_fast_mode: true)
     gateway = agent.agent_gateway
@@ -180,6 +180,9 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_equal gateway.id, agent.reload.agent_gateway_id
     assert_equal token, workspace.reload.manifest_token
     assert_equal callback_token, workspace.callback_token
+    get agent_provision_manifest_path(agent_id: agent.id, token: token)
+    assert_response :success
+    refute response.parsed_body.key?("runtime")
 
     client = Minitest::Mock.new
     client.expect :provision_sync, {}
@@ -192,20 +195,21 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
       Collavre::AgentProvisioningSyncJob.perform_now(agent.id)
     end
     client.verify
+    assert_nil agent.reload.agent_gateway_id
+    refute Collavre::AgentWorkspace.exists?(workspace.id)
+    assert Doorkeeper::AccessToken.by_token(callback_token).revoked?
     get agent_provision_manifest_path(agent_id: agent.id, token: token)
-    assert_response :success
-    refute response.parsed_body.key?("runtime")
+    assert_response :not_found
+    assert gateway.update(completion_key: nil)
+    assert gateway.destroy
+  end
 
-    refute gateway.destroy
-    assert Collavre::AgentWorkspace.exists?(workspace.id)
-    refute gateway.update(completion_key: nil)
-
-    patch update_ai_user_path(agent), params: {
-      user: { llm_vendor: "cli_proxy", llm_model: "paperclip/codex_local", codex_fast_mode: "0", agent_gateway_id: gateway.id }
-    }
-    assert_response :redirect
-    assert_equal workspace.id, Collavre::AgentWorkspace.resolve!(agent: agent.reload, user: nil).id
-    refute agent.effective_codex_fast_mode?
+  test "leaving CLI Proxy with Fast already off still schedules cleanup" do
+    agent = cli_proxy_agent
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ agent.id ]) do
+      patch update_ai_user_path(agent), params: { user: { llm_vendor: "openai", llm_model: "gpt-5" } }
+      assert_response :redirect
+    end
   end
 
   test "non CLI updates cannot assign or replace a gateway through a hidden field" do

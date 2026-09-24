@@ -22,16 +22,36 @@ module Collavre
       workspaces.find_each do |workspace|
         sync(workspace, attempt)
       end
+      release_gateway(agent, agent.agent_gateway)
     end
 
     private
+
+    # Follow workspace resolution's gateway -> agent lock order. Recheck after
+    # the network call so a return to CLI Proxy or reassignment is not detached.
+    # Successful workspaces are removed individually; failed ones retain their
+    # manifest and token until their retry succeeds.
+    def release_gateway(agent, gateway, workspace: nil)
+      gateway.with_lock do
+        agent.with_lock do
+          next if agent.cli_proxy_agent? || agent.agent_gateway_id != gateway.id
+
+          agent.agent_workspaces.where(id: workspace.id).destroy_all if workspace
+          agent.update!(agent_gateway: nil) unless agent.agent_workspaces.exists?
+        end
+      end
+    end
 
     def retryable?(error)
       error.code == "proxy_unreachable" || error.status == 429 || error.status.to_i >= 500
     end
 
     def sync(workspace, attempt)
-      CliProxy::Client.new(gateway: workspace.agent_gateway, workspace: workspace).provision_sync
+      status = CliProxy::Client.new(gateway: workspace.agent_gateway, workspace: workspace).provision_sync
+      if status.is_a?(Hash) && status["last_error"].present?
+        raise CliProxy::Client::Error.new("Provisioning sync incomplete", status: 502)
+      end
+      release_gateway(workspace.agent, workspace.agent_gateway, workspace: workspace)
     rescue CliProxy::Client::Error => e
       # Manifest HTTP failures (including upstream 429) are wrapped as 502 by the proxy.
       # Keep retrying transient failures: a fixed attempt limit strands large batches.

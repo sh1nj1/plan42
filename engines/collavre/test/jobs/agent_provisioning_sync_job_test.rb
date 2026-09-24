@@ -151,8 +151,87 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
       Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id, attempt: 5)
     end
     assert_equal [ @first.id, @second.id ].sort, synced.first(2).sort
-    assert_equal @first.id, synced.last
-    assert_equal 3, synced.size
+    assert_equal 2, synced.size
+    assert_nil @agent.reload.agent_gateway_id
+  end
+
+  test "only successful off syncs revoke tokens and the final retry detaches" do
+    @agent.update!(llm_vendor: "openai")
+    first_token = Doorkeeper::AccessToken.by_token(@first.callback_token)
+    second_token = Doorkeeper::AccessToken.by_token(@second.callback_token)
+    build = lambda do |gateway:, workspace:|
+      client = Object.new
+      failed = workspace.id == @first.id
+      client.define_singleton_method(:provision_sync) do
+        raise Collavre::CliProxy::Client::Error.new("down", status: 502) if failed
+        {}
+      end
+      client
+    end
+    Collavre::CliProxy::Client.stub(:new, build) { Collavre::AgentProvisioningSyncJob.perform_now(@agent.id) }
+    assert_equal @gateway.id, @agent.reload.agent_gateway_id
+    assert Collavre::AgentWorkspace.exists?(@first.id)
+    refute Collavre::AgentWorkspace.exists?(@second.id)
+    refute first_token.reload.revoked?
+    assert second_token.reload.revoked?
+
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { {} }
+    Collavre::CliProxy::Client.stub(:new, client) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id, attempt: 1)
+    end
+    assert_nil @agent.reload.agent_gateway_id
+    assert first_token.reload.revoked?
+    assert @gateway.destroy
+  end
+
+  test "sync errors in a successful HTTP response retain credentials for retry" do
+    @agent.update!(llm_vendor: "openai")
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { { "last_error" => "incomplete" } }
+    Collavre::CliProxy::Client.stub(:new, client) do
+      assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob,
+                           args: [ @agent.id, { workspace_id: @first.id, attempt: 1 } ]) do
+        Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id)
+      end
+    end
+    assert Collavre::AgentWorkspace.exists?(@first.id)
+    assert_equal @gateway.id, @agent.reload.agent_gateway_id
+  end
+
+  test "returning to CLI Proxy during sync preserves workspaces" do
+    @agent.update!(llm_vendor: "openai")
+    agent = @agent
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { agent.update!(llm_vendor: "cli_proxy"); {} }
+    Collavre::CliProxy::Client.stub(:new, client) { Collavre::AgentProvisioningSyncJob.perform_now(@agent.id) }
+    assert_equal @gateway.id, @agent.reload.agent_gateway_id
+    assert_equal 2, @agent.agent_workspaces.count
+  end
+
+  test "an agent without workspaces detaches without contacting the proxy" do
+    @first.destroy!
+    @second.destroy!
+    @agent.update!(llm_vendor: "openai")
+    Collavre::CliProxy::Client.stub(:new, ->(**) { flunk "No workspace needs syncing" }) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
+    end
+    assert_nil @agent.reload.agent_gateway_id
+  end
+
+  test "gateway reassignment during sync is not detached" do
+    @agent.update!(llm_vendor: "openai")
+    replacement = Collavre::AgentGateway.create!(
+      owner: @owner, name: "Replacement", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion"
+    )
+    agent = @agent
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { agent.update!(agent_gateway: replacement); {} }
+    Collavre::CliProxy::Client.stub(:new, client) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id)
+    end
+    assert_equal replacement.id, @agent.reload.agent_gateway_id
   end
 
   test "does nothing for a missing agent or missing or inactive gateway" do
