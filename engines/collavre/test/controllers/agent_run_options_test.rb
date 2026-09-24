@@ -110,6 +110,24 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_select "input[type='checkbox'][name='user[codex_fast_mode]'][checked]"
   end
 
+  test "agent settings explain thinking precedence and allow clearing the default" do
+    agent = cli_proxy_agent
+    agent.update!(reasoning_effort: "high")
+
+    %i[en ko].each do |locale|
+      @user.update!(locale: locale)
+      get edit_ai_user_path(agent)
+      assert_response :success
+      assert_select "label[for='user_reasoning_effort']", I18n.t("collavre.users.new_ai.reasoning_effort_label", locale: locale)
+      assert_select "select[name='user[reasoning_effort]'] option[value='']", I18n.t("collavre.users.new_ai.reasoning_effort_blank", locale: locale)
+      assert_select "small", text: I18n.t("collavre.users.new_ai.reasoning_effort_help", locale: locale)
+    end
+
+    patch update_ai_user_path(agent), params: { user: { reasoning_effort: "" } }
+    assert_response :redirect
+    assert_predicate agent.reload.reasoning_effort, :blank?
+  end
+
   test "the connection screen knows whether fast mode is expected" do
     agent = cli_proxy_agent
     agent.update_columns(codex_fast_mode: true)

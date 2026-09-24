@@ -27,9 +27,9 @@ en:
         vendor_label: LLM Vendor
         vendor_help: Select the AI provider for this agent
         model_label: Model
-        reasoning_effort_label: Thinking level
-        reasoning_effort_blank: Proxy default
-        reasoning_effort_help: Default reasoning effort for this agent. A message can override it from the chat run options.
+        reasoning_effort_label: "Default Thinking level"
+        reasoning_effort_blank: "Use local Codex / Claude settings"
+        reasoning_effort_help: "Applied in order: chat Thinking setting, agent default, then local Codex / Claude settings. Leave unset to use local settings when the chat has no override."
         codex_fast_mode_label: Codex Fast mode
         codex_fast_mode_help: Published in the workspace manifest and applied when the proxy syncs. Codex local (gpt-5.4 or later) only; uses more quota.
         remove_model: Remove from model list

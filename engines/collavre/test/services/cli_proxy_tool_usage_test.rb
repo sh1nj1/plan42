@@ -146,6 +146,24 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal({ x_cli_events: "reasoning" }, conversation.params)
   end
 
+  %w[claude_local codex_local].each do |adapter|
+    test "#{adapter} applies chat then agent defaults and otherwise omits effort for local settings" do
+      agent = users(:ai_bot)
+      [ [ "low", "high", "low" ], [ "", "high", "high" ], [ nil, nil, nil ] ].each do |chat_effort, default, expected|
+        agent.reasoning_effort = default
+        client, conversation = client_with([], reasoning_effort: chat_effort)
+        client.send(:context)[:user] = agent
+        client.instance_variable_set(:@model, "paperclip/#{adapter}")
+        client.chat([])
+        if expected
+          assert_equal expected, conversation.params[:reasoning_effort]
+        else
+          assert_not conversation.params.key?(:reasoning_effort)
+        end
+      end
+    end
+  end
+
   test "other vendors neither request nor record cli events" do
     client, conversation = client_with(run_chunks, vendor: "openai")
     seen = []
