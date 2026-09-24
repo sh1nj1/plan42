@@ -32,17 +32,25 @@ module Collavre
         topic.with_lock do
           next unless self.class.usable_topic?(topic, creative.id) && creative.reload.archived_at.nil?
           comment = creative.comments.create!(topic: topic, user_id: @execution.context.dig("comment", "user_id"),
-            content: "#{agents.map { |agent| "@#{agent.name}:" }.join(" ")} #{@execution.rule_snapshot.fetch("instruction")}",
+            content: instruction_content(agents),
             skip_default_user: true, skip_dispatch: true)
           payload = comment.dispatch_payload.deep_stringify_keys
-          mentions = agents.map { |agent| agent.as_json(only: [ :id, :name, :email ]) }
-          payload["chat"] = { "content" => comment.content, "mentioned_users" => mentions, "mentioned_user" => mentions.first }
+          payload["chat"] = chat_context(comment, agents)
           payload["sender"] = SystemEvents::ContextBuilder.sender_context_for(comment.user)
           @execution.update!(context: @execution.context.merge("invocation" => payload))
           comment
         end
       end
       private
+
+      def instruction_content(agents)
+        "#{agents.map { |agent| "@#{agent.name}:" }.join(" ")} #{@execution.rule_snapshot.fetch("instruction")}"
+      end
+
+      def chat_context(comment, agents)
+        mentions = agents.map { |agent| agent.as_json(only: [ :id, :name, :email ]) }
+        { "content" => comment.content, "mentioned_users" => mentions, "mentioned_user" => mentions.first }
+      end
 
       def creative
         @creative ||= Creative.find(@execution.chain.creative_id)
