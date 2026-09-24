@@ -5,7 +5,7 @@ module Collavre
     # Selection is a preview. Only this boundary owns durable workflow effects.
     class Admission
       def initialize(context, selection, invocation: nil, context_for: nil, scheduling_hooks: nil)
-        @context = context.except("workflow_execution_id")
+        @context = context.except("workflow_execution_id", "invocation")
         @selection = selection
         @rule = selection.workflow_rule
         @context_for, @scheduling_hooks = context_for, scheduling_hooks
@@ -25,7 +25,7 @@ module Collavre
       private
 
       def persist
-        chain = Chain.create_or_find_by!(correlation_id: @context.dig("event", "correlation_id"),
+        chain = Continuation.chain_for(@context) || Chain.create_or_find_by!(correlation_id: @context.dig("event", "correlation_id"),
           creative_id: @context.dig("creative", "id"), topic_id: @context.dig("topic", "id").to_i) do |row|
           row.root_depth = @context.dig("event", "depth").is_a?(Integer) ? @context.dig("event", "depth") : 0
         end
@@ -41,7 +41,14 @@ module Collavre
       def build_execution(chain)
         row = new_execution(chain)
         error = EnvelopeValidation.reason(@context) || Safety.new(row).reason
+        error ||= prepare_invocation(row)
         reserve_execution(row, error)
+      end
+
+      def prepare_invocation(row)
+        return unless row.handler == "agent" && @selection.agents.any?
+        @invocation = Invocation.new(row)
+        "scope_changed" unless Invocation.usable_topic?(@invocation.topic, row.chain.creative_id)
       end
 
       def new_execution(chain)
@@ -52,7 +59,7 @@ module Collavre
 
       def reserve_execution(row, error)
         chain = row.chain
-        decisions = error ? [] : Orchestration::Scheduler.new(@context).schedule(@selection.agents, scheduling_hooks: @scheduling_hooks)
+        decisions = error ? [] : Orchestration::Scheduler.new(@invocation&.scheduling_context || @context).schedule(@selection.agents, scheduling_hooks: @scheduling_hooks)
         admitted = decisions.reject { |decision| decision[:timing] == :rejected }
         error ||= chain.reservation_reason(row.rule_id, @context.dig("event", "depth"), admitted.size)
         row.decisions = decisions.map { |d| d.except(:agent).merge(agent_id: d[:agent].id).deep_stringify_keys }
@@ -73,6 +80,8 @@ module Collavre
           HumanHandoff.new(row).persist!
         when "agent"
           return row.seal!(@selection.agents.empty? ? "no_eligible_agent" : "scheduler_rejected") if admitted.empty?
+          invocation = @invocation.persist!
+          return row.seal!("scope_changed") unless invocation
           admitted.each { |decision| create_obligation(row, decision) }
         end
       end
@@ -90,7 +99,8 @@ module Collavre
 
       def create_obligation(row, decision)
         override = @context_for&.call(decision[:agent]) || {}
-        context = @context.deep_merge(override.deep_stringify_keys).merge("workflow_execution_id" => row.id)
+        context = @context.deep_merge(override.deep_stringify_keys).merge(row.context.fetch("invocation"))
+        context["workflow_execution_id"] = row.id
         row.outboxes.create!(key: "agent:#{decision[:agent].id}", agent_id: decision[:agent].id,
           context: context, due_at: Time.current + (decision[:delay] || 0))
       end

@@ -9,7 +9,8 @@ resolver and does not change routing mode when a rule is saved.
 1. Create a creative and set `kind: workflow` in its existing metadata editor.
 2. Open that workflow's tree and follow the workflow editor link.
 3. Add a titled rule, choose an event and handler, and save. Agent handlers can
-   select several responders. Human and none handlers both silence AI routing.
+   select several responders. Set an optional execution topic name; blank uses Main.
+   Human and none handlers both silence AI routing.
 4. Add optional conditions: source, whether the author is an agent, body phrases,
    and Liquid under Advanced. All configured conditions must match; source and
    body phrase lists each match any item. Liquid has no `agent` binding.
@@ -56,6 +57,33 @@ Durable workflow admissions retain this precedence when queued or resumed;
 current scope, routing mode, and permissions still gate execution.
 
 ## Execution and recovery
+
+Each admitted agent rule posts the rule creative's content as a public instruction
+in the event creative's execution topic. `topic_name` is an optional string in
+`workflow_rule`; omitted or blank selects Main. Names are trimmed, existing topics
+are reused, and missing topics are created. Archived, History, session, and inbox
+System topics cannot be destinations. The instruction uses the triggering message's
+author, preserves workspace attribution, and never reparses mentions or runs the
+workflow matcher again. The selected responders execute against that persisted
+message, so their replies and activity logs appear in its topic. The original
+message stays in place and is provided as authorized source context to the AI.
+
+The execution freezes the instruction content and stores its destination anchor
+in `context.invocation`. Admission, message, and outboxes commit atomically;
+redelivery reuses that message. Source and destination withdrawal stop pending
+work. Matching mode is checked at the source; scheduling uses destination policy.
+Cross-topic child events retain their persisted parent chain and its cumulative
+limits. Existing admissions without an invocation retain their original anchor.
+
+Example rule data (the instruction itself is the rule creative's content):
+
+```json
+{
+  "on": "comment_created",
+  "handler": { "type": "agent", "agent_ids": [42] },
+  "topic_name": "Analysis"
+}
+```
 
 In `on`, set `emits` in Advanced rule data to a registered event, such as
 `workflow_step_completed`. An agent rule publishes one child after every admitted

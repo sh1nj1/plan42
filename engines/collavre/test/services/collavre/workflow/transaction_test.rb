@@ -19,6 +19,7 @@ module Collavre
         @rule = create_workflow_rule(parent: @workflow, handler: { "type" => "human" })
         @creative = create_workflow_creative(description: "Committed workflow", data: { "context_ids" => [ @workflow.id ] })
         @topic = Topic.create!(creative: @creative, user: @owner, name: "Committed workflow")
+        @rule.update!(data: @rule.data.deep_merge("workflow_rule" => { "topic_name" => @topic.name }))
         @comment = Comment.create!(creative: @creative, topic: @topic, user: @owner, content: "Committed input", skip_dispatch: true)
         @policy = OrchestratorPolicy.create!(policy_type: "matching", config: { "workflow_routing" => "on" })
         @context = @comment.dispatch_payload.deep_stringify_keys

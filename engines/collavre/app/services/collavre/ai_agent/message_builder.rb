@@ -254,7 +254,7 @@ module Collavre
       end
 
       def append_trigger_message(messages)
-        payload_text = trigger_payload_text
+        payload_text = Workflow::SourceMessage.prepend_to(trigger_payload_text, @context, @agent)
 
         if review_eligible?
           quoted_body = @original_comment.quoted_comment&.content

@@ -82,6 +82,7 @@ module Collavre
           parse_handler
           parse_conditions
           parse_emits
+          add_fatal(:invalid_structure) if payload.key?("topic_name") && !payload["topic_name"].is_a?(String)
         end
 
         def parse_event
