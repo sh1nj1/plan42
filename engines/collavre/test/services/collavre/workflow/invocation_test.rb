@@ -126,6 +126,34 @@ module Collavre
         assert_blocked
       end
 
+      test "reserved History is rejected before creating a destination" do
+        configure("topic_name" => " History ")
+        assert_no_difference [ "Topic.count", "Outbox.count" ] do
+          assert_blocked
+        end
+        assert_equal Creative::HISTORY_TOPIC_NAME, @creative.history_topic.name
+      end
+
+      test "source edits do not change admitted prompt or channel inputs" do
+        execution = execute
+        context = execution.admissions.first!.context
+        original = @source.content
+        @source.update!(content: "Edited after admission")
+        2.times do
+          prompt = SourceMessage.prepend_to("Instruction", context, @agent)
+          assert_includes prompt, original
+          assert_not_includes prompt, @source.content
+          deliveries = []
+          ActionCable.server.stub(:broadcast, ->(channel, data) { deliveries << data }) do
+            AiAgent::ClaudeChannelAdapter.new(agent: @agent, context: context).deliver
+          end
+          assert_includes deliveries.first.fetch(:comment)[:content], original
+          assert_not_includes deliveries.first.fetch(:comment)[:content], @source.content
+        end
+        @source.update!(private: true)
+        assert_equal "Instruction", SourceMessage.prepend_to("Instruction", context, @agent)
+      end
+
       test "destination archive or movement after admission invalidates the fixed anchor" do
         execution = execute
         row = execution.admissions.first!

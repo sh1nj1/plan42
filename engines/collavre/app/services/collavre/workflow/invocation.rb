@@ -17,6 +17,7 @@ module Collavre
       def topic
         @topic ||= begin
           name = @execution.rule_snapshot["topic_name"]&.strip.presence || Creative::MAIN_TOPIC_NAME
+          return if name == Creative::HISTORY_TOPIC_NAME
           creative.topics.find_or_create_by!(name: name) { |row| row.user = creative.user }
         rescue ActiveRecord::RecordInvalid => error
           creative.topics.find_by(name: name) || raise(error)

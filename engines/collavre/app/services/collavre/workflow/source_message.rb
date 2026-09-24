@@ -11,7 +11,7 @@ module Collavre
         source = Comment.find_by(id: row.execution.context.dig("comment", "id"))
         return text unless source
         link = Collavre::Engine.routes.url_helpers.creative_path(source.creative_id, comment_id: source.id)
-        block = I18n.t("collavre.workflow.runtime.source_message", link: link, content: source.content)
+        block = I18n.t("collavre.workflow.runtime.source_message", link: link, content: row.execution.context.dig("comment", "content"))
         "#{block}\n\n#{text}"
       end
     end
