@@ -141,7 +141,21 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
     end
   end
 
-  test "does nothing for a missing, non-proxy or inactive-gateway agent" do
+  test "syncs retained workspaces after leaving CLI Proxy including retries" do
+    @agent.update!(llm_vendor: "openai", llm_model: "gpt-5", codex_fast_mode: true)
+    synced = []
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { true }
+    Collavre::CliProxy::Client.stub(:new, ->(gateway:, workspace:) { synced << workspace.id; client }) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id, attempt: 5)
+    end
+    assert_equal [ @first.id, @second.id ].sort, synced.first(2).sort
+    assert_equal @first.id, synced.last
+    assert_equal 3, synced.size
+  end
+
+  test "does nothing for a missing agent or missing or inactive gateway" do
     calls = 0
     counter = ->(**) { calls += 1 }
 
@@ -149,7 +163,7 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
       Collavre::AgentProvisioningSyncJob.perform_now(0)
       @gateway.update_columns(active: false)
       Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
-      @agent.update_columns(llm_vendor: "openai")
+      @agent.update_columns(agent_gateway_id: nil)
       Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
     end
 

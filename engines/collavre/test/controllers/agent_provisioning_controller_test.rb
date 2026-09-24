@@ -47,6 +47,24 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "leaving CLI Proxy removes fast runtime from the retained workspace manifest" do
+    @agent.update!(llm_model: "paperclip/codex_local", codex_fast_mode: true)
+    path = collavre.agent_provision_manifest_path(agent_id: @agent.id, token: @workspace.manifest_token)
+    get path
+    assert_equal true, response.parsed_body.dig("runtime", "codex", "fast_mode")
+
+    @agent.update!(llm_vendor: "openai")
+    get path
+    assert_response :success
+    assert_not response.parsed_body.key?("runtime")
+    assert @workspace.reload.persisted?
+
+    @agent.update!(llm_vendor: "cli_proxy", codex_fast_mode: false)
+    get path
+    assert_response :success
+    assert_not response.parsed_body.key?("runtime")
+  end
+
   test "invalid manifest capability is not found" do
     stored = ActiveRecord::Base.connection.select_one(
       "SELECT manifest_token, manifest_token_digest FROM agent_workspaces WHERE id = #{@workspace.id}"

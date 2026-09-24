@@ -116,6 +116,16 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_select "input[type='checkbox'][name='user[codex_fast_mode]'][checked]"
   end
 
+  test "update_ai rejects incompatible effort for a normalized CLI vendor" do
+    agent = cli_proxy_agent
+    patch update_ai_user_path(agent), params: {
+      user: { llm_vendor: " CLI_PROXY ", reasoning_effort: "max" }
+    }
+    assert_response :unprocessable_entity
+    assert_nil agent.reload.reasoning_effort
+    assert_equal "cli_proxy", agent.llm_vendor
+  end
+
   test "agent settings explain thinking precedence and allow clearing the default" do
     agent = cli_proxy_agent
     agent.update!(reasoning_effort: "high")

@@ -14,7 +14,8 @@ module Collavre
 
     def perform(agent_id, workspace_id: nil, attempt: 0)
       agent = User.find_by(id: agent_id)
-      return unless agent&.cli_proxy_agent? && agent.agent_gateway.active?
+      # Retained workspaces still need Fast disabled after the agent leaves CLI Proxy.
+      return unless agent&.agent_gateway&.active?
 
       workspaces = agent.agent_workspaces.where(agent_gateway_id: agent.agent_gateway_id)
       workspaces = workspaces.where(id: workspace_id) if workspace_id

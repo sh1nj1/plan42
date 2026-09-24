@@ -55,6 +55,40 @@ class UserRunOptionsTest < ActiveSupport::TestCase
     @agent.reload.update!(llm_model: "paperclip/claude_local", reasoning_effort: "max")
   end
 
+  test "normalized CLI vendors enforce model compatibility on create and update" do
+    [ "CLI_PROXY", " cli_proxy ", " CLI_PROXY " ].each do |vendor|
+      @agent.assign_attributes(llm_vendor: vendor, reasoning_effort: "max")
+      assert_not @agent.save
+      assert @agent.errors.of_kind?(:reasoning_effort, :inclusion)
+      candidate = @agent.dup
+      candidate.email = "normalized-invalid@ai.local"
+      assert_not candidate.save
+      @agent.reasoning_effort = "high"
+      assert @agent.save
+    end
+  end
+
+  test "leaving CLI Proxy disables fast and syncs with or without a model change" do
+    [ "paperclip/codex_local", "gpt-5" ].each do |model|
+      @agent.update!(llm_vendor: " CLI_PROXY ", llm_model: "paperclip/codex_local", codex_fast_mode: true)
+      assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
+        @agent.update!(llm_vendor: "openai", llm_model: model)
+      end
+      assert_not @agent.effective_codex_fast_mode?
+    end
+  end
+
+  test "returning to CLI Proxy syncs only when fast becomes enabled" do
+    @agent.update!(llm_vendor: "openai", codex_fast_mode: true)
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
+      @agent.update!(llm_vendor: "cli_proxy")
+    end
+    @agent.update!(llm_vendor: "openai", codex_fast_mode: false)
+    assert_no_enqueued_jobs(only: Collavre::AgentProvisioningSyncJob) do
+      @agent.update!(llm_vendor: "cli_proxy")
+    end
+  end
+
   test "changing to an old model removes published fast mode and syncs" do
     @agent.update!(codex_fast_mode: true)
     assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
