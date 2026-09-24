@@ -3,6 +3,7 @@
 module Collavre
   module Workflow
     class Rule < Data.define(:creative_id, :event_name, :conditions, :handler_type, :agent_ids, :emits)
+      TOPIC_NAME_MAX_LENGTH = 255
       HANDLER_TYPES = %w[agent human none].freeze
       CONDITION_TYPES = {
         "source" => ->(value) { value.is_a?(Array) && value.all?(String) },
@@ -82,7 +83,16 @@ module Collavre
           parse_handler
           parse_conditions
           parse_emits
-          add_fatal(:invalid_structure) if payload.key?("topic_name") && !payload["topic_name"].is_a?(String)
+          parse_topic_name
+        end
+
+        def parse_topic_name
+          return unless payload.key?("topic_name")
+          name = payload["topic_name"]
+          return add_fatal(:invalid_structure) unless name.is_a?(String)
+
+          limit = Topic.columns_hash.fetch("name").limit || TOPIC_NAME_MAX_LENGTH
+          add_fatal(:topic_name_too_long, count: limit) if name.strip.length > limit
         end
 
         def parse_event

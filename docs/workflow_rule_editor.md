@@ -60,13 +60,18 @@ current scope, routing mode, and permissions still gate execution.
 
 Each admitted agent rule posts the rule creative's content as a public instruction
 in the event creative's execution topic. `topic_name` is an optional string in
-`workflow_rule`; omitted or blank selects Main. Names are trimmed, existing topics
-are reused, and missing topics are created. Archived, History, session, and inbox
+`workflow_rule`; omitted or blank selects Main. After trimming, names are limited
+to the database column limit, or 255 characters when the adapter reports no limit.
+This application limit is enforced when saving rules (including on SQLite).
+Existing topics are reused, and missing topics are created. Archived, History, session, and inbox
 System topics cannot be destinations. The instruction uses the triggering message's
 author, preserves workspace attribution, and never reparses mentions or runs the
 workflow matcher again. The selected responders execute against that persisted
 message, so their replies and activity logs appear in its topic. The original
 message stays in place and is provided as authorized source context to the AI.
+The source text is frozen at admission. Source image attachments are read live
+and included in the multimodal trigger only after dispatch identity, scope, and
+current permissions are validated; withdrawn or deleted sources provide no images.
 
 The execution freezes the instruction content and stores its destination anchor
 in `context.invocation`. Admission, message, and outboxes commit atomically;

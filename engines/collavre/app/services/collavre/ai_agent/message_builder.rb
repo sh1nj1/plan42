@@ -284,13 +284,15 @@ module Collavre
 
         merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
-        if @original_comment&.images&.attached?
-          @original_comment.images.each do |image|
-            trigger_parts << { image: image.blob }
-          end
-        end
-
+        append_trigger_images(trigger_parts)
         messages << { role: "user", kind: :trigger, parts: trigger_parts }
+      end
+
+      def append_trigger_images(parts)
+        if @original_comment&.images&.attached?
+          @original_comment.images.each { |image| parts << { image: image.blob } }
+        end
+        Workflow::SourceMessage.images(@context, @agent).each { |blob| parts << { image: blob } }
       end
 
       def trigger_payload_text

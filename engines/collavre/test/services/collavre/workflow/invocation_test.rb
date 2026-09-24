@@ -217,6 +217,30 @@ module Collavre
         assert_equal "Instruction", SourceMessage.prepend_to("Instruction", context, @agent)
       end
 
+      test "source images reach the trigger only while the admitted source is authorized" do
+        @source.images.attach(io: StringIO.new(Base64.decode64(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )), filename: "source.png", content_type: "image/png")
+        @source.update!(content: "")
+        @context["comment"]["content"] = ""
+        execution = execute
+        context = execution.admissions.first!.context
+        message = invocation(execution)
+        images = lambda do |payload, agent = @agent|
+          messages = AiAgent::MessageBuilder.new(agent: agent, context: payload, original_comment: message).build[:messages]
+          messages.find { |item| item[:kind] == :trigger }[:parts].filter_map { |part| part[:image] }
+        end
+        2.times { assert_equal @source.images.map(&:blob), images.call(context) }
+        assert_empty images.call(context.deep_merge("comment" => { "id" => @source.id }))
+        assert_empty images.call(context, users(:two))
+        @source.update!(private: true)
+        assert_empty images.call(context)
+        @source.update!(private: false, topic: @creative.main_topic)
+        assert_empty images.call(context)
+        @source.destroy!
+        assert_empty images.call(context)
+      end
+
       test "channel dispatch receives source context along with the visible rule instruction" do
         execution = execute
         context = execution.admissions.first!.context
