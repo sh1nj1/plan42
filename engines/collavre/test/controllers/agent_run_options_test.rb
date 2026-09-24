@@ -89,6 +89,23 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "composer explains engine exclusive efforts in both languages" do
+    %i[en ko].each do |locale|
+      @user.update!(locale: locale)
+      get creatives_path(id: creatives(:root_parent))
+      assert_response :success
+      %w[none minimal max].each do |effort|
+        key = "collavre.comments.agent_run_options"
+        assert_select "option[value=?][data-warning=?]", effort, I18n.t("#{key}.warnings.#{effort}", locale: locale),
+                      text: I18n.t("#{key}.labels.#{effort}", locale: locale)
+      end
+      assert_select "[data-comments--run-options-target='warning'][role='status'][hidden]"
+      %w[low medium high xhigh].each do |effort|
+        assert_select "option[value=?][data-warning='']", effort, text: effort
+      end
+    end
+  end
+
   test "create_ai stores the thinking level and fast mode" do
     gateway = Collavre::AgentGateway.create!(
       owner: @user, name: "Create proxy", base_url: "https://proxy.example.com",

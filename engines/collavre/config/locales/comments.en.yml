@@ -58,6 +58,14 @@ en:
         effort_label: Thinking level
         agent_default: Agent default
         priority_help: "Applied in order: chat setting → agent default → local Codex/Claude settings. Higher levels allow deeper reasoning and may take longer. Levels unsupported by the model are skipped."
+        labels:
+          none: "none — Disable Thinking (Codex only)"
+          minimal: "minimal — Codex only"
+          max: "max — Claude only"
+        warnings:
+          none: "none requests Thinking off in Codex. Claude does not support none: its agent default, then local settings apply instead. Support also depends on the selected Codex model."
+          minimal: "minimal is only supported by Codex. For Claude, this choice is not applied: its agent default, then local settings apply instead."
+          max: "max is only supported by Claude. For Codex, this choice is not applied: its agent default, then local settings apply instead."
         chip_title: "Run options: %{options}"
       close: Close
       reaction_invalid: Invalid reaction.

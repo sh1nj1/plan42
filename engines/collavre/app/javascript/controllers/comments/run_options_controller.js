@@ -18,7 +18,7 @@ export function appendRunOptions(form, formData) {
 }
 
 export default class extends Controller {
-  static targets = ['panel', 'toggle', 'effort']
+  static targets = ['panel', 'toggle', 'effort', 'warning']
 
   connect() {
     this.topicId = null
@@ -128,6 +128,9 @@ export default class extends Controller {
   }
 
   render() {
+    const warning = this.effortTarget.selectedOptions[0]?.dataset.warning || ''
+    this.warningTarget.textContent = warning
+    this.warningTarget.hidden = !warning
     const active = Boolean(this.effortTarget.value)
     this.toggleTarget.classList.toggle('active', active)
   }

@@ -1039,7 +1039,7 @@ body.chat-fullscreen {
     max-width: calc(100vw - 16px);
 }
 
-.agent-run-options-panel .agent-run-options-help {
+.agent-run-options-help {
     margin: 0;
     padding: 0.5em 0.75em;
     font-size: 0.85em;

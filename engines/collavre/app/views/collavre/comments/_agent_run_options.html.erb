@@ -2,9 +2,10 @@
 <select name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" hidden>
   <option value=""><%= t("collavre.comments.agent_run_options.agent_default") %></option>
   <% Collavre::CliProxy::RunOptions::ALL_EFFORTS.each do |effort| %>
-    <option value="<%= effort %>"><%= effort %></option>
+    <option value="<%= effort %>" data-warning="<%= t("collavre.comments.agent_run_options.warnings.#{effort}", default: "") %>"><%= t("collavre.comments.agent_run_options.labels.#{effort}", default: effort) %></option>
   <% end %>
 </select>
+<p class="agent-run-options-help" data-comments--run-options-target="warning" role="status" hidden></p>
 <div id="agent-run-options-panel" class="common-popup agent-run-options-panel" data-comments--run-options-target="panel" style="display:none;">
   <p class="agent-run-options-help"><%= t("collavre.comments.agent_run_options.help") %></p>
   <p class="agent-run-options-help"><%= t("collavre.comments.agent_run_options.priority_help") %></p>

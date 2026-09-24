@@ -20,9 +20,9 @@ describe('comments--run-options', () => {
           <select hidden name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" data-action="change->comments--run-options#change">
             <option value="">Agent default</option>
             <option value="high">high</option>
-            <option value="max">max</option>
+            <option value="max" data-warning="Codex does not support max; agent then local defaults apply.">max — Claude only</option>
           </select>
-          <p>Chat → agent → local defaults</p><ul data-popup-list></ul>
+          <p data-comments--run-options-target="warning" role="status" hidden></p><p>Chat → agent → local defaults</p><ul data-popup-list></ul>
         </div>
       </form>
     </div>`
@@ -48,6 +48,24 @@ describe('comments--run-options', () => {
     application.stop()
     document.body.innerHTML = ''
     delete document.body.dataset.currentUserId
+  })
+
+  test('warns after selection and restoration, and clears the warning for shared levels', () => {
+    switchTopic(7)
+    toggle().click()
+    expect(popup.querySelectorAll('[data-popup-list] li')[2].textContent).toContain('Claude only')
+    popup.querySelectorAll('[data-popup-list] li')[2].click()
+    const warning = popup.querySelector('[role="status"]')
+    expect(warning.hidden).toBe(false)
+    expect(warning.textContent).toContain('Codex does not support max')
+    switchTopic(8)
+    expect(warning.hidden).toBe(true)
+    switchTopic(7)
+    expect(warning.hidden).toBe(false)
+    effort().value = 'high'
+    effort().dispatchEvent(new Event('change'))
+    expect(warning.hidden).toBe(true)
+    expect(warning.textContent).toBe('')
   })
 
   test('isolates accounts and ignores legacy unscoped options', () => {
