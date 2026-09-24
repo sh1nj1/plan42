@@ -204,6 +204,20 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert gateway.destroy
   end
 
+  test "leaving an inactive gateway detaches without proxy access" do
+    agent = cli_proxy_agent
+    gateway = agent.agent_gateway
+    gateway.update!(active: false)
+    patch update_ai_user_path(agent), params: { user: { llm_vendor: "openai", llm_model: "gpt-5" } }
+    assert_response :redirect
+    Collavre::CliProxy::Client.stub(:new, ->(**) { flunk "Inactive gateway must not be contacted" }) do
+      Collavre::AgentProvisioningSyncJob.perform_now(agent.id)
+    end
+    assert_nil agent.reload.agent_gateway_id
+    assert gateway.update(completion_key: nil)
+    assert gateway.destroy
+  end
+
   test "leaving CLI Proxy with Fast already off still schedules cleanup" do
     agent = cli_proxy_agent
     assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ agent.id ]) do

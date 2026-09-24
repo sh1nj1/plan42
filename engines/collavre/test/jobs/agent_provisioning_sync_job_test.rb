@@ -185,6 +185,48 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
     assert @gateway.destroy
   end
 
+  test "deactivation releases retired agents while an off sync retry is pending" do
+    @agent.update!(llm_vendor: "openai")
+    token = Doorkeeper::AccessToken.by_token(@first.callback_token)
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { raise Collavre::CliProxy::Client::Error.new("down", status: 502) }
+    Collavre::CliProxy::Client.stub(:new, client) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
+    end
+    @gateway.update!(active: false)
+    assert_nil @agent.reload.agent_gateway_id
+    assert token.reload.revoked?
+    Collavre::CliProxy::Client.stub(:new, ->(**) { flunk "Inactive gateway must not be contacted" }) do
+      perform_enqueued_jobs
+    end
+    assert @gateway.destroy
+  end
+
+  test "inactive retired gateway removes residual workspaces without proxy access" do
+    @agent.update!(llm_vendor: "openai")
+    token = Doorkeeper::AccessToken.by_token(@first.callback_token)
+    @gateway.update_columns(active: false)
+    Collavre::CliProxy::Client.stub(:new, ->(**) { flunk "Inactive gateway must not be contacted" }) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
+    end
+    assert_nil @agent.reload.agent_gateway_id
+    assert token.reload.revoked?
+    assert_empty @agent.agent_workspaces
+  end
+
+  test "permanent off sync failures revoke tokens and release the gateway" do
+    @agent.update!(llm_vendor: "openai")
+    token = Doorkeeper::AccessToken.by_token(@first.callback_token)
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { raise Collavre::CliProxy::Client::Error.new("denied", status: 403) }
+    Collavre::CliProxy::Client.stub(:new, client) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
+    end
+    assert_nil @agent.reload.agent_gateway_id
+    assert token.reload.revoked?
+    assert @gateway.destroy
+  end
+
   test "sync errors in a successful HTTP response retain credentials for retry" do
     @agent.update!(llm_vendor: "openai")
     client = Object.new
