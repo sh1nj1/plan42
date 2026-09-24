@@ -99,7 +99,7 @@ module Collavre
 
       def create_obligation(row, decision)
         override = @context_for&.call(decision[:agent]) || {}
-        context = @context.deep_merge(override.deep_stringify_keys).merge(row.context.fetch("invocation"))
+        context = @context.merge(row.context.fetch("invocation")).deep_merge(override.deep_stringify_keys)
         context["workflow_execution_id"] = row.id
         row.outboxes.create!(key: "agent:#{decision[:agent].id}", agent_id: decision[:agent].id,
           context: context, due_at: Time.current + (decision[:delay] || 0))
