@@ -43,6 +43,26 @@ class UserRunOptionsTest < ActiveSupport::TestCase
     assert @agent.errors.of_kind?(:reasoning_effort, :inclusion)
   end
 
+  test "CLI defaults must be compatible on create and update" do
+    { "claude_local" => "minimal", "codex_local" => "max", "unknown" => "high" }.each do |adapter, effort|
+      @agent.assign_attributes(llm_model: "paperclip/#{adapter}", reasoning_effort: effort)
+      assert_not @agent.save
+      assert @agent.errors.of_kind?(:reasoning_effort, :inclusion)
+      candidate = @agent.dup
+      candidate.email = "invalid-#{adapter}@ai.local"
+      assert_not candidate.save
+    end
+    @agent.reload.update!(llm_model: "paperclip/claude_local", reasoning_effort: "max")
+  end
+
+  test "changing to an old model removes published fast mode and syncs" do
+    @agent.update!(codex_fast_mode: true)
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
+      @agent.update!(llm_model: "paperclip/codex_local/gpt-5.3")
+    end
+    assert_not @agent.effective_codex_fast_mode?
+  end
+
   test "effective fast mode needs codex_local" do
     assert_not @agent.effective_codex_fast_mode?
 

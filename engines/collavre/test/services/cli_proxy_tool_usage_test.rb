@@ -151,10 +151,18 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
       agent = users(:ai_bot)
       [ [ "low", "high", "low" ], [ "", "high", "high" ], [ nil, nil, nil ] ].each do |chat_effort, default, expected|
         agent.reasoning_effort = default
+        agent.codex_fast_mode = true
         client, conversation = client_with([], reasoning_effort: chat_effort)
         client.send(:context)[:user] = agent
         client.instance_variable_set(:@model, "paperclip/#{adapter}")
         client.chat([])
+        logged = Collavre::ActivityLog.order(:id).last.log.fetch("run_options")
+        assert_equal expected, logged["reasoning_effort"] if expected
+        assert_nil logged["reasoning_effort"] unless expected
+        assert_equal expected ? "request" : "local_default", logged["reasoning_source"]
+        assert_equal adapter == "codex_local", logged["codex_fast_mode_configured"]
+        client.ask("Summary")
+        assert_equal logged, Collavre::ActivityLog.order(:id).last.log.fetch("run_options")
         if expected
           assert_equal expected, conversation.params[:reasoning_effort]
         else
@@ -172,6 +180,7 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal "Answer", client.chat([])
 
     assert_nil conversation.params
+    assert_not Collavre::ActivityLog.order(:id).last.log.key?("run_options")
     assert_empty seen
     assert_equal 0, Collavre::ToolUsage.count
   end

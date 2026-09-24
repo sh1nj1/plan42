@@ -34,6 +34,11 @@ module Collavre
         # with_params replaces rather than merges, so the run's reasoning effort
         # rides on this one call.
         effort = cli_reasoning_effort
+        @cli_run_options = {
+          reasoning_effort: effort,
+          reasoning_source: effort ? "request" : "local_default",
+          codex_fast_mode_configured: !!(context&.dig(:user)&.codex_fast_mode? && CliProxy::RunOptions.fast_mode_supported?(model))
+        }
         chat.with_params(**REQUEST_PARAMS, **(effort ? { reasoning_effort: effort } : {}))
         # Non-streaming responses (#ask) carry their events on the final message.
         # A streamed message is rebuilt by RubyLLM without them, so the events

@@ -76,6 +76,14 @@ describe('agent-vendor run options', () => {
     expect(el('gateway').hidden).toBe(true)
   })
 
+  test.each([
+    ['gpt-5.3', true], ['gpt-5.3-codex', true], ['unknown', true],
+    ['gpt-5.4', false], ['gpt-5.4-mini', false], ['gpt-5.10', false], ['gpt-6.0', false]
+  ])('fast mode availability for %s', async (model, hidden) => {
+    await render({ model: `paperclip/codex_local/${model}` })
+    expect(el('fastMode').hidden).toBe(hidden)
+  })
+
   test('fills the default model when cli_proxy is chosen with none', async () => {
     await render({ vendor: 'google', model: '' })
     el('vendor').value = 'cli_proxy'

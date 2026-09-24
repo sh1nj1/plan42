@@ -9,7 +9,7 @@ module Collavre
 
     included do
       normalizes :reasoning_effort, with: ->(effort) { effort.to_s.strip.presence }
-      validates :reasoning_effort, inclusion: { in: CliProxy::RunOptions::ALL_EFFORTS }, allow_nil: true
+      validates :reasoning_effort, inclusion: { in: ->(agent) { agent.llm_vendor == "cli_proxy" ? CliProxy::RunOptions.efforts_for(agent.llm_model) : CliProxy::RunOptions::ALL_EFFORTS } }, allow_nil: true
       after_update_commit :sync_codex_fast_mode, if: :codex_fast_mode_runtime_changed?
     end
 

@@ -40,7 +40,13 @@ module Collavre
         end
 
         def fast_mode_supported?(model)
-          FAST_MODE_ADAPTERS.include?(adapter_for(model))
+          return false unless FAST_MODE_ADAPTERS.include?(adapter_for(model))
+
+          explicit_model = model.to_s.strip.split("/", 3)[2]
+          return true if explicit_model.nil?
+
+          version = explicit_model.match(/\Agpt-(\d+)\.(\d+)(?:-.*)?\z/)
+          version.present? && ([ version[1].to_i, version[2].to_i ] <=> [ 5, 4 ]) >= 0
         end
 
         # Strips a submitted comment[agent_run_options] down to the keys this

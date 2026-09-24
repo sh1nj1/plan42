@@ -2,13 +2,20 @@ import { Controller } from "@hotwired/stimulus"
 
 const MODEL_PREFIX = "paperclip/"
 const ENGINE_BY_ADAPTER = { claude_local: "claude", codex_local: "codex", codex_custom: "codex_custom" }
-const FAST_MODE_ADAPTERS = ["codex_local"]
 const MODEL_EVENTS = ["input", "change"]
 
 function adapterFor(model) {
   const value = (model || "").trim()
   if (!value.startsWith(MODEL_PREFIX)) return null
   return value.slice(MODEL_PREFIX.length).split("/")[0] || null
+}
+
+function fastModeSupported(model) {
+  if (adapterFor(model) !== "codex_local") return false
+  const explicit = model.trim().split("/").slice(2).join("/")
+  if (!explicit) return model.trim().split("/").length === 2
+  const version = explicit.match(/^gpt-(\d+)\.(\d+)(?:-.*)?$/)
+  return !!version && (Number(version[1]) > 5 || (Number(version[1]) === 5 && Number(version[2]) >= 4))
 }
 
 export default class extends Controller {
@@ -56,7 +63,7 @@ export default class extends Controller {
     })
     if (this.effortTarget.value && !efforts.includes(this.effortTarget.value)) this.effortTarget.value = ""
 
-    const fast = FAST_MODE_ADAPTERS.includes(adapter)
+    const fast = cliProxy && fastModeSupported(this.modelTarget.value)
     this.fastModeTarget.hidden = !fast
   }
 }

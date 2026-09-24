@@ -69,6 +69,16 @@ class CliProxyRunOptionsTest < ActiveSupport::TestCase
     assert_nil RunOptions.sanitize_message_options(params)
   end
 
+  test "explicit fast models require GPT 5.4 or later" do
+    %w[gpt-5.4 gpt-5.4-mini gpt-5.10 gpt-6.0].each do |model|
+      assert RunOptions.fast_mode_supported?("paperclip/codex_local/#{model}"), model
+    end
+    %w[gpt-5.3 gpt-5.3-codex gpt-4.9 unknown gpt-5.40oops].each do |model|
+      assert_not RunOptions.fast_mode_supported?("paperclip/codex_local/#{model}"), model
+    end
+    assert_not RunOptions.fast_mode_supported?("paperclip/codex_local/")
+  end
+
   test "adapter and fast mode support follow the model id" do
     assert_equal "codex_local", RunOptions.adapter_for("paperclip/codex_local/gpt-5.5")
     assert_nil RunOptions.adapter_for("gpt-4o")
