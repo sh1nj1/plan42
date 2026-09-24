@@ -80,7 +80,7 @@ module Collavre
           HumanHandoff.new(row).persist!
         when "agent"
           return row.seal!(@selection.agents.empty? ? "no_eligible_agent" : "scheduler_rejected") if admitted.empty?
-          invocation = @invocation.persist!
+          invocation = @invocation.persist!(agents: admitted.pluck(:agent))
           return row.seal!("scope_changed") unless invocation
           admitted.each { |decision| create_obligation(row, decision) }
         end

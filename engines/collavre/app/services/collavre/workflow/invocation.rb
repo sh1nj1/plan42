@@ -28,14 +28,15 @@ module Collavre
         @execution.context.merge("topic" => { "id" => topic.id })
       end
 
-      def persist!
+      def persist!(agents:)
         topic.with_lock do
           next unless self.class.usable_topic?(topic, creative.id) && creative.reload.archived_at.nil?
           comment = creative.comments.create!(topic: topic, user_id: @execution.context.dig("comment", "user_id"),
-            content: @execution.rule_snapshot.fetch("instruction"),
+            content: "#{agents.map { |agent| "@#{agent.name}:" }.join(" ")} #{@execution.rule_snapshot.fetch("instruction")}",
             skip_default_user: true, skip_dispatch: true)
           payload = comment.dispatch_payload.deep_stringify_keys
-          payload["chat"] = { "content" => comment.content, "mentioned_users" => [] }
+          mentions = agents.map { |agent| agent.as_json(only: [ :id, :name, :email ]) }
+          payload["chat"] = { "content" => comment.content, "mentioned_users" => mentions, "mentioned_user" => mentions.first }
           payload["sender"] = SystemEvents::ContextBuilder.sender_context_for(comment.user)
           @execution.update!(context: @execution.context.merge("invocation" => payload))
           comment

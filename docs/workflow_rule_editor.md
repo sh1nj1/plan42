@@ -58,7 +58,7 @@ current scope, routing mode, and permissions still gate execution.
 
 ## Execution and recovery
 
-Each admitted agent rule posts the rule creative's content as a public instruction
+Each admitted agent rule posts `@Agent name: rule content` as a public instruction
 in the event creative's execution topic. `topic_name` is an optional string in
 `workflow_rule`; omitted or blank selects Main. After trimming, names are limited
 to the database column limit, or 255 characters when the adapter reports no limit.
@@ -66,7 +66,10 @@ This application limit is enforced when saving rules (including on SQLite).
 Existing topics are reused, and missing topics are created. Archived, History, session, and inbox
 System topics cannot be destinations. The instruction uses the triggering message's
 author, preserves workspace attribution, and never reparses mentions or runs the
-workflow matcher again. Dispatch-suppressed instruction comments also leave any
+workflow matcher again. Multiple admitted agents receive a single message with
+all their `@Name:` prefixes; scheduler-rejected agents are excluded. Mention metadata
+is built from admitted agent IDs, so duplicate names or mentions within rule content
+cannot change the recipients. Dispatch-suppressed instruction comments also leave any
 trigger loop awaiting user input unchanged. The selected responders execute
 against that persisted message, so their replies and activity logs appear in its topic. The original
 message stays in place and is provided as authorized source context to the AI.
