@@ -33,9 +33,10 @@ module Collavre
       CliProxy::Client.new(gateway: workspace.agent_gateway, workspace: workspace).provision_sync
     rescue CliProxy::Client::Error => e
       # Manifest HTTP failures (including upstream 429) are wrapped as 502 by the proxy.
-      # Retry only this workspace, after the one-minute manifest rate-limit window.
-      if attempt < 4 && retryable?(e)
-        self.class.set(wait: 65.seconds * (attempt + 1)).perform_later(
+      # Keep retrying transient failures: a fixed attempt limit strands large batches.
+      # Back off beyond the manifest rate window, capped at fifteen minutes.
+      if retryable?(e)
+        self.class.set(wait: [ 65.seconds * (attempt + 1), 15.minutes ].min).perform_later(
           workspace.agent_id, workspace_id: workspace.id, attempt: attempt + 1
         )
       end

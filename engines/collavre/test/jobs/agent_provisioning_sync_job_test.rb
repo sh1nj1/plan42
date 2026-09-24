@@ -86,9 +86,8 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
     end
   end
 
-  test "does not retry permanent failures or exhausted retries" do
-    [ [ 403, nil, 0 ], [ 502, nil, 4 ], [ nil, "proxy_unreachable", 4 ],
-      [ nil, "unknown_error", 0 ] ].each do |status, code, attempt|
+  test "does not retry permanent failures" do
+    [ [ 403, nil, 0 ], [ 403, nil, 100 ], [ nil, "unknown_error", 0 ] ].each do |status, code, attempt|
       client = Object.new
       client.define_singleton_method(:provision_sync) { raise Collavre::CliProxy::Client::Error.new("failed", status: status, code: code) }
       Collavre::CliProxy::Client.stub(:new, client) do
@@ -97,6 +96,40 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
         end
       end
     end
+  end
+
+  test "transient failures keep retrying beyond five windows with capped backoff" do
+    [ [ 429, nil ], [ 502, "manifest_fetch_failed" ], [ nil, "proxy_unreachable" ] ].each do |status, code|
+      client = Object.new
+      client.define_singleton_method(:provision_sync) do
+        raise Collavre::CliProxy::Client::Error.new("limited", status: status, code: code)
+      end
+      [ [ 4, 325 ], [ 5, 390 ], [ 100, 900 ] ].each do |attempt, delay|
+        clear_enqueued_jobs
+        freeze_time do
+          Collavre::CliProxy::Client.stub(:new, client) do
+            assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob,
+                                 args: [ @agent.id, { workspace_id: @first.id, attempt: attempt + 1 } ],
+                                 at: delay.seconds.from_now) do
+              Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id, attempt: attempt)
+            end
+          end
+        end
+        assert_equal 1, enqueued_jobs.size
+      end
+    end
+  end
+
+  test "a successful late retry stops without syncing other workspaces" do
+    client = Object.new
+    client.define_singleton_method(:provision_sync) { true }
+    synced = []
+    Collavre::CliProxy::Client.stub(:new, ->(gateway:, workspace:) { synced << workspace.id; client }) do
+      assert_no_enqueued_jobs do
+        Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id, attempt: 100)
+      end
+    end
+    assert_equal [ @first.id ], synced
   end
 
   test "a retry ignores removed workspaces" do
