@@ -254,7 +254,7 @@ module Collavre
       end
 
       def append_trigger_message(messages)
-        payload_text = Workflow::SourceMessage.prepend_to(trigger_payload_text, @context, @agent)
+        payload_text = trigger_payload_text
 
         if review_eligible?
           quoted_body = @original_comment.quoted_comment&.content
@@ -294,7 +294,8 @@ module Collavre
       end
 
       def trigger_payload_text
-        @context.dig("comment", "content") || @context.except(SystemEvents::Envelope::KEY).to_json
+        text = @context.dig("comment", "content") || @context.except(SystemEvents::Envelope::KEY).to_json
+        Workflow::SourceMessage.prepend_to(text, @context, @agent)
       end
 
       def merged_trigger
