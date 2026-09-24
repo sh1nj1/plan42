@@ -13,11 +13,18 @@ module Collavre
           @comment.update!(action: payload.merge("decision" => result).to_json,
                            action_executed_at: Time.current, action_executed_by: @user,
                            async_approval_recovery_pending: true)
-          ActiveRecord.after_all_transactions_commit { AsyncApprovalResumeJob.perform_later(@comment.id) }
+          ActiveRecord.after_all_transactions_commit { enqueue_resume }
         end
       end
 
       private
+
+      def enqueue_resume
+        AsyncApprovalResumeJob.perform_later(@comment.id)
+      rescue StandardError => e
+        # The committed decision is retried by AsyncApprovalSweepJob.
+        Rails.logger.error("[AsyncApproval] Resume enqueue failed for comment #{@comment.id}: #{e.class}")
+      end
 
       def validate_async!(payload)
         fail_with(:approve_invalid_format) unless payload&.dig("mode") == "async"
