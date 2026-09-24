@@ -29,12 +29,16 @@ module Collavre
 
     def model_attributes(model)
       attributes = { llm_model: model }
-      if @agent.cli_proxy_agent? && params[:user].key?(:reasoning_effort)
-        attributes[:reasoning_effort] = params[:user][:reasoning_effort].to_s.strip.presence
-      elsif @agent.cli_proxy_agent? && !CliProxy::RunOptions.efforts_for(model).include?(@agent.reasoning_effort)
-        attributes[:reasoning_effort] = nil
-      end
+      attributes[:reasoning_effort] = effort_for(model) if @agent.cli_proxy_agent?
       attributes
+    end
+
+    def effort_for(model)
+      submitted = params[:user].key?(:reasoning_effort)
+      effort = submitted ? params[:user][:reasoning_effort].to_s.strip.presence : @agent.reasoning_effort
+      return effort if submitted && effort != @agent.reasoning_effort
+
+      effort if CliProxy::RunOptions.efforts_for(model).include?(effort)
     end
 
     def set_authorized_agent

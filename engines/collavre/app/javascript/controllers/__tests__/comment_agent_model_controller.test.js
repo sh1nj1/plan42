@@ -64,6 +64,44 @@ describe('avatar agent model editor', () => {
     expect(controller.editor.querySelector('[role="status"]').textContent).toBe(status === 422 ? 'Invalid model' : 'Save failed')
     expect(form.querySelector('[type="submit"]').disabled).toBe(false)
   })
+  test('model edits and suggestions refresh efforts without changing the chat override', async () => {
+    controller.editor.innerHTML = editor
+    const form = controller.editor.querySelector('form')
+    form.dataset.action = 'input->comment-agent-model#modelChanged change->comment-agent-model#modelChanged'
+    const model = form.querySelector('input')
+    const select = form.querySelector('select')
+    select.dataset.efforts = JSON.stringify({ codex: ['minimal', 'low'], claude: ['low', 'max'], codex_custom: ['high'] })
+    select.innerHTML = '<option value="">Default</option><option value="minimal" selected>minimal</option>'
+    const chat = document.createElement('input')
+    chat.name = 'comment[agent_run_options][reasoning_effort]'
+    chat.value = 'high'
+    document.body.appendChild(chat)
+    await tick()
+    model.value = ' paperclip/claude_local/opus '
+    model.dispatchEvent(new Event('input', { bubbles: true }))
+    expect([...select.options].map(option => option.value)).toEqual(['', 'low', 'max'])
+    expect(select.value).toBe('')
+    expect(select.options[0].text).toBe('Default')
+    select.value = 'low'
+    model.value = 'paperclip/codex_local'
+    model.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(select.value).toBe('low')
+    expect([...select.options].map(option => option.value)).toEqual(['', 'minimal', 'low'])
+    select.value = 'minimal'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(select.value).toBe('minimal')
+    model.value = 'paperclip/codex_custom'
+    model.dispatchEvent(new Event('change', { bubbles: true }))
+    expect([...select.options].map(option => option.value)).toEqual(['', 'high'])
+    model.value = 'unknown'
+    model.dispatchEvent(new Event('input', { bubbles: true }))
+    expect([...select.options].map(option => option.value)).toEqual([''])
+    expect(select.value).toBe('')
+    expect(chat.value).toBe('high')
+    select.remove()
+    expect(() => controller.modelChanged({ target: model })).not.toThrow()
+    expect(fetch).not.toHaveBeenCalled()
+  })
   test('clicks inside the editor leave the avatar popup open', () => {
     const event = { stopPropagation: jest.fn() }
     controller.keepOpen(event)

@@ -1,5 +1,5 @@
 <%= form_with scope: :user, url: collavre.user_agent_model_path(@agent), method: :patch,
-              data: { action: "submit->comment-agent-model#save", turbo: false, error: t("collavre.comments.agent_model.error") } do |form| %>
+              data: { action: "submit->comment-agent-model#save input->comment-agent-model#modelChanged change->comment-agent-model#modelChanged", turbo: false, error: t("collavre.comments.agent_model.error") } do |form| %>
   <%= render layout: "collavre/users/model_picker",
              locals: { form: form, models: Collavre::LlmModel.where(llm_vendor: @agent.llm_vendor).suggestions,
                        selected_model: @agent.llm_model } do %>
@@ -11,7 +11,8 @@
     <%= form.select :reasoning_effort,
                     options_for_select(Collavre::CliProxy::RunOptions.efforts_for(@agent.llm_model), @agent.reasoning_effort),
                     { include_blank: t("collavre.users.new_ai.reasoning_effort_blank") },
-                    id: effort_id, class: "stacked-form-control" %>
+                    id: effort_id, class: "stacked-form-control",
+                    data: { efforts: Collavre::CliProxy::RunOptions::EFFORTS.to_json } %>
   <% end %>
   <p><%= t("collavre.comments.agent_model.help") %></p>
   <%= form.submit t("collavre.comments.agent_model.save") %>

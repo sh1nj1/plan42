@@ -24,6 +24,9 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
       assert_select "select[name='user[reasoning_effort]'] option[selected][value='high']"
       assert_select "[data-thinking-toggle]", count: 0
       assert_select "select[name='user[reasoning_effort]'] option[value='max']", count: 0
+      select = css_select("select[name='user[reasoning_effort]']").first
+      assert_equal Collavre::CliProxy::RunOptions::EFFORTS.stringify_keys, JSON.parse(select["data-efforts"])
+      assert_select "form[data-action*='change->comment-agent-model#modelChanged']"
       assert_equal "high", @agent.reload.reasoning_effort
     end
     patch user_agent_model_path(@agent), params: { user: { llm_model: @agent.llm_model, reasoning_effort: "low" },
@@ -125,6 +128,35 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
       assert_equal "paperclip/#{target}", @agent.reload.llm_model
       expected ? assert_equal(expected, @agent.reasoning_effort) : assert_nil(@agent.reasoning_effort)
     end
+  end
+
+  test "model changes clear resubmitted incompatible defaults but reject changed incompatible efforts" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @owner, name: "Resubmitted effort", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion"
+    )
+    @agent.update!(llm_vendor: "cli_proxy", agent_gateway: gateway)
+    [
+      [ "codex_local", "minimal", "claude_local", nil ],
+      [ "claude_local", "max", "codex_local", nil ],
+      [ "codex_local", "high", "claude_local", "high" ]
+    ].each do |original, effort, target, expected|
+      @agent.update!(llm_model: "paperclip/#{original}", reasoning_effort: effort)
+      patch user_agent_model_path(@agent), params: {
+        user: { llm_model: "paperclip/#{target}", reasoning_effort: " #{effort} " }
+      }
+      assert_response :success
+      assert_equal "paperclip/#{target}", @agent.reload.llm_model
+      expected ? assert_equal(expected, @agent.reasoning_effort) : assert_nil(@agent.reasoning_effort)
+    end
+
+    @agent.update!(llm_model: "paperclip/codex_local", reasoning_effort: "low")
+    patch user_agent_model_path(@agent), params: {
+      user: { llm_model: "paperclip/claude_local", reasoning_effort: "minimal" }
+    }
+    assert_response :unprocessable_entity
+    assert_equal "paperclip/codex_local", @agent.reload.llm_model
+    assert_equal "low", @agent.reasoning_effort
   end
 
   test "admin may change another owner's agent" do

@@ -36,6 +36,19 @@ export default class extends Controller {
     if (popup?.isOpen()) popup.place()
   }
 
+  modelChanged(event) {
+    if (event.target.name !== 'user[llm_model]') return
+    const select = event.target.form.querySelector('[name="user[reasoning_effort]"]')
+    if (!select) return
+    const adapter = event.target.value.trim().match(/^paperclip\/([^/]+)/)?.[1]
+    const engine = { claude_local: 'claude', codex_local: 'codex', codex_custom: 'codex_custom' }[adapter]
+    const efforts = JSON.parse(select.dataset.efforts || '{}')[engine] || []
+    const selected = select.value
+    const blank = select.options[0].cloneNode(true)
+    select.replaceChildren(blank, ...efforts.map(effort => new Option(effort, effort)))
+    select.value = efforts.includes(selected) ? selected : ''
+  }
+
   keepOpen(event) {
     event.stopPropagation()
   }
