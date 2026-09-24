@@ -65,7 +65,8 @@ export default class extends Controller {
 
   storageKey() {
     const topicId = this.topicId || this.mainTopicId
-    return topicId ? `${STORAGE_PREFIX}${topicId}` : null
+    const userId = document.body.dataset.currentUserId
+    return topicId && userId ? `${STORAGE_PREFIX}${topicId}:user:${userId}` : null
   }
 
   persist() {

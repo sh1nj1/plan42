@@ -17,7 +17,8 @@ module Collavre
           "created_at" => c.created_at.iso8601,
           "quoted_comment_id" => c.quoted_comment_id,
           "quoted_text" => c.quoted_text,
-          "review_type" => c.review_type
+          "review_type" => c.review_type,
+          "agent_run_options" => c.agent_run_options
         }
         # Preserve attachment blob IDs for restore
         if c.images.attached?

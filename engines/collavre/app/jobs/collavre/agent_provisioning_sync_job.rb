@@ -12,20 +12,29 @@ module Collavre
   class AgentProvisioningSyncJob < ApplicationJob
     queue_as :gateway_health
 
-    def perform(agent_id)
+    def perform(agent_id, workspace_id: nil, attempt: 0)
       agent = User.find_by(id: agent_id)
       return unless agent&.cli_proxy_agent? && agent.agent_gateway.active?
 
-      agent.agent_workspaces.where(agent_gateway_id: agent.agent_gateway_id).find_each do |workspace|
-        sync(workspace)
+      workspaces = agent.agent_workspaces.where(agent_gateway_id: agent.agent_gateway_id)
+      workspaces = workspaces.where(id: workspace_id) if workspace_id
+      workspaces.find_each do |workspace|
+        sync(workspace, attempt)
       end
     end
 
     private
 
-    def sync(workspace)
+    def sync(workspace, attempt)
       CliProxy::Client.new(gateway: workspace.agent_gateway, workspace: workspace).provision_sync
     rescue CliProxy::Client::Error => e
+      # Manifest HTTP failures (including upstream 429) are wrapped as 502 by the proxy.
+      # Retry only this workspace, after the one-minute manifest rate-limit window.
+      if attempt < 4 && (e.status == 429 || e.status.to_i >= 500)
+        self.class.set(wait: 65.seconds * (attempt + 1)).perform_later(
+          workspace.agent_id, workspace_id: workspace.id, attempt: attempt + 1
+        )
+      end
       Rails.logger.warn(
         "[AgentProvisioningSyncJob] workspace=#{workspace.id} #{e.code || e.status}: #{e.message}"
       )

@@ -4,7 +4,7 @@ module Collavre
   class CommentResendService
     class NotAllowed < StandardError; end
 
-    COPY_ATTRIBUTES = %w[content private approver_id review_type quoted_comment_id quoted_text].freeze
+    COPY_ATTRIBUTES = %w[content private approver_id review_type quoted_comment_id quoted_text agent_run_options].freeze
 
     # Command results are appended to content; skip_dispatch is not persisted.
     # Reject slash-prefixed messages without executing commands to identify them.

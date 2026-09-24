@@ -175,8 +175,8 @@ export default class extends AgentAuthController {
   // The proxy keeps Fast mode in memory, so a restart turns it off until the
   // manifest is fetched again. Only a proxy that reports runtime can say so.
   fastModePending(data) {
-    if (!this.fastModeExpectedValue || !data.runtime) return false
-    return data.runtime.codex?.fast_mode !== true
+    if (!data.runtime) return false
+    return (data.runtime.codex?.fast_mode === true) !== this.fastModeExpectedValue
   }
 
   provisionButton(label, action, item) {

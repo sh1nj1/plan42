@@ -40,6 +40,7 @@ describe('comments--run-options', () => {
 
   beforeEach(async () => {
     localStorage.clear()
+    document.body.dataset.currentUserId = '1'
     document.body.innerHTML = FIXTURE
     popup = document.getElementById('comments-popup')
     application = Application.start()
@@ -50,6 +51,34 @@ describe('comments--run-options', () => {
   afterEach(() => {
     application.stop()
     document.body.innerHTML = ''
+    delete document.body.dataset.currentUserId
+  })
+
+  test('isolates accounts and ignores legacy unscoped options', () => {
+    localStorage.setItem(`${STORAGE_PREFIX}7`, JSON.stringify({ reasoning_effort: 'max' }))
+    switchTopic(7)
+    expect(effort().value).toBe('')
+    effort().value = 'high'
+    model().value = 'opus'
+    effort().dispatchEvent(new Event('change'))
+    document.body.dataset.currentUserId = '2'
+    switchTopic(7)
+    expect(effort().value).toBe('')
+    expect(model().value).toBe('')
+    model().value = 'sonnet'
+    model().dispatchEvent(new Event('change'))
+    document.body.dataset.currentUserId = '1'
+    switchTopic(7)
+    expect(effort().value).toBe('high')
+    expect(model().value).toBe('opus')
+  })
+
+  test('does not persist without a signed-in user', () => {
+    delete document.body.dataset.currentUserId
+    switchTopic(7)
+    effort().value = 'high'
+    effort().dispatchEvent(new Event('change'))
+    expect(localStorage.length).toBe(0)
   })
 
   test('toggles the panel', () => {
@@ -66,7 +95,7 @@ describe('comments--run-options', () => {
     model().value = ' paperclip/claude_local/opus '
     effort().dispatchEvent(new Event('change'))
 
-    expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}7`)))
+    expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}7:user:1`)))
       .toEqual({ reasoning_effort: 'high', model: 'paperclip/claude_local/opus' })
     expect(toggle().classList.contains('active')).toBe(true)
 
@@ -97,7 +126,7 @@ describe('comments--run-options', () => {
     popup.querySelector('.reset').click()
 
     expect(effort().value).toBe('')
-    expect(localStorage.getItem(`${STORAGE_PREFIX}7`)).toBeNull()
+    expect(localStorage.getItem(`${STORAGE_PREFIX}7:user:1`)).toBeNull()
   })
 
   test('the full-message view uses the main topic, so creatives do not share a choice', () => {
@@ -105,7 +134,7 @@ describe('comments--run-options', () => {
     effort().value = 'max'
     model().value = 'paperclip/claude_local/opus'
     effort().dispatchEvent(new Event('change'))
-    expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}100`)))
+    expect(JSON.parse(localStorage.getItem(`${STORAGE_PREFIX}100:user:1`)))
       .toEqual({ reasoning_effort: 'max', model: 'paperclip/claude_local/opus' })
 
     // Another creative's full-message view starts from the agent defaults.
@@ -132,16 +161,17 @@ describe('comments--run-options', () => {
   })
 
   test('ignores unreadable storage and unknown stored efforts', () => {
-    localStorage.setItem(`${STORAGE_PREFIX}9`, '{broken')
+    localStorage.setItem(`${STORAGE_PREFIX}9:user:1`, '{broken')
     switchTopic(9)
     expect(effort().value).toBe('')
 
-    localStorage.setItem(`${STORAGE_PREFIX}10`, JSON.stringify({ reasoning_effort: 'turbo' }))
+    localStorage.setItem(`${STORAGE_PREFIX}10:user:1`, JSON.stringify({ reasoning_effort: 'turbo' }))
     switchTopic(10)
     expect(effort().value).toBe('')
   })
 
   test('keeps working when storage throws', () => {
+    switchTopic(7)
     const setItem = Storage.prototype.setItem
     Storage.prototype.setItem = () => { throw new Error('denied') }
     try {
