@@ -5,6 +5,9 @@ production: &production
   offline_task_recovery:
     class: Collavre::OfflineTaskSweepJob
     schedule: every minute
+  async_approval_recovery:
+    class: Collavre::AsyncApprovalSweepJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
@@ -48,6 +51,9 @@ desktop:
   offline_task_recovery:
     class: Collavre::OfflineTaskSweepJob
     schedule: every minute
+  async_approval_recovery:
+    class: Collavre::AsyncApprovalSweepJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
@@ -90,6 +96,9 @@ development:
     schedule: every minute
   offline_task_recovery:
     class: Collavre::OfflineTaskSweepJob
+    schedule: every minute
+  async_approval_recovery:
+    class: Collavre::AsyncApprovalSweepJob
     schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob

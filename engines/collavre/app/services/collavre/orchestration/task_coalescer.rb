@@ -257,7 +257,7 @@ module Collavre
       end
 
       def independent_trigger?(task)
-        task.workflow? || task.trigger_event_name == "claude_channel_approval" || review_trigger?(task)
+        task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
       end
 
       def foldable_survivor?(task)
@@ -313,7 +313,7 @@ module Collavre
 
       # One query for the whole burst rather than review_trigger? per sibling.
       def reject_review_triggers(siblings)
-        siblings = siblings.reject { |task| task.trigger_event_name == "claude_channel_approval" }
+        siblings = siblings.reject { |task| task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) }
         anchors = siblings.filter_map { |t| (t.trigger_event_payload || {}).dig("comment", "id") }
         review_ids = Comment.review_message_ids(anchors).to_set
         return siblings if review_ids.empty?

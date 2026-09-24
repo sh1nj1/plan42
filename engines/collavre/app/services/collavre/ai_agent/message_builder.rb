@@ -7,7 +7,8 @@ module Collavre
     # Extracts creative context, chat history, and the trigger comment
     # into the format expected by AiClient.
     class MessageBuilder
-      def initialize(agent:, context:, original_comment: nil)
+      def initialize(agent:, context:, original_comment: nil, task: nil)
+        @task = task
         @agent = agent
         @context = context
         @original_comment = original_comment
@@ -22,6 +23,7 @@ module Collavre
         append_referenced_creative_contexts(messages)
         history_count = append_chat_history(messages)
         append_trigger_message(messages)
+        append_task_identity(messages)
 
         {
           messages: messages,
@@ -31,6 +33,12 @@ module Collavre
       end
 
       private
+
+      def append_task_identity(messages)
+        return unless @task && @agent.cli_proxy_agent?
+
+        messages.last[:parts].unshift(text: I18n.t("collavre.approval_gate.task_context", task_id: @task.id))
+      end
 
       def append_creative_context(messages)
         creative_id = @context.dig("creative", "id")

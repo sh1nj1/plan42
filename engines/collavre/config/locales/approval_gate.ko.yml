@@ -2,7 +2,10 @@ ko:
   collavre:
     approval_gate:
       reason: "사유 (선택)"
-      native_required: "승인 요청은 실행 중인 Collavre 내장 에이전트 작업에서 사용할 수 있습니다. Claude Channel 세션은 플러그인의 approval_request 툴을 사용해 주세요."
+      native_required: "승인 요청에는 실행 중인 내장 에이전트 턴 또는 유효한 Codex CLI task_id가 필요합니다. Claude Channel 세션에서는 플러그인의 approval_request 툴을 사용하세요."
       question_required: "승인자에게 물을 질문을 입력해 주세요."
       request_id_required: "승인 요청에는 결정을 연결할 요청 ID가 필요합니다."
       invalid_approver: "이 크리에이티브에 접근할 수 있는 사람을 승인자로 지정해 주세요."
+      invalid_task: "본인 또는 본인이 만든 에이전트의 실행 중인 Codex CLI task를 지정하세요."
+      async_pending: "현재 턴을 종료하고 기다리세요. Collavre가 사람의 결정을 새 턴으로 전달합니다. 대기 중에는 제안한 작업을 실행하지 마세요."
+      task_context: "현재 Collavre task_id: %{task_id}. 사람의 결정이 필요하면 meta_tool에서 이 task_id로 approval_request를 호출하세요. pending이면 턴을 종료하고 결정 메시지를 기다리세요."

@@ -13,6 +13,9 @@ module Collavre
         raise ArgumentError unless %w[approved denied].include?(decision)
         payload = @comment.approval_gate_action
         fail_with(:approve_invalid_format) unless payload
+        if payload["mode"] == "async"
+          return AsyncApprovalDecision.new(@comment, @user).call(decision, reason: reason)
+        end
         task = Task.find_by(id: payload["task_id"])
         fail_with(:approve_task_not_pending) unless task
 
