@@ -175,6 +175,76 @@ module Collavre
       assert_no_enqueued_jobs(only: AiAgentJob) { AsyncApprovalSweepJob.perform_now }
     end
 
+    %w[running done failed cancelled].each do |status|
+      test "sweep retires a #{status} continuation and never processes its gate again" do
+        request
+        decide
+        @task.update!(status: "done")
+        resume
+        continuation.update!(status: status)
+
+        AsyncApprovalResumeJob.stub(:perform_now, ->(*) { flunk "Historical gate was resumed" }) do
+          2.times { AsyncApprovalSweepJob.perform_now }
+        end
+        refute gate.reload.async_approval_recovery_pending?
+      end
+    end
+
+    %w[failed cancelled].each do |status|
+      test "sweep retires a #{status} origin" do
+        request
+        decide
+        @task.update!(status: status)
+        AsyncApprovalResumeJob.stub(:perform_now, ->(*) { flunk "Inactive origin was resumed" }) do
+          2.times { AsyncApprovalSweepJob.perform_now }
+        end
+        refute gate.reload.async_approval_recovery_pending?
+      end
+    end
+
+    test "sweep retains pending recovery until the origin finishes and dispatch succeeds" do
+      request
+      refute gate.async_approval_recovery_pending?
+      decide
+      AsyncApprovalSweepJob.perform_now
+      assert gate.reload.async_approval_recovery_pending?
+      @task.update!(status: "done")
+      AsyncApprovalSweepJob.perform_now
+      assert gate.reload.async_approval_recovery_pending?
+      assert continuation.pending?
+      continuation.update!(status: "running")
+      AsyncApprovalSweepJob.perform_now
+      refute gate.reload.async_approval_recovery_pending?
+    end
+
+    test "sweep retires withdrawn gates and missing continuations" do
+      request
+      decide
+      @task.update!(status: "done")
+      resume
+      continuation.destroy!
+      assert_no_difference("Task.count") { AsyncApprovalSweepJob.perform_now }
+      refute gate.reload.async_approval_recovery_pending?
+      gate.update!(async_approval_recovery_pending: true, private: true)
+      AsyncApprovalSweepJob.perform_now
+      refute gate.reload.async_approval_recovery_pending?
+    end
+
+    test "sweep retires moved gates and revoked agent access" do
+      request
+      decide
+      original_gate = gate
+      original_gate.update!(topic: @creative.topics.create!(name: "Moved", user: @user))
+      AsyncApprovalSweepJob.perform_now
+      refute original_gate.reload.async_approval_recovery_pending?
+      original_gate.update!(topic: @topic, async_approval_recovery_pending: true)
+      perform_enqueued_jobs(only: PermissionCacheJob) do
+        CreativeShare.find_by!(creative: @creative, user: @agent).update!(permission: "read")
+      end
+      AsyncApprovalSweepJob.perform_now
+      refute original_gate.reload.async_approval_recovery_pending?
+    end
+
     test "async approval recovery is scheduled in every running environment" do
       config = YAML.load_file(Rails.root.join("config/recurring.yml"), aliases: true)
       %w[production desktop development].each do |environment|

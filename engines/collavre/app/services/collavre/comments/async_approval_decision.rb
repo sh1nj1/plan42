@@ -11,7 +11,8 @@ module Collavre
           validate_async!(payload)
           result = { decision: decision, reason: reason.to_s.strip.presence, decided_by: @user.id }
           @comment.update!(action: payload.merge("decision" => result).to_json,
-                           action_executed_at: Time.current, action_executed_by: @user)
+                           action_executed_at: Time.current, action_executed_by: @user,
+                           async_approval_recovery_pending: true)
           ActiveRecord.after_all_transactions_commit { AsyncApprovalResumeJob.perform_later(@comment.id) }
         end
       end

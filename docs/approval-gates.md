@@ -170,7 +170,10 @@ minute in production, development, and desktop environments to recover committed
 decisions whose resume enqueue was interrupted. It also retries dispatch of an
 already-created queued or pending continuation; the persisted task ID prevents
 another continuation from being created. One failed recovery does not block other
-gates, and the next sweep retries it.
+gates, and the next sweep retries it. The decision transaction marks an indexed
+recovery flag; the sweep reads only flagged comments. It clears the flag when
+a continuation has started or finished, or when the origin/gate can no longer
+resume. Historical gates therefore leave the recovery scan permanently.
 
 Deleting or moving a gate withdraws it without cancelling the running Codex turn.
 A deleted gate needs no local cleanup because Codex retains no waiting tool call.
