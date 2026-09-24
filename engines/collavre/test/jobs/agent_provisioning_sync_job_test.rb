@@ -55,14 +55,14 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
   end
 
   test "retries only failed workspaces after the rate limit window" do
-    [ 429, 502 ].each do |status|
+    [ [ 429, nil ], [ 502, nil ], [ nil, "proxy_unreachable" ] ].each do |status, code|
       clear_enqueued_jobs
       calls = []
       build = lambda do |gateway:, workspace:|
         Object.new.tap do |client|
           client.define_singleton_method(:provision_sync) do
             calls << workspace.id
-            raise Collavre::CliProxy::Client::Error.new("limited", status: status) if workspace.id == @failed_id
+            raise Collavre::CliProxy::Client::Error.new("limited", status: status, code: code) if workspace.id == @failed_id
           end
           client.instance_variable_set(:@failed_id, @first.id)
         end
@@ -87,9 +87,10 @@ class Collavre::AgentProvisioningSyncJobTest < ActiveSupport::TestCase
   end
 
   test "does not retry permanent failures or exhausted retries" do
-    [ [ 403, 0 ], [ 502, 4 ] ].each do |status, attempt|
+    [ [ 403, nil, 0 ], [ 502, nil, 4 ], [ nil, "proxy_unreachable", 4 ],
+      [ nil, "unknown_error", 0 ] ].each do |status, code, attempt|
       client = Object.new
-      client.define_singleton_method(:provision_sync) { raise Collavre::CliProxy::Client::Error.new("failed", status: status) }
+      client.define_singleton_method(:provision_sync) { raise Collavre::CliProxy::Client::Error.new("failed", status: status, code: code) }
       Collavre::CliProxy::Client.stub(:new, client) do
         assert_no_enqueued_jobs do
           Collavre::AgentProvisioningSyncJob.perform_now(@agent.id, workspace_id: @first.id, attempt: attempt)

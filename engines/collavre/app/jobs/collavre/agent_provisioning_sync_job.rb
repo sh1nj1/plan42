@@ -25,12 +25,16 @@ module Collavre
 
     private
 
+    def retryable?(error)
+      error.code == "proxy_unreachable" || error.status == 429 || error.status.to_i >= 500
+    end
+
     def sync(workspace, attempt)
       CliProxy::Client.new(gateway: workspace.agent_gateway, workspace: workspace).provision_sync
     rescue CliProxy::Client::Error => e
       # Manifest HTTP failures (including upstream 429) are wrapped as 502 by the proxy.
       # Retry only this workspace, after the one-minute manifest rate-limit window.
-      if attempt < 4 && (e.status == 429 || e.status.to_i >= 500)
+      if attempt < 4 && retryable?(e)
         self.class.set(wait: 65.seconds * (attempt + 1)).perform_later(
           workspace.agent_id, workspace_id: workspace.id, attempt: attempt + 1
         )
