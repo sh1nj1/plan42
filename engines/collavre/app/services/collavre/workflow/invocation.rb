@@ -33,7 +33,7 @@ module Collavre
           next unless self.class.usable_topic?(topic, creative.id) && creative.reload.archived_at.nil?
           comment = creative.comments.create!(topic: topic, user_id: @execution.context.dig("comment", "user_id"),
             content: instruction_content(agents),
-            skip_default_user: true, skip_dispatch: true)
+            skip_default_user: true, skip_dispatch: true, skip_create_notifications: true)
           payload = comment.dispatch_payload.deep_stringify_keys
           payload["chat"] = chat_context(comment, agents)
           payload["sender"] = SystemEvents::ContextBuilder.sender_context_for(comment.user)

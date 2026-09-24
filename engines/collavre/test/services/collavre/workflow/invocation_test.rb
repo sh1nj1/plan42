@@ -74,6 +74,35 @@ module Collavre
         end
       end
 
+      test "generated mentions do not notify same named humans or rejected agents" do
+        human, rejected = users(:two), users(:three)
+        human.update!(name: @agent.name)
+        rejected.update!(name: @agent.name, llm_vendor: @agent.llm_vendor, llm_model: @agent.llm_model)
+        [ human, rejected ].each do |recipient|
+          CreativeShare.create!(creative: @creative, user: recipient, shared_by: @owner, permission: :feedback)
+          CreativeSharesCache.find_or_create_by!(creative: @creative, user: recipient, permission: :feedback)
+        end
+        scheduler = Object.new
+        decisions = [ { agent: @agent, timing: :immediate }, { agent: rejected, timing: :rejected } ]
+        scheduler.define_singleton_method(:schedule) { |*, **| decisions }
+        execution = nil
+        assert_no_enqueued_jobs only: CommentNotificationJob do
+          Orchestration::Scheduler.stub(:new, scheduler) { execution = execute }
+        end
+        message = invocation(execution)
+        assert_equal "@#{@agent.name}: #{@rule.description}", message.content
+        assert_includes message.mentioned_users, human
+        assert_includes message.mentioned_users, rejected
+        assert_equal [ @agent.id ], execution.admissions.pluck(:agent_id)
+        assert_empty Comment.where(quoted_comment_id: message.id)
+        assert_no_enqueued_jobs only: CommentNotificationJob do
+          2.times { Recovery.execution(execution) }
+        end
+        assert_enqueued_jobs 1, only: CommentNotificationJob do
+          @creative.comments.create!(topic: message.topic, user: @owner, content: message.content, skip_dispatch: true)
+        end
+      end
+
       test "instruction in trigger topic leaves awaiting loop untouched" do
         destination = @creative.topics.find_by!(name: "Main")
         loop_data = { "state" => "awaiting_user", "trigger_topic_id" => destination.id,
