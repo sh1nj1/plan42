@@ -1035,9 +1035,6 @@ body.chat-fullscreen {
 
 .agent-run-options-toggle.active .thinking-icon {
     color: var(--color-complete);
-    outline: 1px solid var(--color-complete);
-    outline-offset: 1px;
-    border-radius: 3px;
 }
 
 .agent-run-options-panel {
