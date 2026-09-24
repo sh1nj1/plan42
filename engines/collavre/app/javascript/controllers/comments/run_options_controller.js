@@ -18,7 +18,7 @@ export function appendRunOptions(form, formData) {
 }
 
 export default class extends Controller {
-  static targets = ['panel', 'toggle', 'effort', 'warning']
+  static targets = ['panel', 'toggle', 'effort']
 
   connect() {
     this.topicId = null
@@ -29,7 +29,7 @@ export default class extends Controller {
     this.menu = new CommonPopup(this.panelTarget, {
       renderItem: (item) => item.html,
       onSelect: (item) => this.selectEffort(item.value),
-      onClose: () => this.toggleTarget.setAttribute('aria-expanded', 'false')
+      onClose: () => this.anchor?.setAttribute('aria-expanded', 'false')
     })
     this.restore()
   }
@@ -55,7 +55,16 @@ export default class extends Controller {
   }
 
   toggle() {
-    if (this.menu.isOpen()) return this.menu.hide()
+    this.openFrom(this.toggleTarget)
+  }
+
+  openFrom(anchor) {
+    const sameAnchor = this.anchor === anchor
+    if (this.menu.isOpen()) {
+      this.menu.hide()
+      if (sameAnchor) return
+    }
+    this.anchor = anchor
     const items = Array.from(this.effortTarget.options, (option) => {
       const label = document.createElement('span')
       label.textContent = `${option.selected ? '✓ ' : ''}${option.textContent}`
@@ -63,9 +72,9 @@ export default class extends Controller {
     })
     this.menu.setItems(items)
     this.menu.setActiveIndex(this.effortTarget.selectedIndex)
-    this.menu.showAt(elementAnchor(this.toggleTarget))
-    this.toggleTarget.setAttribute('aria-expanded', 'true')
-    this.toggleTarget.focus()
+    this.menu.showAt(elementAnchor(this.anchor))
+    this.anchor.setAttribute('aria-expanded', 'true')
+    this.anchor.focus()
   }
 
   keepOpen(event) {
@@ -83,7 +92,7 @@ export default class extends Controller {
     this.effortTarget.value = value
     this.change()
     this.menu.hide()
-    this.toggleTarget.focus()
+    this.anchor?.focus()
   }
 
   change() {
@@ -128,10 +137,12 @@ export default class extends Controller {
   }
 
   render() {
-    const warning = this.effortTarget.selectedOptions[0]?.dataset.warning || ''
-    this.warningTarget.textContent = warning
-    this.warningTarget.hidden = !warning
-    const active = Boolean(this.effortTarget.value)
-    this.toggleTarget.classList.toggle('active', active)
+    const levels = { none: 0, minimal: 16, low: 33, medium: 50, high: 67, xhigh: 83, max: 100 }
+    const buttons = [this.toggleTarget, ...this.popup.querySelectorAll('[data-thinking-toggle]')]
+    buttons.forEach(button => {
+      button.style.setProperty('--thinking-fill', `${levels[this.effortTarget.value] || 0}%`)
+      button.title = this.effortTarget.selectedOptions[0]?.textContent || ''
+      button.classList.toggle('active', Boolean(this.effortTarget.value))
+    })
   }
 }

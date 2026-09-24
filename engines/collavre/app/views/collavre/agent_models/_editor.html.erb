@@ -9,3 +9,11 @@
   <%= form.submit t("collavre.comments.agent_model.save") %>
   <p role="status"><%= @saved ? t("collavre.comments.agent_model.saved") : @agent.errors.full_messages.to_sentence %></p>
 <% end %>
+<% if @agent.cli_proxy_agent? %>
+  <button type="button" class="creative-action-btn agent-run-options-toggle" data-thinking-toggle
+          data-action="click->comment-agent-model#thinking keydown->comment-agent-model#thinkingKeydown mousedown->comment-agent-model#keepOpen touchstart->comment-agent-model#keepOpen"
+          aria-expanded="false" aria-controls="agent-run-options-panel">
+    <%= render "collavre/comments/thinking_icon" %>
+    <%= t("collavre.comments.agent_model.message_thinking") %>
+  </button>
+<% end %>

@@ -1029,8 +1029,15 @@ body.chat-fullscreen {
     pointer-events: none;
 }
 
+.agent-run-options-toggle .thinking-icon {
+    border-radius: 3px;
+    background-image: linear-gradient(to top,
+        color-mix(in srgb, var(--color-complete) 35%, transparent) 0 var(--thinking-fill, 0%),
+        transparent var(--thinking-fill, 0%) 100%);
+}
+
 .agent-run-options-toggle.active {
-    color: var(--color-complete);
+    border-color: var(--color-complete);
 }
 
 .agent-run-options-panel {

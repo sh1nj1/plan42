@@ -226,11 +226,7 @@
             aria-expanded="false" aria-controls="agent-run-options-panel"
             title="<%= t('collavre.comments.agent_run_options.button_title') %>"
             aria-label="<%= t('collavre.comments.agent_run_options.button_title') %>">
-      <svg class="thinking-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-        <path d="M12 18V5a3 3 0 0 0-5.8-1A4 4 0 0 0 3 10a4 4 0 0 0 .5 7.5A4 4 0 0 0 12 18Z" />
-        <path d="M12 18V5a3 3 0 0 1 5.8-1A4 4 0 0 1 21 10a4 4 0 0 1-.5 7.5A4 4 0 0 1 12 18Z" />
-        <path d="M8 8c0 2-1 3-3 3m11-3c0 2 1 3 3 3M7 16c2 0 3-1 3-3m7 3c-2 0-3-1-3-3" />
-      </svg>
+      <%= render "collavre/comments/thinking_icon" %>
     </button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>

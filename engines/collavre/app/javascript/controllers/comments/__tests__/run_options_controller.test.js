@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 
+import AvatarModelController from '../../comment_agent_model_controller'
 import { Application } from '@hotwired/stimulus'
 import RunOptionsController, { STORAGE_PREFIX } from '../run_options_controller'
 
@@ -13,6 +14,9 @@ describe('comments--run-options', () => {
 
   const FIXTURE = `
     <div id="comments-popup">
+      <div data-controller="comment-agent-model">
+        <button type="button" data-thinking-toggle data-action="click->comment-agent-model#thinking keydown->comment-agent-model#thinkingKeydown">Thinking for this message</button>
+      </div>
       <form data-controller="comments--run-options" data-action="reset->comments--run-options#afterReset">
         <button type="button" data-comments--run-options-target="toggle"
                 data-action="click->comments--run-options#toggle keydown->comments--run-options#keydown mousedown->comments--run-options#keepOpen touchstart->comments--run-options#keepOpen" aria-expanded="false">⚙</button>
@@ -20,9 +24,9 @@ describe('comments--run-options', () => {
           <select hidden name="comment[agent_run_options][reasoning_effort]" data-comments--run-options-target="effort" data-action="change->comments--run-options#change">
             <option value="">Agent default</option>
             <option value="high">high</option>
-            <option value="max" data-warning="Codex does not support max; agent then local defaults apply.">max — Claude only</option>
+            <option value="max">max — Claude only</option>
           </select>
-          <p data-comments--run-options-target="warning" role="status" hidden></p><p>Chat → agent → local defaults</p><ul data-popup-list></ul>
+          <p>Chat → agent → local defaults</p><ul data-popup-list></ul>
         </div>
       </form>
     </div>`
@@ -41,6 +45,7 @@ describe('comments--run-options', () => {
     popup = document.getElementById('comments-popup')
     application = Application.start()
     application.register('comments--run-options', RunOptionsController)
+    application.register('comment-agent-model', AvatarModelController)
     await tick()
   })
 
@@ -50,22 +55,40 @@ describe('comments--run-options', () => {
     delete document.body.dataset.currentUserId
   })
 
-  test('warns after selection and restoration, and clears the warning for shared levels', () => {
-    switchTopic(7)
+  test('fills the button from the bottom for each effort without a footer warning', () => {
+    const controller = application.getControllerForElementAndIdentifier(form(), 'comments--run-options')
+    const levels = { none: 0, minimal: 16, low: 33, medium: 50, high: 67, xhigh: 83, max: 100 }
+    Object.entries(levels).forEach(([value, fill]) => {
+      if (![...effort().options].some(option => option.value === value)) effort().add(new Option(value, value))
+      controller.selectEffort(value)
+      expect(toggle().style.getPropertyValue('--thinking-fill')).toBe(`${fill}%`)
+      expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe(value)
+      expect(popup.querySelector('[role="status"]')).toBeNull()
+    })
+    controller.selectEffort('')
+    expect(toggle().style.getPropertyValue('--thinking-fill')).toBe('0%')
+    expect(toggle().title).toBe('Agent default')
+  })
+
+  test('avatar opens the shared popup and changes message effort without saving agent settings', () => {
+    const avatar = popup.querySelector('[data-thinking-toggle]')
+    avatar.click()
+    expect(avatar.getAttribute('aria-expanded')).toBe('true')
+    expect(popup.querySelectorAll('[data-popup-list] li')).toHaveLength(3)
+    avatar.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    avatar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(effort().value).toBe('high')
+    expect(avatar.getAttribute('aria-expanded')).toBe('false')
+    expect(avatar.style.getPropertyValue('--thinking-fill')).toBe('67%')
+    expect(toggle().style.getPropertyValue('--thinking-fill')).toBe('67%')
+    expect(new FormData(form()).get('comment[agent_run_options][reasoning_effort]')).toBe('high')
+    expect(new FormData(form()).has('user[reasoning_effort]')).toBe(false)
+    avatar.click()
     toggle().click()
-    expect(popup.querySelectorAll('[data-popup-list] li')[2].textContent).toContain('Claude only')
-    popup.querySelectorAll('[data-popup-list] li')[2].click()
-    const warning = popup.querySelector('[role="status"]')
-    expect(warning.hidden).toBe(false)
-    expect(warning.textContent).toContain('Codex does not support max')
-    switchTopic(8)
-    expect(warning.hidden).toBe(true)
-    switchTopic(7)
-    expect(warning.hidden).toBe(false)
-    effort().value = 'high'
-    effort().dispatchEvent(new Event('change'))
-    expect(warning.hidden).toBe(true)
-    expect(warning.textContent).toBe('')
+    expect(avatar.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    toggle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
   })
 
   test('isolates accounts and ignores legacy unscoped options', () => {

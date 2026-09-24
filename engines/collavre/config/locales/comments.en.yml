@@ -47,6 +47,7 @@ en:
       connected: Github account connected successfully.
     comments:
       agent_model:
+        message_thinking: "Thinking for this message"
         label: "Agent model"
         help: "Changes this agent’s default model for all chats."
         save: "Save model"
@@ -62,10 +63,6 @@ en:
           none: "none — Disable Thinking (Codex only)"
           minimal: "minimal — Codex only"
           max: "max — Claude only"
-        warnings:
-          none: "none requests Thinking off in Codex. Claude does not support none: its agent default, then local settings apply instead. Support also depends on the selected Codex model."
-          minimal: "minimal is only supported by Codex. For Claude, this choice is not applied: its agent default, then local settings apply instead."
-          max: "max is only supported by Claude. For Codex, this choice is not applied: its agent default, then local settings apply instead."
         chip_title: "Run options: %{options}"
       close: Close
       reaction_invalid: Invalid reaction.

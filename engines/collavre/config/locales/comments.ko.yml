@@ -47,6 +47,7 @@ ko:
       connected: Github 계정이 연동되었습니다.
     comments:
       agent_model:
+        message_thinking: "메시지 추론 설정"
         label: "에이전트 모델"
         help: "이 에이전트의 모든 채팅에 적용되는 기본 모델을 변경합니다."
         save: "모델 저장"
@@ -62,10 +63,6 @@ ko:
           none: "none — Thinking 끄기(Codex 전용)"
           minimal: "minimal — Codex 전용"
           max: "max — Claude 전용"
-        warnings:
-          none: "none은 Codex에 Thinking 끄기를 요청합니다. Claude는 none을 지원하지 않아 이 선택 대신 에이전트 기본값 → 로컬 설정을 적용합니다. 선택한 Codex 모델에 따라서도 지원 여부가 다릅니다."
-          minimal: "minimal은 Codex 전용입니다. Claude에는 이 선택이 적용되지 않고 에이전트 기본값 → 로컬 설정을 적용합니다."
-          max: "max는 Claude 전용입니다. Codex에는 이 선택이 적용되지 않고 에이전트 기본값 → 로컬 설정을 적용합니다."
         chip_title: "실행 옵션: %{options}"
       close: 닫기
       reaction_invalid: 잘못된 리액션입니다.

@@ -10,6 +10,24 @@ class AgentModelsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as @owner, password: "password"
   end
 
+  test "CLI avatar offers message thinking without an agent settings field" do
+    gateway = Collavre::AgentGateway.create!(
+      owner: @owner, name: "Thinking avatar", base_url: "https://proxy.example.com",
+      admin_key: "admin", completion_key: "completion"
+    )
+    @agent.update!(llm_vendor: "cli_proxy", agent_gateway: gateway,
+                   llm_model: "paperclip/codex_local", reasoning_effort: "high")
+    %i[en ko].each do |locale|
+      @owner.update!(locale: locale)
+      get user_agent_model_path(@agent)
+      assert_response :success
+      assert_select "button[type='button'][data-thinking-toggle]", text: I18n.t("collavre.comments.agent_model.message_thinking", locale: locale)
+      assert_select "[name='user[reasoning_effort]']", count: 0
+      assert_select "button[data-thinking-toggle] svg.thinking-icon"
+      assert_equal "high", @agent.reload.reasoning_effort
+    end
+  end
+
   test "owner can read and update the agent default without changing other settings" do
     get user_agent_model_path(@agent)
     assert_response :success

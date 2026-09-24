@@ -96,12 +96,12 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
       assert_response :success
       %w[none minimal max].each do |effort|
         key = "collavre.comments.agent_run_options"
-        assert_select "option[value=?][data-warning=?]", effort, I18n.t("#{key}.warnings.#{effort}", locale: locale),
+        assert_select "option[value=?]", effort,
                       text: I18n.t("#{key}.labels.#{effort}", locale: locale)
       end
-      assert_select "[data-comments--run-options-target='warning'][role='status'][hidden]"
+      assert_select "[data-comments--run-options-target='warning']", count: 0
       %w[low medium high xhigh].each do |effort|
-        assert_select "option[value=?][data-warning='']", effort, text: effort
+        assert_select "option[value=?]", effort, text: effort
       end
     end
   end
