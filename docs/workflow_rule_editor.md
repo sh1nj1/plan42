@@ -73,7 +73,10 @@ The source text is frozen at admission. Source image attachments are read live
 and included in the multimodal trigger only after dispatch identity, scope, and
 current permissions are validated; withdrawn or deleted sources provide no images.
 
-The execution freezes the instruction content and stores its destination anchor
+Selection snapshots the instruction from the same rule row as its handler and
+destination configuration. Later rule edits cannot mix instruction versions with
+the selected configuration; current reachability and permissions still gate admission.
+The execution retains that instruction snapshot and stores its destination anchor
 in `context.invocation`. Admission, message, and outboxes commit atomically;
 redelivery reuses that message. Source and destination withdrawal stop pending
 work. Matching mode is checked at the source; scheduling uses destination policy.

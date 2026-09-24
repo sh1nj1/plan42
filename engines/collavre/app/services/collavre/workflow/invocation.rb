@@ -32,7 +32,7 @@ module Collavre
         topic.with_lock do
           next unless self.class.usable_topic?(topic, creative.id) && creative.reload.archived_at.nil?
           comment = creative.comments.create!(topic: topic, user_id: @execution.context.dig("comment", "user_id"),
-            content: Creative.find(@execution.rule_id).description,
+            content: @execution.rule_snapshot.fetch("instruction"),
             skip_default_user: true, skip_dispatch: true)
           payload = comment.dispatch_payload.deep_stringify_keys
           payload["chat"] = { "content" => comment.content, "mentioned_users" => [] }

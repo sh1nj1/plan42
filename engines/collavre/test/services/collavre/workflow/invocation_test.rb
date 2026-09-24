@@ -82,6 +82,35 @@ module Collavre
         assert_equal "Analyze the article and save the result.", original.reload.content
       end
 
+      test "selection freezes instruction with handler and destination before admission" do
+        configure("topic_name" => "Selected destination", "instruction" => "Forged metadata instruction")
+        selection = Orchestration::AgentOrchestrator.prepare_selection("comment_created", @context)
+        original = @rule.description
+        @rule.update!(description: "Edited after selection",
+          data: @rule.data.deep_merge("workflow_rule" => {
+            "handler" => { "type" => "none" }, "topic_name" => "Edited destination"
+          }))
+
+        outcome = Admission.new(@context, selection).call
+        execution = Execution.find(outcome.workflow_execution_id)
+        assert_equal original, invocation(execution).content
+        assert_equal "Selected destination", invocation(execution).topic.name
+        assert_equal "agent", execution.handler
+        assert_equal [ @agent.id ], execution.admissions.pluck(:agent_id)
+        assert_equal original, execution.rule_snapshot["instruction"]
+      end
+
+      test "rule deletion after selection seals without an invocation or outbox" do
+        selection = Orchestration::AgentOrchestrator.prepare_selection("comment_created", @context)
+        @rule.destroy!
+        assert_no_difference [ "Comment.count", "Outbox.count", "Topic.count" ] do
+          outcome = Admission.new(@context, selection).call
+          execution = Execution.find(outcome.workflow_execution_id)
+          assert_equal "permission_revoked", execution.reason
+          assert_nil execution.context["invocation"]
+        end
+      end
+
       test "topic creation validation race reuses the concurrent winner" do
         execution = execute
         destination = invocation(execution).topic
