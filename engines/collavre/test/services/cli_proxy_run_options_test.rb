@@ -58,6 +58,16 @@ class CliProxyRunOptionsTest < ActiveSupport::TestCase
     assert_equal "none", custom.reasoning_effort
   end
 
+  test "effort lookup normalizes model whitespace like runtime resolution" do
+    %w[paperclip/codex_local/gpt-5.4 paperclip/claude_local/sonnet paperclip/codex_custom/openai/gpt-5].each do |model|
+      [ " #{model}", "#{model} ", "\t#{model}\n" ].each do |padded|
+        assert_equal RunOptions.efforts_for(model), RunOptions.efforts_for(padded)
+        assert_equal "high", RunOptions.resolve(agent: agent(model: padded, effort: "high")).reasoning_effort
+      end
+    end
+    [ nil, " ", " unknown/model " ].each { |model| assert_empty RunOptions.efforts_for(model) }
+  end
+
   test "sanitize keeps known non-blank keys only" do
     assert_nil RunOptions.sanitize_message_options(nil)
     assert_nil RunOptions.sanitize_message_options("high")

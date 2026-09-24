@@ -36,7 +36,7 @@ module Collavre
         end
 
         def efforts_for(model)
-          EFFORTS.fetch(AdapterEngine.for_model(model), [])
+          EFFORTS.fetch(AdapterEngine.for_model(model.to_s.strip), [])
         end
 
         def fast_mode_supported?(model)

@@ -147,6 +147,22 @@ class AgentRunOptionsControllersTest < ActionDispatch::IntegrationTest
     assert_equal "cli_proxy", agent.llm_vendor
   end
 
+  test "update_ai accepts padded models with compatible efforts and rejects incompatible efforts" do
+    agent = cli_proxy_agent
+    { "codex_local/gpt-5.4" => [ "minimal", "max" ], "claude_local/sonnet" => [ "max", "minimal" ] }.each do |model, (valid, invalid)|
+      patch update_ai_user_path(agent), params: {
+        user: { llm_model: "  paperclip/#{model}  ", reasoning_effort: valid }
+      }
+      assert_response :redirect
+      assert_equal valid, agent.reload.reasoning_effort
+      assert_equal valid, Collavre::CliProxy::RunOptions.resolve(agent: agent).reasoning_effort
+
+      patch update_ai_user_path(agent), params: { user: { reasoning_effort: invalid } }
+      assert_response :unprocessable_entity
+      assert_equal valid, agent.reload.reasoning_effort
+    end
+  end
+
   test "update_ai retains the workspace and syncs Fast off when leaving CLI Proxy" do
     agent = cli_proxy_agent
     agent.update_columns(codex_fast_mode: true)

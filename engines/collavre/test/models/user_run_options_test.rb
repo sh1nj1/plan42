@@ -68,6 +68,20 @@ class UserRunOptionsTest < ActiveSupport::TestCase
     end
   end
 
+  test "padded models accept compatible defaults on create and update and reject incompatible ones" do
+    @gateway.update!(identity_secret: "s" * 32)
+    { "codex_local/gpt-5.4" => [ "minimal", "max" ], "claude_local/sonnet" => [ "max", "minimal" ] }.each do |model, (valid, invalid)|
+      @agent.assign_attributes(llm_model: " \t paperclip/#{model} \n", reasoning_effort: valid)
+      assert @agent.save, @agent.errors.full_messages.join(", ")
+      candidate = @agent.dup
+      candidate.email = "padded-#{model.split('/').first}@ai.local"
+      assert candidate.save, candidate.errors.full_messages.join(", ")
+      assert_not @agent.update(reasoning_effort: invalid)
+      assert @agent.errors.of_kind?(:reasoning_effort, :inclusion)
+      assert_equal valid, @agent.reload.reasoning_effort
+    end
+  end
+
   test "leaving CLI Proxy disables fast and syncs with or without a model change" do
     [ "paperclip/codex_local", "gpt-5" ].each do |model|
       @agent.update!(llm_vendor: " CLI_PROXY ", llm_model: "paperclip/codex_local", codex_fast_mode: true)
