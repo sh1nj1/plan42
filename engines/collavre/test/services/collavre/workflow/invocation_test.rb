@@ -270,6 +270,58 @@ module Collavre
         assert_empty images.call(context)
       end
 
+      test "frozen source links supply authorized referenced context" do
+        @agent.define_singleton_method(:creative_children_level) { 2 }
+        linked = create_workflow_creative(description: "Linked project contents")
+        CreativeShare.create!(creative: linked, user: @agent, shared_by: @owner, permission: :read)
+        CreativeSharesCache.find_or_create_by!(creative: linked, user: @agent, permission: :read)
+        child = create_workflow_creative(parent: linked, description: "Linked child contents")
+        CreativeSharesCache.find_or_create_by!(creative: child, user: @agent, permission: :read)
+        Current.user = @agent
+        @source.update!(content: "[Project](/creatives/#{linked.id})")
+        @context["comment"]["content"] = @source.content
+        execution = execute
+        context = execution.admissions.first!.context
+        @source.update!(content: "Edited without the link")
+        references = lambda do |payload = context|
+          AiAgent::MessageBuilder.new(agent: @agent, context: payload, original_comment: invocation(execution))
+            .build[:messages].select { |item| item[:kind] == :referenced_creative }
+        end
+        2.times do
+          text = references.call.flat_map { |item| item[:parts] }.pluck(:text).join
+          assert_includes text, linked.description
+          assert_includes text, child.description
+        end
+        assert_empty references.call(context.deep_merge("comment" => { "id" => @source.id }))
+        @source.update!(private: true)
+        assert_empty references.call
+        @source.update!(private: false)
+        CreativeShare.where(creative: linked, user: @agent).destroy_all
+        CreativeSharesCache.where(creative: linked, user: @agent).delete_all
+        assert_empty references.call
+      end
+
+      test "same topic source is excluded before history limiting" do
+        @agent.define_singleton_method(:chat_history_limit) { 1 }
+        topic = @creative.main_topic
+        older = @creative.comments.create!(topic: topic, user: @owner, content: "Older conversation", skip_dispatch: true,
+          created_at: 1.hour.ago)
+        @source.update!(topic: topic)
+        @context.merge!(@source.dispatch_payload.deep_stringify_keys)
+        execution = execute
+        context = execution.admissions.first!.context
+        result = AiAgent::MessageBuilder.new(agent: @agent, context: context, original_comment: invocation(execution)).build
+        history = result[:messages].select { |item| item[:kind] == :chat_history }
+        assert_equal [ older.id ], history.pluck(:comment_id)
+        text = result[:messages].flat_map { |item| item[:parts] }.filter_map { |part| part[:text] }.join
+        assert_equal 1, text.scan(@source.content).size
+        assert_not result[:first_message]
+        older.destroy!
+        result = AiAgent::MessageBuilder.new(agent: @agent, context: context, original_comment: invocation(execution)).build
+        assert_empty result[:messages].select { |item| item[:kind] == :chat_history }
+        assert result[:first_message]
+      end
+
       test "channel dispatch receives source context along with the visible rule instruction" do
         execution = execute
         context = execution.admissions.first!.context

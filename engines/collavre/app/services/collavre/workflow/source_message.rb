@@ -11,6 +11,16 @@ module Collavre
         "#{block}\n\n#{text}"
       end
 
+      def self.content(context, agent)
+        execution, source = authorized_source(context, agent)
+        execution.context.dig("comment", "content") if source
+      end
+
+      def self.comment_id(context, agent)
+        _, source = authorized_source(context, agent)
+        source&.id
+      end
+
       def self.images(context, agent)
         _, source = authorized_source(context, agent)
         source ? source.images.map(&:blob) : []

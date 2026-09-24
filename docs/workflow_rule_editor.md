@@ -69,7 +69,12 @@ author, preserves workspace attribution, and never reparses mentions or runs the
 workflow matcher again. The selected responders execute against that persisted
 message, so their replies and activity logs appear in its topic. The original
 message stays in place and is provided as authorized source context to the AI.
-The source text is frozen at admission. Source image attachments are read live
+The source text is frozen at admission. Its creative links participate in prompt
+context resolution after source authorization and linked-creative read permission
+checks, using the existing subtree, deduplication, and workflow-exclusion rules.
+When source and destination topics coincide, the source is excluded from history
+before the history limit is applied; it appears once in the trigger and older
+conversation can fill the history window. Source image attachments are read live
 and included in the multimodal trigger only after dispatch identity, scope, and
 current permissions are validated; withdrawn or deleted sources provide no images.
 

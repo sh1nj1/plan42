@@ -129,12 +129,12 @@ module Collavre
         # absorbed comment's own dispatch would have supplied.
         contents = [ @context.dig("comment", "content") ] + merged_trigger.blocks.map(&:text)
         contents = contents.compact
-        return if contents.empty?
+        return if contents.empty? && workflow_referenced_ids.empty?
 
         children_level = @agent.creative_children_level
         max_depth = 1 + children_level
 
-        referenced_ids = contents.flat_map { |c| referenced_creative_ids(c) }.uniq
+        referenced_ids = (contents.flat_map { |c| referenced_creative_ids(c) } + workflow_referenced_ids).uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = load_prompt_context_creatives(referenced_ids)
 
@@ -152,6 +152,13 @@ module Collavre
             kind: :referenced_creative,
             parts: [ { text: "Referenced Creative (id: #{creative.id}):\n#{markdown}" } ]
           }
+        end
+      end
+
+      def workflow_referenced_ids
+        text = Workflow::SourceMessage.content(@context, @agent)
+        referenced_creative_ids(text).select do |id|
+          Creatives::PermissionChecker.current_allowed?(id, @agent, :read)
         end
       end
 
@@ -216,7 +223,7 @@ module Collavre
         # limited window lets a burst eat every history slot — a burst as large as
         # the limit would leave no conversation at all and mark the turn
         # first_message. Dropping them first lets older messages backfill.
-        excluded_ids = (merged_comment_ids + [ @context.dig("comment", "id") ]).compact.map(&:to_i)
+        excluded_ids = history_excluded_ids
         scope = scope.where.not(id: excluded_ids) if excluded_ids.any?
 
         scope.order(created_at: :desc)
@@ -251,6 +258,11 @@ module Collavre
         end
 
         count
+      end
+
+      def history_excluded_ids
+        (merged_comment_ids + [ @context.dig("comment", "id"),
+          Workflow::SourceMessage.comment_id(@context, @agent) ]).compact.map(&:to_i)
       end
 
       def append_trigger_message(messages)
