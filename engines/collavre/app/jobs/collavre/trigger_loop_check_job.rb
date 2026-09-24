@@ -246,7 +246,7 @@ module Collavre
         system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
         llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
         gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { agent: verifier, usage_source_task: task }
+        context: { user: verifier, usage_source_task: task }
       )
 
       response_text = +""

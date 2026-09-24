@@ -196,9 +196,10 @@ module Collavre
     end
 
     def build_ai_client(system_prompt)
+      run_options = resolve_run_options
       AiClient.new(
         vendor: @agent.llm_vendor,
-        model: @agent.llm_model,
+        model: run_options&.model || @agent.llm_model,
         system_prompt: system_prompt,
         llm_api_key: @agent.llm_api_key,
         gateway_url: @agent.gateway_url,
@@ -207,7 +208,8 @@ module Collavre
           user: @agent,
           task: @task,
           comment: @reply_comment || @original_comment,
-          workspace_user: workspace_user
+          workspace_user: workspace_user,
+          reasoning_effort: run_options&.reasoning_effort
         },
         request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
         # The streaming block below checks cancellation only when a text delta
@@ -215,6 +217,19 @@ module Collavre
         # that loop's only checkpoint against terminal status and the deadline.
         before_tool_call: ->(force = false) { @lifecycle_manager.check_cancelled!(force: force) }
       )
+    end
+
+    # Only a human's message chooses how a CLI Proxy turn runs. An agent
+    # reply carries the options *it* ran with, which are not a request to the
+    # next agent in an A2A chain.
+    def resolve_run_options
+      return nil unless @agent.llm_vendor.to_s.strip.downcase == "cli_proxy"
+
+      requester = @original_comment&.user
+      message_options = @original_comment&.agent_run_options unless requester.nil? || requester.ai_user?
+      options = CliProxy::RunOptions.resolve(agent: @agent, message_options: message_options)
+      @reply_comment&.update_column(:agent_run_options, options.to_h.presence)
+      options
     end
 
     def stream_response(client, messages_data)

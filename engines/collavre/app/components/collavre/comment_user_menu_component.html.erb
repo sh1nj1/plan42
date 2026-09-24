@@ -1,11 +1,12 @@
 <div class="popup-menu-wrapper comment-user-menu"
-     data-controller="popup-menu comment-user-menu"
+     data-controller="popup-menu comment-user-menu<%= " comment-agent-model" if user.ai_user? %>"
+     data-comment-agent-model-url-value="<%= helpers.collavre.user_agent_model_path(user) %>"
      data-comment-user-menu-user-id-value="<%= user.id %>"
      data-comment-user-menu-user-name-value="<%= user.display_name %>">
   <button type="button"
           class="popup-menu-toggle comment-user-menu-trigger"
           data-popup-menu-target="button"
-          data-action="click->popup-menu#toggle"
+          data-action="click->popup-menu#toggle<%= " click->comment-agent-model#load" if user.ai_user? %>"
           aria-label="<%= t('collavre.comments.user_menu.open', name: user.display_name) %>"
           aria-haspopup="menu"
           aria-expanded="false">

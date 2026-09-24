@@ -35,7 +35,8 @@
              selected_vendor: @user&.llm_vendor || @copy_source&.llm_vendor || "google",
              selected_model: @user&.llm_model || @copy_source&.llm_model,
              selected_gateway_id: @user&.agent_gateway_id || @copy_source&.agent_gateway_id,
-             selected_gateway: @user&.agent_gateway || @copy_source&.agent_gateway %>
+             selected_gateway: @user&.agent_gateway || @copy_source&.agent_gateway,
+             agent_source: @user || @copy_source %>
 
   <div class="form-group" data-agent-vendor-target="legacyCredential">
     <%= form.label :llm_api_key, t('collavre.users.new_ai.api_key_label') %>

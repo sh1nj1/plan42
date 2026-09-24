@@ -25,7 +25,7 @@ class CommentUserMenuComponentTest < ViewComponent::TestCase
 
     render_inline(Collavre::CommentUserMenuComponent.new(user: agent, menu_id: "comment-agent-menu-1"))
 
-    assert_selector "button.comment-user-menu-trigger[data-action='click->popup-menu#toggle']"
+    assert_selector "button.comment-user-menu-trigger[data-action~='click->comment-agent-model#load']"
     assert_no_selector ".ai-agent-draggable"
     assert_no_selector "[draggable='true']"
     assert_no_selector ".comment-user-popup-guide"

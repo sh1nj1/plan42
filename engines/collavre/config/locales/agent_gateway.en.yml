@@ -176,6 +176,7 @@ en:
         per_user: Provider login is yours and is reused by every agent you connect to this gateway — log in once per provider, not once per agent. Skills and workspace config stay separate per agent.
       engines: Agent providers
       loading: Loading…
+      fast_mode_pending: Codex Fast mode on the proxy differs from this agent’s setting. Sync now to apply the current setting.
       refresh: Refresh
       login: Log in
       submit: Submit

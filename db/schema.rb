@@ -212,6 +212,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
   end
 
   create_table "comment_versions", force: :cascade do |t|
+    t.json "agent_run_options"
     t.integer "comment_id", null: false
     t.text "content", null: false
     t.datetime "created_at", null: false
@@ -227,6 +228,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
     t.text "action"
     t.datetime "action_executed_at"
     t.integer "action_executed_by_id"
+    t.json "agent_run_options"
     t.integer "approver_id"
     t.boolean "async_approval_recovery_pending", default: false, null: false
     t.bigint "async_approval_task_id"
@@ -1128,6 +1130,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
     t.integer "agent_gateway_id"
     t.string "avatar_url"
     t.string "calendar_id"
+    t.boolean "codex_fast_mode", default: false, null: false
     t.datetime "created_at", null: false
     t.integer "created_by_id"
     t.boolean "creative_workspace_enabled", default: true, null: false
@@ -1164,6 +1167,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
     t.bigint "quota_probe_task_id"
     t.integer "quota_retry_count", default: 0, null: false
     t.boolean "quota_retry_exhausted", default: false, null: false
+    t.string "reasoning_effort"
     t.text "routing_expression"
     t.string "routing_subscription_token"
     t.boolean "searchable", default: false, null: false

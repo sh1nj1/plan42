@@ -1,0 +1,4 @@
+<% if run_options.present? %>
+  <% run_label = [ run_options["model"]&.delete_prefix(Collavre::CliProxy::RunOptions::MODEL_PREFIX), run_options["reasoning_effort"] ].compact.join(" · ") %>
+  <span class="comment-status-label agent-run-options-label" title="<%= t('collavre.comments.agent_run_options.chip_title', options: run_label) %>">⚙ <%= run_label %></span>
+<% end %>

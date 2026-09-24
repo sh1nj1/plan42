@@ -78,6 +78,40 @@ module Collavre
         assert_equal quoted.id, @task.reload.reply_comment.id
       end
 
+      [
+        [ { "model" => "old-model", "reasoning_effort" => "low" },
+          { "model" => "new-model", "reasoning_effort" => "high" } ],
+        [ {}, { "model" => "new-model", "reasoning_effort" => "high" } ],
+        [ { "model" => "old-model", "reasoning_effort" => "low" }, {} ]
+      ].each_with_index do |(previous_options, current_options), index|
+        test "review workflow replaces audit options with the latest run #{index}" do
+          quoted = @creative.comments.create!(
+            content: "agent draft", user: @agent, topic: @topic, agent_run_options: previous_options
+          )
+          review = @creative.comments.create!(
+            content: "please revise", user: @user, topic: @topic, quoted_comment: quoted
+          )
+          reply = @creative.comments.create!(
+            content: Comment::STREAMING_PLACEHOLDER_CONTENT, user: @agent, topic: @topic,
+            task: @task, agent_run_options: current_options
+          )
+
+          result = ResponseFinalizer.new(
+            task: @task, agent: @agent, original_comment: review,
+            reply_comment: reply, response_content: "revised content"
+          ).finalize
+
+          assert_equal quoted.id, result.id
+          versions = quoted.comment_versions.order(:version_number)
+          assert_equal [ previous_options, current_options ], versions.map(&:agent_run_options)
+          assert_equal [ "agent draft", "revised content" ], versions.map(&:content)
+          assert_equal current_options, quoted.reload.agent_run_options
+          assert_equal "revised content", quoted.content
+          assert_equal @task.id, quoted.task_id
+          assert_not Comment.exists?(reply.id)
+        end
+      end
+
       # The reply placeholder's activity logs must move to the surviving comment so
       # the visible activity record is preserved across the fold.
       test "review workflow reassociates activity logs onto the survivor" do

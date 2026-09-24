@@ -37,6 +37,7 @@
       <% present_user_ids = defined?(present_user_ids) ? present_user_ids : nil %>
       <%= render "collavre/comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
     </span>
+    <span class="agent-run-options-container"><%= render "collavre/comments/run_options", run_options: comment.agent_run_options %></span>
     <% if comment.private? %>
       <span class="comment-status-label private-label">🔒 <%= t('collavre.comments.private') %></span>
     <% end %>

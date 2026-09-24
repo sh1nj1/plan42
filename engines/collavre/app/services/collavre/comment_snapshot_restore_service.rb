@@ -24,16 +24,7 @@ module Collavre
 
         # First pass: recreate all comments without quoted_comment_id
         recreated = locked_snapshot.comments_data.map do |data|
-          comment = Comment.create!(
-            creative_id: locked_snapshot.creative_id,
-            user_id: data["user_id"],
-            topic_id: data["topic_id"],
-            content: data["content"],
-            private: data["private"] || false,
-            quoted_text: data["quoted_text"],
-            review_type: data["review_type"],
-            skip_default_user: true
-          )
+          comment = recreate_comment(locked_snapshot, data)
           # Re-attach images if blob IDs were preserved in the snapshot
           if data["image_blob_ids"].present?
             blobs = ActiveStorage::Blob.where(id: data["image_blob_ids"])
@@ -69,6 +60,20 @@ module Collavre
     end
 
     private
+
+    def recreate_comment(snapshot, data)
+      Comment.create!(
+        creative_id: snapshot.creative_id,
+        user_id: data["user_id"],
+        topic_id: data["topic_id"],
+        content: data["content"],
+        private: data["private"] || false,
+        quoted_text: data["quoted_text"],
+        review_type: data["review_type"],
+        agent_run_options: data["agent_run_options"],
+        skip_default_user: true
+      )
+    end
 
     # TopicMove locks topic -> snapshots. Match that order so restoration
     # cannot deadlock relocation while recreating comments.

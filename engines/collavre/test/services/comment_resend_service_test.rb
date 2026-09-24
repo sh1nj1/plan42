@@ -10,6 +10,12 @@ module Collavre
       @comment = create_message(@user, "Original")
     end
 
+    test "resend preserves the selected model and thinking level" do
+      options = { "model" => "paperclip/claude_local/opus", "reasoning_effort" => "max" }
+      @comment.update!(agent_run_options: options)
+      assert_equal options, resend.reload.agent_run_options
+    end
+
     test "removes only subsequent visible AI messages in the same topic and preserves human quotes" do
       @earlier.update_column(:created_at, @comment.created_at + 1.day)
       reply = create_message(users(:ai_bot), "Reply", created_at: @comment.created_at - 1.day)

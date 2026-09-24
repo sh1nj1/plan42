@@ -63,6 +63,24 @@ describe("AgentConnectionController", () => {
   })
 
   test.each([
+    [true, { codex: { fast_mode: false } }, true],
+    [false, { codex: { fast_mode: true } }, true],
+    [true, { codex: { fast_mode: true } }, false],
+    [false, { codex: { fast_mode: false } }, false],
+    [true, undefined, false],
+    [false, undefined, false]
+  ])("shows Fast mismatch for expected=%s runtime=%j", async (expected, runtime, pending) => {
+    await mount()
+    const controller = application.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="agent-connection"]'), "agent-connection"
+    )
+    controller.fastModeExpectedValue = expected
+    controller.fastModePendingValue = "Fast setting differs; sync now"
+    controller.renderProvision({ manifest_url: "https://example.com/provision.json", runtime })
+    expect(controller.manifestTarget.textContent).toBe(pending ? "Fast setting differs; sync now" : "")
+  })
+
+  test.each([
     [{ flow: "custom", flows: [] }, []],
     [{ flow: "api-key" }, ["api-key"]],
     [{ flow: "custom", flows: ["device-code"] }, ["device-code"]]

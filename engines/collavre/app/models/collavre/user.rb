@@ -3,7 +3,7 @@ module Collavre
     self.table_name = "users"
 
     include HasInboxCreative
-    include AgentLiveness
+    include AgentLiveness, AgentRunOptions
 
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
 

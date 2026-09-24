@@ -116,7 +116,11 @@ export default class extends Controller {
 
   render() {
     const version = this.versions[this.currentIndex - 1]
-    if (version) this.setContentText(version.content)
+    if (version) {
+      this.setContentText(version.content)
+      const chip = document.getElementById(this.contentTargetValue)?.querySelector(".agent-run-options-container")
+      if (chip) chip.innerHTML = version.run_options_html || ""
+    }
 
     this.indicatorTarget.textContent = `v${this.currentIndex}/${this.totalValue}`
     this.updateButtons()

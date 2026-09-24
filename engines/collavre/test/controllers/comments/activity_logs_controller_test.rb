@@ -15,6 +15,16 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(@user, password: "password")
   end
 
+  test "activity details display recorded run settings including local defaults" do
+    @comment.activity_logs.create!(activity: "llm_query", log: {
+      run_options: { reasoning_effort: nil, reasoning_source: "local_default", codex_fast_mode_configured: true }
+    })
+    get creative_comment_activity_log_path(@creative, @comment), params: { locale: :en }
+    assert_response :success
+    assert_select ".activity-log-yaml", text: /reasoning_source: local_default/
+    assert_select ".activity-log-yaml", text: /codex_fast_mode_configured: true/
+  end
+
   test "does not add a standalone duration row without activity logs" do
     get creative_comment_activity_log_path(@creative, @comment), params: { locale: :en }
 

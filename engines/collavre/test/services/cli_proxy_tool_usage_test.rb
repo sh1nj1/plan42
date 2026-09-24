@@ -68,8 +68,9 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     end
   end
 
-  def client_with(chunks, vendor: "cli_proxy", log: true, ask_events: [])
-    client = Collavre::AiClient.new(vendor: vendor, model: "paperclip/claude_local", system_prompt: nil, log_interactions: log)
+  def client_with(chunks, vendor: "cli_proxy", log: true, ask_events: [], reasoning_effort: nil)
+    client = Collavre::AiClient.new(vendor: vendor, model: "paperclip/claude_local", system_prompt: nil,
+                                    log_interactions: log, context: { reasoning_effort: reasoning_effort })
     conversation = Conversation.new(chunks, ask_events: ask_events)
     client.define_singleton_method(:build_conversation) { |_tools| conversation }
     [ client, conversation ]
@@ -104,6 +105,73 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_nil usages.last.duration_ms, "a result whose call never streamed has no duration"
   end
 
+  test "cli_proxy sends the run's reasoning effort with the cli events request" do
+    client, conversation = client_with(run_chunks, reasoning_effort: "high")
+
+    client.chat([ { role: "user", text: "hi" } ])
+
+    assert_equal({ x_cli_events: "reasoning", reasoning_effort: "high" }, conversation.params)
+  end
+
+  test "compression and merge clients send the configured agent effort" do
+    agent = users(:ai_bot)
+    agent.assign_attributes(llm_vendor: "cli_proxy", llm_model: "paperclip/claude_local", reasoning_effort: "high")
+    arguments = [ agent, creatives(:tshirt), nil, users(:one) ]
+    clients = [
+      Collavre::CompressJob.new.send(:build_client, *arguments, "Summarize"),
+      Collavre::MergeCommentsJob.new.send(:build_client, *arguments)
+    ]
+    clients.each do |client|
+      conversation = Conversation.new([])
+      client.define_singleton_method(:build_conversation) { |_tools| conversation }
+      client.chat([])
+      assert_equal({ x_cli_events: "reasoning", reasoning_effort: "high" }, conversation.params)
+    end
+  end
+
+  test "client effort prefers a valid override and filters defaults for its actual model" do
+    agent = users(:ai_bot)
+    agent.reasoning_effort = "max"
+    [ [ "high", "high" ], [ nil, "max" ], [ "invalid", "max" ] ].each do |override, expected|
+      client, conversation = client_with([], reasoning_effort: override)
+      client.send(:context)[:user] = agent
+      client.chat([])
+      assert_equal expected, conversation.params[:reasoning_effort]
+    end
+
+    client, conversation = client_with([])
+    client.send(:context)[:user] = agent
+    client.instance_variable_set(:@model, "paperclip/codex_local")
+    client.chat([])
+    assert_equal({ x_cli_events: "reasoning" }, conversation.params)
+  end
+
+  %w[claude_local codex_local].each do |adapter|
+    test "#{adapter} applies chat then agent defaults and otherwise omits effort for local settings" do
+      agent = users(:ai_bot)
+      [ [ "low", "high", "low" ], [ "", "high", "high" ], [ nil, nil, nil ] ].each do |chat_effort, default, expected|
+        agent.reasoning_effort = default
+        agent.codex_fast_mode = true
+        client, conversation = client_with([], reasoning_effort: chat_effort)
+        client.send(:context)[:user] = agent
+        client.instance_variable_set(:@model, "paperclip/#{adapter}")
+        client.chat([])
+        logged = Collavre::ActivityLog.order(:id).last.log.fetch("run_options")
+        assert_equal expected, logged["reasoning_effort"] if expected
+        assert_nil logged["reasoning_effort"] unless expected
+        assert_equal expected ? "request" : "local_default", logged["reasoning_source"]
+        assert_equal adapter == "codex_local", logged["codex_fast_mode_configured"]
+        client.ask("Summary")
+        assert_equal logged, Collavre::ActivityLog.order(:id).last.log.fetch("run_options")
+        if expected
+          assert_equal expected, conversation.params[:reasoning_effort]
+        else
+          assert_not conversation.params.key?(:reasoning_effort)
+        end
+      end
+    end
+  end
+
   test "other vendors neither request nor record cli events" do
     client, conversation = client_with(run_chunks, vendor: "openai")
     seen = []
@@ -112,6 +180,7 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
     assert_equal "Answer", client.chat([])
 
     assert_nil conversation.params
+    assert_not Collavre::ActivityLog.order(:id).last.log.key?("run_options")
     assert_empty seen
     assert_equal 0, Collavre::ToolUsage.count
   end

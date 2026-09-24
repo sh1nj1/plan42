@@ -96,11 +96,19 @@ function menuState(online, healthStatus, statusText, labels) {
   }
 }
 
+function enableAgentModel(root, user) {
+  if (user.ai_user) {
+    root.dataset.controller += ' comment-agent-model'
+    root.dataset.commentAgentModelUrlValue = `${user.profile_url}/agent-model`
+  }
+}
+
 export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
   const state = menuState(online, healthStatus, statusText, labels)
   const root = document.createElement('div')
   root.className = 'popup-menu-wrapper comment-user-menu'
   root.dataset.controller = 'popup-menu comment-user-menu'
+  enableAgentModel(root, user)
   root.dataset.commentUserMenuUserIdValue = user.id
   root.dataset.commentUserMenuUserNameValue = user.name
 
@@ -108,7 +116,7 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   trigger.type = 'button'
   trigger.className = 'popup-menu-toggle comment-user-menu-trigger'
   trigger.dataset.popupMenuTarget = 'button'
-  trigger.dataset.action = 'click->popup-menu#toggle'
+  trigger.dataset.action = 'click->popup-menu#toggle' + (user.ai_user ? ' click->comment-agent-model#load' : '')
   trigger.setAttribute('aria-label', labels.open.replace('%{name}', user.name))
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', 'false')

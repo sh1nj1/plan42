@@ -904,6 +904,11 @@ body.chat-fullscreen {
     color: var(--color-badge-bg);
 }
 
+.comment-status-label.agent-run-options-label {
+    background-color: color-mix(in srgb, var(--color-muted) 15%, transparent);
+    color: var(--color-muted);
+}
+
 .comment-status-label.approved-label {
     background-color: color-mix(in srgb, var(--color-complete) 20%, transparent);
     color: var(--color-complete);
@@ -1022,6 +1027,27 @@ body.chat-fullscreen {
     transform: translateY(4px);
     transition: opacity 0.2s ease, transform 0.2s ease;
     pointer-events: none;
+}
+
+.agent-run-options-toggle .thinking-battery-segment {
+    opacity: clamp(0.18, calc(var(--thinking-level, 0) - var(--segment) + 1), 1);
+}
+
+.agent-run-options-toggle.active .thinking-icon {
+    color: var(--color-complete);
+}
+
+.agent-run-options-panel {
+    overflow-y: auto;
+    width: 300px;
+    max-width: calc(100vw - 16px);
+}
+
+.agent-run-options-help {
+    margin: 0;
+    padding: 0.5em 0.75em;
+    font-size: 0.85em;
+    color: var(--color-muted);
 }
 
 .comment-attachment-list {
@@ -2380,4 +2406,22 @@ li:hover .topic-create-option {
     color: var(--text-muted);
     cursor: pointer;
     font-size: 1.2rem;
+}
+
+.comment-agent-model-editor {
+    padding: var(--space-2);
+    border-top: 1px solid var(--color-border);
+}
+
+.comment-agent-model-editor label,
+.comment-agent-model-editor input[type="text"] {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.comment-agent-model-editor p {
+    margin: var(--space-1) 0;
+    color: var(--color-text-muted);
+    font-size: var(--text-0);
 }
