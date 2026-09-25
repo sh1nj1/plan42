@@ -1,4 +1,5 @@
 /** @jest-environment jsdom */
+import { jest } from '@jest/globals'
 import { act, createElement as h } from 'react'
 import { createRoot } from 'react-dom/client'
 import { fireEvent, getByRole, queryByRole } from '@testing-library/dom'
@@ -94,4 +95,31 @@ test.each(['🔖', '📚', '🗂️', '🔍'])('inserts the added emoji %s from 
   expect(getByRole(host, 'dialog').querySelectorAll('button')).toHaveLength(56)
   await act(async () => fireEvent.click(getByRole(host, 'button', { name: emoji })))
   expect(text()).toBe(`Hello ${emoji}`)
+})
+
+test('clamps an indented popup and repositions on resize and scroll', () => {
+  let anchorLeft = 200
+  let viewportWidth = 375
+  const viewport = jest.spyOn(document.documentElement, 'clientWidth', 'get').mockImplementation(() => viewportWidth)
+  const bounds = jest.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    return { left: anchorLeft, width: this.classList.contains('lexical-emoji-picker__popup') ? 300 : 28 }
+  })
+  try {
+    open()
+    const popup = getByRole(host, 'dialog')
+    expect(popup.style.left).toBe('-133px')
+    viewportWidth = 1024
+    fireEvent(window, new Event('resize'))
+    expect(popup.style.left).toBe('0px')
+    anchorLeft = -20
+    fireEvent.scroll(document)
+    expect(popup.style.left).toBe('28px')
+    open()
+    fireEvent(window, new Event('resize'))
+    fireEvent.scroll(document)
+    expect(queryByRole(host, 'dialog')).toBeNull()
+  } finally {
+    viewport.mockRestore()
+    bounds.mockRestore()
+  }
 })

@@ -982,10 +982,11 @@
   left: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
   gap: var(--space-1);
   padding: var(--space-2);
-  width: min(280px, calc(100vw - 48px));
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 16px));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   max-height: 240px;
   overflow-y: auto;
   background: var(--surface-section);

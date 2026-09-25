@@ -121,6 +121,28 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_equal "Root🔖", inline_editor_field.text
   end
 
+  test "emoji popup stays inside narrow viewports for an indented creative" do
+    child = Creative.create!(description: "Child", user: @user, parent: @root_creative)
+    visit collavre.creative_path(@root_creative)
+    open_inline_editor(child)
+    page.current_window.resize_to(375, 700)
+    find(".lexical-emoji-picker > button").click
+    [ 375, 320, 768 ].each do |width|
+      page.current_window.resize_to(width, 700)
+      assert_selector ".lexical-emoji-picker__popup"
+      assert page.evaluate_script(<<~JS)
+        (() => {
+          const popup = document.querySelector('.lexical-emoji-picker__popup')
+          const rect = popup.getBoundingClientRect()
+          return rect.left >= 7 && rect.right <= document.documentElement.clientWidth - 7 &&
+            popup.scrollWidth <= popup.clientWidth
+        })()
+      JS
+    end
+    find(".lexical-emoji-picker__popup button", text: "🔍", exact_text: true).click
+    assert_text "🔍"
+  end
+
   test "escape dismisses emoji popup without closing the editor" do
     open_inline_editor(@root_creative)
     inline_editor_field.click

@@ -1,4 +1,4 @@
-import { createElement as h, useEffect, useRef, useState } from 'react'
+import { createElement as h, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { $getRoot, $getSelection, $isRangeSelection, $setSelection } from 'lexical'
 
 const EMOJIS = '😀 😃 😄 😁 😆 😅 😂 🤣 😊 🙂 😉 😍 🥰 😘 😎 🤔 😮 😢 😭 😡 🥳 😴 👍 👎 👏 🙌 🙏 💪 👋 🤝 ❤️ 🧡 💛 💚 💙 💜 🔥 ⭐ 🌟 ✨ 🎉 🎊 🎁 🎯 🚀 💡 ✅ ❌ ⚠️ 📌 📝 📅 🔖 📚 🗂️ 🔍'.split(' ')
@@ -25,8 +25,28 @@ function useDismiss(open, wrapper, trigger, close) {
   }, [open, wrapper, trigger, close])
 }
 
+function usePopupPosition(ref) {
+  useLayoutEffect(() => {
+    const popup = ref.current
+    const position = () => {
+      const anchor = popup.parentElement.getBoundingClientRect()
+      const width = popup.getBoundingClientRect().width
+      const left = Math.max(8, Math.min(anchor.left, document.documentElement.clientWidth - width - 8))
+      popup.style.left = `${left - anchor.left}px`
+    }
+    position()
+    window.addEventListener('resize', position)
+    document.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      document.removeEventListener('scroll', position, true)
+    }
+  }, [ref])
+}
+
 function EmojiChoices({ label, choose }) {
   const ref = useRef(null)
+  usePopupPosition(ref)
   useEffect(() => { ref.current.querySelector('button').focus() }, [])
   return h('div', { ref, className: 'lexical-emoji-picker__popup', role: 'dialog', 'aria-label': label },
     EMOJIS.map((emoji) => h('button', {
