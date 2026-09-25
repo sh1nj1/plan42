@@ -68,9 +68,10 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
   end
 
   test "JSON deletion retains the no content response" do
-    delete creative_path(@creative), as: :json
+    delete creative_path(@creative), headers: { "Accept" => "application/json" }
 
     assert_response :no_content
+    assert_nil response.headers["Location"]
     assert_not Creative.exists?(@creative.id)
     assert_equal @parent, @child.reload.parent
   end
