@@ -42,7 +42,7 @@ module Collavre
       else
         users
       end
-      users = users.order(:name, :id).distinct.limit(limit)
+      users = Collavre::User.where(id: users.select(:id).distinct).order(:name, :id).limit(limit)
       render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
     end
 
