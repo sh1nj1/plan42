@@ -435,6 +435,7 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear, colorType }
 
 import LinkPopup from "./LinkPopup"
 import EmojiPicker from "./EmojiPicker"
+import HeadingButtons from "./HeadingButtons"
 
 function HistoryButtons({ editor, canUndo, canRedo }) {
   return (
@@ -461,7 +462,7 @@ function HistoryButtons({ editor, canUndo, canRedo }) {
   )
 }
 
-function Toolbar({ emojiLabel }) {
+function Toolbar({ emojiLabel, headingLabels }) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
     bold: false,
@@ -708,6 +709,7 @@ function Toolbar({ emojiLabel }) {
   return (
     <div className="lexical-toolbar">
       <HistoryButtons editor={editor} canUndo={canUndo} canRedo={canRedo} />
+      <HeadingButtons editor={editor} labels={headingLabels} />
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
         type="button"
@@ -927,6 +929,7 @@ function EditorInner({
   blobUrlTemplate,
   placeholderText,
   emojiLabel,
+  headingLabels,
   deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
@@ -951,7 +954,7 @@ function EditorInner({
 
   return (
     <div className="lexical-editor-shell">
-      <Toolbar emojiLabel={emojiLabel} />
+      <Toolbar emojiLabel={emojiLabel} headingLabels={headingLabels} />
       <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={

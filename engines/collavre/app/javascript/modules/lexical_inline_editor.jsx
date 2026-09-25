@@ -42,6 +42,7 @@ export function createInlineEditor(container, {
         editorKey={currentKey}
         placeholderText={container.dataset.placeholder || null}
         emojiLabel={container.dataset.emojiLabel}
+        headingLabels={[1, 2, 3].map((level) => container.dataset[`heading${level}Label`])}
         // onPromptForLink removed
         onKeyDown={(event, editor) => {
           if (onKeyDown) onKeyDown(event, editor)
