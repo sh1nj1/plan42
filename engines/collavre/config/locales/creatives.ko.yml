@@ -185,6 +185,7 @@ ko:
         metadata_must_be_object: 메타데이터는 객체여야 합니다.
         description_read_only_source: 읽기 전용 소스 콘텐츠는 직접 변경할 수 없습니다
       inline_editor:
+        insert_emoji: "이모지 삽입"
         placeholder: 크리에이티브를 설명해주세요…
         markdown_placeholder: 마크다운으로 작성…
         markdown_preview_placeholder: 미리보기

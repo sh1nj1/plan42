@@ -434,8 +434,9 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear, colorType }
 
 
 import LinkPopup from "./LinkPopup"
+import EmojiPicker from "./EmojiPicker"
 
-function Toolbar() {
+function Toolbar({ emojiLabel }) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
     bold: false,
@@ -681,6 +682,7 @@ function Toolbar() {
 
   return (
     <div className="lexical-toolbar">
+      <EmojiPicker editor={editor} label={emojiLabel} />
       <button
         type="button"
         className="lexical-toolbar-btn"
@@ -915,6 +917,7 @@ function EditorInner({
   directUploadUrl,
   blobUrlTemplate,
   placeholderText,
+  emojiLabel,
   deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
@@ -939,7 +942,7 @@ function EditorInner({
 
   return (
     <div className="lexical-editor-shell">
-      <Toolbar />
+      <Toolbar emojiLabel={emojiLabel} />
       <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
@@ -1055,6 +1058,7 @@ export default function InlineLexicalEditor({
   blobUrlTemplate,
   editorKey,
   placeholderText,
+  emojiLabel,
   deletedAttachmentsRef
 }) {
   const initialConfig = useMemo(
@@ -1095,7 +1099,7 @@ export default function InlineLexicalEditor({
         onUploadStateChange={onUploadStateChange}
         directUploadUrl={directUploadUrl}
         blobUrlTemplate={blobUrlTemplate}
-        placeholderText={placeholderText}
+        placeholderText={placeholderText} emojiLabel={emojiLabel}
         deletedAttachmentsRef={deletedAttachmentsRef}
       />
     </LexicalComposer>

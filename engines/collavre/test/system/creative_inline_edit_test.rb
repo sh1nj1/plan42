@@ -87,6 +87,31 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector "img", wait: 10
   end
 
+  test "emoji toolbar inserts at the caret and persists after saving" do
+    open_inline_editor(@root_creative)
+    field = inline_editor_field
+    field.click
+    field.send_keys(:end)
+    find(".lexical-emoji-picker > button").click
+    assert_selector ".lexical-emoji-picker__popup[role='dialog']"
+    find(".lexical-emoji-picker__popup button", text: "🎉", exact_text: true).click
+    assert_no_selector ".lexical-emoji-picker__popup"
+    assert_text "Root🎉"
+    close_inline_editor
+    assert_selector "#creative-#{@root_creative.id}", text: "Root🎉"
+    open_inline_editor(@root_creative)
+    assert_equal "Root🎉", inline_editor_field.text
+  end
+
+  test "escape dismisses emoji popup without closing the editor" do
+    open_inline_editor(@root_creative)
+    find(".lexical-emoji-picker > button").click
+    page.driver.browser.switch_to.active_element.send_keys(:escape)
+    assert_no_selector ".lexical-emoji-picker__popup"
+    assert_selector ".lexical-content-editable"
+    assert_selector ".lexical-emoji-picker > button:focus"
+  end
+
   test "shows saved row when starting another addition" do
     open_inline_editor(@root_creative)
     start_inline_child_form
