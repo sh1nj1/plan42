@@ -1,3 +1,4 @@
+import { openInitialChat, openPendingChat } from '../../lib/onboarding_ui'
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
@@ -149,27 +150,13 @@ export default class extends Controller {
         this.openForCreative()
         this._enterFullscreenImmediate()
       })
-    } else if (this.isFullscreen()) {
-      // Sync UI for initial fullscreen state (legacy fullscreen page)
-      this._syncFullscreenUI(true)
-      // Defer to ensure all sibling controllers are connected
-      requestAnimationFrame(() => this.openForCreative())
-    } else if (this.isDocked()) {
-      this.enterDockedMode()
-    } else if (this.openPendingChat()) {
-      // Initial onboarding opens chat on mobile too, where the docked panel is
-      // not active and would otherwise remain below the viewport.
     } else {
-      this.openFromUrl()
+      openInitialChat(this)
     }
   }
 
   openPendingChat() {
-    if (this.element.dataset.autoOpen !== 'true') return false
-
-    delete this.element.dataset.autoOpen
-    requestAnimationFrame(() => this.openForCreative())
-    return true
+    return openPendingChat(this)
   }
 
   disconnect() {

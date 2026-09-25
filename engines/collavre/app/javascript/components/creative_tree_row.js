@@ -5,8 +5,7 @@ import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
-import csrfFetch from "../lib/api/csrf_fetch";
-import { creativePathFromTemplate } from "../lib/creative_path";
+import { updateCreativeProgress } from "../lib/creative_path";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -603,14 +602,7 @@ class CreativeTreeRow extends LitElement {
     wrap.classList.add("progress-toggle-saving");
 
     try {
-      const body = new FormData();
-      body.append("creative[progress]", newProgress);
-      const pathTemplate = this.closest("[data-creative-path-template]")?.dataset.creativePathTemplate;
-      const response = await csrfFetch(creativePathFromTemplate(pathTemplate, creativeId), {
-        method: "PATCH",
-        headers: { Accept: "application/json" },
-        body,
-      });
+      const response = await updateCreativeProgress(this, creativeId, newProgress);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       // Update this row's progressHtml from server response

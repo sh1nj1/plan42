@@ -7,6 +7,7 @@ class InlineScriptsTest < ApplicationSystemTestCase
       password: SystemHelpers::PASSWORD,
       name: "TestUser",
       email_verified_at: Time.current,
+      onboarding_completed_at: Time.current,
       notifications_enabled: false
     )
     # creative_workspace_enabled is intentionally left unset: these tests rely on

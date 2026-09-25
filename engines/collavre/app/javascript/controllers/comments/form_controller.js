@@ -6,7 +6,7 @@ import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
 import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
-import { creativePathFromTemplate } from '../../lib/creative_path'
+import { commentRequest } from '../../lib/creative_path'
 import ReviewQuotesStore from './review_quotes_store'
 import FormDraftManager from './form_draft_manager'
 import { alertDialog } from '../../lib/utils/dialog'
@@ -457,12 +457,7 @@ export default class extends Controller {
       this._pendingReviewType = null
     }
 
-    let url = `${creativePathFromTemplate(this.element.dataset.creativePathTemplate, this.creativeId)}/comments`
-    let method = 'POST'
-    if (submittedEditingId) {
-      url += `/${submittedEditingId}`
-      method = 'PATCH'
-    }
+    const { url, method } = commentRequest(this.element, this.creativeId, submittedEditingId)
 
     let settlementUi = Promise.resolve()
     const doFetch = () => fetch(url, {

@@ -21,13 +21,10 @@ module Collavre
       def build_entries(entries)
         # The Inbox has dedicated navigation and must not also appear as an
         # ordinary root workspace node. Keep other childless roots visible.
-        entries = entries.reject { |entry| entry.fetch(:creative).inbox? }
+        entries = without_inboxes(entries)
         return [] if entries.empty?
 
-        creatives = entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
-        prepare_level(creatives)
-        children_index.load(creatives)
-        children_by_parent = creatives.to_h { |creative| [ creative.id, children_index.children_for(creative) ] }
+        children_by_parent = index_children(entries)
         prepare_presence(children_by_parent.values.flatten)
         child_entries_by_parent = entries.to_h do |entry|
           creative = entry.fetch(:creative)
@@ -48,6 +45,17 @@ module Collavre
             children: child_entries_by_parent.fetch(entry.object_id).map { next_child_node.next }
           )
         end
+      end
+
+      def index_children(entries)
+        creatives = entries.map { |entry| entry.fetch(:creative) }.uniq(&:id)
+        prepare_level(creatives)
+        children_index.load(creatives)
+        creatives.to_h { |creative| [ creative.id, children_index.children_for(creative) ] }
+      end
+
+      def without_inboxes(entries)
+        entries.reject { |entry| entry.fetch(:creative).inbox? }
       end
 
       def node(creative, visible_children:, children:)
