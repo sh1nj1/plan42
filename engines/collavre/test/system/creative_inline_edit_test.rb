@@ -105,6 +105,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   test "escape dismisses emoji popup without closing the editor" do
     open_inline_editor(@root_creative)
+    inline_editor_field.click
     find(".lexical-emoji-picker > button").click
     page.driver.browser.switch_to.active_element.send_keys(:escape)
     assert_no_selector ".lexical-emoji-picker__popup"

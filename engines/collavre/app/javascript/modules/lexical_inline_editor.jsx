@@ -24,7 +24,6 @@ export function createInlineEditor(container, {
   let currentHtml = ""
   const directUploadUrl = container.dataset.directUploadUrl || null
   const blobUrlTemplate = container.dataset.blobUrlTemplate || null
-  const placeholderText = container.dataset.placeholder || null
 
   const deletedAttachmentsRef = { current: [] }
 
@@ -41,7 +40,7 @@ export function createInlineEditor(container, {
       <InlineLexicalEditor
         initialHtml={currentHtml}
         editorKey={currentKey}
-        placeholderText={placeholderText}
+        placeholderText={container.dataset.placeholder || null}
         emojiLabel={container.dataset.emojiLabel}
         // onPromptForLink removed
         onKeyDown={(event, editor) => {
