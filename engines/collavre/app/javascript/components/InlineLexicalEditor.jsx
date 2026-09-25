@@ -37,9 +37,7 @@ import {
   COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_LOW,
   FORMAT_TEXT_COMMAND,
-  REDO_COMMAND,
-  SELECTION_CHANGE_COMMAND,
-  UNDO_COMMAND
+  SELECTION_CHANGE_COMMAND
 } from "lexical"
 import { $patchStyleText } from "@lexical/selection"
 import { $generateHtmlFromNodes, $generateNodesFromDOM } from "@lexical/html"
@@ -435,33 +433,11 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear, colorType }
 
 import LinkPopup from "./LinkPopup"
 import EmojiPicker from "./EmojiPicker"
+import HeadingButtons from "./HeadingButtons"
+import HistoryButtons from "./HistoryButtons"
 
-function HistoryButtons({ editor, canUndo, canRedo }) {
-  return (
-    <>
-      <button
-        type="button"
-        className="lexical-toolbar-btn"
-        onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
-        disabled={!canUndo}
-        title="Undo (⌘/Ctrl+Z)"
-        aria-label="Undo">
-        ↩
-      </button>
-      <button
-        type="button"
-        className="lexical-toolbar-btn"
-        onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
-        disabled={!canRedo}
-        title="Redo (⇧⌘/Ctrl+Z)"
-        aria-label="Redo">
-        ↪
-      </button>
-    </>
-  )
-}
 
-function Toolbar({ emojiLabel }) {
+function Toolbar({ labels }) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
     bold: false,
@@ -708,7 +684,7 @@ function Toolbar({ emojiLabel }) {
   return (
     <div className="lexical-toolbar">
       <HistoryButtons editor={editor} canUndo={canUndo} canRedo={canRedo} />
-      <span className="lexical-toolbar-separator" aria-hidden="true" />
+      <HeadingButtons editor={editor} labels={labels.headings} />
       <button
         type="button"
         className={`lexical-toolbar-btn ${formats.bold ? "active" : ""}`}
@@ -846,7 +822,7 @@ function Toolbar({ emojiLabel }) {
         📎
       </button>
       <span className="lexical-toolbar-separator" aria-hidden="true" />
-      <EmojiPicker editor={editor} label={emojiLabel} />
+      <EmojiPicker editor={editor} label={labels.emoji} />
       {showLinkPopup && (
         <LinkPopup
           initialLabel={linkPopupData.label}
@@ -926,7 +902,7 @@ function EditorInner({
   directUploadUrl,
   blobUrlTemplate,
   placeholderText,
-  emojiLabel,
+  labels,
   deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
@@ -951,7 +927,7 @@ function EditorInner({
 
   return (
     <div className="lexical-editor-shell">
-      <Toolbar emojiLabel={emojiLabel} />
+      <Toolbar labels={labels} />
       <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
