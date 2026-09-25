@@ -1,7 +1,7 @@
 import { createElement as h, useEffect, useRef, useState } from 'react'
 import { $getRoot, $getSelection, $isRangeSelection, $setSelection } from 'lexical'
 
-const EMOJIS = '😀 😃 😄 😁 😆 😅 😂 🤣 😊 🙂 😉 😍 🥰 😘 😎 🤔 😮 😢 😭 😡 🥳 😴 👍 👎 👏 🙌 🙏 💪 👋 🤝 ❤️ 🧡 💛 💚 💙 💜 🔥 ⭐ 🌟 ✨ 🎉 🎊 🎁 🎯 🚀 💡 ✅ ❌ ⚠️ 📌 📝 📅'.split(' ')
+const EMOJIS = '😀 😃 😄 😁 😆 😅 😂 🤣 😊 🙂 😉 😍 🥰 😘 😎 🤔 😮 😢 😭 😡 🥳 😴 👍 👎 👏 🙌 🙏 💪 👋 🤝 ❤️ 🧡 💛 💚 💙 💜 🔥 ⭐ 🌟 ✨ 🎉 🎊 🎁 🎯 🚀 💡 ✅ ❌ ⚠️ 📌 📝 📅 🔖 📚 🗂️ 🔍'.split(' ')
 
 function useDismiss(open, wrapper, trigger, close) {
   useEffect(() => {

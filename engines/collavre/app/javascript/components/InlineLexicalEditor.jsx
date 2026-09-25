@@ -707,7 +707,6 @@ function Toolbar({ emojiLabel }) {
 
   return (
     <div className="lexical-toolbar">
-      <EmojiPicker editor={editor} label={emojiLabel} />
       <HistoryButtons editor={editor} canUndo={canUndo} canRedo={canRedo} />
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
@@ -846,6 +845,7 @@ function Toolbar({ emojiLabel }) {
         title="Attach file">
         📎
       </button>
+      <EmojiPicker editor={editor} label={emojiLabel} />
       {showLinkPopup && (
         <LinkPopup
           initialLabel={linkPopupData.label}

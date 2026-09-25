@@ -89,18 +89,27 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   test "emoji toolbar inserts at the caret and persists after saving" do
     open_inline_editor(@root_creative)
+    assert_selector ".lexical-toolbar > .lexical-emoji-picker:last-child"
     field = inline_editor_field
     field.click
     field.send_keys(:end)
     find(".lexical-emoji-picker > button").click
     assert_selector ".lexical-emoji-picker__popup[role='dialog']"
-    find(".lexical-emoji-picker__popup button", text: "🎉", exact_text: true).click
+    assert_selector ".lexical-emoji-picker__popup button", count: 56
+    assert page.evaluate_script(<<~JS)
+    (() => {
+      const popup = document.querySelector('.lexical-emoji-picker__popup').getBoundingClientRect()
+      const trigger = document.querySelector('.lexical-emoji-picker').getBoundingClientRect()
+      return Math.abs(popup.right - trigger.right) < 1 && popup.left >= 0
+    })()
+    JS
+    find(".lexical-emoji-picker__popup button", text: "🔖", exact_text: true).click
     assert_no_selector ".lexical-emoji-picker__popup"
-    assert_text "Root🎉"
+    assert_text "Root🔖"
     close_inline_editor
-    assert_selector "#creative-#{@root_creative.id}", text: "Root🎉"
+    assert_selector "#creative-#{@root_creative.id}", text: "Root🔖"
     open_inline_editor(@root_creative)
-    assert_equal "Root🎉", inline_editor_field.text
+    assert_equal "Root🔖", inline_editor_field.text
   end
 
   test "escape dismisses emoji popup without closing the editor" do

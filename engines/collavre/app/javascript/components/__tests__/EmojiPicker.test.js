@@ -88,3 +88,10 @@ test('unmount while open removes document listeners', () => {
   expect(() => fireEvent.keyDown(document, { key: 'Escape' })).not.toThrow()
   expect(() => fireEvent.mouseDown(document.body)).not.toThrow()
 })
+
+test.each(['🔖', '📚', '🗂️', '🔍'])('inserts the added emoji %s from a complete seven-row grid', async (emoji) => {
+  open()
+  expect(getByRole(host, 'dialog').querySelectorAll('button')).toHaveLength(56)
+  await act(async () => fireEvent.click(getByRole(host, 'button', { name: emoji })))
+  expect(text()).toBe(`Hello ${emoji}`)
+})
