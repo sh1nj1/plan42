@@ -142,6 +142,14 @@
           <div class="creative-overflow-divider"></div>
           <%= render 'integrations_menu', creative: current_creative %>
         <% end %>
+        <% if current_creative&.has_permission?(Current.user, :admin) %>
+          <div class="creative-overflow-divider"></div>
+          <%= button_to creative_path(current_creative), method: :delete,
+                id: 'delete-current-creative-btn', class: 'popup-menu-item danger-link',
+                form: { data: { turbo_frame: '_top', turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_only_this') } } do %>
+            <span aria-hidden="true"><%= svg_tag 'trash-bold-outline.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.delete') %>
+          <% end %>
+        <% end %>
         <div class="creative-overflow-divider mobile-only"></div>
         <button type="button" id="toggle-edit-btn" class="popup-menu-item mobile-only" aria-label="<%= t('.edit') %>">
           <span aria-hidden="true"><%= svg_tag 'edit.svg', width: 16, height: 16 %></span> <%= t('.edit') %>
