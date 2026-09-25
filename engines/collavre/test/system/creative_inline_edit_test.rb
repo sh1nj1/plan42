@@ -129,15 +129,17 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     find(".lexical-emoji-picker > button").click
     [ 375, 320, 768 ].each do |width|
       page.current_window.resize_to(width, 700)
-      assert_selector ".lexical-emoji-picker__popup"
-      assert page.evaluate_script(<<~JS)
-        (() => {
-          const popup = document.querySelector('.lexical-emoji-picker__popup')
-          const rect = popup.getBoundingClientRect()
-          return rect.left >= 7 && rect.right <= document.documentElement.clientWidth - 7 &&
-            popup.scrollWidth <= popup.clientWidth
-        })()
-      JS
+      # WebDriver can return before the browser dispatches resize and repositions the popup.
+      assert_selector ".lexical-emoji-picker__popup" do
+        page.evaluate_script(<<~JS)
+          (() => {
+            const popup = document.querySelector('.lexical-emoji-picker__popup')
+            const rect = popup.getBoundingClientRect()
+            return rect.left >= 7 && rect.right <= document.documentElement.clientWidth - 7 &&
+              popup.scrollWidth <= popup.clientWidth
+          })()
+        JS
+      end
     end
     find(".lexical-emoji-picker__popup button", text: "🔍", exact_text: true).click
     assert_text "🔍"
