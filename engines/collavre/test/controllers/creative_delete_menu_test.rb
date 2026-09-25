@@ -59,6 +59,37 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
     assert_equal @parent, @child.reload.parent
   end
 
+  test "nested admin deletion redirects to root when the parent is private" do
+    parent = Creative.create!(user: users(:two), description: "Private parent")
+    target = Creative.create!(user: users(:two), parent: parent, description: "Shared target")
+    CreativeShare.create!(creative: target, user: @user, permission: :admin)
+    assert target.has_permission?(@user, :admin)
+    assert_not parent.has_permission?(@user, :read)
+
+    delete creative_path(target), headers: { "Accept" => "text/vnd.turbo-stream.html, text/html" }
+
+    assert_response :see_other
+    assert_redirected_to creatives_path
+    assert_not Creative.exists?(target.id)
+    follow_redirect!
+    assert_response :success
+  end
+
+  test "nested admin deletion redirects to a parent with read permission" do
+    parent = Creative.create!(user: users(:two), description: "Readable parent")
+    target = Creative.create!(user: users(:two), parent: parent, description: "Shared target")
+    CreativeShare.create!(creative: parent, user: @user, permission: :read)
+    CreativeShare.create!(creative: target, user: @user, permission: :admin)
+    assert target.has_permission?(@user, :admin)
+    assert parent.has_permission?(@user, :read)
+
+    delete creative_path(target)
+
+    assert_response :see_other
+    assert_redirected_to creatives_path(id: parent.id)
+    assert_not Creative.exists?(target.id)
+  end
+
   test "root deletion redirects to the root list" do
     delete creative_path(@parent)
 

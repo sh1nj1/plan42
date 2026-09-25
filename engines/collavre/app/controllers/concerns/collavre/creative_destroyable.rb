@@ -15,9 +15,16 @@ module Collavre
         delete_with_children: params[:delete_with_children].present?
       ).call
       respond_to do |format|
-        format.html { redirect_to creatives_path(id: parent&.id), status: :see_other }
+        format.html { redirect_to destroy_redirect_path(parent), status: :see_other }
         format.json { head :no_content }
       end
+    end
+
+    private
+
+    def destroy_redirect_path(parent)
+      parent_id = parent.id if parent&.has_permission?(Current.user, :read)
+      creatives_path(id: parent_id)
     end
   end
 end
