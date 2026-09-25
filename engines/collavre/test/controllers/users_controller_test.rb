@@ -348,9 +348,9 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, results.length
   end
 
-  test "search loads JSON user metadata and deduplicates contacts before limiting" do
+  test "search handles JSON user metadata and limits contacts in stable ID order" do
     sign_in_as(@regular_user, password: "password")
-    candidates = 2.times.map do |index|
+    candidates = 3.times.map do |index|
       User.create!(name: "JSON search user", email: "json-search-#{index}@example.com",
                    password: "password", searchable: true, tools: [ "echo" ],
                    dismissed_notices: [ "notice" ])
@@ -360,7 +360,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     get collavre.search_users_path, params: { q: "json search", scope: "contacts", limit: 2 }
 
     assert_response :success
-    assert_equal candidates.map(&:id), response.parsed_body.pluck("id")
+    assert_equal candidates.first(2).map(&:id), response.parsed_body.pluck("id")
   end
 
   test "shared and completed practice trees keep normal human mention search" do
