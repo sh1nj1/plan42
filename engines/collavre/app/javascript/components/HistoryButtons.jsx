@@ -24,4 +24,3 @@ export default function HistoryButtons({ editor, canUndo, canRedo }) {
     </>
   )
 }
-
