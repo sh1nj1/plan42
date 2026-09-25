@@ -58,6 +58,8 @@ module Collavre
       end
 
       def pending_agent_turn?(owned)
+        return false if owned.empty?
+
         comment_ids = Comment.where(creative_id: owned).pluck(:id)
         creative_ids = owned.map(&:id)
 
@@ -84,9 +86,8 @@ module Collavre
         return true if Task.where(status: Task::ACTIVE_STATUSES, creative_id: creative_ids).exists?
         return false if comment_ids.empty?
 
-        Task.where(status: Task::ACTIVE_STATUSES).find_each.any? do |task|
-          comment_ids.include?(task.trigger_event_payload&.dig("comment", "id").to_i)
-        end
+        PayloadScope.matching(Task.where(status: Task::ACTIVE_STATUSES), "trigger_event_payload",
+                              %w[comment id], comment_ids).exists?
       end
 
       # A direct dispatch creates its Task only when AiAgentJob starts. Check
@@ -95,20 +96,10 @@ module Collavre
       def queued_agent_job_for_comments?(comment_ids, creative_ids)
         return false unless defined?(SolidQueue::Job)
 
-        SolidQueue::Job.where(class_name: AiAgentJob.name, finished_at: nil).find_each.any? do |job|
-          context = queued_job_context(job)
-          comment_ids.include?(context.dig("comment", "id").to_i) ||
-            creative_ids.include?(context.dig("creative", "id").to_i)
-        end
-      end
-
-      def queued_job_context(job)
-        queued_job = ActiveJob::Base.deserialize(job.arguments)
-        queued_job.send(:deserialize_arguments_if_needed)
-        context = queued_job.arguments.last
-        context.is_a?(Hash) ? context.deep_stringify_keys : {}
-      rescue ActiveJob::DeserializationError, KeyError, TypeError
-        {}
+        jobs = SolidQueue::Job.where(class_name: AiAgentJob.name, finished_at: nil)
+        by_comment = PayloadScope.matching(jobs, "arguments", %w[arguments 2 comment id], comment_ids)
+        by_creative = PayloadScope.matching(jobs, "arguments", %w[arguments 2 creative id], creative_ids)
+        by_comment.or(by_creative).exists?
       end
 
       def destroy_items!(owned)

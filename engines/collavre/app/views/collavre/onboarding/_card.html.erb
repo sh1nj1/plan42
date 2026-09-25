@@ -1,4 +1,4 @@
-<% session = Collavre::Onboarding::Session.for_creative(creative) %>
+<% session = Collavre::OnboardingHelper.session_for(creative, user: Current.user) %>
 <% return unless session %>
 <div class="onboarding-card"
      data-controller="onboarding-card"

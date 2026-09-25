@@ -36,7 +36,7 @@ module Collavre
       # An onboarding practice tree grants feedback access to one available AI
       # helper. Filter by the permission cache in SQL before applying the result
       # limit, so an inaccessible earlier candidate cannot hide the helper.
-      session = Collavre::Onboarding::Session.for_creative(creative)
+      session = Collavre::OnboardingHelper.session_for(creative, user: Current.user)
       users = if params[:scope] != "contacts" && session
         Creatives::PermissionFilter.permitted_users(users.ai_agents, creative, min_permission: :feedback)
       else

@@ -123,6 +123,28 @@ class InlineScriptsTest < ApplicationSystemTestCase
 
   public
 
+  test "active onboarding stays open across mobile and workspace navigation without inline handlers" do
+    @user.update!(onboarding_completed_at: nil)
+    session = Collavre::Onboarding::Seeder.new(user: @user, force: true).call
+    resize_window_to(390, 844)
+    visit collavre.creatives_path
+    assert_selector "#comments-popup .onboarding-card", visible: :visible, wait: 10
+    assert_current_path collavre.creatives_path(id: session.root.id, open_comments: true)
+    assert_no_selector ".onboarding-card script, .onboarding-card [onclick], .onboarding-card [onchange]", visible: :all
+
+    resize_window_to(1440, 900)
+    visit collavre.creatives_path(id: session.root.id)
+    assert_selector "#comments-popup[data-docked='true'] .onboarding-card", wait: 10
+    assert_selector ".creative-workspace-tree-link[data-creative-id='#{session.root.id}'][data-guide-anchor='tree.node']"
+    assert_selector ".creative-workspace-tree-progress"
+    resize_window_to(1100, 900)
+    toggle = find("[data-workspace-tree-target='panelToggle']")
+    toggle.click if toggle["aria-expanded"] == "true"
+    assert_selector "[data-workspace-tree-target='panelToggle'][aria-expanded='false']"
+    find("[data-workspace-tree-target='panelToggle']").click
+    assert_selector "[data-workspace-tree-target='panelToggle'][aria-expanded='true']"
+  end
+
   test "profile toggles the creative workspace from its default on state" do
     assert_predicate @user, :creative_workspace_enabled?
 

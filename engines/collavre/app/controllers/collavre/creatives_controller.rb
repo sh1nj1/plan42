@@ -350,37 +350,6 @@ module Collavre
       end
     end
 
-    def record_onboarding_progress(creative, previous_description:, previous_progress:)
-      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
-
-      session = Onboarding::Session.for_user(Current.user)
-      return unless session
-
-      if creative.progress != previous_progress
-        Onboarding::ProgressTracker.record(
-          user: Current.user,
-          event: :progress_changed,
-          creative: creative,
-          before_progress: previous_progress,
-          session: session
-        )
-      end
-      return if creative.description == previous_description
-
-      Onboarding::ProgressTracker.record(
-        user: Current.user,
-        event: :description_changed,
-        creative: creative,
-        before_description: previous_description,
-        session: session
-      )
-    end
-
-    def record_onboarding_creation(creative)
-      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
-
-      Onboarding::ProgressTracker.record(user: Current.user, event: :creative_created, creative: creative)
-    end
 
     def contexts
       unless @creative.has_permission?(Current.user, :read)
@@ -534,6 +503,38 @@ module Collavre
 
 
     private
+
+    def record_onboarding_progress(creative, previous_description:, previous_progress:)
+      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      session = Onboarding::Session.for_user(Current.user)
+      return unless session
+
+      if creative.progress != previous_progress
+        Onboarding::ProgressTracker.record(
+          user: Current.user,
+          event: :progress_changed,
+          creative: creative,
+          before_progress: previous_progress,
+          session: session
+        )
+      end
+      return if creative.description == previous_description
+
+      Onboarding::ProgressTracker.record(
+        user: Current.user,
+        event: :description_changed,
+        creative: creative,
+        before_description: previous_description,
+        session: session
+      )
+    end
+
+    def record_onboarding_creation(creative)
+      return unless Current.user&.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      Onboarding::ProgressTracker.record(user: Current.user, event: :creative_created, creative: creative)
+    end
 
       def ensure_onboarding_for_workspace_root
         return if request.head? || turbo_prefetch_request?

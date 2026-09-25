@@ -435,6 +435,7 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-controller='workspace-tree'][data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
+    assert_select "creative-tree-row[is-title][data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
     assert_select "#creatives[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
     assert_select "#comments-popup[data-creative-path-template='/collavre/creatives/__CREATIVE_ID__']"
     assert_select "#comments-popup[data-user-search-url='/collavre/users/search']"

@@ -47,6 +47,27 @@ describe('OnboardingCardController', () => {
     jest.restoreAllMocks()
   })
 
+  test('refreshes the card after completion is rejected', async () => {
+    fetchMock.mockResolvedValueOnce({ ...jsonResponse({}), ok: false, status: 409 })
+    const refresh = jest.spyOn(controller, 'refresh').mockResolvedValue()
+    await controller.complete()
+    expect(refresh).toHaveBeenCalled()
+    expect(controller.element.isConnected).toBe(true)
+  })
+
+  test('removes the card for an older completion response without a redirect', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }))
+    await controller.complete()
+    expect(controller.element.isConnected).toBe(false)
+  })
+
+  test('navigates without Turbo when it is unavailable', () => {
+    delete window.Turbo
+    controller.navigate('#onboarding-finished')
+    expect(window.location.hash).toBe('#onboarding-finished')
+    window.history.replaceState(null, '', '/')
+  })
+
   test('renders the current UI step and highlights its registered anchor', () => {
     expect(controller.instructionTarget.textContent).toBe('Select the practice Creative.')
     expect(controller.nextTarget.hidden).toBe(false)

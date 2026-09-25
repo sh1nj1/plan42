@@ -4,6 +4,33 @@ require "test_helper"
 
 module Collavre
   class OnboardingsControllerTest < ActionDispatch::IntegrationTest
+    test "onboarding progress helpers are not controller actions" do
+      refute CommentsController.action_methods.include?("record_onboarding_comment_progress")
+      refute CreativesController.action_methods.include?("record_onboarding_progress")
+      refute CreativesController.action_methods.include?("record_onboarding_creation")
+    end
+
+    test "shared and completed onboarding trees render ordinary chat instead of a foreign guide" do
+      owner = User.create!(name: "Guide owner", email: "guide-owner@example.com", password: "password")
+      viewer = users(:one)
+      session = Onboarding::Seeder.new(user: owner).call
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: session.root, user: viewer, permission: :read)
+      end
+      sign_in_as(viewer, password: "password")
+      get creative_comments_path(session.root)
+      assert_response :success
+      assert_select ".onboarding-card", count: 0
+      assert_select "#no-comments", count: 1
+
+      owner.update!(onboarding_completed_at: Time.current)
+      sign_in_as(owner, password: "password")
+      get creative_comments_path(session.root)
+      assert_response :success
+      assert_select ".onboarding-card", count: 0
+      assert_select "#no-comments", count: 1
+    end
+
     test "first workspace entry seeds once, opens the onboarding chat once, and exposes runner state" do
       user = User.create!(name: "First visit", email: "first-visit@example.com", password: "password")
       sign_in_as(user, password: "password")

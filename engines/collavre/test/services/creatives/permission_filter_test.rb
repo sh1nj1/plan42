@@ -341,6 +341,10 @@ module Creatives
         min_permission: :feedback
       )
 
+      scope = User.where(id: [ @owner.id, @shared_user.id, @stranger.id ])
+      assert_equal [ @owner.id, @stranger.id ].sort,
+        Creatives::PermissionFilter.permitted_users(scope, @origin, min_permission: :feedback).pluck(:id).sort
+
       assert_equal [ @owner.id, @stranger.id ], permitted_ids,
         "owner and direct feedback share qualify, while a user-specific deny overrides public feedback"
     end

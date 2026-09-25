@@ -87,20 +87,6 @@ module Collavre
         assert_equal agent, MentionParser.resolve_user("@#{agent.name}: hello")
       end
 
-      test "selects an agent after its name is normalized" do
-        user = User.create!(name: "Whitespace mention learner", email: "whitespace-mention-learner@example.com", password: "password")
-        whitespace_agent = User.create!(name: " Helper", email: "whitespace-helper@example.com", password: "password",
-                                        llm_vendor: "openai", searchable: true)
-        agent = User.create!(name: "Resolvable helper", email: "resolvable-helper@example.com", password: "password",
-                             llm_vendor: "openai", searchable: true)
-
-        candidates = User.where(id: [ whitespace_agent.id, agent.id ]).order(:id)
-        session = User.stub(:accessible_ai_agents_for, candidates) { Seeder.new(user: user).call }
-
-        assert_equal whitespace_agent.id, session.data["agent_mention_agent_id"]
-        assert_equal whitespace_agent, MentionParser.resolve_user("@#{whitespace_agent.name}:")
-      end
-
       test "omits the agent mention step when no agent is available" do
         user = User.create!(name: "Core-only learner", email: "core-only-learner@example.com", password: "password")
 

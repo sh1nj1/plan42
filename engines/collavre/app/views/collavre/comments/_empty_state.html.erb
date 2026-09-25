@@ -16,7 +16,7 @@
   end
 %>
 <div id="no-comments" class="comments-placeholder" data-controller="comments--feature-cards comments--placeholder">
-  <% if Collavre::Onboarding::Session.for_creative(creative) %>
+  <% if Collavre::OnboardingHelper.session_for(creative, user: Current.user) %>
     <%= render "collavre/onboarding/card", creative: creative %>
   <% else %>
     <template data-comments--feature-cards-target="minimalTemplate">

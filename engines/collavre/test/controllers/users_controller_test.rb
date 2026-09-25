@@ -348,6 +348,25 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, results.length
   end
 
+  test "shared and completed practice trees keep normal human mention search" do
+    learner = User.create!(name: "Practice learner", email: "practice-search-owner@example.com", password: "password")
+    viewer = User.create!(name: "Practice viewer", email: "practice-search-viewer@example.com", password: "password")
+    session = Collavre::Onboarding::Seeder.new(user: learner).call
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: session.root, user: viewer, permission: :feedback)
+    end
+    sign_in_as(viewer, password: "password")
+    get collavre.search_users_path, params: { q: "practice", creative_id: session.root.id }
+    assert_response :success
+    assert_includes response.parsed_body.pluck("id"), learner.id
+
+    learner.update!(onboarding_completed_at: Time.current)
+    sign_in_as(learner, password: "password")
+    get collavre.search_users_path, params: { q: "practice", creative_id: session.root.id }
+    assert_response :success
+    assert_includes response.parsed_body.pluck("id"), viewer.id
+  end
+
   test "onboarding mention search only offers agents with feedback access" do
     learner = User.create!(name: "Onboarding learner", email: "onboarding-search@example.com", password: "password")
     helper = User.create!(

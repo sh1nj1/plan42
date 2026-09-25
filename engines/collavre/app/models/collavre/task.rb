@@ -96,7 +96,7 @@ module Collavre
     # reply comment can be saved. No worker remains after that handoff, so Stop
     # must release its slot itself just as it does for delegated tasks.
     def externally_claimed?
-      trigger_event_payload&.fetch("external_reply_claimed", false)
+      trigger_event_payload.is_a?(Hash) && trigger_event_payload.fetch("external_reply_claimed", false)
     end
 
     # Cancellation callers often select an active row before waiting on another
@@ -209,24 +209,7 @@ module Collavre
     end
 
     def schedule_onboarding_cleanup
-      # The deferred-cleanup marker may have been added after this task loaded
-      # (for example, by onboarding reset), so do not inspect a stale belongs_to
-      # association from the running task instance.
-      creative = Creative.find_by(id: creative_id)
-      return unless creative && Onboarding::Ownership.owned?(creative)
-
-      onboarding = Onboarding::Ownership.metadata(creative)
-      session_id = onboarding&.fetch("session_id", nil)
-      return if session_id.blank?
-
-      user = creative.user
-      # A reset clears onboarding_completed_at for its replacement session.
-      # The retiring session records its own deferred cleanup eligibility on
-      # its tagged creatives, so its terminal turn remains able to finish
-      # cleanup after the bounded retry window.
-      return unless onboarding["cleanup_pending"] || user&.onboarding_completed_at?
-
-      OnboardingCleanupJob.perform_later(user.id, session_id)
+      Onboarding::TaskCleanup.call(self)
     end
 
     # Terminal transitions refresh the notices in broadcast_stop_button_removal.

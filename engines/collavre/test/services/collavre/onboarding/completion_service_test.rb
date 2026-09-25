@@ -15,6 +15,47 @@ module Collavre
         ActiveJob::Base.queue_adapter = @previous_adapter
       end
 
+      test "a terminal turn enqueues one cleanup for two creatives in the same session" do
+        user = User.create!(name: "One cleanup", email: "one-cleanup@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        comment = Comment.create!(creative: session.practice_creatives.second, user: user, content: "Help")
+        task = Task.create!(name: "Response", status: "running", creative: session.practice_creatives.first,
+                            agent: users(:ai_bot), trigger_event_payload: { "comment" => { "id" => comment.id } })
+        CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
+        clear_enqueued_jobs
+        assert_enqueued_jobs 1, only: OnboardingCleanupJob do
+          task.update!(status: "done")
+        end
+      end
+
+      test "empty cleanup does not inspect the task or job queues" do
+        service = CompletionService.new(user: users(:one))
+        service.stub(:queued_agent_job_for_comments?, ->(*) { flunk "must not scan jobs" }) do
+          assert service.clean_up_when_agent_turn_settles("missing")
+        end
+      end
+
+      test "terminal turn outside the session retries cleanup through its trigger comment" do
+        user = User.create!(name: "External context", email: "external-context@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        comment = Comment.create!(creative: session.practice_creatives.second, user: user, content: "Help")
+        outside = Creative.create!(user: user, description: "Outside context")
+        task = Task.create!(name: "Response", status: "running", creative: outside, agent: users(:ai_bot),
+                            trigger_event_payload: { "comment" => { "id" => comment.id.to_s } })
+        CompletionService.new(user: user).call(defer_pending_agent_cleanup: true)
+        clear_enqueued_jobs
+        assert_no_enqueued_jobs(only: OnboardingCleanupJob) do
+          OnboardingCleanupJob.perform_now(user.id, session.session_id, OnboardingCleanupJob::RETRY_DELAYS.length)
+        end
+        assert Creative.exists?(session.root.id)
+        assert_enqueued_with(job: OnboardingCleanupJob, args: [ user.id, session.session_id ]) do
+          task.update!(status: "done")
+        end
+        OnboardingCleanupJob.perform_now(user.id, session.session_id)
+        refute Creative.exists?(session.root.id)
+        assert Creative.exists?(outside.id)
+      end
+
       test "reset preserves legacy metadata with and without a genuine session" do
         user = User.create!(name: "Legacy", email: "legacy-reset@example.com", password: "password")
         scalar = Creative.create!(user: user, description: "Scalar", data: { "onboarding" => "legacy" })
@@ -205,6 +246,22 @@ module Collavre
         end
 
         assert Creative.exists?(session.root.id)
+      end
+
+      test "queued replay contexts defer cleanup without deserializing unrelated jobs" do
+        user = User.create!(name: "Queued replay", email: "queued-replay@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        creative = session.practice_creatives.second
+        comment = Comment.create!(creative: creative, user: user, content: "Help")
+        job = AiAgentJob.new(users(:ai_bot).id, "comment_created", comment.dispatch_payload, "replay-identity")
+        queued = SolidQueue::Job.create!(class_name: AiAgentJob.name, queue_name: "ai_agents", arguments: job.serialize)
+        unrelated = AiAgentJob.new(users(:ai_bot).id, "comment_created", { "creative" => { "id" => -1 } })
+        SolidQueue::Job.create!(class_name: AiAgentJob.name, queue_name: "ai_agents", arguments: unrelated.serialize)
+        service = CompletionService.new(user: user)
+        refute service.clean_up_when_agent_turn_settles(session.session_id)
+        queued.update!(finished_at: Time.current)
+        assert service.clean_up_when_agent_turn_settles(session.session_id)
+        refute Creative.exists?(session.root.id)
       end
 
       test "checks queued agent jobs before active tasks during cleanup" do
