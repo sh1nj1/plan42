@@ -845,6 +845,7 @@ function Toolbar({ emojiLabel }) {
         title="Attach file">
         📎
       </button>
+      <span className="lexical-toolbar-separator" aria-hidden="true" />
       <EmojiPicker editor={editor} label={emojiLabel} />
       {showLinkPopup && (
         <LinkPopup

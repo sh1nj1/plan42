@@ -89,7 +89,16 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   test "emoji toolbar inserts at the caret and persists after saving" do
     open_inline_editor(@root_creative)
-    assert_selector ".lexical-toolbar > .lexical-emoji-picker:last-child"
+    assert_selector ".lexical-toolbar > .lexical-toolbar-separator[aria-hidden='true'] + .lexical-emoji-picker:last-child"
+    assert page.evaluate_script(<<~JS)
+    (() => {
+      const picker = document.querySelector('.lexical-emoji-picker')
+      const separator = picker.previousElementSibling
+      const gap = parseFloat(getComputedStyle(picker.parentElement).columnGap) || 0
+      const margin = parseFloat(getComputedStyle(separator).marginRight) || 0
+      return Math.abs(picker.getBoundingClientRect().left - separator.getBoundingClientRect().right - gap - margin) < 1
+    })()
+    JS
     field = inline_editor_field
     field.click
     field.send_keys(:end)
@@ -100,7 +109,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     (() => {
       const popup = document.querySelector('.lexical-emoji-picker__popup').getBoundingClientRect()
       const trigger = document.querySelector('.lexical-emoji-picker').getBoundingClientRect()
-      return Math.abs(popup.right - trigger.right) < 1 && popup.left >= 0
+      return Math.abs(popup.left - trigger.left) < 1 && popup.left >= 0
     })()
     JS
     find(".lexical-emoji-picker__popup button", text: "🔖", exact_text: true).click

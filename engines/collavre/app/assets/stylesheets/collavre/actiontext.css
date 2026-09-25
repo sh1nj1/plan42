@@ -974,13 +974,12 @@
 
 .lexical-emoji-picker {
   position: relative;
-  margin-left: auto;
 }
 
 .lexical-emoji-picker__popup {
   position: absolute;
   top: calc(100% + 0.35rem);
-  right: 0;
+  left: 0;
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
