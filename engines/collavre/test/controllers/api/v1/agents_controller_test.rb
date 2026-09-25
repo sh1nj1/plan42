@@ -670,6 +670,69 @@ module Collavre
             "the delegated task must be parked as awaiting a permission decision"
         end
 
+        test "notify rejects a permission prompt cancelled while acquiring the topic lock" do
+          reg = register_agent("notify-perm-race")
+          topic = Topic.find(reg["topic_id"])
+          task = Task.create!(name: "Discarded turn", status: "delegated",
+                              agent_id: reg["agent_id"], topic_id: topic.id, creative: topic.creative)
+          original_lock = Orchestration::TopicSlot.method(:lock_matches_context?)
+          acquired = false
+          lock = lambda do |topic_id, creative_id|
+            acquired = true
+            task.update!(status: "cancelled")
+            original_lock.call(topic_id, creative_id)
+          end
+
+          Orchestration::TopicSlot.stub :lock_matches_context?, lock do
+            assert_no_difference "Comment.count" do
+              post "/api/v1/agent/notify",
+                params: { topic_id: topic.id, task_id: task.id, permission_request_id: "discarded" },
+                headers: auth_headers, as: :json
+            end
+          end
+          assert acquired
+          assert_response :forbidden
+          assert_nil task.reload.pending_tool_call
+        end
+
+        test "notify rejects a topic whose lock context disappeared" do
+          reg = register_agent("notify-missing-lock")
+          Orchestration::TopicSlot.stub :lock_matches_context?, false do
+            assert_no_difference "Comment.count" do
+              post "/api/v1/agent/notify",
+                params: { topic_id: reg["topic_id"], permission_request_id: "missing" },
+                headers: auth_headers, as: :json
+            end
+          end
+          assert_response :not_found
+        end
+
+        test "notify saves permission and parks task inside the topic mutation" do
+          reg = register_agent("notify-perm-lock")
+          topic = Topic.find(reg["topic_id"])
+          task = Task.create!(name: "Active turn", status: "delegated",
+                              agent_id: reg["agent_id"], topic_id: topic.id, creative: topic.creative)
+          mutation = Comments::TopicMutation.method(:call)
+          observed = false
+          wrapper = lambda do |topic_id, creative_id, &block|
+            assert_equal [ topic.id, topic.creative_id ], [ topic_id, creative_id ]
+            mutation.call(topic_id, creative_id) do
+              block.call
+              prompt = Comment.find_by!(topic_id: topic.id, user_id: task.agent_id)
+              assert_equal "locked", prompt.claude_channel_permission_request_id
+              assert_equal "locked", task.reload.pending_tool_call["request_id"]
+              observed = true
+            end
+          end
+          Comments::TopicMutation.stub :call, wrapper do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic.id, task_id: task.id, permission_request_id: "locked" },
+              headers: auth_headers, as: :json
+          end
+          assert_response :created
+          assert observed
+        end
+
         test "notify with permission_request_id builds a structured approval comment" do
           # The plugin sends only tool_name + arguments; the server renders the
           # (localized) prompt text server-side and attaches the approve/deny
@@ -707,6 +770,148 @@ module Collavre
           assert_includes comment.content, "Bash"
           assert_includes comment.content, "ls -la"
           refute comment.action_executed_at.present?, "a freshly surfaced prompt is undecided"
+        end
+
+        test "notify with approval_question builds an agent-initiated approval request" do
+          # The Claude Channel counterpart of the native approval_request gate:
+          # the agent's own question becomes the comment body verbatim (no
+          # server-rendered template) and rides the permission rail so the
+          # decision reaches the tool call it is blocking.
+          reg = register_agent("notify-approval-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch", status: "delegated", trigger_event_name: "comment_created",
+            agent: ai_user, topic_id: topic_id, creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id, task_id: task.id, text: "",
+              permission_request_id: "approval-1", approval_question: "  Deploy **now**?  "
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert comment.claude_channel_approval_request?
+          assert_equal "Deploy **now**?", comment.content, "the question is the comment body, verbatim"
+          assert_equal "approval-1", comment.claude_channel_permission_request_id
+          assert_equal @user.id, comment.approver_id, "the token holder decides their session's requests"
+          assert_equal ai_user.id, comment.user_id
+          refute comment.action_executed_at.present?
+          # Parked exactly like a relayed tool prompt: the human's decision must
+          # reach the blocked session instead of queuing behind the topic slot.
+          assert_equal "delegated", task.reload.status
+          assert_equal "approval-1", task.pending_tool_call&.dig("request_id")
+        end
+
+        test "reply commits an unread approval handoff with exact task ownership" do
+          previous_adapter = ActiveJob::Base.queue_adapter
+          reg = register_agent("approval-handoff")
+          topic = Topic.find(reg["topic_id"])
+          agent = User.find(reg["agent_id"])
+          task = Task.create!(name: "Approval turn", status: "delegated", agent: agent,
+                              topic_id: topic.id, creative_id: topic.creative_id)
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, task_id: task.id, permission_request_id: "handoff-1",
+                      approval_question: "Deploy?" }, headers: auth_headers, as: :json
+          assert_response :created
+          approval = Comment.find(response.parsed_body["comment_id"])
+          assert_equal task.id.to_s, JSON.parse(approval.action)["origin_task_id"].to_s
+
+          ActiveJob::Base.queue_adapter = :test
+          # The decision arrives after pending but before the final reply.
+          approval.decide_claude_channel_permission!(:allow, by: @user)
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Waiting for approval",
+                      pending_approval_ids: [ "handoff-1" ] }, headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal "done", task.reload.status
+          assert JSON.parse(approval.reload.action)["turn_finished"]
+          assert_difference("Task.count", 1) { ClaudeApprovalResumeJob.perform_now(approval.id) }
+          continuation = Task.find(JSON.parse(approval.reload.action)["resume_task_id"])
+          assert_equal "pending", continuation.status
+          assert_equal agent.id, continuation.agent_id
+          assert_no_difference("Task.count") { ClaudeApprovalResumeJob.perform_now(approval.id) }
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "an approval request can route the decision to another human who can read the creative" do
+          reg = register_agent("notify-approval-approver-test")
+          topic_id = reg["topic_id"]
+          creative = Topic.find(topic_id).creative.effective_origin
+          approver = users(:two)
+          CreativeShare.create!(creative: creative, user: approver, permission: "read")
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id, permission_request_id: "approval-2",
+              approval_question: "Ship it?", approver_user_id: approver.id
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal approver.id, Comment.find(JSON.parse(response.body)["comment_id"]).approver_id
+        end
+
+        test "an approval request rejects an approver who cannot see the creative or is an AI" do
+          reg = register_agent("notify-approval-bad-approver-test")
+          topic_id = reg["topic_id"]
+
+          [ users(:two).id, users(:ai_bot).id, 0 ].each do |approver_id|
+            assert_no_difference -> { Comment.count } do
+              post "/api/v1/agent/notify",
+                params: {
+                  topic_id: topic_id, permission_request_id: "approval-3",
+                  approval_question: "Ship it?", approver_user_id: approver_id
+                },
+                headers: auth_headers,
+                as: :json
+            end
+            assert_response :unprocessable_entity
+            assert_equal I18n.t("collavre.approval_gate.invalid_approver"), JSON.parse(response.body)["error"]
+          end
+        end
+
+        test "an approval request rejects an AI token owner as the default approver" do
+          reg = register_agent("notify-ai-default-approver")
+          @user.update!(llm_vendor: "openai")
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: reg["topic_id"], permission_request_id: "ai-default", approval_question: "Ship it?" },
+              headers: auth_headers, as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.invalid_approver"), JSON.parse(response.body)["error"]
+        end
+
+        test "an approval request needs both a question and a request id" do
+          reg = register_agent("notify-approval-invalid-test")
+          topic_id = reg["topic_id"]
+
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic_id, permission_request_id: "approval-4", approval_question: "   " },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.question_required"), JSON.parse(response.body)["error"]
+
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic_id, approval_question: "Ship it?" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.request_id_required"), JSON.parse(response.body)["error"]
         end
 
         test "notify renders the permission prompt in the token holder's locale" do
@@ -838,6 +1043,27 @@ module Collavre
             "injected markdown must not render as a live heading outside the fence")
           assert_includes comment.content, "echo hi",
             "the preview content itself must still be shown to the approver"
+        end
+
+        test "notify reports validation errors without posting an empty notice" do
+          reg = register_agent("notify-empty-test")
+          assert_no_difference("Comment.count") do
+            post "/api/v1/agent/notify",
+              params: { topic_id: reg["topic_id"], text: " " },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert JSON.parse(response.body)["errors"].present?
+        end
+
+        test "permission formatting handles long whitespace and Unicode line separators" do
+          controller = Collavre::Api::V1::AgentsController.new
+          whitespace = " " * 100_000
+          input = "Bash#{whitespace}end\r\nnext\u2028last"
+          assert_equal "Bash end next last", controller.send(:format_permission_tool_name, input)
+          assert_equal I18n.t("collavre.claude_channel.permission.description", text: "Bash end next last"),
+            controller.send(:format_permission_description, input)
         end
 
         test "notify keeps a multi-line permission description inside its blockquote" do

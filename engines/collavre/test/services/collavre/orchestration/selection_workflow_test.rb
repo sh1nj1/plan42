@@ -99,7 +99,7 @@ module Collavre
         assert_equal base.id, execution.rule_id
         assert_equal [ @agent.id ], execution.selected_agent_ids
         assert_equal 1, execution.admissions.count
-        assert_equal base.data["workflow_rule"], execution.rule_snapshot
+        assert_equal base.data["workflow_rule"].merge("instruction" => base.description), execution.rule_snapshot
       end
 
       test "an edited snapshot of the same rule cannot supply a responder" do
@@ -119,6 +119,22 @@ module Collavre
           assert_empty selection.agents
           assert_equal base.id, selection.workflow_rule.creative_id
           assert_not selection.workflow_snapshot.key?("future_metadata")
+        end
+      end
+
+      test "an instruction edit cannot merge override responders from another version" do
+        base = rule_for("true", "agent", [ @agent.id ])
+        original = base.description
+        calls = 0
+        factory = Matcher.method(:new)
+        Matcher.stub(:new, ->(context) {
+          calls += 1
+          base.update!(description: "Changed instruction") if calls == 2
+          factory.call(context)
+        }) do
+          selection = select
+          assert_empty selection.agents
+          assert_equal original, selection.workflow_snapshot["instruction"]
         end
       end
 

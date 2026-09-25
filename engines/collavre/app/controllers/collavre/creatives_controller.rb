@@ -9,6 +9,7 @@ module Collavre
     include Collavre::Concerns::TreeManageable
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
+    include Collavre::CreativeDestroyable
     include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
@@ -531,17 +532,6 @@ module Collavre
       render json: { sequence: issue_last_visited_creative_sequence }
     end
 
-    def destroy
-      parent = @creative.parent
-      unless @creative.has_permission?(Current.user, :admin)
-        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
-      end
-      Creatives::DestroyService.new(
-        creative: @creative,
-        user: Current.user,
-        delete_with_children: params[:delete_with_children].present?
-      ).call
-    end
 
     private
 

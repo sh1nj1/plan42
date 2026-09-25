@@ -87,6 +87,74 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector "img", wait: 10
   end
 
+  test "emoji toolbar inserts at the caret and persists after saving" do
+    open_inline_editor(@root_creative)
+    assert_selector ".lexical-toolbar > .lexical-toolbar-separator[aria-hidden='true'] + .lexical-emoji-picker:last-child"
+    assert page.evaluate_script(<<~JS)
+    (() => {
+      const picker = document.querySelector('.lexical-emoji-picker')
+      const separator = picker.previousElementSibling
+      const gap = parseFloat(getComputedStyle(picker.parentElement).columnGap) || 0
+      const margin = parseFloat(getComputedStyle(separator).marginRight) || 0
+      return Math.abs(picker.getBoundingClientRect().left - separator.getBoundingClientRect().right - gap - margin) < 1
+    })()
+    JS
+    field = inline_editor_field
+    field.click
+    field.send_keys(:end)
+    find(".lexical-emoji-picker > button").click
+    assert_selector ".lexical-emoji-picker__popup[role='dialog']"
+    assert_selector ".lexical-emoji-picker__popup button", count: 56
+    assert page.evaluate_script(<<~JS)
+    (() => {
+      const popup = document.querySelector('.lexical-emoji-picker__popup').getBoundingClientRect()
+      const trigger = document.querySelector('.lexical-emoji-picker').getBoundingClientRect()
+      return Math.abs(popup.left - trigger.left) < 1 && popup.left >= 0
+    })()
+    JS
+    find(".lexical-emoji-picker__popup button", text: "🔖", exact_text: true).click
+    assert_no_selector ".lexical-emoji-picker__popup"
+    assert_text "Root🔖"
+    close_inline_editor
+    assert_selector "#creative-#{@root_creative.id}", text: "Root🔖"
+    open_inline_editor(@root_creative)
+    assert_equal "Root🔖", inline_editor_field.text
+  end
+
+  test "emoji popup stays inside narrow viewports for an indented creative" do
+    child = Creative.create!(description: "Child", user: @user, parent: @root_creative)
+    visit collavre.creative_path(@root_creative)
+    open_inline_editor(child)
+    page.current_window.resize_to(375, 700)
+    find(".lexical-emoji-picker > button").click
+    [ 375, 320, 768 ].each do |width|
+      page.current_window.resize_to(width, 700)
+      # WebDriver can return before the browser dispatches resize and repositions the popup.
+      assert_selector ".lexical-emoji-picker__popup" do
+        page.evaluate_script(<<~JS)
+          (() => {
+            const popup = document.querySelector('.lexical-emoji-picker__popup')
+            const rect = popup.getBoundingClientRect()
+            return rect.left >= 7 && rect.right <= document.documentElement.clientWidth - 7 &&
+              popup.scrollWidth <= popup.clientWidth
+          })()
+        JS
+      end
+    end
+    find(".lexical-emoji-picker__popup button", text: "🔍", exact_text: true).click
+    assert_text "🔍"
+  end
+
+  test "escape dismisses emoji popup without closing the editor" do
+    open_inline_editor(@root_creative)
+    inline_editor_field.click
+    find(".lexical-emoji-picker > button").click
+    page.driver.browser.switch_to.active_element.send_keys(:escape)
+    assert_no_selector ".lexical-emoji-picker__popup"
+    assert_selector ".lexical-content-editable"
+    assert_selector ".lexical-emoji-picker > button:focus"
+  end
+
   test "shows saved row when starting another addition" do
     open_inline_editor(@root_creative)
     start_inline_child_form

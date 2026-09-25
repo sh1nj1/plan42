@@ -47,10 +47,7 @@ module Collavre
             # chat history — so comments that Orchestration::TaskCoalescer
             # folded into this turn have to be rendered inline here or they
             # never reach the agent at all.
-            content: Orchestration::ResumeContext.prepend_to(
-              MergedTriggerComments.prepend_to(@context.dig("comment", "content"), @context, agent: @agent),
-              @context
-            ),
+            content: trigger_content,
             author_id: @context.dig("sender", "id") || @context.dig("comment", "user_id"),
             author_name: @context.dig("sender", "name") || comment&.user&.display_name,
             topic_id: @topic_id,
@@ -63,6 +60,12 @@ module Collavre
       end
 
       private
+
+      def trigger_content
+        text = Workflow::SourceMessage.prepend_to(@context.dig("comment", "content"), @context, @agent)
+        Orchestration::ResumeContext.prepend_to(
+          MergedTriggerComments.prepend_to(text, @context, agent: @agent), @context)
+      end
 
       def broadcast_dispatch(payload)
         # Per-agent stream is the source of truth for MCP plugin clients:
@@ -102,7 +105,8 @@ module Collavre
       # back with it, tells the resumed attempt's reply from a late one of the
       # interrupted attempt (Orchestration::ExecutionFence).
       def task_fields
-        { task_id: @task&.id, execution_generation: @task && Orchestration::ExecutionFence.generation(@task) }
+        { task_id: @task&.id, execution_generation: @task && Orchestration::ExecutionFence.generation(@task),
+          approval_request_id: @context["claude_approval_request_id"] }.compact
       end
 
       # True when the dispatched topic is a Claude Channel Session topic (it

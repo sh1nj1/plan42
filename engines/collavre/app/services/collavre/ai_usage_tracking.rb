@@ -28,6 +28,7 @@ module Collavre
       log = RubyLlmInteractionLogger.log(
         vendor: @vendor,
         model: @model,
+        run_options: @cli_run_options,
         messages: messages,
         tools: tools,
         response_content: response_content,

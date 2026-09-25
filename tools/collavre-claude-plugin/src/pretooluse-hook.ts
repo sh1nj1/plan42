@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse hook entry: reads the harness hook payload on stdin and, for the
-// Collavre channel `reply` tool only, prints an "allow" decision so the channel
+// Collavre channel `reply` and `approval_request` tools only, prints an "allow" decision so the channel
 // can answer without a permission prompt. For any other tool it prints nothing
 // and exits 0, leaving the normal permission flow untouched. See hook-decision.ts.
 

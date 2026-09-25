@@ -43,6 +43,9 @@
      data-move-error-text="<%= t('collavre.comments.move_error') %>"
      data-selection-select-all-text="<%= t('collavre.comments.select_all') %>"
      data-selection-count-text="<%= t('collavre.comments.selection_count') %>"
+     data-resend-label="<%= t('collavre.comments.resend') %>"
+     data-resend-description="<%= t('collavre.comments.resend_description') %>"
+     data-resend-failed="<%= t('collavre.comments.resend_failed') %>"
      data-selection-delete-text="<%= t('collavre.comments.selection_delete') %>"
      data-selection-move-text="<%= t('collavre.comments.selection_move') %>"
      data-selection-topic-move-text="<%= t('collavre.comments.selection_topic_move') %>"
@@ -212,7 +215,7 @@
       <div id="typing-indicator" data-comments--presence-target="typingIndicator" data-comments--popup-target="typingIndicator" data-stop-agent-text="<%= t('collavre.comments.stop_agent') %>"></div>
     </div>
   </div>
-  <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
+  <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" data-controller="comments--run-options" data-action="reset->comments--run-options#afterReset" style="display:none;">
     <input type="hidden" name="comment[quoted_comment_id]" data-comments--form-target="quotedCommentId" value="" />
     <input type="hidden" name="comment[quoted_text]" data-comments--form-target="quotedText" value="" />
     <div class="comment-quote-indicator" data-comments--form-target="quoteIndicator" style="display:none;">
@@ -228,9 +231,18 @@
     <button class="creative-action-btn" id="attach-image-btn" data-comments--form-target="imageButton" type="button"><%= t('collavre.comments.image_button') %></button>
     <button class="creative-action-btn" id="voice-comments-btn" data-comments--form-target="voiceButton" type="button" data-voice-state="idle"><%= t('collavre.comments.voice_button') %></button>
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('collavre.comments.search_button') %></button>
+    <button class="creative-action-btn agent-run-options-toggle" type="button"
+            data-comments--run-options-target="toggle"
+            data-action="click->comments--run-options#toggle keydown->comments--run-options#keydown mousedown->comments--run-options#keepOpen touchstart->comments--run-options#keepOpen"
+            aria-expanded="false" aria-controls="agent-run-options-panel"
+            title="<%= t('collavre.comments.agent_run_options.button_title') %>"
+            aria-label="<%= t('collavre.comments.agent_run_options.button_title') %>">
+      <%= render "collavre/comments/thinking_icon" %>
+    </button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     </div>
+    <%= render "collavre/comments/agent_run_options" %>
     <div class="comment-attachment-list" data-comments--form-target="attachmentList" aria-live="polite"></div>
     </div>
   </form>

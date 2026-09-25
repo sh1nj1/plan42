@@ -46,6 +46,23 @@ ko:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
     comments:
+      agent_model:
+        label: "에이전트 모델"
+        help: "이 에이전트의 모든 채팅에 적용되는 기본 모델과 추론 수준을 저장합니다. 채팅창의 임시 선택과는 별개입니다."
+        save: "에이전트 설정 저장"
+        saved: "에이전트 설정을 저장했습니다."
+        error: "에이전트 설정을 저장하지 못했습니다. 다시 시도해 주세요."
+      agent_run_options:
+        button_title: CLI Proxy 에이전트 실행 옵션
+        help: 이 토픽에서 보내는 메시지로 호출되는 CLI Proxy 에이전트에 적용됩니다. 에이전트 설정 자체는 바뀌지 않습니다.
+        effort_label: Thinking 레벨
+        agent_default: 에이전트 기본값
+        priority_help: "채팅 설정 → 에이전트 기본값 → 로컬 Codex·Claude 설정 순으로 적용됩니다. 높은 레벨은 더 깊이 생각하며 시간이 더 걸릴 수 있습니다. 모델이 지원하지 않는 레벨은 건너뜁니다."
+        labels:
+          none: "none — Thinking 끄기(Codex 전용)"
+          minimal: "minimal — Codex 전용"
+          max: "max — Claude 전용"
+        chip_title: "실행 옵션: %{options}"
       close: 닫기
       reaction_invalid: 잘못된 리액션입니다.
       invalid_topic: 토픽이 이 크리에이티브에 속하지 않습니다.
@@ -134,6 +151,10 @@ ko:
       add_participant: 사용자 추가
       select_all: 전체
       selection_count: "{count}/{total}개 선택"
+      resend: "다시 보내기"
+      resend_description: "이후 AI 메시지를 삭제하고 이 메시지를 다시 보냅니다. 사용자 메시지는 유지됩니다. 비공개 메시지와 슬래시 명령어는 다시 보낼 수 없습니다."
+      resend_failed: "메시지를 다시 보내지 못했습니다."
+      resend_not_allowed: "이 메시지는 다시 보낼 수 없습니다."
       selection_delete: 삭제
       selection_move: 이동
       selection_topic_move: 토픽 이동

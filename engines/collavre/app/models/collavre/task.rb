@@ -5,6 +5,7 @@ module Collavre
     include ReplayLoopCompletion
     include WorkflowCompletion
     include ApprovalGateCleanup
+    include AsyncApproval
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy

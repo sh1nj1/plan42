@@ -3,7 +3,7 @@
 <% has_pending_action = comment.approval_action? && comment.action_executed_at.blank? %>
 <% approver_id = comment.approver_id %>
 <% has_engine_login = comment.task&.trigger_event_payload&.key?("engine_login") %>
-<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approval-gate="<%= comment.approval_gate? %>" data-approver-id="<%= approver_id %>" data-ai-user="<%= comment.user&.ai_user? %>" data-streaming="<%= local_assigns.fetch(:streaming, false) %>">
+<div class="comment-item" id="<%= dom_id(comment) %>" data-controller="comment" data-user-id="<%= comment.user&.id %>" data-comment-id="<%= comment.id %>" data-topic-id="<%= comment_topic&.id %>" data-creative-id="<%= comment.creative_id %>" data-creative-owner-id="<%= comment.creative&.user_id %>" data-has-pending-action="<%= has_pending_action %>" data-approval-gate="<%= comment.approval_gate? || comment.claude_channel_approval_request? %>" data-approver-id="<%= approver_id %>" data-private="<%= comment.private? %>" data-command-message="<%= Collavre::CommentResendService.command_message?(comment) %>" data-inbox-system="<%= comment.creative.inbox? && comment_topic&.name == Collavre::Creative::SYSTEM_TOPIC_NAME %>" data-ai-user="<%= comment.user&.ai_user? %>" data-streaming="<%= local_assigns.fetch(:streaming, false) %>">
   <div class="comment-select">
     <input type="checkbox"
            class="comment-select-checkbox"
@@ -37,6 +37,7 @@
       <% present_user_ids = defined?(present_user_ids) ? present_user_ids : nil %>
       <%= render "collavre/comments/read_receipts", read_by_users: users_read, present_user_ids: present_user_ids unless comment.private? %>
     </span>
+    <span class="agent-run-options-container"><%= render "collavre/comments/run_options", run_options: comment.agent_run_options %></span>
     <% if comment.private? %>
       <span class="comment-status-label private-label">🔒 <%= t('collavre.comments.private') %></span>
     <% end %>
@@ -189,9 +190,16 @@
     <%= turbo_frame_tag "inline_agent_login_#{comment.id}", src: collavre.inline_agent_login_path(comment_id: comment.id), loading: :lazy %>
   <% end %>
 
-  <%= render "collavre/comments/approval_gate", comment: comment, pending: has_pending_action if comment.approval_gate? %>
+  <%# Both gate kinds share the reason box / decided-reason line: the native gate
+      and the Claude Channel approval_request (whose reason lives in the relayed
+      action payload rather than the paused task's decision). %>
+  <% if comment.approval_gate? %>
+    <%= render "collavre/comments/approval_gate", comment: comment, pending: has_pending_action, reason: comment.approval_gate_reason %>
+  <% elsif comment.claude_channel_approval_request? %>
+    <%= render "collavre/comments/approval_gate", comment: comment, pending: has_pending_action, reason: comment.claude_channel_permission_reason %>
+  <% end %>
 
-  <% if comment.approval_action? && !comment.approval_gate? %>
+  <% if comment.approval_action? && !comment.approval_gate? && !comment.claude_channel_approval_request? %>
     <div class="comment-action-block" data-comment-id="<%= comment.id %>">
       <details class="comment-action-details">
         <summary class="comment-action-summary"><%= t("collavre.comments.action_summary") %></summary>

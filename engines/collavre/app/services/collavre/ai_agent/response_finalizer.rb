@@ -40,7 +40,7 @@ module Collavre
       private
 
       def finalize_reply_comment(review_handler)
-        if @original_comment&.review_message? && review_handler.handle(@response_content, task: @task)
+        if @original_comment&.review_message? && review_handler.handle(@response_content, task: @task, agent_run_options: @reply_comment.agent_run_options)
           # Review workflow: update quoted comment in place (no new comment created)
           @review_flow = true
           review_handler.add_completion_reaction
@@ -73,6 +73,18 @@ module Collavre
       end
 
       def create_reply_comment
+        reply = nil
+        # The fallback insertion must obey the same resend lock as the placeholder.
+        Comments::TopicMutation.call(@original_comment.topic_id, @original_comment.creative_id) do
+          next unless Comment.exists?(id: @original_comment.id, creative_id: @original_comment.creative_id,
+                                      topic_id: @original_comment.topic_id)
+
+          reply = persist_reply_comment
+        end
+        reply
+      end
+
+      def persist_reply_comment
         reply_comment = @original_comment.creative.comments.create!(
           content: @response_content,
           user: @agent,

@@ -1,130 +1,121 @@
-# Authoring Tools (Meta-Skills) as Creatives
+# Ruby tools stored in Creatives
 
-Collavre tools follow the [rails_mcp_engine](https://github.com/sh1nj1/rails_mcp_engine)
-pattern: a Ruby service class declares its metadata with the `ToolMeta` DSL and
-its types with a Sorbet `sig`, and the engine generates both the RubyLLM tool and
-the MCP tool from that single definition.
+Use this workflow when asked to create or edit a Collavre MCP tool. The Ruby
+source lives in a Creative, written with `creative_create_service` or
+`creative_update_service`. There is no separate authoring CLI or registration
+endpoint. Use the existing owner approval action to enable execution.
 
-A tool does not need a deploy. Put its source in a Ruby code block inside a
-Creative's description and Collavre picks it up:
+## Discover and choose the destination
 
-1. Saving the Creative scans its code blocks for `extend ToolMeta`.
-2. Each block becomes a pending tool, and the Creative owner receives an
-   approval comment.
-3. When the owner approves, the source is evaluated and registered. The tool
-   then appears in `collavre tool list` and runs with `collavre tool run`.
-4. Editing the source resets approval. Removing the block deletes the tool.
+Call `meta_tool(action: "get", tool_name: "creative_create_service")` and the
+corresponding `get` for `creative_update_service` to inspect current parameters.
+Retrieve the intended parent with `creative_retrieval_service`; use a Creative
+the requester has authorized you to write. If the purpose or destination is
+missing, ask for it before creating executable content.
 
-Only users with write permission on the tool's Creative can see and run it.
+Search existing registered names with `meta_tool(action: "search", query: ... )`.
+Choose a unique snake_case tool name and `Tools::<UniqueName>Service` class.
+Discovery only includes approved tools the current user can access; absence is
+not proof that a name is globally free. A duplicate pending name cannot become
+a second tool; use a distinct name rather than modifying somebody else's tool.
+One tool per Creative makes later edits and approvals easier to inspect.
 
-## Workflow
+## Write the service in a Ruby fence
 
-```bash
-# 1. Start from a template
-collavre tool scaffold --name weekly_digest --desc "Summarize a Creative's week" > weekly_digest.rb
+Follow the [rails_mcp_engine DSL](https://github.com/vrerv/rails_mcp_engine#defining-a-tool-service).
+Include `extend T::Sig`, `extend ToolMeta`, literal `tool_name` and
+`tool_description`, `tool_param` metadata, and a Sorbet-signed keyword `call`.
+Keep the class name's `Service` suffix: the library generates wrapper constants
+from the remaining name. Do not declare extra services or register tools yourself.
 
-# 2. Edit weekly_digest.rb, then preview the Creative Markdown (no network)
-collavre tool create --parent 123 --file weekly_digest.rb --dry-run
-
-# 3. Create the tool Creative, then ask the owner to approve it
-collavre tool create --parent 123 --file weekly_digest.rb
-
-# 4. After approval
-collavre tool info weekly_digest
-collavre tool run weekly_digest --json '{"creative_id": 123}'
-
-# Change the source later (approval is required again)
-collavre tool update 456 --file weekly_digest.rb
-```
-
-Tool names are global, so pick a specific name. `create` refuses a `tool_name`
-that is already registered, and so does `update` when the new name is not one
-of the tools the server records for that Creative (its approved or pending
-tools, not names that merely appear in its text). Only approved tools are visible to this check: a
-name still pending approval elsewhere makes the save fail silently, and on
-`update` the Creative's previous tool is removed as well. Both commands exit
-non-zero when the server rejects the request.
-If the Creative's `ai_write_policy` is `review`, the save becomes a draft change
-set first; the CLI reports it, and the approval comment only appears after that
-draft is applied.
-
-## Tool source shape
+This harmless example has no resource access or side effects:
 
 ```ruby
-module Tools
-  class WeeklyDigestService
-    extend T::Sig
-    extend ToolMeta
+class Tools::CreativeGreetingService
+  extend T::Sig
+  extend ToolMeta
 
-    tool_name "weekly_digest"
-    tool_description "Summarize a Creative's week."
-    tool_param :creative_id, description: "Creative to summarize", required: true
-    tool_param :days, description: "Window in days (default 7)", required: false
+  tool_name "creative_greeting"
+  tool_description "Return the supplied name in a structured greeting payload."
+  tool_param :name, description: "Name to return", required: true
 
-    sig { params(creative_id: Integer, days: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
-    def call(creative_id:, days: nil)
-      user = Collavre::Current.user
-      raise "Current.user is required" unless user
-
-      creative = Collavre::Creative.find_by(id: creative_id)
-      return { error: "Creative not found", id: creative_id } unless creative
-      return { error: "No read permission", id: creative_id } unless creative.has_permission?(user, :read)
-
-      since = (days || 7).days.ago
-      { success: true, id: creative.id, updated_children: creative.children.where("updated_at >= ?", since).count }
-    end
+  sig { params(name: String).returns(T::Hash[Symbol, String]) }
+  def call(name:)
+    { name: name }
   end
 end
 ```
 
-Rules the CLI checks before creating the Creative:
+For resource operations, use `Collavre::Current.user` as the caller and check
+`creative.has_permission?(Collavre::Current.user, :read)` (or `:write` for
+mutations) on every resource accessed. Permission to run the tool's Creative
+does not authorize access to other Creatives. Ruby executes in the application
+process; owner approval is a trust decision, not a sandbox. User-facing messages
+must use the application's English and Korean i18n translations.
 
-- The class lives in the `Tools` namespace and has `extend T::Sig` and `extend ToolMeta`
-  (written exactly like that; the server looks for the literal text).
-- `tool_name` is a snake_case string literal and `tool_description` is a string literal,
-  each on one line with matching quotes.
-  The server reads the first `tool_name` it finds, so keep it a plain string and
-  write `tool_name` only once (not even in a comment). Approval fails if the name
-  the class actually declares differs from the recorded one. If approval fails,
-  nothing from the source stays registered; fix the source and approve again.
-- The entrypoint is `def call(...)` with a Sorbet `sig` above it.
+## Save with the existing Creative tool
 
-Rules the CLI cannot check, so follow them yourself:
+Send the entire Markdown body, including the opening and closing Ruby fences.
+Use actual newlines in the description value (JSON encodes them as `\n`). For
+example, call the existing tool through `meta_tool` with this JSON; replace the
+parent ID with the authorized destination:
 
-- The service class name is not already used by another tool or by the app.
-  Distinct names can map to one class (`foo1` and `foo_1` both scaffold
-  `Tools::Foo1Service`), and approval refuses a class the tool did not define
-  itself. Rename the class if approval reports it as already defined.
-- The class name ends in `Service`, and its name without that suffix is free
-  in `Tools` and `Mcp`. Approval builds `Tools::<Name>` and `Mcp::<Name>` from
-  it, so `Tools::CreativeRetrievalServiceService` or a second `FooService` in
-  another module is refused. Rename the class if approval reports what it
-  builds as already defined.
-  Approved tools on other server processes count too: approval refuses any
-  of these names that an earlier approved tool uses ("which another approved
-  tool already uses").
-- The service class is the first class in the source, and that class itself
-  has `extend ToolMeta` and `tool_name`. Approval registers the first class and
-  refuses it if the source did not declare it again, so a class body that only
-  reopens an earlier version cannot keep the old implementation running.
+```json
+{
+  "action": "run",
+  "tool_name": "creative_create_service",
+  "arguments": {
+    "parent_id": 123,
+    "description": "# Greeting tool\n\n```ruby\nclass Tools::CreativeGreetingService\n  extend T::Sig\n  extend ToolMeta\n  tool_name \"creative_greeting\"\n  tool_description \"Return the supplied name in a structured greeting payload.\"\n  tool_param :name, description: \"Name to return\", required: true\n  sig { params(name: String).returns(T::Hash[Symbol, String]) }\n  def call(name:)\n    { name: name }\n  end\nend\n```"
+  }
+}
+```
 
-- Every `tool_param` matches a keyword argument in `sig` and `def call`.
-  Optional params use `T.nilable(...)` and a default of `nil`.
-- `sig` types drive the JSON schema. Use `String`, `Integer`, `Float`,
-  `T::Boolean`, `T::Array[...]`, `T::Hash[...]`, and `T.nilable(...)`.
-- Return a Hash. Return `{ error: "..." }` for expected failures instead of raising.
-- Reference Collavre models by their full name (`Collavre::Creative`,
-  `Collavre::Current`). The source is evaluated at the top level.
+The meta response wraps the Creative service response in `result`. Check its
+`success`/`error` or `pending_review`, and retain the returned Creative ID or
+`change_set_id`. Do not retry a successful create merely because the tool is
+not yet discoverable: extraction happens in a queued job after the save.
 
-## Safety
+## Approval and verification
 
-The approved source runs inside the Collavre server with full application
-privileges. Write tools the way the built-in tools are written:
+Under `ai_write_policy=review`, the owner first applies the Creative draft in
+History. Applying the draft is separate from approving the executable tool.
+Once the code is stored, Collavre creates an owner approval comment for the
+tool. Report the Creative ID and pending state; wait for that approval instead
+of marking the tool approved yourself. If approval fails, inspect its error,
+correct the source, and request approval of the corrected version.
 
-- Act as `Collavre::Current.user` and check `has_permission?` on every Creative
-  the tool reads (`:read`) or changes (`:write`).
-- Do not shell out, read server files, read credentials or environment variables,
-  or make network calls the owner has not asked for.
-- Keep one tool to one clear job. Split unrelated actions into separate tools.
+After approval, verify the real schema and result:
 
-Approvers should read the source before approving it.
+```json
+{"action":"get","tool_name":"creative_greeting"}
+```
+
+```json
+{"action":"run","tool_name":"creative_greeting","arguments":{"name":"Soonoh"}}
+```
+
+The second response's `result` must be `{"name":"Soonoh"}`. For a different
+tool, choose a harmless representative call consistent with the user's request.
+Report the Creative ID, actual tool name, approval status, and verification
+result. An unavailable result can mean extraction is pending, approval is
+missing, registration failed, or the caller lacks write access to the Creative.
+Do not claim success solely because the Creative was saved.
+
+## Edit or remove
+
+Read the existing Creative before editing. `creative_update_service` replaces
+the entire body; preserve unrelated prose and code. Its retrieval view is a
+plain-text rendering, so do not assume it is a lossless Markdown round-trip.
+Use the original full Markdown when available; obtain the original source
+before replacing a body whose formatting you cannot reconstruct safely.
+
+Call `meta_tool(action: "run", tool_name: "creative_update_service",
+arguments: {id: <existing Creative ID>, description: <full Markdown>})`.
+Keep the same tool and service names for an ordinary edit. Source changes revoke
+the old registration when the extraction job runs and require approval again.
+Removing the code block removes the tool; renaming is removal plus creation and
+needs approval. Verify the old name is unavailable and the approved replacement
+has the expected schema and behavior. Other processes reconcile approved
+versions on their next `meta_tool` call; a call already in progress is not
+cancelled by an edit.

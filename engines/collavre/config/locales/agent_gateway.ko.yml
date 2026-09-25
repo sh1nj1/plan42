@@ -176,6 +176,7 @@ ko:
         per_user: provider 로그인은 내 계정 단위이며, 이 게이트웨이에 연결한 모든 에이전트가 함께 사용합니다. 에이전트마다가 아니라 provider마다 한 번만 로그인하면 됩니다. 스킬과 워크스페이스 설정은 에이전트별로 분리됩니다.
       engines: Agent provider
       loading: 불러오는 중…
+      fast_mode_pending: 프록시의 Codex Fast 모드가 에이전트 설정과 다릅니다. 지금 sync하여 현재 설정을 적용하세요.
       refresh: 새로고침
       login: 로그인
       submit: 제출

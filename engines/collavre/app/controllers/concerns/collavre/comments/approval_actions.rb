@@ -128,13 +128,21 @@ module Collavre
           render_approval_status_error(status) and return
         end
 
+        # Only an agent-initiated approval_request carries a reason and a named
+        # decider back to the blocked agent. A relayed native tool prompt is a
+        # bare allow/deny with no reason box, so any reason posted against one is
+        # ignored and its broadcast payload stays exactly as before.
+        approval_request = @comment.claude_channel_approval_request?
+        reason = params[:reason] if approval_request
+        decided_by = Current.user if approval_request
+
         begin
-          @comment.decide_claude_channel_permission!(behavior, by: Current.user)
+          @comment.decide_claude_channel_permission!(behavior, by: Current.user, reason: reason)
         rescue Comment::ClaudeChannelPermission::AlreadyDecided
           render json: { error: I18n.t("collavre.comments.approve_already_executed") }, status: :unprocessable_entity and return
         end
 
-        @comment.broadcast_claude_channel_permission_decision(behavior)
+        @comment.broadcast_claude_channel_permission_decision(behavior, reason: reason, decided_by: decided_by)
         @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
         render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
       end

@@ -186,16 +186,19 @@ module Collavre
         private
 
         def reclaim_task_for_retry!(task, execution_job_id)
-          previous_status = task.with_lock do
+          previous_status, reply_id = task.with_lock do
             next unless ExecutionFence.retryable?(task, execution_job_id)
 
             status = task.status
             task.update!(status: "pending", trigger_event_payload: ExecutionFence.retire_attempt(task.trigger_event_payload))
-            status
+            [ status, task.reply_comment&.id ]
           end
           return false unless previous_status
 
-          ActiveRecord.after_all_transactions_commit { detach_partial_reply(task) } if %w[running failed].include?(previous_status)
+          # Bind cleanup to the old attempt, including an explicitly absent reply.
+          if %w[running failed].include?(previous_status)
+            ActiveRecord.after_all_transactions_commit { detach_partial_reply(task, reply: Comment.find_by(id: reply_id)) }
+          end
           true
         end
 
@@ -321,8 +324,7 @@ module Collavre
         # The interrupted attempt's streamed reply stays visible — the user has
         # read it — but it is no longer this turn's reply: the resumed attempt
         # writes its own. A reply that never got past the placeholder is removed.
-        def detach_partial_reply(task)
-          reply = task.reply_comment
+        def detach_partial_reply(task, reply: task.reply_comment)
           return unless reply
 
           if reply.content.to_s.strip.in?([ "", Comment::STREAMING_PLACEHOLDER_CONTENT ])

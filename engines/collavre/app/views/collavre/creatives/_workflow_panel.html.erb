@@ -32,6 +32,8 @@
           <% end %>
         </fieldset>
         <label><%= t('collavre.workflow.editor.agents') %><select name="agents" multiple data-field="handler.agent_ids"></select></label>
+        <label><%= t('collavre.workflow.editor.topic_name') %><input name="topic-name" data-field="topic_name" placeholder="<%= t('collavre.topics.main_name') %>"></label>
+        <p><%= t('collavre.workflow.editor.invocation_note') %></p>
         <fieldset>
           <legend><%= t('collavre.workflow.editor.sources') %></legend>
           <label class="workflow-choice"><input type="checkbox" name="any-source" data-field="any-source"><%= t('collavre.workflow.editor.any_source') %></label>

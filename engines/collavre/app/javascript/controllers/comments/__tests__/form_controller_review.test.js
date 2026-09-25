@@ -53,6 +53,10 @@ describe('FormController - Review Quote Chips', () => {
           <input type="file" data-comments--form-target="imageInput" style="display:none;" />
           <button data-comments--form-target="imageButton" style="display:none;">Image</button>
           <div data-comments--form-target="attachmentList"></div>
+          <select name="comment[agent_run_options][reasoning_effort]">
+            <option value="">Agent default</option>
+            <option value="max">max</option>
+          </select>
         </form>
       </div>
     `
@@ -367,6 +371,40 @@ describe('FormController - Review Quote Chips', () => {
       expect(notifyProgrammaticScroll).toHaveBeenCalled()
 
       commentEl.remove()
+    })
+  })
+
+  describe('sending a question quote', () => {
+    test('carries the selected agent run options and topic', async () => {
+      const fetchMock = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') }))
+      const originalFetch = global.fetch
+      global.fetch = fetchMock
+      const meta = document.createElement('meta')
+      meta.name = 'csrf-token'
+      meta.content = 'token'
+      document.head.appendChild(meta)
+      try {
+        controller.creativeId = '123'
+        controller._mainTopicId = '55'
+        container.querySelector('select').value = 'max'
+
+        controller._sendQuestionQuote({ id: 'q1', commentId: 42, text: 'Why?', type: 'question', feedback: 'Explain' })
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        const [url, options] = fetchMock.mock.calls[0]
+        expect(url).toBe('/creatives/123/comments')
+        const body = options.body
+        expect(body.get('comment[review_type]')).toBe('question')
+        expect(body.get('comment[quoted_comment_id]')).toBe('42')
+        expect(body.get('comment[topic_id]')).toBe('55')
+        expect(body.get('comment[agent_run_options][reasoning_effort]')).toBe('max')
+        expect(body.get('comment[agent_run_options][model]')).toBeNull()
+        expect(body.get('comment[quoted_text]')).toBeNull()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      } finally {
+        global.fetch = originalFetch
+        meta.remove()
+      }
     })
   })
 })

@@ -178,6 +178,7 @@ module Collavre
       if agent.claude_channel_agent?
         register_presence(agent)
         ResumeSuspendedTasksJob.perform_later(agent_id: agent.id)
+        ClaudeApprovalResumeJob.perform_later(nil, agent.id)
       end
     end
 

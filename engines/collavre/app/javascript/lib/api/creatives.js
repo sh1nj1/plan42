@@ -86,6 +86,7 @@ export function destroy(id, withChildren = false) {
   const query = withChildren ? '?delete_with_children=true' : ''
   return csrfFetch(`/creatives/${id}${query}`, {
     method: 'DELETE',
+    headers: JSON_HEADERS,
   }).then(invalidateWorkspaceTreeOnSuccess)
 }
 

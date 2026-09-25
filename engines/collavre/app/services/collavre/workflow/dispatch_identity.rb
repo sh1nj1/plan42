@@ -18,7 +18,7 @@ module Collavre
       def self.task_admission(task)
         row = admission(task.trigger_event_payload, task.agent_id)
         row if row && row.execution_id == task.workflow_execution_id &&
-          task.creative_id == row.execution.chain.creative_id && task.topic_id.to_i == row.execution.chain.topic_id
+          task.creative_id == row.execution.chain.creative_id && task.topic_id.to_i == row.context.dig("topic", "id").to_i
       end
     end
   end

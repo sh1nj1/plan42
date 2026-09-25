@@ -26,6 +26,21 @@ module Collavre
         Collavre::CreativeShare.create!(creative: @creative, user: user, permission: permission, shared_by: @user)
       end
 
+      test "branch preserves human overrides and AI run audit options" do
+        human, reply = @comments.first(2)
+        human.update!(agent_run_options: { "model" => "paperclip/claude_local/opus", "reasoning_effort" => "max" })
+        reply.update!(user: users(:ai_bot), agent_run_options: { "model" => "paperclip/codex_local", "reasoning_effort" => "high" })
+
+        topic = ::Collavre::TopicBranchService.new(creative: @creative, user: @user, source_topic: @source)
+          .call(comment_ids: @comments.map(&:id))
+
+        copies = topic.comments.order(:created_at).to_a
+        assert_equal @comments.map(&:agent_run_options), copies.map(&:agent_run_options)
+        assert_equal [ @user.id, users(:ai_bot).id, @user.id ], copies.map(&:user_id)
+        human.reload
+        assert_equal "max", human.agent_run_options["reasoning_effort"]
+      end
+
       # The branch copies content but not `action`, so a copied approval prompt
       # stops matching Comment.without_approval_action and lands in the agent
       # history queries the column exists to keep it out of.

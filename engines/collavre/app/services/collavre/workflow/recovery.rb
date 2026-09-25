@@ -11,7 +11,7 @@ module Collavre
 
         execution = Execution.joins(:chain).find_by(input_event_id: event["id"], workflow_chains: {
           correlation_id: event["correlation_id"], creative_id: context.dig("creative", "id"),
-          topic_id: context.dig("topic", "id").to_i
+          topic_id: Continuation.chain_for(context)&.topic_id || context.dig("topic", "id").to_i
         })
         return unless execution
 

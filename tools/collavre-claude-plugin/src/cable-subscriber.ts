@@ -8,6 +8,8 @@ export interface AgentEvent {
   // exact dispatched task (required when topic concurrency > 1).
   task_id?: number | null;
   execution_generation?: string;
+  // A continuation acknowledges the completed turn's server-owned approval.
+  approval_request_id?: string;
   // session_topic marks whether the dispatched topic is a Session-mapped topic.
   // Used to ignore dispatches belonging to a sibling session that shares this
   // agent's stream. Absent when talking to a legacy server.
@@ -17,6 +19,12 @@ export interface AgentEvent {
   // per-agent stream; the plugin acts only on request_ids it surfaced.
   request_id?: string;
   behavior?: "allow" | "deny";
+  // Present only on an agent-initiated approval_request decision (a relayed tool
+  // prompt has no reason box): the approver's optional note and identity, relayed
+  // to the model as part of the blocked tool call's result.
+  reason?: string;
+  decided_by?: number;
+  decided_by_name?: string;
   // Absent on `permission_decision` events (a decision carries no comment).
   comment?: {
     id: number;

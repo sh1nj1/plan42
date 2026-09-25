@@ -23,26 +23,7 @@ module Collavre
     end
 
     def create_ai
-      ai_id = params[:ai_id].to_s.strip.downcase
-      email = "#{ai_id}@ai.local"
-      searchable = ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false))
-
-      @user = Collavre::User.new(
-        name: params[:name],
-        email: email,
-        password: SecureRandom.hex(36),
-        system_prompt: params[:system_prompt],
-        llm_vendor: params[:llm_vendor].presence || "google",
-        llm_model: params[:llm_model],
-        llm_api_key: params[:llm_api_key],
-        gateway_url: params[:gateway_url],
-        agent_gateway: selected_agent_gateway,
-        tools: params[:tools] || [],
-        searchable: searchable,
-        email_verified_at: Time.current,
-        created_by_id: Current.user.id,
-        routing_expression: params[:routing_expression]
-      )
+      @user = Collavre::User.new(new_ai_user_attributes)
       @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
       saved = Collavre::User.transaction do
@@ -74,7 +55,8 @@ module Collavre
     end
 
     def update_ai
-      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf, tools: [])
+      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf,
+                                                  :reasoning_effort, :codex_fast_mode, tools: [])
       assign_ai_gateway(ai_params)
       clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
       @has_stored_llm_api_key = @user.llm_api_key.present?
@@ -103,6 +85,32 @@ module Collavre
     end
 
     private
+
+    def new_ai_user_attributes
+      {
+        name: params[:name],
+        email: "#{params[:ai_id].to_s.strip.downcase}@ai.local",
+        password: SecureRandom.hex(36),
+        system_prompt: params[:system_prompt],
+        tools: params[:tools] || [],
+        searchable: ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false)),
+        email_verified_at: Time.current,
+        created_by_id: Current.user.id,
+        routing_expression: params[:routing_expression]
+      }.merge(new_ai_llm_attributes)
+    end
+
+    def new_ai_llm_attributes
+      {
+        llm_vendor: params[:llm_vendor].presence || "google",
+        llm_model: params[:llm_model],
+        llm_api_key: params[:llm_api_key],
+        gateway_url: params[:gateway_url],
+        agent_gateway: selected_agent_gateway,
+        reasoning_effort: params[:reasoning_effort],
+        codex_fast_mode: ActiveModel::Type::Boolean.new.cast(params[:codex_fast_mode]) || false
+      }
+    end
 
     def current_user_contacts_path
       user_path(Current.user, tab: "contacts")
@@ -170,8 +178,10 @@ module Collavre
           gateways.active.find_by(id: ai_params[:agent_gateway_id])
         end
         ai_params[:agent_gateway_id] = gateway&.id
-      elsif effective_vendor != "cli_proxy" && ai_params.key?(:llm_vendor)
-        ai_params[:agent_gateway_id] = nil
+      elsif effective_vendor != "cli_proxy"
+        # Keep the registered manifest reachable so retained workspaces can sync Fast off.
+        # The sync job detaches it after cleanup; ignore the hidden gateway field here.
+        ai_params.delete(:agent_gateway_id)
       end
     end
 

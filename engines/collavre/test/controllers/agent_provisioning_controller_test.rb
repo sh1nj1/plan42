@@ -2,6 +2,8 @@ require "test_helper"
 
 class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
   setup do
+    @previous_queue_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
     @owner = users(:two)
     @gateway = Collavre::AgentGateway.create!(
       owner: @owner,
@@ -22,6 +24,8 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
     )
     @workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: nil)
   end
+
+  teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
 
   test "public manifest contains fixed skill and workspace config artifacts" do
     get collavre.agent_provision_manifest_path(agent_id: @agent.id, token: @workspace.manifest_token)
@@ -45,6 +49,45 @@ class AgentProvisioningControllerTest < ActionDispatch::IntegrationTest
         assert_includes response.headers["Cache-Control"], "private"
       end
     end
+  end
+
+  test "leaving CLI Proxy removes fast runtime while workspace cleanup is pending" do
+    @agent.update!(llm_model: "paperclip/codex_local", codex_fast_mode: true)
+    path = collavre.agent_provision_manifest_path(agent_id: @agent.id, token: @workspace.manifest_token)
+    get path
+    assert_response :success
+    assert_equal true, response.parsed_body.dig("runtime", "codex", "fast_mode")
+
+    assert_enqueued_with(job: Collavre::AgentProvisioningSyncJob, args: [ @agent.id ]) do
+      @agent.update!(llm_vendor: "openai")
+    end
+    get path
+    assert_response :success
+    assert_not response.parsed_body.key?("runtime")
+    assert @workspace.reload.persisted?
+
+    @agent.update!(llm_vendor: "cli_proxy", codex_fast_mode: false)
+    get path
+    assert_response :success
+    assert_not response.parsed_body.key?("runtime")
+  end
+
+  test "leaving CLI Proxy revokes the manifest after workspace cleanup succeeds" do
+    @agent.update!(llm_model: "paperclip/codex_local", codex_fast_mode: true)
+    path = collavre.agent_provision_manifest_path(agent_id: @agent.id, token: @workspace.manifest_token)
+    @agent.update!(llm_vendor: "openai")
+
+    client = Minitest::Mock.new
+    client.expect(:provision_sync, {})
+    Collavre::CliProxy::Client.stub(:new, client) do
+      Collavre::AgentProvisioningSyncJob.perform_now(@agent.id)
+    end
+    client.verify
+
+    get path
+    assert_response :not_found
+    assert_not Collavre::AgentWorkspace.exists?(@workspace.id)
+    assert_nil @agent.reload.agent_gateway_id
   end
 
   test "invalid manifest capability is not found" do

@@ -34,6 +34,17 @@ class ApprovalGateControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "Claude approval request renders as an approver-only gate" do
+    @comment.update!(action: { action: "claude_channel_permission", kind: "approval_request", request_id: "claude-gate" }.to_json)
+    get creative_comments_path(@creative), params: { topic_id: @task.topic_id }
+    assert_response :success
+    assert_select "#comment_#{@comment.id}[data-approval-gate=true]" do
+      assert_select ".approve-comment-btn", count: 1
+      assert_select ".deny-comment-btn", count: 1
+      assert_select "textarea[data-approval-reason]", count: 1
+    end
+  end
+
   %w[approve deny].each do |action|
     test "#{action} records reason and returns decided UI once" do
       assert_enqueued_with(job: Collavre::ApprovalGateResumeJob) do
@@ -47,6 +58,37 @@ class ApprovalGateControllerTest < ActionDispatch::IntegrationTest
       assert_equal @user.id, @task.reload.pending_tool_call.dig("decision", "decided_by")
       post "/creatives/#{@creative.id}/comments/#{@comment.id}/#{action}", as: :json
       assert_response :unprocessable_entity
+    end
+  end
+
+  %w[approve deny].each do |action|
+    test "async #{action} succeeds and recovers when resume enqueue fails" do
+      gateway = Collavre::AgentGateway.create!(name: "Test", owner: @user, base_url: "https://gateway.example.com",
+        admin_key: "test", completion_key: "test", tenant_id: "test")
+      @task.agent.update!(agent_gateway: gateway, llm_vendor: "cli_proxy", llm_model: "codex", created_by_id: @user.id)
+      perform_enqueued_jobs(only: Collavre::PermissionCacheJob) do
+        Collavre::CreativeShare.create!(creative: @creative, user: @task.agent, permission: "feedback")
+      end
+      @task.update!(status: "done", pending_tool_call: nil)
+      @comment.update!(action: @comment.approval_gate_action.merge("mode" => "async").to_json,
+        async_approval_task_id: @task.id)
+      attempted = false
+      Collavre::AsyncApprovalResumeJob.stub(:perform_later, lambda { |id|
+        assert_equal @comment.id, id
+        attempted = true
+        raise "Queue unavailable"
+      }) do
+        post "/creatives/#{@creative.id}/comments/#{@comment.id}/#{action}", params: { reason: "Reviewed" }, as: :json
+      end
+      assert attempted
+      assert_response :success
+      assert_select action == "deny" ? ".denied-label" : ".approved-label", count: 1
+      assert @comment.reload.async_approval_recovery_pending?
+      assert_equal @user, @comment.action_executed_by
+      assert_equal "Reviewed", @comment.approval_gate_reason
+      assert @task.reload.done?
+      assert_difference("Collavre::Task.count", 1) { Collavre::AsyncApprovalSweepJob.perform_now }
+      assert_no_difference("Collavre::Task.count") { Collavre::AsyncApprovalSweepJob.perform_now }
     end
   end
 

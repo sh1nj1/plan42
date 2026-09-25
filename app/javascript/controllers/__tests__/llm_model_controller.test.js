@@ -67,6 +67,30 @@ describe('LlmModelController', () => {
         jest.clearAllMocks()
     })
 
+    test('supports a dynamically loaded avatar picker with a fixed vendor and unique menu', async () => {
+        const avatar = document.createElement('div')
+        avatar.dataset.controller = 'llm-model'
+        avatar.dataset.llmModelMenuIdValue = 'avatar-model-suggestions'
+        avatar.dataset.llmModelModelsValue = JSON.stringify(models)
+        avatar.innerHTML = `
+          <input type="hidden" value="openai" data-llm-model-target="vendor">
+          <input name="user[llm_model]" data-llm-model-target="input">
+          <div id="avatar-model-suggestions" style="display:none"><ul class="common-popup-list"></ul></div>
+        `
+        document.body.appendChild(avatar)
+        await flush()
+        const picker = application.getControllerForElementAndIdentifier(avatar, 'llm-model')
+        picker.show('gpt')
+        expect(avatar.querySelector('.llm-model-name').textContent).toBe('gpt-5.2')
+        expect(controller.menuElement.querySelector('.llm-model-name')).toBeNull()
+        picker.handleKeydown(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+        expect(picker.inputTarget.value).toBe('gpt-5.2')
+        expect(controller.inputTarget.value).toBe('')
+        avatar.remove()
+        await flush()
+        expect(picker.popup).toBeNull()
+    })
+
     test('filters suggestions by the selected vendor and search term', () => {
         controller.show('gpt')
 

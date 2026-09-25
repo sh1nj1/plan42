@@ -24,7 +24,6 @@ export function createInlineEditor(container, {
   let currentHtml = ""
   const directUploadUrl = container.dataset.directUploadUrl || null
   const blobUrlTemplate = container.dataset.blobUrlTemplate || null
-  const placeholderText = container.dataset.placeholder || null
 
   const deletedAttachmentsRef = { current: [] }
 
@@ -41,7 +40,8 @@ export function createInlineEditor(container, {
       <InlineLexicalEditor
         initialHtml={currentHtml}
         editorKey={currentKey}
-        placeholderText={placeholderText}
+        placeholderText={container.dataset.placeholder || null}
+        labels={editorLabels(container)}
         // onPromptForLink removed
         onKeyDown={(event, editor) => {
           if (onKeyDown) onKeyDown(event, editor)
@@ -133,3 +133,10 @@ export function createInlineEditor(container, {
 }
 
 
+
+function editorLabels(container) {
+  return {
+    emoji: container.dataset.emojiLabel,
+    headings: [1, 2, 3].map((level) => container.dataset[`heading${level}Label`])
+  }
+}

@@ -33,6 +33,10 @@ module Collavre
       end
 
       def self.prepare_waiting_task!(task)
+        if task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
+          return false unless task.creative&.has_permission?(task.agent, :feedback)
+        end
+
         context = task.trigger_event_payload
         return true unless context&.key?("topic")
 

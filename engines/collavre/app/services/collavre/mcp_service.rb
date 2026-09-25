@@ -83,18 +83,12 @@ module Collavre
       end
 
       # Check strict loading? No, simple where is fine.
-      dynamic_tools = McpTool.where(name: registered_names).includes(:creative)
+      dynamic_tools = McpTool.where(name: registered_names - McpToolRegistry.system_names.to_a).includes(:creative)
       dynamic_tool_names = dynamic_tools.pluck(:name).to_set
 
       # Build set of tool names the user has permission to run
       # User needs write permission on the creative to run its tools
-      accessible_tool_names = if user
-                                dynamic_tools.select do |mcp_tool|
-                                  mcp_tool.creative&.has_permission?(user, :write)
-                                end.map(&:name).to_set
-      else
-                                Set.new
-      end
+      accessible_tool_names = accessible_names(dynamic_tools, user)
 
       tools.select do |tool|
         name = if tool.respond_to?(:tool_name)
@@ -114,6 +108,15 @@ module Collavre
       end
     end
 
+    def self.accessible_names(dynamic_tools, user)
+      return Set.new unless user
+
+      dynamic_tools.select do |tool|
+        tool.active? && tool.creative&.has_permission?(user, :write)
+      end.map(&:name).to_set
+    end
+    private_class_method :accessible_names
+
     def self.load_active_tools
       McpTool.active.find_each do |tool|
         register_tool_from_source(tool.source_code, expected_name: tool.name)
@@ -128,7 +131,9 @@ module Collavre
       return [] unless defined?(RailsMcpEngine)
 
       RailsMcpEngine::Engine.build_tools!
-      result = ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      result = Current.set(user: user) do
+        ::Tools::MetaToolService.new.call(action: "list", tool_name: nil, query: nil, arguments: nil)
+      end
       tool_list = Array(result[:tools])
       filter_tools(tool_list, user)
     rescue StandardError => e
@@ -150,7 +155,6 @@ module Collavre
 
     def update_from_creative(input_creative)
       creative = input_creative.effective_origin
-      return unless creative.description.present?
 
       # Parse HTML to find code blocks
       doc = Nokogiri::HTML.fragment(creative.description)
@@ -191,6 +195,7 @@ module Collavre
       return unless tool_name_match
 
       tool_name = tool_name_match[1]
+      return notify_reserved_name(creative, tool_name) if McpToolRegistry.system_names.include?(tool_name)
 
       mcp_tool = McpTool.find_or_initialize_by(creative: creative, name: tool_name)
 
@@ -217,6 +222,14 @@ module Collavre
       end
 
       tool_name
+    end
+
+    def notify_reserved_name(creative, tool_name)
+      message = I18n.t("collavre.mcp_tools.reserved_name", tool_name: tool_name)
+      return nil if creative.comments.exists?(content: message)
+
+      Comment.create!(creative: creative, user: nil, content: message, skip_default_user: true, skip_dispatch: true)
+      nil
     end
 
     def notify_approval_needed(creative, tool)

@@ -90,7 +90,7 @@ module Collavre
       end
 
       if @comment.user == Current.user
-        safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
+        safe_params = comment_params.except(:quoted_comment_id, :quoted_text, :agent_run_options)
         validate_topic_id!(safe_params[:topic_id]) or return
 
         if update_comment(safe_params)
@@ -256,7 +256,12 @@ module Collavre
     end
 
     def comment_params
-      params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, :review_type, images: [])
+      permitted = params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text,
+                                                  :review_type, images: [],
+                                                  agent_run_options: CliProxy::RunOptions::MESSAGE_KEYS)
+      return permitted unless permitted.key?(:agent_run_options)
+
+      permitted.merge(agent_run_options: CliProxy::RunOptions.sanitize_message_options(permitted[:agent_run_options]))
     end
 
     def current_topic_context

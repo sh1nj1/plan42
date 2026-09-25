@@ -8,7 +8,7 @@ module Collavre
     class TaskReplyService
       Result = Data.define(:status, :body, :comment, :agent, :task)
 
-      def initialize(topic:, current_user:, text:, requested_task_id:, agent_resolver:, task_claimer:, claim_service:)
+      def initialize(topic:, current_user:, text:, requested_task_id:, agent_resolver:, task_claimer:, claim_service:, pending_approval_ids: [])
         @topic = topic
         @current_user = current_user
         @text = text
@@ -16,6 +16,7 @@ module Collavre
         @agent_resolver = agent_resolver
         @task_claimer = task_claimer
         @claim_service = claim_service
+        @pending_approval_ids = pending_approval_ids
       end
 
       def call
@@ -53,7 +54,9 @@ module Collavre
 
         claim_service.link_reply(task: task, comment: comment) if task
         claim_service.finalize(agent: agent, task: task, comment: comment) if task
-        Result.new(status: :created, body: { comment_id: comment.id }, comment: comment, agent: agent, task: task)
+        handed_off = task ? ClaudeApprovalHandoff.finish!(task, @pending_approval_ids) : []
+        Result.new(status: :created, body: { comment_id: comment.id, pending_approval_ids: handed_off },
+                   comment: comment, agent: agent, task: task)
       end
 
       def failed_result(comment, task)

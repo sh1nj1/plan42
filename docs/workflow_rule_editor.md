@@ -9,7 +9,8 @@ resolver and does not change routing mode when a rule is saved.
 1. Create a creative and set `kind: workflow` in its existing metadata editor.
 2. Open that workflow's tree and follow the workflow editor link.
 3. Add a titled rule, choose an event and handler, and save. Agent handlers can
-   select several responders. Human and none handlers both silence AI routing.
+   select several responders. Set an optional execution topic name; blank uses Main.
+   Human and none handlers both silence AI routing.
 4. Add optional conditions: source, whether the author is an agent, body phrases,
    and Liquid under Advanced. All configured conditions must match; source and
    body phrase lists each match any item. Liquid has no `agent` binding.
@@ -56,6 +57,50 @@ Durable workflow admissions retain this precedence when queued or resumed;
 current scope, routing mode, and permissions still gate execution.
 
 ## Execution and recovery
+
+Each admitted agent rule posts `@Agent name: rule content` as a public instruction
+in the event creative's execution topic. `topic_name` is an optional string in
+`workflow_rule`; omitted or blank selects Main. After trimming, names are limited
+to the database column limit, or 255 characters when the adapter reports no limit.
+This application limit is enforced when saving rules (including on SQLite).
+Existing topics are reused, and missing topics are created. Archived, History, session, and inbox
+System topics cannot be destinations. The instruction uses the triggering message's
+author, preserves workspace attribution, and never reparses mentions or runs the
+workflow matcher again. Multiple admitted agents receive a single message with
+all their `@Name:` prefixes; scheduler-rejected agents are excluded. Mention metadata
+is built from admitted agent IDs, so duplicate names or mentions within rule content
+cannot change the recipients. Dispatch-suppressed instruction comments also leave any
+trigger loop awaiting user input unchanged. The selected responders execute
+against that persisted message, so their replies and activity logs appear in its topic. The original
+message stays in place and is provided as authorized source context to the AI.
+The source text is frozen at admission. Its creative links participate in prompt
+context resolution after source authorization and linked-creative read permission
+checks, using the existing subtree, deduplication, and workflow-exclusion rules.
+When source and destination topics coincide, the source is excluded from history
+before the history limit is applied; it appears once in the trigger and older
+conversation can fill the history window. Source image attachments are read live
+and included in the multimodal trigger only after dispatch identity, scope, and
+current permissions are validated; withdrawn or deleted sources provide no images.
+
+Selection snapshots the instruction from the same rule row as its handler and
+destination configuration. Later rule edits cannot mix instruction versions with
+the selected configuration; current reachability and permissions still gate admission.
+The execution retains that instruction snapshot and stores its destination anchor
+in `context.invocation`. Admission, message, and outboxes commit atomically;
+redelivery reuses that message. Source and destination withdrawal stop pending
+work. Matching mode is checked at the source; scheduling uses destination policy.
+Cross-topic child events retain their persisted parent chain and its cumulative
+limits. Existing admissions without an invocation retain their original anchor.
+
+Example rule data (the instruction itself is the rule creative's content):
+
+```json
+{
+  "on": "comment_created",
+  "handler": { "type": "agent", "agent_ids": [42] },
+  "topic_name": "Analysis"
+}
+```
 
 In `on`, set `emits` in Advanced rule data to a registered event, such as
 `workflow_step_completed`. An agent rule publishes one child after every admitted

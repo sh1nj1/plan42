@@ -17,6 +17,7 @@ import CreativesWorkflowRuleController from "./creatives/workflow_rule_controlle
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
+import CommentsRunOptionsController from "./comments/run_options_controller"
 import CommentsPresenceController from "./comments/presence_controller"
 import CommentsMentionMenuController from "./comments/mention_menu_controller"
 import CommentsTopicsController from "./comments/topics_controller"
@@ -33,6 +34,7 @@ import TopicListController from "./topic_list_controller"
 import EntityListController from "./entity_list_controller"
 import CommonPopupController from "./common_popup_controller"
 import CommentController from "./comment_controller"
+import CommentAgentModelController from "./comment_agent_model_controller"
 import CommentUserMenuController from "./comment_user_menu_controller"
 import ReactionPickerController from "./reaction_picker_controller"
 import ShareInviteController from "./share_invite_controller"
@@ -139,6 +141,7 @@ export function registerControllers(application) {
   registerCreativeControllers(application)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
+  application.register("comments--run-options", CommentsRunOptionsController)
   application.register("comments--presence", CommentsPresenceController)
   application.register("comments--mention-menu", CommentsMentionMenuController)
   application.register("comments--topics", CommentsTopicsController)
@@ -156,6 +159,7 @@ export function registerControllers(application) {
   application.register("entity-list", EntityListController)
   application.register("common-popup", CommonPopupController)
   application.register("comment", CommentController)
+  application.register("comment-agent-model", CommentAgentModelController)
   application.register("comment-user-menu", CommentUserMenuController)
   application.register("reaction-picker", ReactionPickerController)
   application.register("share-invite", ShareInviteController)

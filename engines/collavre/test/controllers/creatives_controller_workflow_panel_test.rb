@@ -21,10 +21,12 @@ class CreativesControllerWorkflowPanelTest < ActionDispatch::IntegrationTest
     assert_select "template [name='event']"
     assert_select "template input[type='radio'][value='agent']"
     assert_select "template select[multiple]"
+    assert_select "template input[name=topic-name][placeholder=?]", I18n.t("collavre.topics.main_name")
     assert_select "template details:not([open]) textarea[name='expression']"
     assert_select "a[href='#{creative_path(@workflow)}']", text: I18n.t("collavre.workflow.editor.tree_link")
     users(:one).update!(locale: "ko")
     get edit_creative_path(@workflow), headers: { "Accept-Language" => "ko" }
+    assert_select "template input[name=topic-name][placeholder=?]", I18n.t("collavre.topics.main_name", locale: :ko)
     assert_select "h2", text: I18n.t("collavre.workflow.editor.title", locale: :ko)
   end
 

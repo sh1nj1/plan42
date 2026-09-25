@@ -9,6 +9,7 @@ import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
 import { commentRequest } from '../../lib/creative_path'
 import ReviewQuotesStore from './review_quotes_store'
 import FormDraftManager from './form_draft_manager'
+import { appendRunOptions } from './run_options_controller'
 import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
 
@@ -1001,15 +1002,12 @@ export default class extends Controller {
     const formData = new FormData()
     formData.append('comment[content]', content)
     formData.append('comment[review_type]', 'question')
-    if (quote.commentId) {
-      formData.append('comment[quoted_comment_id]', quote.commentId)
-    }
+    if (quote.commentId) formData.append('comment[quoted_comment_id]', quote.commentId)
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
+    appendRunOptions(this.formTarget, formData)
     const effectiveTopicId = this.currentTopicId || this._mainTopicId
-    if (effectiveTopicId) {
-      formData.append('comment[topic_id]', effectiveTopicId)
-    }
+    if (effectiveTopicId) formData.append('comment[topic_id]', effectiveTopicId)
 
     const url = `/creatives/${this.creativeId}/comments`
     const doFetch = () => fetch(url, {
