@@ -434,8 +434,34 @@ function ToolbarColorPicker({ icon, title, color, onChange, onClear, colorType }
 
 
 import LinkPopup from "./LinkPopup"
+import EmojiPicker from "./EmojiPicker"
 
-function Toolbar() {
+function HistoryButtons({ editor, canUndo, canRedo }) {
+  return (
+    <>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
+        disabled={!canUndo}
+        title="Undo (⌘/Ctrl+Z)"
+        aria-label="Undo">
+        ↩
+      </button>
+      <button
+        type="button"
+        className="lexical-toolbar-btn"
+        onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
+        disabled={!canRedo}
+        title="Redo (⇧⌘/Ctrl+Z)"
+        aria-label="Redo">
+        ↪
+      </button>
+    </>
+  )
+}
+
+function Toolbar({ emojiLabel }) {
   const [editor] = useLexicalComposerContext()
   const [formats, setFormats] = useState({
     bold: false,
@@ -681,24 +707,7 @@ function Toolbar() {
 
   return (
     <div className="lexical-toolbar">
-      <button
-        type="button"
-        className="lexical-toolbar-btn"
-        onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}
-        disabled={!canUndo}
-        title="Undo (⌘/Ctrl+Z)"
-        aria-label="Undo">
-        ↩
-      </button>
-      <button
-        type="button"
-        className="lexical-toolbar-btn"
-        onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}
-        disabled={!canRedo}
-        title="Redo (⇧⌘/Ctrl+Z)"
-        aria-label="Redo">
-        ↪
-      </button>
+      <HistoryButtons editor={editor} canUndo={canUndo} canRedo={canRedo} />
       <span className="lexical-toolbar-separator" aria-hidden="true" />
       <button
         type="button"
@@ -836,6 +845,8 @@ function Toolbar() {
         title="Attach file">
         📎
       </button>
+      <span className="lexical-toolbar-separator" aria-hidden="true" />
+      <EmojiPicker editor={editor} label={emojiLabel} />
       {showLinkPopup && (
         <LinkPopup
           initialLabel={linkPopupData.label}
@@ -915,6 +926,7 @@ function EditorInner({
   directUploadUrl,
   blobUrlTemplate,
   placeholderText,
+  emojiLabel,
   deletedAttachmentsRef
 }) {
   const [editor] = useLexicalComposerContext()
@@ -939,15 +951,14 @@ function EditorInner({
 
   return (
     <div className="lexical-editor-shell">
-      <Toolbar />
+      <Toolbar emojiLabel={emojiLabel} />
       <div className="lexical-editor-inner" ref={onAnchorRef}>
         <RichTextPlugin
           contentEditable={
             <ContentEditable
               className="lexical-content-editable shared-input-surface"
               onKeyDown={(event) => {
-                if (!onKeyDown) return
-                onKeyDown(event, editor)
+                onKeyDown?.(event, editor)
               }}
               onDragOver={handleDragOver}
             />
@@ -1044,19 +1055,7 @@ function EnterKeyPlugin({ onEnterKey }) {
   return null
 }
 
-export default function InlineLexicalEditor({
-  initialHtml,
-  onChange,
-  onKeyDown,
-  onEnterKey,
-  onReady,
-  onUploadStateChange,
-  directUploadUrl,
-  blobUrlTemplate,
-  editorKey,
-  placeholderText,
-  deletedAttachmentsRef
-}) {
+export default function InlineLexicalEditor({ editorKey, ...props }) {
   const initialConfig = useMemo(
     () => ({
       namespace: "CreativeLexicalEditor",
@@ -1086,18 +1085,7 @@ export default function InlineLexicalEditor({
 
   return (
     <LexicalComposer key={editorKey} initialConfig={initialConfig}>
-      <EditorInner
-        initialHtml={initialHtml}
-        onChange={onChange}
-        onKeyDown={onKeyDown}
-        onEnterKey={onEnterKey}
-        onReady={onReady}
-        onUploadStateChange={onUploadStateChange}
-        directUploadUrl={directUploadUrl}
-        blobUrlTemplate={blobUrlTemplate}
-        placeholderText={placeholderText}
-        deletedAttachmentsRef={deletedAttachmentsRef}
-      />
+      <EditorInner {...props} />
     </LexicalComposer>
   )
 }
