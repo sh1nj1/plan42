@@ -7,15 +7,15 @@ class CreativeDeleteMenuSystemTest < ApplicationSystemTestCase
       notifications_enabled: false, creative_workspace_enabled: true)
     @parent = Creative.create!(user: @user, description: "Delete menu parent")
     @creative = Creative.create!(user: @user, parent: @parent, description: "Delete menu target")
-    @child = Creative.create!(user: @user, parent: @creative, description: "Preserved child")
+    @child = Creative.create!(user: @user, parent: @creative, description: "Deleted child")
     sign_in_via_ui(@user)
   end
 
-  test "cancel preserves the creative and confirm deletes it then navigates to its parent" do
+  test "cancel preserves the creative and confirm deletes it with its children then navigates to its parent" do
     visit collavre.creatives_path(id: @creative.id)
     open_delete_menu
     assert_selector "dialog[role='alertdialog'] .confirm-dialog-message",
-      text: I18n.t("collavre.creatives.index.are_you_sure_delete_only_this")
+      text: I18n.t("collavre.creatives.index.are_you_sure_delete_with_children")
     find("dialog[role='alertdialog'] .modal-dialog-btn-secondary").click
     assert_no_selector "dialog[role='alertdialog']"
     assert Creative.exists?(@creative.id)
@@ -24,9 +24,9 @@ class CreativeDeleteMenuSystemTest < ApplicationSystemTestCase
     find("dialog[role='alertdialog'] .modal-dialog-btn-danger").click
 
     assert_current_path collavre.creatives_path(id: @parent.id)
-    assert_selector "#creative-#{@child.id}"
+    assert_no_selector "#creative-#{@child.id}"
     assert_not Creative.exists?(@creative.id)
-    assert_equal @parent, @child.reload.parent
+    assert_not Creative.exists?(@child.id)
   end
 
   private
