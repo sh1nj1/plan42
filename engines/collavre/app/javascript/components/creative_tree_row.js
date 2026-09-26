@@ -5,7 +5,7 @@ import { parseEmojis } from "../utils/emoji_parser";
 import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
-import csrfFetch from "../lib/api/csrf_fetch";
+import { updateCreativeProgress } from "../lib/creative_path";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -321,7 +321,13 @@ class CreativeTreeRow extends LitElement {
   _renderActionButton() {
     if (this.canWrite) {
       return html`
-        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
+        <button
+          type="button"
+          class="creative-action-btn edit-inline-btn"
+          data-creative-id=${this.creativeId}
+          data-guide-anchor="creative.editor"
+          data-guide-anchor-key=${this.creativeId}
+        >
           ${unsafeHTML(this.editIconHtml || "")}
         </button>
       `;
@@ -596,13 +602,7 @@ class CreativeTreeRow extends LitElement {
     wrap.classList.add("progress-toggle-saving");
 
     try {
-      const body = new FormData();
-      body.append("creative[progress]", newProgress);
-      const response = await csrfFetch(`/creatives/${creativeId}`, {
-        method: "PATCH",
-        headers: { Accept: "application/json" },
-        body,
-      });
+      const response = await updateCreativeProgress(this, creativeId, newProgress);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       // Update this row's progressHtml from server response

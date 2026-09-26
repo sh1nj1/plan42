@@ -54,7 +54,9 @@ module Collavre
           next unless Orchestration::ExecutionFence.current?(locked, requested_generation)
 
           claimed_from[locked.id] = locked.status
-          Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
+          Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil,
+                                           trigger_event_payload: payload_for(locked).merge("external_reply_claimed" => true),
+                                           updated_at: Time.current)
           claimed = locked.reload
         end
         claimed
@@ -66,7 +68,10 @@ module Collavre
       # row in the meantime wins.
       def release(task)
         task.with_lock do
-          task.update!(status: claimed_from.fetch(task.id, "delegated")) if task.status == "running"
+          next unless task.status == "running"
+
+          task.update!(status: claimed_from.fetch(task.id, "delegated"),
+                       trigger_event_payload: payload_for(task).except("external_reply_claimed"))
         end
       end
 
@@ -94,6 +99,10 @@ module Collavre
       end
 
       private
+
+      def payload_for(task)
+        task.trigger_event_payload.is_a?(Hash) ? task.trigger_event_payload : {}
+      end
 
       def claimed_from
         @claimed_from ||= {}

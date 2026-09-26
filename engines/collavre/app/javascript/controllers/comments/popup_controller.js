@@ -1,3 +1,4 @@
+import { openInitialChat, openPendingChat } from '../../lib/onboarding_ui'
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
@@ -149,16 +150,13 @@ export default class extends Controller {
         this.openForCreative()
         this._enterFullscreenImmediate()
       })
-    } else if (this.isFullscreen()) {
-      // Sync UI for initial fullscreen state (legacy fullscreen page)
-      this._syncFullscreenUI(true)
-      // Defer to ensure all sibling controllers are connected
-      requestAnimationFrame(() => this.openForCreative())
-    } else if (this.isDocked()) {
-      this.enterDockedMode()
     } else {
-      this.openFromUrl()
+      openInitialChat(this)
     }
+  }
+
+  openPendingChat() {
+    return openPendingChat(this)
   }
 
   disconnect() {
@@ -639,7 +637,7 @@ export default class extends Controller {
           this.openForCreative({ highlightId: this.commentIdFromUrl() })
         }, 0)
       })
-    } else if (this.hasListTarget) {
+    } else if (this.hasListTarget && !this.listTarget.querySelector('.onboarding-card')) {
       this.listTarget.classList.add('docked-empty')
       this.listTarget.textContent = el.dataset.dockedEmptyText || ''
     }

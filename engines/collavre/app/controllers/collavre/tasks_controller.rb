@@ -39,7 +39,7 @@ module Collavre
       previous_status = task.cancel_if_active!
       return head :unprocessable_entity unless previous_status
 
-      held_slot_without_worker = Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status)
+      held_slot_without_worker = (Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status) || task.externally_claimed?)
 
       # The third door a waiter leaves the queue through without ever being
       # promoted — "queued" is in the whitelist above, so the user's own stop

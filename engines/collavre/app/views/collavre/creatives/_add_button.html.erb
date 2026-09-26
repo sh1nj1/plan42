@@ -3,7 +3,7 @@
   shortcut_hint = local_assigns[:shortcut_hint]
   base_class = @parent_creative ? 'add-creative-btn' : 'new-root-creative-btn'
   css_class = label ? "btn btn-primary #{base_class} add-creative-btn--cta" : "creative-header-outline-btn #{base_class}"
-  data_attrs = @parent_creative ? { parent_id: @parent_creative.id } : {}
+  data_attrs = (@parent_creative ? { parent_id: @parent_creative.id } : {}).merge(guide_anchor: "tree.add")
 %>
 <%= button_tag(
       type: 'button',

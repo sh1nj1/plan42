@@ -43,13 +43,13 @@ class FeatureGuideTest < ApplicationSystemTestCase
     visit collavre.features_path
 
     assert_selector ".feature-guide-back"
-    assert_link I18n.t("collavre.features.nav.back_home"), class: "landing-btn-ghost"
+    assert_link I18n.t("collavre.features.nav.back"), class: "landing-btn-ghost"
   end
 
   test "the hub offers a back button to the landing page" do
     visit collavre.features_path
 
-    click_link I18n.t("collavre.features.nav.back_home")
+    click_link I18n.t("collavre.features.nav.back")
 
     assert_current_path collavre.landing_path(locale: I18n.locale)
   end

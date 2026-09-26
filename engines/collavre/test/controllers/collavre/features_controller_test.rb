@@ -47,7 +47,7 @@ module Collavre
 
         assert_response :success
         assert_select "a.landing-btn.landing-btn-ghost[href=?]", "/collavre/landing?locale=#{locale}",
-                      text: I18n.t("collavre.features.nav.back_home", locale: locale), count: 1
+                      text: I18n.t("collavre.features.nav.back", locale: locale), count: 1
       end
     end
 

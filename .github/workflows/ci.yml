@@ -191,6 +191,14 @@ jobs:
           DATABASE_URL: postgresql://collavre:collavre@localhost:5432/collavre_test
         run: bin/rails runner script/postgres_query_smoke.rb
 
+      # Match the search token, not unrelated searchable-profile HTML tests.
+      - name: Test user and onboarding search on PostgreSQL
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgresql://collavre:collavre@localhost:5432/collavre_test
+          PARALLEL_WORKERS: 1
+        run: bin/rails test engines/collavre/test/controllers/users_controller_test.rb -n '/search(?:_|$)/'
+
   test:
     runs-on: ubuntu-latest
 

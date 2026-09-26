@@ -348,6 +348,87 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, results.length
   end
 
+  test "search handles JSON user metadata and limits contacts in stable ID order" do
+    sign_in_as(@regular_user, password: "password")
+    candidates = 3.times.map do |index|
+      User.create!(name: "JSON search user", email: "json-search-#{index}@example.com",
+                   password: "password", searchable: true, tools: [ "echo" ],
+                   dismissed_notices: [ "notice" ])
+    end
+    candidates.each { |user| Contact.create!(user: @regular_user, contact_user: user) }
+
+    get collavre.search_users_path, params: { q: "json search", scope: "contacts", limit: 2 }
+
+    assert_response :success
+    assert_equal candidates.first(2).map(&:id), response.parsed_body.pluck("id")
+  end
+
+  test "shared and completed practice trees keep normal human mention search" do
+    learner = User.create!(name: "Practice learner", email: "practice-search-owner@example.com", password: "password")
+    viewer = User.create!(name: "Practice viewer", email: "practice-search-viewer@example.com", password: "password")
+    session = Collavre::Onboarding::Seeder.new(user: learner).call
+    perform_enqueued_jobs do
+      CreativeShare.create!(creative: session.root, user: viewer, permission: :feedback)
+    end
+    sign_in_as(viewer, password: "password")
+    get collavre.search_users_path, params: { q: "practice", creative_id: session.root.id }
+    assert_response :success
+    assert_includes response.parsed_body.pluck("id"), learner.id
+
+    learner.update!(onboarding_completed_at: Time.current)
+    sign_in_as(learner, password: "password")
+    get collavre.search_users_path, params: { q: "practice", creative_id: session.root.id }
+    assert_response :success
+    assert_includes response.parsed_body.pluck("id"), viewer.id
+  end
+
+  test "onboarding mention search only offers agents with feedback access" do
+    learner = User.create!(name: "Onboarding learner", email: "onboarding-search@example.com", password: "password")
+    helper = User.create!(
+      name: "Onboarding helper", email: "onboarding-search-helper@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    unavailable_agent = User.create!(
+      name: "Onboarding unavailable helper", email: "onboarding-search-unavailable@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    session = User.stub(:accessible_ai_agents_for, User.where(id: helper.id)) do
+      Collavre::Onboarding::Seeder.new(user: learner).call
+    end
+    sign_in_as(learner, password: "password")
+
+    get collavre.search_users_path, params: { q: "onboarding", creative_id: session.practice_creatives.second.id }
+
+    assert_response :success
+    emails = JSON.parse(response.body).pluck("email")
+    assert_includes emails, helper.email
+    refute_includes emails, unavailable_agent.email
+  end
+
+  test "onboarding mention search applies its limit after filtering inaccessible agents" do
+    learner = User.create!(name: "Limited onboarding learner", email: "limited-onboarding-search@example.com", password: "password")
+    helper = User.create!(
+      name: "Limited onboarding z helper", email: "limited-onboarding-search-helper@example.com", password: "password",
+      llm_vendor: "openai", searchable: true
+    )
+    20.times do |index|
+      User.create!(
+        name: "Limited onboarding a unavailable #{index}", email: "limited-onboarding-unavailable-#{index}@example.com", password: "password",
+        llm_vendor: "openai", searchable: true
+      )
+    end
+    onboarding_session = User.stub(:accessible_ai_agents_for, User.where(id: helper.id)) do
+      Collavre::Onboarding::Seeder.new(user: learner).call
+    end
+    sign_in_as(learner, password: "password")
+
+    get collavre.search_users_path,
+        params: { q: "limited onboarding", creative_id: onboarding_session.practice_creatives.second.id, limit: 1 }
+
+    assert_response :success
+    assert_equal [ helper.email ], JSON.parse(response.body).pluck("email")
+  end
+
   test "ai user defaults to non-searchable when checkbox is unchecked" do
     sign_in_as(@regular_user, password: "password")
 
@@ -504,6 +585,17 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.passkeys_user_path(@regular_user)
     assert_response :success
+  end
+  test "onboarding reset action is only shown on the current user's profile" do
+    sign_in_as(@regular_user, password: "password")
+
+    get collavre.user_path(@admin)
+    assert_response :success
+    assert_select "form[action=?]", collavre.reset_onboarding_path, count: 0
+
+    get collavre.user_path(@regular_user)
+    assert_response :success
+    assert_select "form[action=?]", collavre.reset_onboarding_path, count: 1
   end
   test "profile controls the creative workspace preference which defaults on" do
     sign_in_as(@regular_user, password: "password")

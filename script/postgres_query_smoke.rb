@@ -19,55 +19,61 @@ abort "postgres_query_smoke expects a PostgreSQL connection" unless
 failures = []
 
 def check(failures, label)
-  yield
+  # Recover the outer cleanup transaction after a PostgreSQL statement error.
+  ActiveRecord::Base.transaction(requires_new: true) { yield }
   puts "ok   #{label}"
 rescue StandardError => e
   failures << "#{label}: #{e.class}: #{e.message.lines.first.to_s.strip}"
   puts "FAIL #{label}"
 end
 
-suffix = SecureRandom.hex(4)
-actor = Collavre::User.create!(
-  name: "Smoke Owner", email: "smoke-owner-#{suffix}@example.test", password: "password123"
-)
-Collavre::Current.user = actor
-creative = Collavre::Creative.create!(description: "Smoke Host", user: actor)
-reviewer = Collavre::User.create!(
-  name: "Smoke Reviewer", email: "smoke-agent-#{suffix}@example.test", password: "password123",
-  llm_vendor: "google", llm_model: "gemini-1.5-flash", searchable: true
-)
+# Keep callback-created rows (including topics) out of subsequent fixture loads.
+ActiveRecord::Base.transaction do
+  suffix = SecureRandom.hex(4)
+  actor = Collavre::User.create!(
+    name: "Smoke Owner", email: "smoke-owner-#{suffix}@example.test", password: "password123"
+  )
+  Collavre::Current.user = actor
+  creative = Collavre::Creative.create!(description: "Smoke Host", user: actor)
+  reviewer = Collavre::User.create!(
+    name: "Smoke Reviewer", email: "smoke-agent-#{suffix}@example.test", password: "password123",
+    llm_vendor: "google", llm_model: "gemini-1.5-flash", searchable: true
+  )
 
-# Reached by the completion API's model list.
-check(failures, "User.accessible_ai_agents_for") do
-  Collavre::User.accessible_ai_agents_for(actor).to_a
-end
+  # Reached by the completion API's model list.
+  check(failures, "User.accessible_ai_agents_for") do
+    Collavre::User.accessible_ai_agents_for(actor).to_a
+  end
 
-# Reached by topic_create / topic_update with primary_agent, both with and
-# without a creative to scope the candidates.
-check(failures, "AgentResolver.candidates_for(no creative)") do
-  Collavre::Topics::AgentResolver.candidates_for(actor, nil).to_a
-end
+  # Reached by topic_create / topic_update with primary_agent, both with and
+  # without a creative to scope the candidates.
+  check(failures, "AgentResolver.candidates_for(no creative)") do
+    Collavre::Topics::AgentResolver.candidates_for(actor, nil).to_a
+  end
 
-check(failures, "AgentResolver.candidates_for(creative)") do
-  Collavre::Topics::AgentResolver.candidates_for(actor, creative).to_a
-end
+  check(failures, "AgentResolver.candidates_for(creative)") do
+    Collavre::Topics::AgentResolver.candidates_for(actor, creative).to_a
+  end
 
-check(failures, "AgentResolver.call(name, creative:)") do
-  Collavre::Topics::AgentResolver.call("Smoke Reviewer", actor: actor, creative: creative) ||
-    raise("expected the searchable agent to resolve")
-end
+  check(failures, "AgentResolver.call(name, creative:)") do
+    Collavre::Topics::AgentResolver.call("Smoke Reviewer", actor: actor, creative: creative) ||
+      raise("expected the searchable agent to resolve")
+  end
 
-# Reached by each queued gateway health probe. Agent gateways carry a json
-# health_engines column, so this relation must not select whole rows with
-# DISTINCT either.
-check(failures, "AgentGateway.health_probe_targets") do
-  Collavre::AgentGateway.health_probe_targets.find_by(id: -1)
-end
+  # Reached by each queued gateway health probe. Agent gateways carry a json
+  # health_engines column, so this relation must not select whole rows with
+  # DISTINCT either.
+  check(failures, "AgentGateway.health_probe_targets") do
+    Collavre::AgentGateway.health_probe_targets.find_by(id: -1)
+  end
 
-check(failures, "User.with_llm_vendors normalizes control whitespace") do
-  reviewer.update_column(:llm_vendor, "\tGoOgLe\r\n")
-  Collavre::User.ai_agents.with_llm_vendors([ "google" ]).exists?(reviewer.id) ||
-    raise("expected the tab-padded vendor to match")
+  check(failures, "User.with_llm_vendors normalizes control whitespace") do
+    reviewer.update_column(:llm_vendor, "\tGoOgLe\r\n")
+    Collavre::User.ai_agents.with_llm_vendors([ "google" ]).exists?(reviewer.id) ||
+      raise("expected the tab-padded vendor to match")
+  end
+
+  raise ActiveRecord::Rollback
 end
 
 abort "\n#{failures.size} PostgreSQL-incompatible query/queries:\n- #{failures.join("\n- ")}" if failures.any?

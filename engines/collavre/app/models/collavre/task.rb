@@ -35,6 +35,7 @@ module Collavre
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
     after_update_commit :refresh_suspension_notices, if: :left_suspension?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
+    after_update_commit :schedule_onboarding_cleanup, if: :became_inactive?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
       rel = where(topic_id: topic_id, status: %w[running delegated])
@@ -91,6 +92,13 @@ module Collavre
       ACTIVE_STATUSES.include?(status)
     end
 
+    # A Claude Channel /reply claim moves a delegated task to running before a
+    # reply comment can be saved. No worker remains after that handoff, so Stop
+    # must release its slot itself just as it does for delegated tasks.
+    def externally_claimed?
+      trigger_event_payload.is_a?(Hash) && trigger_event_payload.fetch("external_reply_claimed", false)
+    end
+
     # Cancellation callers often select an active row before waiting on another
     # request's task lock. Reload under that lock so a completed reply cannot be
     # overwritten by a stale running/delegated instance.
@@ -130,6 +138,7 @@ module Collavre
       recheck_abandoned_replays
       check_trigger_loop_completion if trigger_loop_completion_eligible?
       broadcast_stop_button_removal if terminal_status?
+      schedule_onboarding_cleanup if terminal_status?
     end
 
     # What a persisted row says about whether this turn ever handed anything
@@ -188,6 +197,19 @@ module Collavre
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    # A completed onboarding session may have stopped retrying its cleanup
+    # while a tool approval waited indefinitely. Once that turn transitions out
+    # of an active state, enqueue one final cleanup instead of polling forever.
+    def became_inactive?
+      saved_change_to_attribute?("status") &&
+        status_before_last_save.in?(ACTIVE_STATUSES) &&
+        !active?
+    end
+
+    def schedule_onboarding_cleanup
+      Onboarding::TaskCleanup.call(self)
     end
 
     # Terminal transitions refresh the notices in broadcast_stop_button_removal.

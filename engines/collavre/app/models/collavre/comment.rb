@@ -293,7 +293,7 @@ module Collavre
 
         # Match explicit Stop: these states have no worker to release their
         # reservation and drain the topic queue after cancellation.
-        next unless Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status)
+        next unless Task::HELD_SLOT_WITHOUT_WORKER.include?(previous_status) || task.externally_claimed?
         if task.agent
           Collavre::Orchestration::ResourceTracker.for(task.agent).release!(task.id)
         end

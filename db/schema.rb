@@ -1161,6 +1161,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
     t.datetime "locked_at"
     t.string "name", null: false
     t.boolean "notifications_enabled"
+    t.datetime "onboarding_completed_at"
+    t.datetime "onboarding_seeded_at"
     t.string "password_digest", null: false
     t.datetime "quota_blocked_until"
     t.string "quota_probe_generation"

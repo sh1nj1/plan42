@@ -1,0 +1,38 @@
+ko:
+  collavre:
+    onboarding:
+      seed:
+        root: "🚀 콜라브 시작하기"
+        progress_practice: "연습용 항목 1"
+        editor_practice: "연습용 항목 2"
+      card:
+        heading: "콜라브 둘러보기"
+        next: "보여주기"
+        finish: "마치고 정리하기"
+        learn_more: "기능 더 알아보기"
+        complete: "기본 사용법을 모두 마쳤습니다."
+      reset: "온보딩 다시 보기"
+      errors:
+        stale_session: "이 온보딩 세션은 더 이상 현재 세션이 아닙니다."
+      steps:
+        tree_node:
+          title: "시작 공간 찾기"
+          body: "왼쪽 트리에 연습용 작업 공간이 생겼습니다."
+        progress:
+          title: "추가하기, 완료하기"
+          body: "추가한 새 항목을 완료하세요."
+          body_before: ""
+          body_after: " 버튼으로 항목을 하나 추가한 뒤, 새 항목을 완료하세요."
+          control: "추가"
+        editor:
+          title: "항목 편집하기"
+          body: "모바일에서는 항목을 가로로 밀어 수정 버튼을 보이게 한 뒤, 연습용 항목 2의 문장을 바꿔보세요."
+          body_before: "모바일에서는 항목을 가로로 밀어 "
+          body_after: " 버튼을 보이게 한 뒤, 연습용 항목 2의 문장을 바꿔보세요."
+          control: "수정"
+        comment:
+          title: "채팅 메시지 보내기"
+          body: "연습용 항목 2의 채팅에 공개 메시지를 남겨보세요."
+        mention:
+          title: "AI 팀원 멘션하기"
+          body: "채팅에서 @이름: 형식으로 사용 가능한 AI 팀원을 불러보세요."

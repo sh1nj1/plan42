@@ -1,4 +1,4 @@
-<section class="creative-workspace-tree-region"
+<section class="creative-workspace-tree-region" data-guide-anchor="tree.panel" data-creative-path-template="<%= creative_path('__CREATIVE_ID__') %>"
          data-controller="workspace-tree"
          data-workspace-tree-url-value="<%= creatives_path(format: :json, workspace_tree: 1) %>"
          data-workspace-tree-last-visited-creative-url-value="<%= creatives_path %>"
@@ -17,6 +17,7 @@
   <div id="creative-history-toast-container" class="creative-history-toast-container"></div>
   <button type="button"
           class="creative-workspace-tree-toggle"
+          data-guide-anchor="tree.toggle"
           data-workspace-tree-target="panelToggle"
           data-action="workspace-tree#togglePanel"
           aria-expanded="false"

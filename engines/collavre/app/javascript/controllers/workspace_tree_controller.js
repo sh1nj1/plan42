@@ -1,3 +1,4 @@
+import { decorateTreeNode, setWorkspacePanelOpen } from '../lib/onboarding_ui'
 import { Controller } from '@hotwired/stimulus'
 import {
   cancelPendingLastVisitedCreative,
@@ -239,7 +240,7 @@ export default class extends Controller {
       link.setAttribute('aria-current', 'page')
     }
     link.addEventListener('click', (event) => this.selectNode(event))
-    row.appendChild(link)
+    decorateTreeNode(link, row, node)
     item.appendChild(row)
 
     if (hasChildren && expanded) {
@@ -384,12 +385,11 @@ export default class extends Controller {
   }
 
   togglePanel() {
-    this.panelToggleTarget.setAttribute('aria-expanded', String(this.element.classList.toggle('is-open')))
+    setWorkspacePanelOpen(this, !this.element.classList.contains('is-open'))
   }
 
   closePanel() {
-    this.element.classList.remove('is-open')
-    this.panelToggleTarget.setAttribute('aria-expanded', 'false')
+    setWorkspacePanelOpen(this, false)
   }
 
   handleOutsidePanelClick(event) {

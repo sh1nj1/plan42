@@ -17,6 +17,38 @@ module Collavre
         @claim_service = TaskClaimService.new
       end
 
+      test "releasing a suspended claim removes the external slot marker before resume" do
+        @task.update!(status: "suspended", suspended_from: "delegated", suspend_reason: "agent_offline",
+                      suspended_at: Time.current, trigger_event_payload: { "keep" => "context" })
+        claimed = @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+        assert claimed.externally_claimed?
+        @claim_service.release(claimed)
+        assert_equal({ "keep" => "context" }, claimed.reload.trigger_event_payload)
+        Orchestration::TaskResumer.stub(:agent_available?, true) do
+          Orchestration::TaskResumer.stub(:after_resume, nil) do
+            assert_equal :resumed, Orchestration::TaskResumer.resume!(claimed)
+          end
+        end
+        refute claimed.reload.externally_claimed?
+      end
+
+      test "claim and release tolerate legacy scalar payloads" do
+        [ nil, [], "legacy" ].each do |payload|
+          @task.update_columns(status: "delegated", trigger_event_payload: payload)
+          claimed = @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+          assert claimed.externally_claimed?
+          @claim_service.release(claimed)
+          assert_equal "delegated", claimed.reload.status
+          assert_equal({}, claimed.trigger_event_payload)
+        end
+      end
+
+      test "malformed payloads are not external claims" do
+        [ nil, [], "legacy" ].each do |payload|
+          refute Task.new(trigger_event_payload: payload).externally_claimed?
+        end
+      end
+
       test "reply persists a measurable completion exactly once" do
         travel_to @started_at + 83 do
           result = reply
@@ -36,6 +68,7 @@ module Collavre
       test "invalid reply leaves no completion and can be retried" do
         assert_equal :unprocessable_entity, reply(text: "").status
         assert_equal "delegated", @task.reload.status
+        refute @task.externally_claimed?
         assert_not @task.task_actions.exists?(action_type: "completion")
         assert_nil @task.reply_comment
         assert_equal :created, reply.status
@@ -48,6 +81,7 @@ module Collavre
         assert_equal :unprocessable_entity, reply(text: "").status
         assert_equal "suspended", @task.reload.status
         assert_equal "delegated", @task.suspended_from
+        refute @task.externally_claimed?
         assert_not @task.task_actions.exists?(action_type: "completion")
       end
 

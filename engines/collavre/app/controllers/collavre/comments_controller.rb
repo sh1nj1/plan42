@@ -62,6 +62,7 @@ module Collavre
         @comment.skip_dispatch = true
       end
       if @comment.save
+        record_onboarding_comment_progress
         # Cross-post inbox inline replies to the original creative/topic
         InboxReplyService.call(@comment)
 
@@ -135,7 +136,6 @@ module Collavre
         render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden
       end
     end
-
 
 
     def show
@@ -233,6 +233,16 @@ module Collavre
     end
 
     private
+
+    def record_onboarding_comment_progress
+      return unless Current.user.onboarding_seeded_at? && !Current.user.onboarding_completed_at?
+
+      session = Onboarding::Session.for_user(Current.user)
+      return unless session
+
+      Onboarding::ProgressTracker.record(user: Current.user, event: :comment_created, comment: @comment, session: session)
+      Onboarding::ProgressTracker.record(user: Current.user, event: :agent_mentioned, comment: @comment, session: session)
+    end
 
     def live_claude_agent_ids_for(users)
       agent_ids = users.filter_map { |user| user.id if user.claude_channel_agent? }

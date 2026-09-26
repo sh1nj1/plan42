@@ -208,6 +208,18 @@ describe('CommentsPopupController', () => {
         expect(popup.dataset.autoFocusOnOpen).toBe('true')
     })
 
+    test('opens an initial onboarding chat outside the desktop dock', async () => {
+        const popup = document.getElementById('comments-popup')
+        const openForCreative = jest.spyOn(controller, 'openForCreative').mockResolvedValue()
+        popup.dataset.autoOpen = 'true'
+
+        expect(controller.openPendingChat()).toBe(true)
+        await new Promise(resolve => requestAnimationFrame(resolve))
+
+        expect(popup.dataset.autoOpen).toBeUndefined()
+        expect(openForCreative).toHaveBeenCalledTimes(1)
+    })
+
     test('docked chat opens by default and close collapses instead of hiding it', async () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
@@ -222,7 +234,18 @@ describe('CommentsPopupController', () => {
         expect(controller.closeButtonTarget.getAttribute('aria-label')).toBe('Expand chat')
     })
 
-    test('docked close button shows the close asset while expanded and a chevron when collapsed', () => {
+    test('docked empty workspace preserves the server-rendered onboarding card', () => {
+        const popup = document.getElementById('comments-popup')
+        popup.dataset.docked = 'true'
+        controller.listTarget.innerHTML = '<div class="onboarding-card">Guide</div>'
+
+        controller.enterDockedMode()
+
+        expect(controller.listTarget.querySelector('.onboarding-card')).not.toBeNull()
+        expect(controller.listTarget.classList.contains('docked-empty')).toBe(false)
+    })
+
+    test('docked close button keeps the close icon while expanded and shows a chevron when collapsed', () => {
         const popup = document.getElementById('comments-popup')
         popup.dataset.docked = 'true'
         popup.dataset.collapseDockedLabel = 'Collapse chat'

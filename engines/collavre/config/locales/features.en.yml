@@ -4,6 +4,7 @@ en:
     features:
       nav:
         landing: "Home"
+        back: "Back"
         back_home: "← Home"
         all: "All features"
         all_arrow: "← All features"

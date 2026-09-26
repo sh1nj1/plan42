@@ -88,6 +88,14 @@ describe("creative-tree-row parentId convention", () => {
     expect(tree.dataset.parentId).toBe("");
   });
 
+  test("editable rows expose the visible edit control as a keyed guide anchor", async () => {
+    const el = await mountRow({ creativeId: "8", canWrite: true });
+    const button = el.querySelector(".edit-inline-btn");
+
+    expect(button.dataset.guideAnchor).toBe("creative.editor");
+    expect(button.dataset.guideAnchorKey).toBe("8");
+  });
+
   test("addNew sibling derivation reads the correct parent from a page-title child", async () => {
     // Simulate the editor's else-branch derivation: parentId = prev.dataset.parentId
     // for a child row that lives under a page-title parent (id 5).
@@ -113,5 +121,28 @@ describe("creative-tree-row parentId convention", () => {
       frame: "creative-workspace-content",
     });
     delete window.Turbo;
+  });
+
+  test.each([false, true])("progress updates preserve the engine mount prefix for title=%s", async (isTitle) => {
+    const region = document.createElement("section");
+    const centralTree = document.createElement("div");
+    if (!isTitle) centralTree.dataset.creativePathTemplate = "/collavre/creatives/__CREATIVE_ID__";
+    region.appendChild(centralTree);
+    document.body.appendChild(region);
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ progress: 1 }),
+    });
+    global.fetch = fetchSpy;
+    const el = await mountRow({
+      creativeId: "8",
+      progressHtml: '<button data-progress-toggle data-creative-id="8" data-new-progress="1"><input class="progress-toggle-checkbox" type="checkbox"></button>',
+    }, centralTree);
+
+    if (isTitle) el.dataset.creativePathTemplate = "/collavre/creatives/__CREATIVE_ID__";
+    el.querySelector("[data-progress-toggle]").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchSpy).toHaveBeenCalledWith("/collavre/creatives/8", expect.objectContaining({ method: "PATCH" }));
   });
 });

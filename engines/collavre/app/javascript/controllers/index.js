@@ -53,6 +53,7 @@ import WorkspaceTreeController from "./workspace_tree_controller"
 import GatewayCheckController from "./gateway_check_controller"
 import AgentConnectionController from "./agent_connection_controller"
 import AgentVendorController from "./agent_vendor_controller"
+import OnboardingCardController from "./onboarding_card_controller"
 import DesktopProxySetupController from "./desktop_proxy_setup_controller"
 import CreativeHistoryDetailController from "./creative_history_detail_controller"
 import CreativeHistoryController from "./creative_history_controller"
@@ -106,6 +107,7 @@ export {
   GatewayCheckController,
   AgentConnectionController,
   AgentVendorController,
+  OnboardingCardController,
   DesktopProxySetupController,
   CreativeHistoryDetailController,
   CreativeHistoryController,
@@ -137,17 +139,7 @@ export function registerControllers(application) {
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)
   registerCreativeControllers(application)
-  application.register("comments--list", CommentsListController)
-  application.register("comments--form", CommentsFormController)
-  application.register("comments--run-options", CommentsRunOptionsController)
-  application.register("comments--presence", CommentsPresenceController)
-  application.register("comments--mention-menu", CommentsMentionMenuController)
-  application.register("comments--topics", CommentsTopicsController)
-  application.register("comments--contexts", CommentsContextsController)
-  application.register("comments--drop-trigger", CommentsDropTriggerController)
-  application.register("comments--feature-cards", CommentsFeatureCardsController)
-  application.register("comments--placeholder", CommentsPlaceholderController)
-  application.register("comments--popup", CommentsPopupController)
+  registerCommentControllers(application)
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)
   application.register("link-creative", LinkCreativeController)
@@ -175,9 +167,24 @@ export function registerControllers(application) {
   application.register("gateway-check", GatewayCheckController)
   application.register("agent-connection", AgentConnectionController)
   application.register("agent-vendor", AgentVendorController)
+  application.register("onboarding-card", OnboardingCardController)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
   application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)
   application.register("creative-history-undo", CreativeHistoryUndoController)
   application.register("cron-badge", CronBadgeController)
+}
+
+function registerCommentControllers(application) {
+  application.register("comments--list", CommentsListController)
+  application.register("comments--form", CommentsFormController)
+  application.register("comments--run-options", CommentsRunOptionsController)
+  application.register("comments--presence", CommentsPresenceController)
+  application.register("comments--mention-menu", CommentsMentionMenuController)
+  application.register("comments--topics", CommentsTopicsController)
+  application.register("comments--contexts", CommentsContextsController)
+  application.register("comments--drop-trigger", CommentsDropTriggerController)
+  application.register("comments--feature-cards", CommentsFeatureCardsController)
+  application.register("comments--placeholder", CommentsPlaceholderController)
+  application.register("comments--popup", CommentsPopupController)
 }
