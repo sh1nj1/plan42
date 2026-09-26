@@ -63,7 +63,7 @@ module Collavre
     end
 
     after_update :register_subtree_touch_after_commit, if: :saved_change_to_parent_id?
-    after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
+    after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?, unless: :skip_drop_trigger_on_move
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
 
@@ -163,7 +163,7 @@ module Collavre
       )
     end
 
-    attr_accessor :filtered_progress
+    attr_accessor :filtered_progress, :skip_drop_trigger_on_move
 
     belongs_to :user, class_name: Collavre.configuration.user_class_name, optional: true
 

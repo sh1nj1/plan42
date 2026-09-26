@@ -103,7 +103,16 @@ module Collavre
       end
 
       def destroy_items!(owned)
-        owned.sort_by { |creative| -creative.ancestors.count }.each(&:destroy!)
+        Creative.transaction do
+          owned.sort_by { |creative| -creative.ancestors.count }.each do |creative|
+            # Preserve actual children, never a linked origin's visible subtree.
+            Creative.where(parent_id: creative.id).each do |child|
+              child.skip_drop_trigger_on_move = true
+              child.update!(parent: creative.parent)
+            end
+            creative.destroy!
+          end
+        end
       end
     end
   end

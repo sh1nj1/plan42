@@ -96,6 +96,94 @@ module Collavre
         assert user.reload.onboarding_completed_at?
       end
 
+      %i[finish reset deferred].each do |cleanup|
+        test "#{cleanup} reparents preserved descendants to the surviving workspace" do
+          user = User.create!(name: "Hierarchy", email: "hierarchy@example.com", password: "password")
+          session = Seeder.new(user: user).call
+          workspace = Creative.create!(user: user, description: "Workspace")
+          session.root.update!(parent: workspace)
+          practice = session.practice_creatives.first
+          nested = session.practice_creatives.second
+          nested.update!(parent: practice)
+          preserved = [ session.root, practice, nested ].map do |parent|
+            Creative.create!(user: user, parent: parent, description: "Keep me")
+          end
+          grandchild = Creative.create!(user: user, parent: preserved.last, description: "Keep hierarchy")
+          owned_ids = [ session.root.id, practice.id, nested.id ]
+          service = CompletionService.new(user: user)
+
+          case cleanup
+          when :finish then assert service.call(session_id: session.session_id)
+          when :reset
+            assert service.call(session_id: session.session_id, defer_pending_agent_cleanup: true)
+            user.update!(onboarding_seeded_at: nil, onboarding_completed_at: nil)
+            Seeder.new(user: user, force: true).call
+          when :deferred then assert service.clean_up_when_agent_turn_settles(session.session_id)
+          end
+
+          assert_empty Creative.where(id: owned_ids)
+          preserved.each { |item| assert_equal workspace.id, item.reload.parent_id }
+          assert_equal preserved.last.id, grandchild.reload.parent_id
+          assert_equal [ workspace.id, preserved.last.id ].sort, grandchild.ancestors.ids.sort
+        end
+      end
+
+      test "cleanup reparenting skips drop triggers while ordinary moves still trigger" do
+        user = User.create!(name: "Quiet cleanup", email: "quiet-cleanup@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        workspace = Creative.create!(user: user, description: "Triggered workspace",
+                                     data: { "trigger" => { "on_child_enter" => true } })
+        session.root.update!(parent: workspace)
+        preserved = Creative.create!(user: user, parent: session.root, description: "Keep", progress: 1.0)
+        clear_enqueued_jobs
+
+        assert_no_enqueued_jobs(only: DropTriggerJob) { CompletionService.new(user: user).call }
+
+        assert_equal workspace.id, preserved.reload.parent_id
+        assert_equal [ workspace.id ], preserved.ancestors.ids
+        assert_equal 1.0, workspace.reload.progress
+        preserved.update!(parent: nil)
+        assert_enqueued_with(job: DropTriggerJob, args: [ workspace.id, preserved.id ]) do
+          preserved.update!(parent: workspace)
+        end
+      end
+
+      test "failed reparenting rolls back earlier deletions and preserves the session" do
+        user = User.create!(name: "Rollback", email: "rollback@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        workspace = Creative.create!(user: user, description: "Workspace")
+        session.root.update!(parent: workspace)
+        preserved = Creative.create!(user: user, parent: session.root, description: "Keep me")
+        owned_ids = [ session.root.id, *session.practice_creative_ids ]
+        reject_move = proc { throw(:abort) if id == preserved.id && parent_id == workspace.id }
+        Creative.set_callback(:update, :before, reject_move)
+
+        assert_raises(ActiveRecord::RecordNotSaved) { CompletionService.new(user: user).call }
+
+        assert_equal owned_ids.sort, Creative.where(id: owned_ids).ids.sort
+        assert_equal session.root.id, preserved.reload.parent_id
+        assert_nil user.reload.onboarding_completed_at
+      ensure
+        Creative.skip_callback(:update, :before, reject_move) if reject_move
+      end
+
+      test "cleanup of an older tagged shell preserves the origin hierarchy" do
+        user = User.create!(name: "Linked cleanup", email: "linked-cleanup@example.com", password: "password")
+        session = Seeder.new(user: user).call
+        workspace = Creative.create!(user: user, description: "Workspace")
+        session.root.update!(parent: workspace)
+        origin = Creative.create!(user: user, description: "Origin")
+        child = Creative.create!(user: user, parent: origin, description: "Origin child")
+        shell = Creative.create!(user: user, parent: session.root, origin: origin)
+        Ownership.stamp!(shell, session.session_id)
+
+        assert CompletionService.new(user: user).call
+
+        refute Creative.exists?(shell.id)
+        assert_equal origin.id, child.reload.parent_id
+        assert_equal [ origin.id ], child.ancestors.ids
+      end
+
       test "removes the practice item added to complete the progress step" do
         user = User.create!(name: "Added practice finisher", email: "added-practice-finisher@example.com", password: "password")
         session = Seeder.new(user: user).call

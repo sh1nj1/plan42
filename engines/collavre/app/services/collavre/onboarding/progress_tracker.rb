@@ -49,6 +49,8 @@ module Collavre
       def record_added_practice!(session, step)
         return unless step&.key == :progress && creative&.user_id == user.id && creative.parent_id == session.root.id
 
+        return if creative.origin_id.present?
+
         tag_added_practice_with_session!(session)
         session.update!(added_practice_creative_id: creative.id)
       end

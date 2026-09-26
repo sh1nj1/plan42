@@ -41,6 +41,25 @@ module Collavre
         assert_equal "comment", current_step
       end
 
+      test "linked shells cannot become the added practice item" do
+        origin = Creative.create!(user: @user, description: "Existing work")
+        shell = Creative.create!(user: @user, parent: @session.root, origin: origin)
+
+        ProgressTracker.record(user: @user, event: :creative_created, creative: shell)
+
+        assert_nil Session.for_user(@user).added_practice_creative_id
+        refute Ownership.owned?(shell.reload)
+        assert_equal "progress", current_step
+
+        added = Creative.create!(user: @user, parent: @session.root, description: "Real practice")
+        ProgressTracker.record(user: @user, event: :creative_created, creative: added)
+        ProgressTracker.record(user: @user, event: :creative_created, creative: shell)
+        assert_equal added.id, Session.for_user(@user).added_practice_creative_id
+        added.update!(progress: 1.0)
+        ProgressTracker.record(user: @user, event: :progress_changed, creative: added, before_progress: 0)
+        assert_equal "editor", current_step
+      end
+
       test "requires a public human comment before an AI mention" do
         add_and_complete_practice_item(@user, @session)
         @second.update!(description: "Changed")

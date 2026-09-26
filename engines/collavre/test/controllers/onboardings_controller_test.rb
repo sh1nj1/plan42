@@ -4,6 +4,30 @@ require "test_helper"
 
 module Collavre
   class OnboardingsControllerTest < ActionDispatch::IntegrationTest
+    %i[complete reset].each do |action|
+      test "#{action} preserves children under the containing workspace" do
+        user = User.create!(name: "Hierarchy learner", email: "api-hierarchy@example.com", password: "password")
+        sign_in_as(user, password: "password")
+        session = Onboarding::Seeder.new(user: user).call
+        workspace = Creative.create!(user: user, description: "Workspace")
+        session.root.update!(parent: workspace)
+        preserved = Creative.create!(user: user, parent: session.practice_creatives.first, description: "Keep")
+
+        if action == :complete
+          post complete_onboarding_path, params: { session_id: session.session_id }, as: :json
+          assert_response :success
+        else
+          post reset_onboarding_path
+          assert_redirected_to creatives_path
+          refute_equal session.session_id, Onboarding::Session.for_user(user.reload).session_id
+        end
+
+        refute Creative.exists?(session.root.id)
+        assert_equal workspace.id, preserved.reload.parent_id
+        assert_equal [ workspace.id ], preserved.ancestors.ids
+      end
+    end
+
     test "onboarding progress helpers are not controller actions" do
       refute CommentsController.action_methods.include?("record_onboarding_comment_progress")
       refute CreativesController.action_methods.include?("record_onboarding_progress")
