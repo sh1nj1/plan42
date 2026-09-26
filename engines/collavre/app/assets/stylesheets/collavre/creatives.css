@@ -521,7 +521,7 @@ creative-tree-row.show-edit .creative-row {
 }
 
 
-@media (hover: hover) {
+@media (hover: hover) and (not (any-pointer: coarse)) {
     .creative-row:hover .creative-toggle-btn {
         visibility: visible;
     }
@@ -549,7 +549,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     /* Fixed width for alignment */
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (not (any-pointer: coarse)) {
     .creative-row:hover .edit-inline-btn {
         color: var(--text-primary);
         visibility: visible;
@@ -558,7 +558,7 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
 }
 
 /* Touch taps must not reveal hidden descendants through emulated hover. */
-@media (hover: none) {
+@media (hover: none), (any-pointer: coarse) {
     .creative-toggle-btn,
     .edit-inline-btn {
         visibility: visible;
@@ -815,14 +815,14 @@ creative-tree-row.chat-active .creative-row {
     visibility: hidden;
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (not (any-pointer: coarse)) {
     .creative-row:hover .comments-btn.no-comments {
         visibility: visible;
         opacity: 1.0;
     }
 }
 
-@media (max-width: 768px), (hover: none) {
+@media (max-width: 768px), (hover: none), (any-pointer: coarse) {
     .comments-btn.no-comments {
         visibility: visible;
         opacity: 0.2;

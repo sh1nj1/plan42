@@ -33,6 +33,7 @@ class CreativeTouchActionsTest < ApplicationSystemTestCase
       assert_no_selector "#creative-#{@child.id}", visible: :visible
 
       if width <= 768
+        assert_equal "0px", find("#{row} .edit-inline-btn", visible: :all).style("max-width").fetch("max-width")
         tap("#{row} .creative-content", swipe: 80)
       end
       tap("#{row} .edit-inline-btn")
@@ -49,16 +50,20 @@ class CreativeTouchActionsTest < ApplicationSystemTestCase
     end
   end
 
-  test "desktop hover still reveals row actions" do
+  test "pointer hover preserves the expected row actions" do
     page.driver.browser.action.move_to_location(0, 0).perform
-    assert_equal "hidden", control_visibility.fetch(".edit-inline-btn")
-    assert_equal "hidden", control_visibility.fetch(".comments-btn")
+    assert_equal initial_visibility, control_visibility.fetch(".edit-inline-btn")
+    assert_equal initial_visibility, control_visibility.fetch(".comments-btn")
     find("#{row} .creative-content").hover
     assert_equal "visible", control_visibility.fetch(".edit-inline-btn")
     assert_equal "visible", control_visibility.fetch(".comments-btn")
   end
 
   private
+
+  def initial_visibility
+    "hidden"
+  end
 
   def row
     "#creative-#{@creative.id}"
@@ -96,5 +101,23 @@ class CreativeTouchActionsTest < ApplicationSystemTestCase
         return [selector, getComputedStyle(element).visibility];
       }))
     JS
+  end
+end
+
+class CreativeHybridTouchActionsTest < CreativeTouchActionsTest
+  driven_by :hybrid_pointer_headless_chrome
+
+  private
+
+  def initial_visibility
+    "visible"
+  end
+
+  def emulate_touch(width)
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride",
+      width: width, height: 900, deviceScaleFactor: 1, mobile: false)
+    assert page.evaluate_script("matchMedia('(hover: hover)').matches")
+    assert page.evaluate_script("matchMedia('(pointer: fine)').matches")
+    assert page.evaluate_script("matchMedia('(any-pointer: coarse)').matches")
   end
 end
