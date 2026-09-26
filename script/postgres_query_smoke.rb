@@ -19,7 +19,8 @@ abort "postgres_query_smoke expects a PostgreSQL connection" unless
 failures = []
 
 def check(failures, label)
-  yield
+  # Recover the outer cleanup transaction after a PostgreSQL statement error.
+  ActiveRecord::Base.transaction(requires_new: true) { yield }
   puts "ok   #{label}"
 rescue StandardError => e
   failures << "#{label}: #{e.class}: #{e.message.lines.first.to_s.strip}"
