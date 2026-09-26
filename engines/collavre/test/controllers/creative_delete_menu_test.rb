@@ -7,7 +7,7 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
     sign_in_as(@user, password: "password")
     @parent = Creative.create!(user: @user, description: "Delete menu parent")
     @creative = Creative.create!(user: @user, parent: @parent, description: "Delete menu target")
-    @child = Creative.create!(user: @user, parent: @creative, description: "Preserved child")
+    @child = Creative.create!(user: @user, parent: @creative, description: "Child")
   end
 
   test "menu targets the current creative with localized confirmation in full and frame views" do
@@ -19,10 +19,11 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
         assert_response :success
         assert_select "#creative-overflow-menu form[action=?][data-turbo-frame='_top']", creative_path(@creative) do
           assert_select "[name='_method'][value='delete']"
+          assert_select "[name='delete_with_children'][value='true']"
           assert_select "#delete-current-creative-btn", text: I18n.t("collavre.creatives.index.delete", locale: locale)
         end
         assert_select "#creative-overflow-menu form[data-turbo-confirm=?]",
-          I18n.t("collavre.creatives.index.are_you_sure_delete_only_this", locale: locale)
+          I18n.t("collavre.creatives.index.are_you_sure_delete_with_children", locale: locale)
       end
     end
   end
@@ -57,6 +58,31 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
     assert_redirected_to creatives_path(id: @parent.id)
     assert_not Creative.exists?(@creative.id)
     assert_equal @parent, @child.reload.parent
+  end
+
+  test "menu deletion removes the creative and all its descendants" do
+    grandchild = Creative.create!(user: @user, parent: @child, description: "Grandchild")
+
+    delete creative_path(@creative), params: { delete_with_children: true },
+      headers: { "Accept" => "text/vnd.turbo-stream.html, text/html" }
+
+    assert_response :see_other
+    assert_redirected_to creatives_path(id: @parent.id)
+    assert_not Creative.exists?(@creative.id)
+    assert_not Creative.exists?(@child.id)
+    assert_not Creative.exists?(grandchild.id)
+    assert Creative.exists?(@parent.id)
+  end
+
+  test "menu deletion of a linked creative keeps the origin and its children" do
+    link = Creative.create!(user: @user, parent: @parent, origin: @creative)
+
+    delete creative_path(link), params: { delete_with_children: true }
+
+    assert_redirected_to creatives_path(id: @parent.id)
+    assert_not Creative.exists?(link.id)
+    assert Creative.exists?(@creative.id)
+    assert Creative.exists?(@child.id)
   end
 
   test "nested admin deletion redirects to root when the parent is private" do
