@@ -108,9 +108,11 @@ test('clamps an indented popup and repositions on resize and scroll', () => {
     open()
     const popup = getByRole(host, 'dialog')
     expect(popup.style.left).toBe('-133px')
+    expect(popup.style.maxWidth).toBe('359px')
     viewportWidth = 1024
     fireEvent(window, new Event('resize'))
     expect(popup.style.left).toBe('0px')
+    expect(popup.style.maxWidth).toBe('1008px')
     anchorLeft = -20
     fireEvent.scroll(document)
     expect(popup.style.left).toBe('28px')

@@ -30,6 +30,8 @@ function usePopupPosition(ref) {
     const popup = ref.current
     const position = () => {
       const anchor = popup.parentElement.getBoundingClientRect()
+      // Unlike 100vw, clientWidth excludes the document scrollbar.
+      popup.style.maxWidth = `${document.documentElement.clientWidth - 16}px`
       const width = popup.getBoundingClientRect().width
       const left = Math.max(8, Math.min(anchor.left, document.documentElement.clientWidth - width - 8))
       popup.style.left = `${left - anchor.left}px`

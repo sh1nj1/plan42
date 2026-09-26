@@ -145,8 +145,9 @@
         <% if current_creative&.has_permission?(Current.user, :admin) %>
           <div class="creative-overflow-divider"></div>
           <%= button_to creative_path(current_creative), method: :delete,
+                params: { delete_with_children: true },
                 id: 'delete-current-creative-btn', class: 'popup-menu-item danger-link',
-                form: { data: { turbo_frame: '_top', turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_only_this') } } do %>
+                form: { data: { turbo_frame: '_top', turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_with_children') } } do %>
             <span aria-hidden="true"><%= svg_tag 'trash-bold-outline.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.delete') %>
           <% end %>
         <% end %>

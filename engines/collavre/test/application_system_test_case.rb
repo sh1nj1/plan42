@@ -52,6 +52,14 @@ Capybara.register_driver(:hovering_pointer_headless_chrome) do |app|
   )
 end
 
+# Model a mouse-primary device that also has a touchscreen.
+Capybara.register_driver(:hybrid_pointer_headless_chrome) do |app|
+  BUILD_CHROME_DRIVER.call(
+    app,
+    [ "--blink-settings=availableHoverTypes=2,primaryHoverType=2,availablePointerTypes=6,primaryPointerType=4" ]
+  )
+end
+
 DRIVER_ENV_KEY = "SYSTEM_TEST_DRIVER".freeze
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase

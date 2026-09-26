@@ -125,10 +125,19 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     child = Creative.create!(description: "Child", user: @user, parent: @root_creative)
     visit collavre.creative_path(@root_creative)
     open_inline_editor(child)
-    page.current_window.resize_to(375, 700)
+    # Reserve scrollbar space on macOS too, matching the Linux CI viewport.
+    page.execute_script(<<~JS)
+      const style = document.createElement('style')
+      style.textContent = 'html { overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; height: 15px; }'
+      document.head.appendChild(style)
+    JS
+    # Chrome window resizing can clamp narrow widths to 500px; emulate the viewport instead.
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height: 700, deviceScaleFactor: 1, mobile: false)
     find(".lexical-emoji-picker > button").click
     [ 375, 320, 768 ].each do |width|
-      page.current_window.resize_to(width, 700)
+      page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: width, height: 700, deviceScaleFactor: 1, mobile: false)
+      assert_equal width, page.evaluate_script("window.innerWidth")
+      assert_equal width - 15, page.evaluate_script("document.documentElement.clientWidth")
       # WebDriver can return before the browser dispatches resize and repositions the popup.
       assert_selector ".lexical-emoji-picker__popup" do
         page.evaluate_script(<<~JS)
@@ -143,6 +152,8 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     end
     find(".lexical-emoji-picker__popup button", text: "🔍", exact_text: true).click
     assert_text "🔍"
+  ensure
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
   end
 
   test "escape dismisses emoji popup without closing the editor" do
