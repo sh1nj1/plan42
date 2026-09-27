@@ -378,6 +378,23 @@ textarea.modal-dialog-input {
   }
 }
 
+/* Float above the destination field without resizing or clipping the dialog. */
+.creative-move-results {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  max-height: 30vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--surface-section);
+  box-shadow: var(--shadow-2);
+}
+
 .creative-move-status {
   margin: 0;
   font-size: var(--text-0);
@@ -406,6 +423,7 @@ textarea.modal-dialog-input {
 /* Native dialog margins otherwise offset the shared fixed-position panel. */
 dialog.creative-move-dialog {
   margin: 0;
+  animation: none;
 }
 
 .creative-move-dialog .modal-dialog-title {

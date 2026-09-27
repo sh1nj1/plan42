@@ -11,10 +11,12 @@ let app, picker, input, list, select, close
 
 beforeEach(async () => {
   jest.clearAllMocks()
+  HTMLElement.prototype.showPopover = jest.fn()
+  HTMLElement.prototype.hidePopover = jest.fn()
   browse.mockResolvedValue([{ id: 7, origin_id: 70, description: 'Destination', has_children: false }])
   search.mockResolvedValue([{ id: 8, description: 'Search result' }])
   document.body.innerHTML = `<div data-controller="inline-creative-picker"
-    data-action="focusout->inline-creative-picker#closeOnFocusOut"
+    data-action="focusout->inline-creative-picker#closeOnFocusOut keydown->inline-creative-picker#handleEscape"
     data-link-creative-loading-text="Loading" data-link-creative-empty-text="Empty">
     <input data-inline-creative-picker-target="input"
       data-action="input->inline-creative-picker#_debouncedSearch keydown->inline-creative-picker#handleInputKeydown">
@@ -38,7 +40,7 @@ const key = value => {
   return event
 }
 
-test('opens below the existing input, keeps focus, and selects the shell id', async () => {
+test('floats above the existing input, keeps focus, and selects the shell id', async () => {
   await open()
   expect(list.hidden).toBe(false)
   expect(input.getAttribute('aria-expanded')).toBe('true')
@@ -104,4 +106,59 @@ test('Enter cannot submit while there are no selectable results', async () => {
   expect(key('Enter').defaultPrevented).toBe(true)
   expect(select).not.toHaveBeenCalled()
   expect(list.textContent).toBe('Empty')
+})
+
+
+test('positions above the input and tracks viewport and scroll changes', async () => {
+  input.getBoundingClientRect = () => ({ left: 20, top: 250, width: 300 })
+  await open()
+  expect(list.showPopover).toHaveBeenCalled()
+  expect(list.style.top).toBe('246px')
+  expect(list.style.transform).toBe('translateY(-100%)')
+  expect(list.style.width).toBe('300px')
+  expect(list.style.maxHeight).toBe('238px')
+  input.getBoundingClientRect = () => ({ left: -20, top: 150, width: 300 })
+  window.dispatchEvent(new Event('scroll'))
+  expect(list.style.left).toBe('8px')
+  expect(list.style.top).toBe('146px')
+  picker.close()
+  window.dispatchEvent(new Event('resize'))
+  picker._reposition()
+  expect(list.style.top).toBe('146px')
+  expect(list.hidePopover).toHaveBeenCalled()
+})
+
+test('Escape from a tree button closes only the results and restores input focus', async () => {
+  browse.mockResolvedValue([{ id: 7, description: 'Parent', has_children: true }])
+  await open()
+  const button = list.querySelector('button')
+  button.focus()
+  const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+  button.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+  expect(list.hidden).toBe(true)
+  expect(document.activeElement).toBe(input)
+})
+
+
+test('repositions within a resized visual viewport and removes its listeners on close', async () => {
+  const viewport = new EventTarget()
+  Object.assign(viewport, { offsetTop: 40, offsetLeft: 10, width: 280, height: 400 })
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+  input.getBoundingClientRect = () => ({ left: 200, top: 180, width: 400 })
+  await open()
+  expect(list.style.width).toBe('264px')
+  expect(list.style.left).toBe('18px')
+  expect(list.style.maxHeight).toBe('128px')
+  viewport.offsetTop = 60
+  viewport.dispatchEvent(new Event('resize'))
+  expect(list.style.maxHeight).toBe('108px')
+  viewport.offsetTop = 80
+  viewport.dispatchEvent(new Event('scroll'))
+  expect(list.style.maxHeight).toBe('88px')
+  picker.close()
+  viewport.offsetTop = 100
+  viewport.dispatchEvent(new Event('resize'))
+  expect(list.style.maxHeight).toBe('88px')
+  delete window.visualViewport
 })
