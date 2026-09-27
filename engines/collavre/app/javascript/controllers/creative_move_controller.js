@@ -6,7 +6,7 @@ import { invalidateCreativeTree } from '../lib/creative_tree_invalidation'
 // The header overflow menu opens the move dialog. The picker browses
 // server data, so destinations do not have to exist in either rendered tree.
 export default class extends Controller {
-  static targets = ['dialog', 'destination', 'direction', 'mode', 'confirm', 'status', 'announcement', 'picker']
+  static targets = ['dialog', 'destination', 'direction', 'mode', 'confirm', 'status', 'announcement']
   static values = { messages: Object }
 
   connect() {
@@ -100,30 +100,36 @@ export default class extends Controller {
 
   chooseDestination() {
     if (this.busy || this.picking || !this.dialogTarget.open) return
-    this.picker = this.application.getControllerForElementAndIdentifier(this.pickerTarget, 'inline-creative-picker')
+    const element = document.getElementById('link-creative-modal')
+    this.picker = element && this.application.getControllerForElementAndIdentifier(element, 'link-creative')
     if (!this.picker) {
       this.statusTarget.textContent = this.messagesValue.failed
       return
     }
     this.picking = true
+    // Release the native dialog's top layer so the shared popup can receive input.
+    this.dialogTarget.close()
     this.picker.open(null, item => {
       this.targetId = String(item.id)
       this.destinationTarget.value = item.label
       const invalid = this.ids.includes(this.targetId)
       this.confirmTarget.disabled = invalid
       this.statusTarget.textContent = invalid ? this.messagesValue.invalid : ''
-    }, () => { this.picking = false }, { allowCreate: false, selectOrigin: false })
+    }, () => this.destinationPickerClosed(), { allowCreate: false, selectOrigin: false })
+  }
+
+  destinationPickerClosed() {
+    if (!this.picking) return
+    this.picking = false
+    if (this.disconnected) return
+    this.dialogTarget.showModal()
+    this.destinationTarget.focus()
   }
 
   closePicker() {
+    if (!this.picking) return
+    this.picking = false
     this.picker?.close()
-  }
-
-  destinationChanged() {
-    this.targetId = null
-    this.confirmTarget.disabled = true
-    this.statusTarget.textContent = ''
-    this.chooseDestination()
   }
 
   cancel(event) {
