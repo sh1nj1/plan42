@@ -270,6 +270,37 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert @ai_user.searchable
   end
 
+  test "searchable can be unchecked and checked again through the edit form" do
+    @ai_user.update!(searchable: true)
+
+    [ false, true ].each do |checked|
+      get edit_ai_user_url(@ai_user)
+      assert_response :success
+      assert_select "input[type='checkbox'][name='user[searchable]'][checked]", count: checked ? 0 : 1
+
+      fields = css_select("input[name='user[searchable]']")
+      submitted = fields.reject { |field| field["type"] == "checkbox" && !checked }
+      assert_not_empty submitted, "Unchecked searchable must still submit a value"
+      body = URI.encode_www_form(submitted.map { |field| [ field["name"], field["value"] ] })
+
+      patch update_ai_user_url(@ai_user), params: body,
+            headers: { "CONTENT_TYPE" => "application/x-www-form-urlencoded" }
+
+      assert_redirected_to user_path(@admin, tab: "contacts")
+      assert_equal checked, @ai_user.reload.searchable?
+      get edit_ai_user_url(@ai_user)
+      assert_select "input[type='checkbox'][name='user[searchable]'][checked]", count: checked ? 1 : 0
+    end
+  end
+
+  test "new ai form submits false when searchable is unchecked" do
+    get new_ai_users_url
+
+    assert_response :success
+    assert_select "input[type='hidden'][name='searchable'][value='false']"
+    assert_select "input[type='checkbox'][name='searchable'][checked]", count: 0
+  end
+
   test "creating an ai user remembers its model" do
     assert_difference("Collavre::LlmModel.count", 1) do
       post create_ai_users_url, params: {
