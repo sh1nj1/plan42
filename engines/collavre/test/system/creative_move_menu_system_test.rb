@@ -48,7 +48,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, @source.reload.parent
   end
 
-  test "inline destination stays in the dialog and clears stale selections on mobile" do
+  test "floating destination stays below the input and clears stale selections on mobile" do
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 390, height: 844, deviceScaleFactor: 1, mobile: true)
     visit collavre.creatives_path(id: @source.id)
     open_move_menu
@@ -56,6 +56,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal "true", input["aria-expanded"]
     assert_selector "dialog[open] #creative-move-results"
     assert_no_selector "#link-creative-modal"
+    assert_floating_destination
     input.set("Menu destination")
     find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
     assert_equal "Menu destination", input.value
@@ -70,7 +71,71 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
     resize_window_to(1440, 900)
     page.execute_script("document.body.classList.remove('dark-mode'); document.body.classList.add('light-mode')")
+    assert_floating_destination
     page.save_screenshot(Rails.root.join("tmp/screenshots/creative-move-desktop.png"))
+  end
+
+  test "destination fallback stays below the input and supports selection without Popover API" do
+    visit collavre.creatives_path(id: @source.id)
+    page.execute_script(<<~JS)
+      delete HTMLElement.prototype.showPopover
+      delete HTMLElement.prototype.hidePopover
+    JS
+    open_move_menu
+    assert_selector "#creative-move-results .link-tree-item"
+    assert_no_selector "#creative-move-results[popover]", visible: :all
+    geometry = page.evaluate_script(<<~JS)
+      (() => {
+        const input = document.querySelector('#creative-move-destination').getBoundingClientRect()
+        const list = document.querySelector('#creative-move-results').getBoundingClientRect()
+        return { inputBottom: input.bottom, listTop: list.top, inputLeft: input.left, listLeft: list.left }
+      })()
+    JS
+    assert_in_delta geometry["inputBottom"] + 4, geometry["listTop"], 1
+    assert_in_delta geometry["inputLeft"], geometry["listLeft"], 1
+    find("#creative-move-destination").send_keys(:escape)
+    assert_no_selector "#creative-move-results"
+    assert_selector "dialog[open][data-creative-move-target]"
+    pick_destination
+    find('[data-creative-move-target="confirm"]').click
+    assert_no_selector "dialog[open][data-creative-move-target]"
+    assert_equal @destination, @source.reload.parent
+  end
+
+  [ true, false ].each do |popover|
+    test "short visual viewport keeps destination rows clickable with popover #{popover}" do
+      visit collavre.creatives_path(id: @source.id)
+      unless popover
+        page.execute_script("delete HTMLElement.prototype.showPopover; delete HTMLElement.prototype.hidePopover")
+      end
+      open_move_menu
+      original_top = page.evaluate_script("document.querySelector('dialog[open]').style.top")
+      page.execute_script(<<~JS)
+        const viewport = new EventTarget()
+        Object.assign(viewport, { offsetTop: 40, offsetLeft: 0, pageTop: 40, pageLeft: 0, scale: 1, width: 390, height: 260 })
+        Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+        viewport.dispatchEvent(new Event('resize'))
+      JS
+      input = find("#creative-move-destination")
+      input.set("Menu destination")
+      assert_selector "#creative-move-results .link-result-item[data-id='#{@destination.id}']"
+      geometry = page.evaluate_script(<<~JS)
+        (() => {
+          const input = document.querySelector('#creative-move-destination').getBoundingClientRect()
+          const list = document.querySelector('#creative-move-results').getBoundingClientRect()
+          return { inputTop: input.top, inputBottom: input.bottom, top: list.top, bottom: list.bottom, height: list.height }
+        })()
+      JS
+      assert_operator geometry["inputTop"], :>=, 48
+      assert_in_delta geometry["inputBottom"] + 4, geometry["top"], 1
+      assert_operator geometry["height"], :>=, 30
+      assert_operator geometry["bottom"], :<=, 292
+      find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
+      assert_equal original_top, page.evaluate_script("document.querySelector('dialog[open]').style.top")
+      find('[data-creative-move-target="confirm"]').click
+      assert_no_selector "dialog[open][data-creative-move-target]"
+      assert_equal @destination, @source.reload.parent
+    end
   end
 
   test "workspace move menu offers a click-only path" do
@@ -86,7 +151,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, @source.reload.parent
   end
 
-  test "Escape closes inline results before cancelling and restoring focus" do
+  test "Escape closes floating results before cancelling and restoring focus" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu(:return)
     find('[data-creative-move-target="destination"]').send_keys(:escape)
@@ -97,6 +162,19 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_no_selector "dialog[open][data-creative-move-target]"
     assert_equal "creative-overflow-menu", page.evaluate_script("document.activeElement.getAttribute('aria-controls')")
     assert_nil @source.reload.parent_id
+  end
+
+  test "Escape from a tree toggle keeps the move dialog open" do
+    Creative.create!(description: "Nested destination", parent: @destination, user: @user)
+    visit collavre.creatives_path(id: @source.id)
+    open_move_menu
+    toggle = find("#creative-move-results .link-tree-item[data-id='#{@destination.id}'] .link-tree-toggle")
+    page.execute_script("arguments[0].focus()", toggle)
+    assert_equal "link-tree-toggle", page.evaluate_script("document.activeElement.className")
+    page.driver.browser.switch_to.active_element.send_keys(:escape)
+    assert_no_selector "#creative-move-results"
+    assert_selector "dialog[open][data-creative-move-target]"
+    assert_equal "creative-move-destination", page.evaluate_script("document.activeElement.id")
   end
 
   test "keyboard creates a link from a readable source without the workspace" do
@@ -358,6 +436,24 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
   end
 
   private
+
+  def assert_floating_destination
+    assert_selector "#creative-move-results:popover-open"
+    geometry = page.evaluate_script(<<~JS)
+      (() => {
+        const input = document.querySelector('#creative-move-destination').getBoundingClientRect()
+        const list = document.querySelector('#creative-move-results').getBoundingClientRect()
+        const dialog = document.querySelector('dialog[open]').getBoundingClientRect()
+        return { inputBottom: input.bottom, listBottom: list.bottom, listTop: list.top, dialogHeight: dialog.height }
+      })()
+    JS
+    assert_operator geometry["listTop"], :>=, geometry["inputBottom"]
+    assert_operator geometry["listTop"], :>=, 0
+    find("#creative-move-destination").send_keys(:escape)
+    assert_selector "dialog[open][data-creative-move-target]"
+    assert_in_delta geometry["dialogHeight"], find("dialog[open]").rect.height, 1
+    find("#creative-move-destination").click
+  end
 
   # The selection-only launcher (an empty move id) now lives on archived parents
   # alone, so the fallback paths are exercised from one.
