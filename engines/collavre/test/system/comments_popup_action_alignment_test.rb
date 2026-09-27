@@ -75,12 +75,15 @@ class CommentsPopupActionAlignmentTest < ApplicationSystemTestCase
           const label = comment.querySelector('.comment-approval-reason label').getBoundingClientRect()
           const field = comment.querySelector('[data-approval-reason]').getBoundingClientRect()
           const content = comment.querySelector('.comment-content').getBoundingClientRect()
+          const reason = getComputedStyle(comment.querySelector('.comment-approval-reason'))
           return { labelBottom: label.bottom, fieldTop: field.top,
+            reasonBottomMargin: parseFloat(reason.marginBottom),
             fieldLeft: field.left, fieldRight: field.right,
             contentLeft: content.left, contentRight: content.right }
         })()
       JS
       assert_operator dimensions['fieldTop'], :>, dimensions['labelBottom']
+      assert_operator dimensions['reasonBottomMargin'], :>=, 8
       assert_in_delta dimensions['contentLeft'], dimensions['fieldLeft'], 1
       assert_in_delta dimensions['contentRight'], dimensions['fieldRight'], 1
     end
