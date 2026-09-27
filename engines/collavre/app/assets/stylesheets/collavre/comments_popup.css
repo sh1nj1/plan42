@@ -981,6 +981,25 @@ body.chat-fullscreen {
     color: var(--color-chat-btn-text);
 }
 
+.comment-approval-reason {
+    width: 100%;
+    margin-top: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.comment-approval-reason label {
+    display: block;
+    margin-bottom: var(--space-1);
+}
+
+.comment-approval-reason textarea {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    resize: vertical;
+}
+
 .comment-owner-only,
 .comment-delete-hidden,
 .comment-approve-hidden {

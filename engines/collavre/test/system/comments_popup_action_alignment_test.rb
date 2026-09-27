@@ -55,4 +55,37 @@ class CommentsPopupActionAlignmentTest < ApplicationSystemTestCase
     assert_in_delta dimensions.dig("closeButton", "centerX"), dimensions.dig("closeIcon", "centerX"), 0.01
     assert_in_delta dimensions.dig("closeButton", "centerY"), dimensions.dig("closeIcon", "centerY"), 0.01
   end
+
+  test "approval reason is stacked and fills the message width" do
+    task = Collavre::Task.create!(name: "Approval", status: "pending_approval", agent: users(:ai_bot),
+      creative: @creative, topic_id: @creative.main_topic.id,
+      pending_tool_call: { kind: "approval_gate", tool_call_id: "layout-gate" })
+    comment = @creative.comments.create!(user: task.agent, approver: @user, topic_id: task.topic_id,
+      content: "Proceed?", action: { action: "approval_gate", task_id: task.id, tool_call_id: "layout-gate" }.to_json)
+
+    [ 480, 1000 ].each do |width|
+      page.current_window.resize_to(width, 900)
+      visit root_path
+      find("#creative-#{@creative.id}").hover
+      within("#creative-#{@creative.id}") { find(".comments-btn").click }
+      assert_selector "#comment_#{comment.id} textarea[data-approval-reason]", visible: :visible
+      dimensions = page.evaluate_script(<<~JS)
+        (() => {
+          const comment = document.getElementById('comment_#{comment.id}')
+          const label = comment.querySelector('.comment-approval-reason label').getBoundingClientRect()
+          const field = comment.querySelector('[data-approval-reason]').getBoundingClientRect()
+          const content = comment.querySelector('.comment-content').getBoundingClientRect()
+          const reason = getComputedStyle(comment.querySelector('.comment-approval-reason'))
+          return { labelBottom: label.bottom, fieldTop: field.top,
+            reasonBottomMargin: parseFloat(reason.marginBottom),
+            fieldLeft: field.left, fieldRight: field.right,
+            contentLeft: content.left, contentRight: content.right }
+        })()
+      JS
+      assert_operator dimensions['fieldTop'], :>, dimensions['labelBottom']
+      assert_operator dimensions['reasonBottomMargin'], :>=, 8
+      assert_in_delta dimensions['contentLeft'], dimensions['fieldLeft'], 1
+      assert_in_delta dimensions['contentRight'], dimensions['fieldRight'], 1
+    end
+  end
 end
