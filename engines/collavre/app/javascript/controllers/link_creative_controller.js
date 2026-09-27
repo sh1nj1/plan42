@@ -533,9 +533,7 @@ export default class extends CommonPopupController {
 
     // Override select to invoke callback
     select(item) {
-        if (this.onSelectCallback) {
-            this.onSelectCallback(item)
-        }
+        this.onSelectCallback?.(item)
         this.close()
     }
 
