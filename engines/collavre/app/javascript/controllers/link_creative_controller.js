@@ -73,6 +73,9 @@ export default class extends CommonPopupController {
         // CommonPopup's key handling is item-list based and we don't populate it,
         // so it is a no-op here. We drive navigation over our own rendered rows.
         if (event.key === 'Escape') {
+            // Do not let this key also cancel a dialog restored by onClose.
+            event.preventDefault()
+            event.stopPropagation()
             this.close()
             return
         }

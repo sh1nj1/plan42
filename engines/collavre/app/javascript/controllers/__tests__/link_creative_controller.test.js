@@ -785,7 +785,13 @@ describe('destination picker cancellation callbacks', () => {
     controller.open(rect, onSelect, onClose, { allowCreate: false })
     await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)))
     if (method === 'close') controller.closeTarget.click()
-    if (method === 'Escape') controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    if (method === 'Escape') {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      const stopPropagation = jest.spyOn(event, 'stopPropagation')
+      controller.inputTarget.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(stopPropagation).toHaveBeenCalled()
+    }
     if (method === 'outside') document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     if (method === 'touch') document.body.dispatchEvent(new Event('touchstart', { bubbles: true }))
     expect(element.style.display).toBe('none')
