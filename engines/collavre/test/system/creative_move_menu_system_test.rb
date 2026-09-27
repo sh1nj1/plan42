@@ -102,6 +102,42 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, @source.reload.parent
   end
 
+  [ true, false ].each do |popover|
+    test "short visual viewport keeps destination rows clickable with popover #{popover}" do
+      visit collavre.creatives_path(id: @source.id)
+      unless popover
+        page.execute_script("delete HTMLElement.prototype.showPopover; delete HTMLElement.prototype.hidePopover")
+      end
+      open_move_menu
+      original_top = page.evaluate_script("document.querySelector('dialog[open]').style.top")
+      page.execute_script(<<~JS)
+        const viewport = new EventTarget()
+        Object.assign(viewport, { offsetTop: 40, offsetLeft: 0, pageTop: 40, pageLeft: 0, scale: 1, width: 390, height: 260 })
+        Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+        viewport.dispatchEvent(new Event('resize'))
+      JS
+      input = find("#creative-move-destination")
+      input.set("Menu destination")
+      assert_selector "#creative-move-results .link-result-item[data-id='#{@destination.id}']"
+      geometry = page.evaluate_script(<<~JS)
+        (() => {
+          const input = document.querySelector('#creative-move-destination').getBoundingClientRect()
+          const list = document.querySelector('#creative-move-results').getBoundingClientRect()
+          return { inputTop: input.top, inputBottom: input.bottom, top: list.top, bottom: list.bottom, height: list.height }
+        })()
+      JS
+      assert_operator geometry["inputTop"], :>=, 48
+      assert_in_delta geometry["inputBottom"] + 4, geometry["top"], 1
+      assert_operator geometry["height"], :>=, 30
+      assert_operator geometry["bottom"], :<=, 292
+      find("#creative-move-results .link-result-item[data-id='#{@destination.id}']").click
+      assert_equal original_top, page.evaluate_script("document.querySelector('dialog[open]').style.top")
+      find('[data-creative-move-target="confirm"]').click
+      assert_no_selector "dialog[open][data-creative-move-target]"
+      assert_equal @destination, @source.reload.parent
+    end
+  end
+
   test "workspace move menu offers a click-only path" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu

@@ -44,6 +44,7 @@ export default class extends LinkCreativeController {
         window.removeEventListener('scroll', this.reposition, true)
         window.visualViewport?.removeEventListener('resize', this.reposition)
         window.visualViewport?.removeEventListener('scroll', this.reposition)
+        this._restoreDialogPosition()
         this.inputTarget.setAttribute('aria-expanded', 'false')
         this.dispatchClose()
     }
@@ -71,8 +72,9 @@ export default class extends LinkCreativeController {
 
     _reposition() {
         if (this.listTarget.hidden) return
-        const anchor = this.inputTarget.getBoundingClientRect()
         const viewport = visualViewportRect()
+        this._makeRoomBelow(viewport)
+        const anchor = this.inputTarget.getBoundingClientRect()
         const width = Math.min(anchor.width, viewport.width - 16)
         const top = Math.max(viewport.top + 8, anchor.bottom + 4)
         Object.assign(this.listTarget.style, {
@@ -81,5 +83,28 @@ export default class extends LinkCreativeController {
             left: `${Math.max(viewport.left + 8, Math.min(anchor.left, viewport.right - width - 8))}px`,
             top: `${top}px`,
         })
+    }
+
+    _makeRoomBelow(viewport) {
+        const dialog = this.element.closest('dialog')
+        if (!dialog) return
+        const anchor = this.inputTarget.getBoundingClientRect()
+        // Keep the input visible and reserve up to three rows below it, even
+        // when the keyboard pans or shrinks the visual viewport.
+        const minimum = Math.min(120, Math.max(0, viewport.height - anchor.height - 20))
+        const bottom = Math.max(viewport.top + 8 + anchor.height,
+            Math.min(anchor.bottom, viewport.bottom - minimum - 12))
+        if (Math.abs(bottom - anchor.bottom) < 1) return
+        if (!this._shiftedDialog) {
+            this._shiftedDialog = dialog
+            this._originalDialogTop = dialog.style.top
+        }
+        dialog.style.top = `${dialog.getBoundingClientRect().top + bottom - anchor.bottom}px`
+    }
+
+    _restoreDialogPosition() {
+        if (!this._shiftedDialog) return
+        this._shiftedDialog.style.top = this._originalDialogTop
+        this._shiftedDialog = null
     }
 }

@@ -163,16 +163,48 @@ test('repositions within a resized visual viewport and removes its listeners on 
   delete window.visualViewport
 })
 
-test('limits the list to the space below the input near the viewport bottom', async () => {
-  input.getBoundingClientRect = () => ({ left: 20, top: 650, bottom: 680, width: 300 })
-  await open()
-  expect(list.style.top).toBe('684px')
-  expect(list.style.maxHeight).toBe(`${Math.max(0, window.innerHeight - 692)}px`)
-  input.getBoundingClientRect = () => ({ left: 20, top: 850, bottom: 880, width: 300 })
-  window.dispatchEvent(new Event('resize'))
-  expect(list.style.maxHeight).toBe('0px')
+test.each([true, false])('keeps results usable in a short viewport (popover: %s)', async popover => {
+  if (!popover) {
+    delete HTMLElement.prototype.showPopover
+    delete HTMLElement.prototype.hidePopover
+  }
+  const dialog = document.createElement('dialog')
+  document.body.append(dialog)
+  dialog.append(picker.element)
+  await flush()
+  dialog.style.top = '150px'
+  dialog.getBoundingClientRect = () => ({ top: parseFloat(dialog.style.top) })
+  input.getBoundingClientRect = () => {
+    const top = parseFloat(dialog.style.top) + 100
+    return { left: 20, top, bottom: top + 30, height: 30, width: 300 }
+  }
+  const viewport = new EventTarget()
+  Object.assign(viewport, { offsetTop: 0, offsetLeft: 0, width: 390, height: 280 })
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+  try {
+    await open()
+    expect(list.style.maxHeight).toBe('120px')
+    expect(parseFloat(list.style.top)).toBe(input.getBoundingClientRect().bottom + 4)
+    expect(parseFloat(list.style.top) + 120).toBeLessThanOrEqual(272)
+    viewport.offsetTop = 200
+    viewport.dispatchEvent(new Event('scroll'))
+    expect(input.getBoundingClientRect().top).toBeGreaterThanOrEqual(208)
+    expect(parseFloat(list.style.maxHeight)).toBeGreaterThanOrEqual(120)
+    viewport.height = 100
+    viewport.dispatchEvent(new Event('resize'))
+    expect(list.style.maxHeight).toBe('50px')
+    expect(parseFloat(list.style.top) + 50).toBeLessThanOrEqual(292)
+    key('ArrowDown')
+    key('Enter')
+    expect(select).toHaveBeenCalledWith({ id: 7, label: 'Destination' })
+    expect(dialog.style.top).toBe('150px')
+    await open()
+    key('Escape')
+    expect(dialog.style.top).toBe('150px')
+  } finally {
+    delete window.visualViewport
+  }
 })
-
 
 test('without the Popover API, browsing, searching, selecting and reopening still work', async () => {
   delete HTMLElement.prototype.showPopover
