@@ -40,7 +40,7 @@ const key = value => {
   return event
 }
 
-test('floats above the existing input, keeps focus, and selects the shell id', async () => {
+test('floats below the existing input, keeps focus, and selects the shell id', async () => {
   await open()
   expect(list.hidden).toBe(false)
   expect(input.getAttribute('aria-expanded')).toBe('true')
@@ -109,22 +109,22 @@ test('Enter cannot submit while there are no selectable results', async () => {
 })
 
 
-test('positions above the input and tracks viewport and scroll changes', async () => {
-  input.getBoundingClientRect = () => ({ left: 20, top: 250, width: 300 })
+test('positions below the input and tracks viewport and scroll changes', async () => {
+  input.getBoundingClientRect = () => ({ left: 20, top: 250, bottom: 280, width: 300 })
   await open()
   expect(list.showPopover).toHaveBeenCalled()
-  expect(list.style.top).toBe('246px')
-  expect(list.style.transform).toBe('translateY(-100%)')
+  expect(list.style.top).toBe('284px')
+  expect(list.style.transform).toBe('')
   expect(list.style.width).toBe('300px')
-  expect(list.style.maxHeight).toBe('238px')
-  input.getBoundingClientRect = () => ({ left: -20, top: 150, width: 300 })
+  expect(list.style.maxHeight).toBe('320px')
+  input.getBoundingClientRect = () => ({ left: -20, top: 150, bottom: 180, width: 300 })
   window.dispatchEvent(new Event('scroll'))
   expect(list.style.left).toBe('8px')
-  expect(list.style.top).toBe('146px')
+  expect(list.style.top).toBe('184px')
   picker.close()
   window.dispatchEvent(new Event('resize'))
   picker._reposition()
-  expect(list.style.top).toBe('146px')
+  expect(list.style.top).toBe('184px')
   expect(list.hidePopover).toHaveBeenCalled()
 })
 
@@ -145,20 +145,30 @@ test('repositions within a resized visual viewport and removes its listeners on 
   const viewport = new EventTarget()
   Object.assign(viewport, { offsetTop: 40, offsetLeft: 10, width: 280, height: 400 })
   Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
-  input.getBoundingClientRect = () => ({ left: 200, top: 180, width: 400 })
+  input.getBoundingClientRect = () => ({ left: 200, top: 180, bottom: 210, width: 400 })
   await open()
   expect(list.style.width).toBe('264px')
   expect(list.style.left).toBe('18px')
-  expect(list.style.maxHeight).toBe('128px')
+  expect(list.style.maxHeight).toBe('218px')
   viewport.offsetTop = 60
   viewport.dispatchEvent(new Event('resize'))
-  expect(list.style.maxHeight).toBe('108px')
+  expect(list.style.maxHeight).toBe('238px')
   viewport.offsetTop = 80
   viewport.dispatchEvent(new Event('scroll'))
-  expect(list.style.maxHeight).toBe('88px')
+  expect(list.style.maxHeight).toBe('258px')
   picker.close()
   viewport.offsetTop = 100
   viewport.dispatchEvent(new Event('resize'))
-  expect(list.style.maxHeight).toBe('88px')
+  expect(list.style.maxHeight).toBe('258px')
   delete window.visualViewport
+})
+
+test('limits the list to the space below the input near the viewport bottom', async () => {
+  input.getBoundingClientRect = () => ({ left: 20, top: 650, bottom: 680, width: 300 })
+  await open()
+  expect(list.style.top).toBe('684px')
+  expect(list.style.maxHeight).toBe(`${Math.max(0, window.innerHeight - 692)}px`)
+  input.getBoundingClientRect = () => ({ left: 20, top: 850, bottom: 880, width: 300 })
+  window.dispatchEvent(new Event('resize'))
+  expect(list.style.maxHeight).toBe('0px')
 })

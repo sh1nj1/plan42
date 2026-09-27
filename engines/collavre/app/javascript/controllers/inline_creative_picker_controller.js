@@ -70,13 +70,12 @@ export default class extends LinkCreativeController {
         const anchor = this.inputTarget.getBoundingClientRect()
         const viewport = visualViewportRect()
         const width = Math.min(anchor.width, viewport.width - 16)
-        const top = Math.max(viewport.top + 8, anchor.top - 4)
+        const top = Math.max(viewport.top + 8, anchor.bottom + 4)
         Object.assign(this.listTarget.style, {
             width: `${width}px`,
-            maxHeight: `${Math.max(0, Math.min(320, top - viewport.top - 8))}px`,
+            maxHeight: `${Math.max(0, Math.min(320, viewport.bottom - top - 8))}px`,
             left: `${Math.max(viewport.left + 8, Math.min(anchor.left, viewport.right - width - 8))}px`,
             top: `${top}px`,
-            transform: 'translateY(-100%)',
         })
     }
 }

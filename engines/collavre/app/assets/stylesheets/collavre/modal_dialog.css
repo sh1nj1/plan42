@@ -378,7 +378,7 @@ textarea.modal-dialog-input {
   }
 }
 
-/* Float above the destination field without resizing or clipping the dialog. */
+/* Float below the destination field without resizing or clipping the dialog. */
 .creative-move-results {
   position: fixed;
   inset: auto;

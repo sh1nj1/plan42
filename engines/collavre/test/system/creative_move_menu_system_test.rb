@@ -48,7 +48,7 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     assert_equal @destination, @source.reload.parent
   end
 
-  test "floating destination stays above the input and clears stale selections on mobile" do
+  test "floating destination stays below the input and clears stale selections on mobile" do
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 390, height: 844, deviceScaleFactor: 1, mobile: true)
     visit collavre.creatives_path(id: @source.id)
     open_move_menu
@@ -381,10 +381,10 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
         const input = document.querySelector('#creative-move-destination').getBoundingClientRect()
         const list = document.querySelector('#creative-move-results').getBoundingClientRect()
         const dialog = document.querySelector('dialog[open]').getBoundingClientRect()
-        return { inputTop: input.top, listBottom: list.bottom, listTop: list.top, dialogHeight: dialog.height }
+        return { inputBottom: input.bottom, listBottom: list.bottom, listTop: list.top, dialogHeight: dialog.height }
       })()
     JS
-    assert_operator geometry["listBottom"], :<=, geometry["inputTop"]
+    assert_operator geometry["listTop"], :>=, geometry["inputBottom"]
     assert_operator geometry["listTop"], :>=, 0
     find("#creative-move-destination").send_keys(:escape)
     assert_selector "dialog[open][data-creative-move-target]"
