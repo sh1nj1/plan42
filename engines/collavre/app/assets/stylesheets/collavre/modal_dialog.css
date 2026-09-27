@@ -381,6 +381,7 @@ textarea.modal-dialog-input {
 /* Float below the destination field without resizing or clipping the dialog. */
 .creative-move-results {
   position: fixed;
+  z-index: 1;
   inset: auto;
   box-sizing: border-box;
   color: var(--text-primary);
@@ -420,9 +421,12 @@ textarea.modal-dialog-input {
   white-space: nowrap;
 }
 
-/* Native dialog margins otherwise offset the shared fixed-position panel. */
+/* Keep fixed fallback results relative to the viewport, without a transformed ancestor. */
 dialog.creative-move-dialog {
-  margin: 0;
+  margin: 0 auto;
+  left: 0;
+  right: 0;
+  transform: none;
   animation: none;
 }
 

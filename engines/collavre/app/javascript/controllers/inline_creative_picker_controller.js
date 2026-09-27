@@ -21,7 +21,11 @@ export default class extends LinkCreativeController {
         this._rootNodes = null
         this._activeEl = null
         this.listTarget.hidden = false
-        this.listTarget.showPopover()
+        if (typeof this.listTarget.showPopover === 'function') {
+            this.listTarget.showPopover()
+        } else {
+            this.listTarget.removeAttribute('popover')
+        }
         window.addEventListener('resize', this.reposition)
         window.addEventListener('scroll', this.reposition, true)
         window.visualViewport?.addEventListener('resize', this.reposition)
@@ -34,7 +38,7 @@ export default class extends LinkCreativeController {
         this._clearDebounce()
         this._searchToken++
         this._openGeneration++
-        this.listTarget.hidePopover()
+        this.listTarget.hidePopover?.()
         this.listTarget.hidden = true
         window.removeEventListener('resize', this.reposition)
         window.removeEventListener('scroll', this.reposition, true)

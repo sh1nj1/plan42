@@ -172,3 +172,29 @@ test('limits the list to the space below the input near the viewport bottom', as
   window.dispatchEvent(new Event('resize'))
   expect(list.style.maxHeight).toBe('0px')
 })
+
+
+test('without the Popover API, browsing, searching, selecting and reopening still work', async () => {
+  delete HTMLElement.prototype.showPopover
+  delete HTMLElement.prototype.hidePopover
+  list.setAttribute('popover', 'manual')
+  input.getBoundingClientRect = () => ({ left: 20, top: 250, bottom: 280, width: 300 })
+  await open()
+  expect(list.hasAttribute('popover')).toBe(false)
+  expect(list.hidden).toBe(false)
+  expect(list.textContent).toContain('Destination')
+  expect(list.style.top).toBe('284px')
+  input.value = 'query'
+  await picker.search()
+  expect(list.textContent).toContain('Search result')
+  key('ArrowDown')
+  key('Enter')
+  expect(select).toHaveBeenCalledWith({ id: 8, label: 'Search result' })
+  expect(list.hidden).toBe(true)
+  input.value = ''
+  await open()
+  expect(list.hidden).toBe(false)
+  expect(key('Escape').defaultPrevented).toBe(true)
+  expect(list.hidden).toBe(true)
+  expect(close).toHaveBeenCalledTimes(2)
+})

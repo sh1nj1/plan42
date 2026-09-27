@@ -75,6 +75,33 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     page.save_screenshot(Rails.root.join("tmp/screenshots/creative-move-desktop.png"))
   end
 
+  test "destination fallback stays below the input and supports selection without Popover API" do
+    visit collavre.creatives_path(id: @source.id)
+    page.execute_script(<<~JS)
+      delete HTMLElement.prototype.showPopover
+      delete HTMLElement.prototype.hidePopover
+    JS
+    open_move_menu
+    assert_selector "#creative-move-results .link-tree-item"
+    assert_no_selector "#creative-move-results[popover]", visible: :all
+    geometry = page.evaluate_script(<<~JS)
+      (() => {
+        const input = document.querySelector('#creative-move-destination').getBoundingClientRect()
+        const list = document.querySelector('#creative-move-results').getBoundingClientRect()
+        return { inputBottom: input.bottom, listTop: list.top, inputLeft: input.left, listLeft: list.left }
+      })()
+    JS
+    assert_in_delta geometry["inputBottom"] + 4, geometry["listTop"], 1
+    assert_in_delta geometry["inputLeft"], geometry["listLeft"], 1
+    find("#creative-move-destination").send_keys(:escape)
+    assert_no_selector "#creative-move-results"
+    assert_selector "dialog[open][data-creative-move-target]"
+    pick_destination
+    find('[data-creative-move-target="confirm"]').click
+    assert_no_selector "dialog[open][data-creative-move-target]"
+    assert_equal @destination, @source.reload.parent
+  end
+
   test "workspace move menu offers a click-only path" do
     visit collavre.creatives_path(id: @source.id)
     open_move_menu
