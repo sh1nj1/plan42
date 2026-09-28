@@ -32,9 +32,8 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
 gem "solid_queue"
-# Pinned below 4.1: its async broadcaster drops messages on write failure or
-# process exit (no shutdown flush). Upgrade together with a pubsub shutdown hook.
-gem "solid_cable", "~> 4.0.2"
+# 4.1.0 uses the synchronous broadcaster installed by solid_cable_resilience.rb.
+gem "solid_cable", "~> 4.1.0"
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
