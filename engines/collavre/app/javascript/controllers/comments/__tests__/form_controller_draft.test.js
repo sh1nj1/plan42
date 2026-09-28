@@ -99,6 +99,58 @@ describe('FormController - draft persistence', () => {
     jest.restoreAllMocks()
   })
 
+  describe('focus ownership', () => {
+    let frames
+    beforeEach(() => {
+      frames = []
+      jest.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback))
+    })
+    const flush = () => frames.splice(0).forEach(callback => callback())
+    const otherInput = () => {
+      const input = document.createElement('input')
+      container.append(input)
+      input.focus()
+      return input
+    }
+
+    test('permission refresh does not request focus even with nothing else focused', () => {
+      const focus = jest.spyOn(controller, 'focusTextarea')
+      controller.setCommentPermission(true)
+      flush()
+      expect(focus).not.toHaveBeenCalled()
+      expect(document.activeElement).not.toBe(controller.textareaTarget)
+    })
+
+    test('opening the popup respects another input', () => {
+      const input = otherInput()
+      controller.onPopupOpened({ creativeId: '77', canComment: true })
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    test('a deferred list focus respects an input selected before the frame', () => {
+      controller.focusTextarea()
+      const input = otherInput()
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    test('comment editing explicitly focuses the composer', () => {
+      otherInput()
+      controller.startEditing({ id: '1', content: 'edit me' })
+      flush()
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test('revoked permission cancels queued focus', () => {
+      const focus = jest.spyOn(controller.textareaTarget, 'focus')
+      controller.focusTextarea()
+      controller.setCommentPermission(false)
+      flush()
+      expect(focus).not.toHaveBeenCalled()
+    })
+  })
+
   test('restores a saved draft when the popup opens for that chat', () => {
     chatDrafts.set('77', 'unfinished thought')
     dispatchTopicChange('77')

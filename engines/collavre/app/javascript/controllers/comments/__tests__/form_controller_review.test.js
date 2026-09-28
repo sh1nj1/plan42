@@ -108,6 +108,39 @@ describe('FormController - Review Quote Chips', () => {
     })
   })
 
+  describe('quoteComment', () => {
+    test.each(['Quoted text', 'A'.repeat(81)])('quotes selected text and explicitly focuses the composer: %s', (text) => {
+      const otherInput = document.createElement('input')
+      container.appendChild(otherInput)
+      otherInput.focus()
+      expect(document.activeElement).toBe(otherInput)
+
+      controller.quoteComment(42, text)
+
+      expect(controller.quotedCommentIdTarget.value).toBe('42')
+      expect(controller.quotedTextTarget.value).toBe(text)
+      expect(controller.quoteIndicatorTarget.style.display).toBe('')
+      expect(controller.quoteIndicatorTextTarget.textContent).toBe(
+        text.length > 80 ? text.substring(0, 80) + '…' : text,
+      )
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test.each([[null, 'text'], [42, '']])('ignores an incomplete quote (%s, %s)', (id, text) => {
+      const focus = jest.spyOn(controller.textareaTarget, 'focus')
+      try {
+        controller.quoteComment(id, text)
+
+        expect(controller.quotedCommentIdTarget.value).toBe('')
+        expect(controller.quotedTextTarget.value).toBe('')
+        expect(controller.quoteIndicatorTarget.style.display).toBe('none')
+        expect(focus).not.toHaveBeenCalled()
+      } finally {
+        focus.mockRestore()
+      }
+    })
+  })
+
   describe('appendReviewQuote', () => {
     test('adds a review quote chip', () => {
       controller.appendReviewQuote(42, 'Hello world')

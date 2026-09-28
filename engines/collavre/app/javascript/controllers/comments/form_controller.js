@@ -11,6 +11,7 @@ import FormDraftManager from './form_draft_manager'
 import { appendRunOptions } from './run_options_controller'
 import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
+import { focusWhenAvailable } from '../../lib/utils/focus'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -204,7 +205,7 @@ export default class extends Controller {
     this.resetForm()
     this._drafts._draftSaveSuspendedForPermission = !canComment
     if (canComment && this.shouldAutoFocusOnOpen()) {
-      requestAnimationFrame(() => this.textareaTarget.focus())
+      this.focusTextarea()
     }
     this._restoreDraft()
   }
@@ -240,9 +241,6 @@ export default class extends Controller {
 
     this._drafts._draftSaveSuspendedForPermission = false
     this._restoreDraft()
-    if (this.shouldAutoFocusOnOpen()) {
-      requestAnimationFrame(() => this.textareaTarget.focus())
-    }
   }
 
   onSelectionChanged({ size, moving }) {
@@ -259,9 +257,8 @@ export default class extends Controller {
     this.formTarget.style.display = this.canComment && !this.readOnlyTopic ? '' : 'none'
   }
 
-  focusTextarea() {
-    if (this.formTarget.style.display === 'none') return
-    requestAnimationFrame(() => this.textareaTarget.focus())
+  focusTextarea(options) {
+    focusWhenAvailable(this.textareaTarget, options)
   }
 
   startEditing({ id, content, private: isPrivate }) {
@@ -276,7 +273,7 @@ export default class extends Controller {
     this.submitTarget.textContent = this.element.dataset.updateCommentText
     if (this.cancelTarget) this.cancelTarget.style.display = ''
     requestAnimationFrame(() => this._autoResize())
-    this.focusTextarea()
+    this.focusTextarea({ explicit: true })
   }
 
   handleStashDraft(event) {
@@ -871,7 +868,7 @@ export default class extends Controller {
     const newPos = pos + (needsSpace ? 1 : 0) + link.length + (after ? 0 : 1)
     textarea.setSelectionRange(newPos, newPos)
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    textarea.focus()
+    this.focusTextarea({ explicit: true })
   }
 
   extractImageFiles(dataTransfer) {
@@ -947,7 +944,7 @@ export default class extends Controller {
     this.quoteIndicatorTextTarget.textContent = selectedText.length > 80
       ? selectedText.substring(0, 80) + '…'
       : selectedText
-    this.focusTextarea()
+    this.focusTextarea({ explicit: true })
   }
 
   // Append a review quote as a visual chip above the textarea.
@@ -968,7 +965,7 @@ export default class extends Controller {
 
     this.textareaTarget.value = ''
     this.textareaTarget.placeholder = this._getI18nText('reviewFeedbackPlaceholder', 'Write feedback for this quote...')
-    this.focusTextarea()
+    this.focusTextarea({ explicit: true })
   }
 
   _commitActiveQuote() {
@@ -978,7 +975,7 @@ export default class extends Controller {
     this.textareaTarget.placeholder = this._getI18nText('reviewSummaryPlaceholder', 'Overall comment (optional)...')
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
-    this.focusTextarea()
+    this.focusTextarea({ explicit: true })
   }
 
   // Send a single question quote immediately as a standalone comment.
@@ -1056,7 +1053,7 @@ export default class extends Controller {
         this.sending = false
       })
 
-    this.focusTextarea()
+    this.focusTextarea({ explicit: true })
   }
 
   _renderReviewQuoteChips() {
@@ -1123,7 +1120,7 @@ export default class extends Controller {
         this.textareaTarget.placeholder = this._getI18nText('reviewFeedbackPlaceholder', 'Write feedback for this quote...')
         this._renderReviewQuoteChips()
         this._updateSubmitButton()
-        this.focusTextarea()
+        this.focusTextarea({ explicit: true })
       })
 
       // Feedback preview (shown when not active and has feedback)
