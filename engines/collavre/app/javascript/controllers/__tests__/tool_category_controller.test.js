@@ -16,10 +16,11 @@ describe('ToolCategoryController', () => {
     document.body.innerHTML = `
       <fieldset data-controller="tool-category">
         <legend>
+          <button type="button" aria-label="Category" aria-expanded="false" aria-controls="body"
+                  data-tool-category-target="disclosure" data-action="tool-category#expand">▸</button>
           <input type="checkbox" id="toggle" data-tool-category-target="toggle"
                  data-action="change->tool-category#toggle">
-          <button type="button" aria-expanded="false" aria-controls="body"
-                  data-tool-category-target="disclosure" data-action="tool-category#expand">Category</button>
+          <strong>Category</strong>
           ${withCount ? '<span data-tool-category-target="count"></span>' : ''}
         </legend>
         <div id="body" data-tool-category-target="body" hidden>${tools}</div>

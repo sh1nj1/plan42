@@ -7,17 +7,18 @@
       <fieldset class="tool-category" data-controller="tool-category" data-tool-category-key="<%= group[:key] %>">
         <legend class="tool-category-header">
           <span class="tool-category-heading">
+            <button type="button" class="tool-category-disclosure"
+                    aria-label="<%= group[:label] %>"
+                    aria-expanded="false" aria-controls="tool_category_body_<%= group[:key] %>"
+                    data-tool-category-target="disclosure" data-action="tool-category#expand">
+              <span class="tool-category-chevron" aria-hidden="true">▸</span>
+            </button>
             <input type="checkbox" class="form-check-input tool-category-toggle"
                    id="tool_category_<%= group[:key] %>"
                    aria-label="<%= t('collavre.tool_categories.select_all_aria', category: group[:label]) %>"
                    data-tool-category-target="toggle"
                    data-action="change->tool-category#toggle">
-            <button type="button" class="tool-category-disclosure"
-                    aria-expanded="false" aria-controls="tool_category_body_<%= group[:key] %>"
-                    data-tool-category-target="disclosure" data-action="tool-category#expand">
-              <span class="tool-category-chevron" aria-hidden="true">▸</span>
-              <strong><%= group[:label] %></strong>
-            </button>
+            <strong><%= group[:label] %></strong>
             <span class="text-muted small tool-category-count">
               (<span data-tool-category-target="count"><%= group[:tools].count { |tool| selected.include?(tool[:name]) } %></span>/<%= group[:tools].size %>)
             </span>

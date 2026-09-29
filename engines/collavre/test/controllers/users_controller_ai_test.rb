@@ -48,6 +48,9 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
           assert_select "fieldset.tool-category" do
             buttons = css_select("button[type='button'][aria-expanded='false'][data-action='tool-category#expand']")
             assert_equal 1, buttons.size
+            assert_equal I18n.t("collavre.tool_categories.custom", locale: locale), buttons.first["aria-label"]
+            assert_select ".tool-category-heading > button:first-child + input.tool-category-toggle + strong",
+                          text: I18n.t("collavre.tool_categories.custom", locale: locale), count: 1
             assert_select "[id=?][data-tool-category-target='body'][hidden]", buttons.first["aria-controls"]
           end
         end
