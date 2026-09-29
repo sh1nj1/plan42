@@ -271,6 +271,30 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
     end
   end
 
+  test "large tables are appended separately in order between paragraph batches" do
+    batches = []
+    @client.define_singleton_method(:append_blocks) do |id, blocks|
+      batches << blocks
+      super(id, blocks)
+    end
+    rows = 1000.times.map { |index| "<tr><td>Row #{index}</td></tr>" }.join
+    html = "<p>Before</p><table>#{rows}</table><p>After</p>"
+    @root.stub(:effective_description, html) do
+      link = sync
+      assert_equal [ 1 ] * 12, batches.map(&:size)
+      tables = batches.flatten.select { |block| block[:type] == "table" }
+      assert_equal [ 100 ] * 10, tables.map { |block| block.dig(:table, :children).size }
+      contents = tables.flat_map { |block| block.dig(:table, :children) }.map do |row|
+        row.dig(:table_row, :cells, 0, 0, :text, :content)
+      end
+      assert_equal 1000.times.map { |index| "Row #{index}" }, contents
+      assert_equal "Before", batches.first.first.dig(:paragraph, :rich_text, 0, :text, :content)
+      assert_equal "After", batches.last.first.dig(:paragraph, :rich_text, 0, :text, :content)
+      assert_equal @client.blocks.keys, node(link, @root).body_block_ids
+      assert node(link, @root).content_hash
+    end
+  end
+
   test "reverting source content after a failed update restores the original body" do
     link = sync
     original = @root.description
