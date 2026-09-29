@@ -51,6 +51,16 @@ class McpServiceFilterTest < ActiveSupport::TestCase
     refute_includes filtered, @other_tool
   end
 
+  test "agent selection never widens dynamic tool permissions" do
+    agent = users(:ai_bot)
+    agent.update!(tools: [ "system_tool", "user_tool", "other_tool" ])
+    Collavre::Current.set(user: @user, mcp_agent_workspace: Struct.new(:agent).new(agent)) do
+      assert_equal [ @system_tool, @user_tool ], McpService.filter_tools([ @system_tool, @user_tool, @other_tool ], @user)
+      agent.update!(tools: [ "other_tool" ])
+      assert_empty McpService.filter_tools([ @system_tool, @user_tool, @other_tool ], @user)
+    end
+  end
+
   test "filters hash tools correctly" do
     system_hash = { name: "system_tool" }
     user_hash = { name: "user_tool" }

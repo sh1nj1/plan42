@@ -57,6 +57,7 @@ class McpServerTest < ActionDispatch::IntegrationTest
     agent = users(:ai_bot)
     agent.update!(tools: %w[meta_tool cron_list])
     @token.update!(resource_owner_id: agent.id)
+    assert_discovery_names(%w[cron_list meta_tool])
     assert_mcp_denied("cron_cancel", { key: "missing" })
     assert_mcp_denied("meta_tool", { action: "run", tool_name: "cron_cancel", arguments: { key: "missing" } })
     assert_mcp_denied("meta_tool", { action: "run", tool_name: "meta_tool", arguments: {
@@ -64,9 +65,11 @@ class McpServerTest < ActionDispatch::IntegrationTest
     } })
     call_mcp("cron_list")
     assert Collavre::ToolUsage.last.succeeded
+    agent.update!(tools: [ "meta_tool" ])
+    assert_discovery_names([ "meta_tool" ])
     agent.update!(tools: [])
+    assert_discovery_names([])
     assert_mcp_denied("cron_list")
-    refute Collavre::ToolUsage.last.succeeded
   end
 
   test "per-user workspace callback token enforces the agent selection instead of human token owner" do
@@ -79,15 +82,46 @@ class McpServerTest < ActionDispatch::IntegrationTest
     @token = Doorkeeper::AccessToken.find(workspace.callback_access_token_id)
     @bearer = workspace.callback_token
     assert_equal users(:one).id, @token.resource_owner_id
+    assert_discovery_names(%w[cron_list meta_tool])
     assert_mcp_denied("cron_cancel", { key: "missing" })
     assert_mcp_denied("meta_tool", { action: "run", tool_name: "cron_cancel", arguments: { key: "missing" } })
     call_mcp("cron_list")
     assert Collavre::ToolUsage.last.succeeded
+    agent.update!(tools: [ "meta_tool" ])
+    assert_discovery_names([ "meta_tool" ])
     agent.update!(tools: [])
+    assert_discovery_names([])
     assert_mcp_denied("cron_list")
   end
 
+  test "human tokens retain discovery beyond agent selections" do
+    capture_mcp_messages do |messages|
+      post "/mcp/messages",
+        params: { jsonrpc: "2.0", method: "tools/list", id: 4 }.to_json,
+        headers: { "Authorization" => "Bearer #{@token.token}", "Content-Type" => "application/json" }
+      assert_response :success
+      names = messages.last.fetch("result").fetch("tools").map { |tool| tool["name"] }
+      assert_includes names, "cron_cancel"
+      assert_includes names, "creative_retrieval_service"
+    end
+  end
+
   private
+
+  def assert_discovery_names(expected)
+    capture_mcp_messages do |messages|
+      post "/mcp/messages",
+        params: { jsonrpc: "2.0", method: "tools/list", id: 4 }.to_json,
+        headers: { "Authorization" => "Bearer #{@bearer || @token.token}", "Content-Type" => "application/json" }
+      assert_response :success
+      assert_equal expected.sort, messages.last.fetch("result").fetch("tools").map { |tool| tool["name"] }.sort
+      return if expected.empty?
+
+      call_mcp("meta_tool", { action: "list" })
+      payload = messages.last.fetch("result").fetch("content").first.fetch("text")
+      assert_equal expected.sort, payload.scan(/\bname: "([^"]+)"/).flatten.sort
+    end
+  end
 
   def call_mcp(name, arguments = {})
     post "/mcp/messages",
@@ -96,11 +130,22 @@ class McpServerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  def assert_mcp_denied(name, arguments = {})
-    Collavre::Tools::CronCancelService.stub(:new, -> { flunk "Denied tool must not execute" }) do
-      call_mcp(name, arguments)
+  def capture_mcp_messages
+    transport = Rails.application.app
+    transport = transport.instance_variable_get(:@app) until transport.is_a?(FastMcp::Transports::RackTransport)
+    messages = []
+    transport.stub(:send_message, ->(message) { messages << message.deep_stringify_keys; nil }) do
+      yield messages
     end
-    assert_equal name, Collavre::ToolUsage.last.tool_name
-    refute Collavre::ToolUsage.last.succeeded
+  end
+
+  def assert_mcp_denied(name, arguments = {})
+    capture_mcp_messages do |messages|
+      Collavre::Tools::CronCancelService.stub(:new, -> { flunk "Denied tool must not execute" }) do
+        call_mcp(name, arguments)
+      end
+      result = messages.last
+      assert result["error"] || result.dig("result", "isError"), result.inspect
+    end
   end
 end
