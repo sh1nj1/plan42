@@ -119,13 +119,13 @@ export default class extends Controller {
   }
 
   receiveMutation({ changed, refreshAt }) {
+    this.scheduleRefresh(refreshAt)
     if (!changed) return
     const keys = parseJSON(changed, null)
     for (const key of Array.isArray(keys) ? keys : [changed]) {
       this.removed.delete(key)
       this.snoozed.delete(key)
     }
-    this.scheduleRefresh(refreshAt)
     window.Turbo?.cache?.clear()
   }
 

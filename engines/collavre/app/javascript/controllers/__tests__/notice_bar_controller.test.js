@@ -162,6 +162,32 @@ describe('NoticeBarController', () => {
     expect(controller.feedRefresh.deadline || null).toBe(deadline ? Date.parse(deadline) : null)
   })
 
+  test('an automatic completion preserves the next deadline when it supersedes a refresh', async () => {
+    const item = mission('m1')
+    await mount({ items: [item], top: item.key })
+    let resolve
+    csrfFetch.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    controller.scheduleRefresh(new Date(Date.now() + 1000).toISOString())
+    await jest.advanceTimersByTimeAsync(1000)
+    expect(csrfFetch).toHaveBeenCalledTimes(1)
+    expect(controller.feedRefresh.deadline).toBeNull()
+    const deadline = new Date(Date.now() + 86400000).toISOString()
+    const payload = payloadEl([], { key: item.key, next_key: null })
+    payload.dataset.refreshAt = deadline
+    controller.payloadTarget.replaceWith(payload)
+    await flush(1500)
+    resolve({ ok: true, json: async () => ({ items: [item], refresh_at: null }) })
+    await flush(1500)
+    expect(controller.queue).toEqual([])
+    expect(controller.feedRefresh.deadline).toBe(Date.parse(deadline))
+    expect(controller.refreshAtValue).toBe(deadline)
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [notice('scheduled')], refresh_at: null }) })
+    await jest.advanceTimersByTimeAsync(86400000)
+    await flush(1500)
+    expect(csrfFetch).toHaveBeenCalledTimes(2)
+    expect(controller.queue).toEqual([notice('scheduled')])
+  })
+
   test('a queued refresh is discarded when a payload arrives before the animation ends', async () => {
     const item = mission('m1')
     await mount({ items: [item], top: item.key })
