@@ -58,8 +58,10 @@ export default class extends Controller {
     return this.run(() => {
       // A newer payload can arrive while this job waits for an animation.
       if (!current()) return undefined
-      for (const key of this.snoozed) this.removed.delete(key)
-      this.snoozed.clear()
+      // Only the server can make a snoozed mission visible again.
+      for (const { key } of items) {
+        if (this.snoozed.delete(key)) this.removed.delete(key)
+      }
       return this.reconcile(items)
     })
   }

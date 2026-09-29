@@ -137,7 +137,44 @@ describe('NoticeBarController', () => {
     await flush(21600000)
     expect(controller.queue).toEqual(visible ? [item] : [])
     expect(postedUrls()).toContain('/user_notices')
-    expect(controller.removed.has(item.key)).toBe(false)
+    expect(controller.removed.has(item.key)).toBe(!visible)
+  })
+
+  test('an early boundary refresh keeps an unexpired snooze hidden across snapshot restoration', async () => {
+    const item = mission('m1')
+    const announcement = notice('scheduled')
+    await mount({ items: [item], top: item.key })
+    const deadline = new Date(Date.now() + 86400000).toISOString()
+    csrfFetch.mockResolvedValueOnce({ ok: true, headers: new Headers({ 'X-Notice-Snoozed-Until': deadline }) })
+    await controller.dismissTop()
+    controller.scheduleRefresh(new Date(Date.now() + 1000).toISOString())
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [announcement], refresh_at: deadline }) })
+    await jest.advanceTimersByTimeAsync(1000)
+    await controller.work
+    expect(controller.queue).toEqual([announcement])
+    expect(controller.removed.has(item.key)).toBe(true)
+    expect(controller.snoozed.has(item.key)).toBe(true)
+
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    const snapshot = zone.cloneNode(true)
+    expect(JSON.parse(snapshot.querySelector('[data-notice-bar-target="payload"]').dataset.items)).toEqual([])
+    application.stop()
+    zone.remove()
+    document.body.appendChild(snapshot)
+    application = Application.start()
+    application.register('notice-bar', NoticeBarController)
+    await jest.advanceTimersByTimeAsync(0)
+    zone = snapshot
+    controller = application.getControllerForElementAndIdentifier(zone, 'notice-bar')
+    await flush()
+    expect(controller.queue).toEqual([])
+    expect(strip()).toBeNull()
+
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [item, announcement], refresh_at: null }) })
+    await jest.advanceTimersByTimeAsync(Date.parse(deadline) - Date.now())
+    await controller.work
+    expect(controller.queue).toEqual([item, announcement])
+    expect(strip().dataset.key).toBe(item.key)
   })
 
   test.each(['dismiss', 'snooze', 'restore', 'complete'])('a %s broadcast supersedes an in-flight refresh', async (action) => {
