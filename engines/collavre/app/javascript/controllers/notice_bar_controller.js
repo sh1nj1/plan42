@@ -46,6 +46,7 @@ export default class extends Controller {
     this.removed = new Set()
     this.work = Promise.resolve()
     this.busy = false
+    this.deferred = []
   }
 
   disconnect() {
@@ -130,7 +131,9 @@ export default class extends Controller {
     const items = incoming.filter((item) => !this.removed.has(item.key))
     if (!this.loaded) return this.firstRender(items)
     if (this.sheetView?.isOpen) {
-      this.deferred = [items, completion]
+      // Every completion keeps its celebration; plain updates only need the latest.
+      if (!completion) this.deferred = this.deferred.filter(([, done]) => done)
+      this.deferred.push([items, completion])
       return undefined
     }
     if (!completion) return this.applyItems(items)
@@ -224,9 +227,7 @@ export default class extends Controller {
     if (!this.sheetView?.isOpen) return
     await this.sheet.close(this.strip)
     if (then) await then()
-    const deferred = this.deferred
-    this.deferred = null
-    if (deferred) await this.reconcile(...deferred)
+    for (const payload of this.deferred.splice(0)) await this.reconcile(...payload)
   }
 
   async followCta(item) {

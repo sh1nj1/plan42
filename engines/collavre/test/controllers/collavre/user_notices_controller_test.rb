@@ -20,6 +20,13 @@ module Collavre
       UserNotice.find_by(user: @user, notice_key: key)
     end
 
+    test "a stale snooze from an open sheet does not reopen a completed mission" do
+      UserNotice.record!(@user, :tour_one, :completed)
+      post "/user_notices/tour_one/snooze"
+      assert_response :no_content
+      assert state("tour_one").completed?
+    end
+
     test "snoozes missions and dismisses everything else" do
       post "/user_notices/tour_one/snooze"
       assert_response :no_content

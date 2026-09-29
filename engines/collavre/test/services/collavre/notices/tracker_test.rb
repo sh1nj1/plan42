@@ -32,7 +32,7 @@ module Collavre
         capture_broadcasts { ActiveSupport::Notifications.instrument(EVENT, user: @user, one: true) }
 
         assert_equal "completed", status(:tour_one)
-        assert_equal "pending", status(:tour_two), "the refreshed bar starts the next mission"
+        assert_nil status(:tour_two), "the event that is still evaluating tour_two leaves its backfill for later"
         args, kwargs = @broadcasts.sole
         assert_equal [ [ "inbox", @user ] ], args
         assert_equal Tracker::PAYLOAD_TARGET, kwargs[:target]
@@ -75,6 +75,20 @@ module Collavre
 
         assert_equal %w[completed completed], [ status(:tour_one), status(:tour_two) ]
         assert_equal %w[tour_one tour_two], @broadcasts.map { |_, kwargs| kwargs[:locals][:completion][:key] }
+      end
+
+      # The first broadcast must not backfill the mission the same event is
+      # about to complete, or the bar would skip straight to "all done".
+      test "cascade keeps the intermediate step when later missions are already done" do
+        NoticeRegistry.register(:tour_two, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                           completes_on: { EVENT => ->(payload) { payload[:two] } })
+        UserNotice.record!(@user, :tour_one, :pending)
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true, two: true) }
+
+        first, second = @broadcasts.map { |_, kwargs| kwargs[:locals] }
+        assert_equal "tour_two", first[:completion][:next_key]
+        assert_equal %w[tour_two], first[:items].map { |item| item[:key] }
+        assert_equal [ "tour_two", nil ], [ second[:completion][:key], second[:completion][:next_key] ]
       end
 
       test "renders the broadcast in the user's locale" do

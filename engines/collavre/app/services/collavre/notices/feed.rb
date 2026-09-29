@@ -8,10 +8,14 @@ module Collavre
     # that the mission waits for its completion event (see Notices::Tracker),
     # which keeps page loads free of per-request progress queries.
     class Feed
-      def initialize(user, routes: Collavre::Engine.routes.url_helpers, now: Time.current)
+      # `awaiting` lists missions an in-flight event is about to evaluate
+      # (see Notices::Tracker); their backfill waits so each completion
+      # keeps its own step in the celebration sequence.
+      def initialize(user, routes: Collavre::Engine.routes.url_helpers, now: Time.current, awaiting: [])
         @user = user
         @routes = routes
         @now = now
+        @awaiting = awaiting.map(&:to_s)
       end
 
       def items
@@ -64,11 +68,11 @@ module Collavre
       end
 
       def backfill_completed?(notice)
-        return false if state_for(notice)
+        return false if state_for(notice) || @awaiting.include?(notice.key.to_s)
 
         status = notice.done_for?(@user) ? :completed : :pending
-        states[notice.key.to_s] = UserNotice.record!(@user, notice.key, status)
-        status == :completed
+        states[notice.key.to_s] = UserNotice.seed!(@user, notice.key, status)
+        states[notice.key.to_s].completed?
       end
 
       def serialize(notice)

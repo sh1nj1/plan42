@@ -25,13 +25,26 @@ module Collavre
       find_or_initialize_by(user: user, notice_key: key.to_s)
     end
 
+    # Completion is final: a stale snooze or dismissal (e.g. from a sheet left
+    # open while the mission finished in another tab) must not reopen it.
     def self.record!(user, key, status, snoozed_until: nil)
       notice = self.for(user, key)
+      return notice if notice.completed? && status.to_s != "completed"
+
       notice.update!(status: status, snoozed_until: snoozed_until,
                      completed_at: status.to_s == "completed" ? Time.current : nil)
       notice
     rescue ActiveRecord::RecordNotUnique
       retry
+    end
+
+    # Writes the initial state only when the user has no row yet; a row that
+    # appeared meanwhile (e.g. an event completing the mission) wins.
+    def self.seed!(user, key, status)
+      create_or_find_by!(user: user, notice_key: key.to_s) do |notice|
+        notice.status = status
+        notice.completed_at = Time.current if status.to_s == "completed"
+      end
     end
   end
 end

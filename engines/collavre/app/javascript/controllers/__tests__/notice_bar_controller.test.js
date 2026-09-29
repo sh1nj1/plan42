@@ -542,12 +542,30 @@ describe('NoticeBarController', () => {
       await replacePayload([notice('n0'), notice('n1')])
       await flush()
       expect(strip().dataset.key).toBe('n1')
-      expect(controller.deferred).toBeTruthy()
+      expect(controller.deferred).toHaveLength(1)
 
       sheetEl().querySelector('.notice-sheet__close').click()
       await flush()
-      expect(controller.deferred).toBeNull()
+      expect(controller.deferred).toEqual([])
       expect(strip().dataset.key).toBe('n0')
+    })
+
+    test('every completion deferred behind the sheet is celebrated in order', async () => {
+      await mount({ items: [mission('m1')], top: 'm1' })
+      await openSheet()
+      const celebrate = jest.spyOn(controller, 'celebrate')
+      await replacePayload([mission('m1'), notice('n8')])
+      await replacePayload([mission('m2')], { key: 'm1', done: 'First done', next_key: 'm2' })
+      await replacePayload([mission('m2'), notice('n8')])
+      await replacePayload([mission('m2'), notice('n8'), notice('n9')])
+      await replacePayload([notice('n8'), notice('n9')], { key: 'm2', done: 'Second done', next_key: null })
+      await flush()
+      expect(controller.deferred.map(([, done]) => done?.key)).toEqual(['m1', undefined, 'm2'])
+
+      sheetEl().querySelector('.notice-sheet__close').click()
+      await flush(4000)
+      expect(celebrate.mock.calls.map(([, done]) => done.key)).toEqual(['m1', 'm2'])
+      expect(controller.deferred).toEqual([])
     })
 
     test('a deferred payload lands after the CTA acted on the notice the user saw', async () => {

@@ -12,12 +12,13 @@ module Collavre
         user = payload[:user]
         return if user.nil? || user.ai_user?
 
-        open_candidates(event_name, user).each do |notice|
+        candidates = open_candidates(event_name, user)
+        candidates.each_with_index do |notice, index|
           next if notice.mission? && !head_of_group?(notice, user)
           next unless notice.completed_by?(event_name, payload, user)
 
           UserNotice.record!(user, notice.key, :completed)
-          broadcast(user, completed: notice.key)
+          broadcast(user, completed: notice.key, awaiting: candidates.drop(index + 1).map(&:key))
         end
       rescue StandardError => e
         # Progress tracking must never break the action that emitted the event.
@@ -34,9 +35,9 @@ module Collavre
         candidates.reject { |notice| finished.include?(notice.key.to_s) }
       end
 
-      def broadcast(user, completed: nil)
+      def broadcast(user, completed: nil, awaiting: [])
         I18n.with_locale(locale_for(user)) do
-          feed = Feed.new(user)
+          feed = Feed.new(user, awaiting: awaiting)
           Turbo::StreamsChannel.broadcast_replace_to(
             [ "inbox", user ],
             target: PAYLOAD_TARGET,

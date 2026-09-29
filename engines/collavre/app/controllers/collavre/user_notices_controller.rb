@@ -11,7 +11,8 @@ module Collavre
       record!(:dismissed)
     end
 
-    # Missions cannot be dismissed, only put off until they are done.
+    # Missions cannot be dismissed, only put off until they are done. A snooze
+    # arriving after completion is ignored (see UserNotice.record!).
     def snooze
       return head(:unprocessable_entity) unless @notice.mission?
 

@@ -46,6 +46,16 @@ module Collavre
         assert_includes keys, "tour_two", "done_when must not be re-evaluated once a row exists"
       end
 
+      test "a completion recorded during the first render survives the backfill" do
+        NoticeRegistry.register(:racing, kind: :mission, group: :race, done_when: lambda { |user|
+          UserNotice.record!(user, :racing, :completed)
+          false
+        })
+
+        assert_not_includes Feed.new(@user).items.map { |item| item[:key] }, "racing"
+        assert UserNotice.find_by!(user: @user, notice_key: "racing").completed?
+      end
+
       test "hides dismissed, completed, snoozed and out-of-window notices" do
         UserNotice.record!(@user, :outage, :dismissed)
         UserNotice.record!(@user, :release_note, :completed)

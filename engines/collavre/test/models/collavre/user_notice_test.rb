@@ -35,6 +35,27 @@ module Collavre
       assert UserNotice.find_by(user: user, notice_key: "race").completed?
     end
 
+    test "record! keeps a completion over a stale snooze or dismissal" do
+      user = users(:two)
+      UserNotice.record!(user, :tour, :completed)
+
+      assert UserNotice.record!(user, :tour, :snoozed, snoozed_until: 1.day.from_now).completed?
+      assert UserNotice.record!(user, :tour, :dismissed).completed?
+      assert UserNotice.find_by(user: user, notice_key: "tour").completed?
+    end
+
+    test "seed! writes the first state and never overwrites an existing row" do
+      user = users(:two)
+
+      seeded = UserNotice.seed!(user, :fresh, :completed)
+      assert seeded.completed?
+      assert_not_nil seeded.completed_at
+
+      UserNotice.record!(user, :taken, :completed)
+      assert UserNotice.seed!(user, :taken, :pending).completed?
+      assert_nil UserNotice.seed!(user, :open, :pending).completed_at
+    end
+
     test "hidden? covers finished rows and live snoozes only" do
       now = Time.current
       notice = UserNotice.new(user: users(:two), notice_key: "tour")
