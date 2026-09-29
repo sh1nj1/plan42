@@ -141,6 +141,40 @@ describe('NoticeBarController', () => {
     expect(controller.queue.map(({ key }) => key)).toEqual(['remaining'])
   })
 
+  test.each(['complete', 'dismiss', 'snooze'])('%s invalidates older A snapshots across A → B → C → A', async (action) => {
+    const item = action === 'snooze' ? mission('m1') : notice('n1')
+    const snapshots = new Map()
+    window.Turbo.cache = { clear: jest.fn(() => snapshots.clear()) }
+    await mount({ items: [item], top: item.key })
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    snapshots.set('A', zone.cloneNode(true))
+    application.stop()
+    zone.remove()
+    await mount({ items: [item], top: item.key }) // B receives the same server feed.
+    const operation = action === 'complete' ? controller.followCta(item) : controller.dismissTop()
+    await flush()
+    await operation
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    snapshots.set('B', zone.cloneNode(true))
+    application.stop()
+    zone.remove()
+    await mount({ items: [] }) // C receives the updated server feed.
+    expect(window.Turbo.cache.clear).toHaveBeenCalledTimes(1)
+    expect(snapshots.has('A')).toBe(false) // Turbo must fetch A again on restoration.
+    application.stop()
+    zone.remove()
+    await mount({ items: [], top: item.key })
+    expect(strip()).toBeNull()
+  })
+
+  test('a refused state change does not invalidate snapshots', async () => {
+    window.Turbo.cache = { clear: jest.fn() }
+    csrfFetch.mockResolvedValue({ ok: false })
+    await mount()
+    expect(await controller.post('n1', 'complete')).toBe(false)
+    expect(window.Turbo.cache.clear).not.toHaveBeenCalled()
+  })
+
   test('undo remains present in a Turbo snapshot', async () => {
     const item = mission('m1')
     await mount({ items: [item], top: item.key })

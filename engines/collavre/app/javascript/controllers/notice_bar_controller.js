@@ -193,7 +193,10 @@ export default class extends Controller {
     const url = `${this.urlValue.replace('__key__', encodeURIComponent(key))}/${action}`
     this.requests = (this.requests || Promise.resolve())
       .then(() => csrfFetch(url, { method: 'POST', headers: { Accept: 'application/json' } }))
-      .then((response) => response.ok)
+      .then((response) => {
+        if (response.ok) window.Turbo?.cache?.clear()
+        return response.ok
+      })
       .catch((error) => { console.error('[notice-bar]', action, error); return false })
     return this.requests
   }

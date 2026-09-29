@@ -16,6 +16,7 @@ module Collavre
         @routes = routes
         @now = now
         @awaiting = awaiting.map(&:to_s)
+        @visibility = {}
       end
 
       def items
@@ -54,8 +55,8 @@ module Collavre
       end
 
       def showable?(notice)
-        return false unless notice.active?(@now) && notice.visible_to?(@user)
         return false if state_for(notice)&.hidden?(@now)
+        return false unless notice.active?(@now) && visible_to_user?(notice)
         return true unless notice.mission?
 
         head_of_group?(notice) && !backfill_completed?(notice)
@@ -93,8 +94,12 @@ module Collavre
         }.compact
       end
 
+      def visible_to_user?(notice)
+        @visibility.fetch(notice.key) { @visibility[notice.key] = notice.visible_to?(@user) }
+      end
+
       def visible_group(notice)
-        NoticeRegistry.group(notice.group).select { |member| member.visible_to?(@user) }
+        NoticeRegistry.group(notice.group).select { |member| visible_to_user?(member) }
       end
 
       def tag_for(notice)

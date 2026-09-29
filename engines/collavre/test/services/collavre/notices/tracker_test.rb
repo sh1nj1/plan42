@@ -28,6 +28,16 @@ module Collavre
         UserNotice.find_by(user: @user, notice_key: key.to_s)&.status
       end
 
+      test "finished candidates skip audience checks while snoozed candidates remain eligible" do
+        %i[completed dismissed].each do |status|
+          NoticeRegistry.register(status, audience: ->(_) { flunk "finished audience evaluated" },
+                                           completes_on: { EVENT => true })
+          UserNotice.record!(@user, status, status)
+        end
+        UserNotice.record!(@user, :tour_one, :snoozed, snoozed_until: 1.hour.from_now)
+        assert_equal %i[tour_one tour_two], Tracker.open_candidates(EVENT, @user).map(&:key)
+      end
+
       test "completes the head mission and broadcasts the refreshed bar" do
         capture_broadcasts { ActiveSupport::Notifications.instrument(EVENT, user: @user, one: true) }
 

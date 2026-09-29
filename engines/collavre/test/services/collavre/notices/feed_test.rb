@@ -26,6 +26,32 @@ module Collavre
         Feed.new(user).items.map { |item| item[:key] }
       end
 
+      test "hidden states skip audience evaluation" do
+        %i[completed dismissed snoozed].each do |status|
+          NoticeRegistry.register(status, audience: ->(_) { flunk "hidden audience evaluated" })
+          UserNotice.record!(@user, status, status, snoozed_until: 1.hour.from_now)
+        end
+        assert_equal %w[outage tour_one release_note], keys
+      end
+
+      test "audience results including false are reused only within a feed" do
+        calls = Hash.new(0)
+        available = false
+        %i[tour_one tour_two].each do |key|
+          NoticeRegistry.register(key, kind: :mission, group: :tour, done_when: ->(_) { false },
+                                       audience: ->(_) { calls[key] += 1; key == :tour_one || available })
+        end
+        feed = Feed.new(@user)
+        assert_equal 1, feed.items.find { |item| item[:key] == "tour_one" }[:steps].size
+        feed.completion(:tour_one)
+        feed.items
+        assert_equal({ tour_one: 1, tour_two: 1 }, calls)
+
+        available = true
+        assert_equal 2, Feed.new(@user).items.find { |item| item[:key] == "tour_one" }[:steps].size
+        assert_equal({ tour_one: 2, tour_two: 2 }, calls)
+      end
+
       test "orders by priority then registration and shows one mission per group" do
         assert_equal %w[outage tour_one release_note], keys
       end

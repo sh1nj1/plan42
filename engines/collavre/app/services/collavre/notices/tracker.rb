@@ -27,12 +27,12 @@ module Collavre
 
       # Notices listening to the event that this user has not finished yet.
       def open_candidates(event_name, user)
-        candidates = NoticeRegistry.listening_to(event_name).select { |notice| notice.active? && notice.visible_to?(user) }
+        candidates = NoticeRegistry.listening_to(event_name).select { |notice| notice.active? }
         return [] if candidates.empty?
 
         finished = UserNotice.where(user: user, notice_key: candidates.map { |notice| notice.key.to_s },
                                     status: %i[completed dismissed]).pluck(:notice_key)
-        candidates.reject { |notice| finished.include?(notice.key.to_s) }
+        candidates.select { |notice| !finished.include?(notice.key.to_s) && notice.visible_to?(user) }
       end
 
       def broadcast(user, completed: nil, awaiting: [])
