@@ -11,6 +11,8 @@ module Collavre
     def verify_ai_profile_access
       return if ai_profile_editable? || @user.searchable? || shared_ai_profile?
 
+      return if Current.user.contact_users.where(id: @user.id).exists?
+
       head :not_found
     end
 

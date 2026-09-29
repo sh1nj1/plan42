@@ -90,7 +90,7 @@
   <%= form.button t('common.save'), type: "submit", disabled: @read_only, class: "primary-action-button" %>
 <% end %>
 
-<% if !@read_only && @user.cli_proxy_agent? %>
+<% if @user.cli_proxy_agent? && (!@read_only || (@user.agent_gateway&.per_user? && @user.gateway_accessible_to?(Current.user))) %>
   <section class="form-section" style="margin-top: 1.5rem;">
     <h2><%= t("collavre.agent_connections.card_title") %></h2>
     <p class="text-muted"><%= t("collavre.agent_connections.card_help") %></p>

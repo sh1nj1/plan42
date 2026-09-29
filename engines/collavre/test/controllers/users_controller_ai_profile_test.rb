@@ -116,9 +116,78 @@ class UsersControllerAiProfileTest < ActionDispatch::IntegrationTest
     assert_select "button[type='submit']:not([disabled])"
   end
 
+  test "private contact profile is read-only and does not grant update access" do
+    @agent.update!(searchable: false)
+    Collavre::Contact.ensure(user: @viewer, contact_user: @agent)
+
+    get user_url(@agent)
+    assert_redirected_to edit_ai_user_url(@agent)
+    follow_redirect!
+    assert_response :success
+    assert_select "button[type='submit'][disabled]"
+    assert_select "[name='user[llm_api_key]']", count: 0
+
+    original = @agent.attributes
+    patch update_ai_user_url(@agent), params: { user: { name: "Changed" } }
+    assert_response :redirect
+    assert_equal original, @agent.reload.attributes
+
+    @viewer.contacts.where(contact_user: @agent).destroy_all
+    get edit_ai_user_url(@agent)
+    assert_response :not_found
+  end
+
+  test "per-user gateway contact can reach their connections without exposing settings" do
+    gateway = create_profile_gateway
+    @agent.update!(searchable: false, llm_vendor: "cli_proxy", agent_gateway: gateway)
+    Collavre::Contact.ensure(user: @viewer, contact_user: @agent)
+
+    get edit_ai_user_url(@agent)
+    assert_response :success
+    assert_select "button[type='submit'][disabled]"
+    assert_select "a[href=?]", agent_connection_user_path(@agent)
+    %w[llm_vendor llm_model llm_api_key gateway_url agent_gateway_id agent_conf].each do |field|
+      assert_select "[name='user[#{field}]']", count: 0
+    end
+    [ gateway.base_url, gateway.admin_key, gateway.completion_key, gateway.identity_secret,
+      "profile-secret-key", "private-gateway.example", "private-value" ].each do |secret|
+      assert_not_includes response.body, secret
+    end
+
+    get agent_connection_user_path(@agent)
+    assert_response :success
+    assert Collavre::AgentWorkspace.exists?(agent: @agent, user: @viewer)
+  end
+
+  test "shared gateway connections stay hidden from non-owners" do
+    @agent.update!(llm_vendor: "cli_proxy", agent_gateway: create_profile_gateway(workspace_mode: :shared))
+    Collavre::Contact.ensure(user: @viewer, contact_user: @agent)
+
+    get edit_ai_user_url(@agent)
+    assert_response :success
+    assert_select "a[href=?]", agent_connection_user_path(@agent), count: 0
+  end
+
+  test "searchable per-user gateway without access does not show connections" do
+    @agent.update!(llm_vendor: "cli_proxy", agent_gateway: create_profile_gateway)
+
+    get edit_ai_user_url(@agent)
+    assert_response :success
+    assert_select "a[href=?]", agent_connection_user_path(@agent), count: 0
+  end
+
   test "anonymous visitors must sign in" do
     sign_out
     get edit_ai_user_url(@agent)
     assert_redirected_to new_session_url
+  end
+  private
+
+  def create_profile_gateway(workspace_mode: :per_user)
+    Collavre::AgentGateway.create!(
+      owner: users(:one), name: "Profile proxy", base_url: "https://profile-proxy.example",
+      admin_key: "profile-admin-secret", completion_key: "profile-completion-secret",
+      identity_secret: "s" * 32, workspace_mode: workspace_mode
+    )
   end
 end
