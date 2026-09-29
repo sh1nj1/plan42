@@ -22,6 +22,12 @@ class NotionClientTreeTest < ActiveSupport::TestCase
     assert_requested request
   end
 
+  test "not found errors still propagate for page updates" do
+    stub_request(:patch, %r{/v1/pages/page$}).to_return(status: 404, body: "{}")
+    service = CollavreNotion::NotionService.new(user: @user)
+    assert_raises(CollavreNotion::NotionNotFoundError) { service.update_page("page") }
+  end
+
   test "rate limited moves raise the retryable error" do
     stub_request(:post, %r{/v1/pages/page/move}).to_return(status: 429, body: "{}")
     assert_raises(CollavreNotion::NotionRateLimitError) { @client.move_page("page", parent_id: "parent") }

@@ -30,6 +30,9 @@ module CollavreNotion
 
     def delete_block(block_id)
       with_rate_limit_retry { client.delete_block(block_id) }
+    rescue NotionNotFoundError
+      # An already missing owned block needs no further cleanup.
+      nil
     end
 
     def sync_creative(creative, parent_page_id: nil, page_link: nil)

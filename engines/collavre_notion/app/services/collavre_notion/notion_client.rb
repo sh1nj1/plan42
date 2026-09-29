@@ -248,7 +248,7 @@ module CollavreNotion
         raise NotionError, "Forbidden: Insufficient permissions"
       when 404
         Rails.logger.error("Notion API 404 error: #{response.body}")
-        raise NotionError, "Resource not found"
+        raise NotionNotFoundError, "Resource not found"
       when 429
         raise rate_limit_error(response)
       else

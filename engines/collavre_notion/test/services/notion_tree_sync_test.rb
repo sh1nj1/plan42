@@ -105,6 +105,64 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
     assert_equal nested_id, node(link, nested).page_id
   end
 
+  test "missing owned blocks are cleared and changed content syncs without repeated deletion" do
+    link = sync
+    old_ids = node(link, @root).body_block_ids
+    @root.update!(description: "Updated after remote deletion")
+    real_client = CollavreNotion::NotionClient.new(@account)
+    requests = old_ids.map do |id|
+      stub_request(:delete, %r{/v1/blocks/#{id}$}).to_return(status: 404, body: "{}")
+    end
+    @client.stub(:delete_block, ->(id) { real_client.delete_block(id) }) do
+      sync
+      assert_empty old_ids & node(link, @root).body_block_ids
+      assert node(link, @root).content_hash
+      ids = node(link, @root).body_block_ids
+      sync
+      assert_equal ids, node(link, @root).body_block_ids
+    end
+    requests.each { |request| assert_requested request, times: 1 }
+  end
+
+  test "missing legacy blocks are removed from tracking without repeated deletion" do
+    link = sync
+    link.notion_block_links.create!(creative: @root, block_id: "missing")
+    real_client = CollavreNotion::NotionClient.new(@account)
+    request = stub_request(:delete, %r{/v1/blocks/missing$}).to_return(status: 404, body: "{}")
+    @client.stub(:delete_block, ->(id) { real_client.delete_block(id) }) do
+      sync
+      assert_empty link.notion_block_links.reload
+      assert link.reload.last_synced_at
+      sync
+    end
+    assert_requested request, times: 1
+  end
+
+  test "other deletion errors preserve owned and legacy tracking for retry" do
+    link = sync
+    old_ids = node(link, @root).body_block_ids
+    legacy = link.notion_block_links.create!(creative: @root, block_id: "legacy")
+    @root.update!(description: "Changed")
+    real_client = CollavreNotion::NotionClient.new(@account)
+    [ 400, 401, 403, 500 ].each do |status|
+      stub_request(:delete, %r{/v1/blocks/}).to_return(status: status, body: "{}")
+      @client.stub(:delete_block, ->(id) { real_client.delete_block(id) }) do
+        assert_raises(CollavreNotion::NotionError) { sync }
+        assert_equal old_ids, node(link, @root).body_block_ids
+        assert_nil node(link, @root).content_hash
+        assert legacy.reload
+      end
+    end
+    sync
+    legacy = link.notion_block_links.create!(creative: @root, block_id: "legacy-again")
+    @client.stub(:delete_block, ->(id) { real_client.delete_block(id) }) do
+      assert_raises(CollavreNotion::NotionError) { sync }
+      assert legacy.reload
+    end
+    sync
+    assert_empty link.notion_block_links.reload
+  end
+
   test "new descendants are added and moved descendants retain page IDs" do
     a = child(@root, "A")
     b = child(@root, "B")
