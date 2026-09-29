@@ -42,6 +42,7 @@ module Collavre
     end
 
     test "an inbox does not count as a first creative and plain comments do not call an agent" do
+      users(:ai_bot).update!(searchable: true)
       Turbo::StreamsChannel.stub(:broadcast_replace_to, nil) do
         Creative.inbox_for(@user)
         assert_nil status(:onboarding_first_creative)

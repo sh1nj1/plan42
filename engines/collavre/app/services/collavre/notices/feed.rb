@@ -93,15 +93,19 @@ module Collavre
         }.compact
       end
 
+      def visible_group(notice)
+        NoticeRegistry.group(notice.group).select { |member| member.visible_to?(@user) }
+      end
+
       def tag_for(notice)
         return I18n.t("collavre.notices.kinds.#{notice.kind}") unless notice.mission?
 
-        members = NoticeRegistry.group(notice.group)
+        members = visible_group(notice)
         I18n.t("collavre.notices.groups.#{notice.group}", step: members.index(notice) + 1, total: members.size)
       end
 
       def steps_for(notice)
-        NoticeRegistry.group(notice.group).map do |member|
+        visible_group(notice).map do |member|
           state = if member == notice then "current"
           elsif state_for(member)&.completed? then "done"
           else "todo"

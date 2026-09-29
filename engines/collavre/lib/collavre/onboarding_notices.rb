@@ -29,6 +29,7 @@ module Collavre
       NoticeRegistry.register(:onboarding_call_agent,
         kind: :mission, group: :onboarding, icon: "🌳",
         target: "[data-comments--form-target='textarea']",
+        audience: method(:agent_available?),
         cta_path: ->(routes, user) { latest_creative_path(routes, user, open_comments: true) },
         done_when: method(:agent_called?),
         completes_on: { COMMENT_CREATED => ->(payload) { payload[:comment].mentioned_users.ai_agents.exists? } })
@@ -42,9 +43,18 @@ module Collavre
     # collaborator who only works in someone else's tree owns no root, so fall
     # back to the last creative they visited and may comment on.
     def latest_creative_path(routes, user, **options)
-      creative = own_creatives(user).where(parent_id: nil, origin_id: nil).order(id: :desc).first ||
-                 commentable_last_visit(user)
+      creative = latest_creative(user)
       creative ? routes.creative_path(creative, **options) : routes.creatives_path
+    end
+
+    def latest_creative(user)
+      own_creatives(user).where(parent_id: nil, origin_id: nil).order(id: :desc).first || commentable_last_visit(user)
+    end
+
+    # Match the composer destination and its mention resolver, without depending
+    # on a vendor engine. Availability can change after onboarding has started.
+    def agent_available?(user)
+      !user.ai_user? && Collavre.user_class.mentionable_for(latest_creative(user)).ai_agents.exists?
     end
 
     def commentable_last_visit(user)
