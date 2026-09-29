@@ -149,7 +149,7 @@ module Collavre
       bases = path.blank? ? allowed_roots : [ resolve!(path) ]
       bases.each do |base|
         if base.file?
-          yield base
+          yield base if base.size <= MAX_FILE_BYTES
           next
         end
         Find.find(base.to_s) do |entry|

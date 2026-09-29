@@ -164,6 +164,33 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
     assert_equal 1, @browser.search("draw", path: "config/routes.rb")[:matches].size
   end
 
+  test "search skips oversized files before reading for direct directory and default paths" do
+    write("app/search/large.rb", "needle" * 4)
+    write("config/routes.rb", "needle" * 4)
+    original_read = File.method(:binread)
+    stub_const(:MAX_FILE_BYTES, 20) do
+      File.stub :binread, ->(file) {
+        assert_operator file.size, :<=, 20, "oversized files must never be read"
+        original_read.call(file)
+      } do
+        [ "app/search/large.rb", "app/search", "config/routes.rb", nil ].each do |path|
+          assert_empty @browser.search("needle", path: path)[:matches]
+        end
+      end
+    end
+  end
+
+  test "search includes files at and below the byte limit" do
+    write("app/search/below.rb", "needle" + "x" * 13)
+    write("app/search/exact.rb", "needle" + "x" * 14)
+    stub_const(:MAX_FILE_BYTES, 20) do
+      %w[app/search/below.rb app/search/exact.rb].each do |path|
+        assert_equal [ path ], @browser.search("needle", path: path)[:matches].pluck(:path)
+      end
+      assert_equal 2, @browser.search("needle", path: "app/search")[:matches].size
+    end
+  end
+
   test "stops at the result and file limits" do
     stub_const(:MAX_SEARCH_RESULTS, 1) do
       result = @browser.search("#")
