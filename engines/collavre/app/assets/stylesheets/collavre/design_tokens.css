@@ -63,6 +63,12 @@
   --text-7: 3rem;         /* 48px — hero */
   --text-8: 3.5rem;       /* 56px — jumbo */
 
+  /* Compact UI typography */
+  --text-caption: 0.6875rem; /* 11px */
+  --text-sm: 0.8125rem;      /* 13px */
+  --text-body-sm: 0.875rem;  /* 14px */
+  --text-lg: 1.125rem;      /* 18px */
+
   /* Font weights */
   --weight-1: 100;        /* thin */
   --weight-2: 200;        /* extra-light */
@@ -358,4 +364,59 @@ body {
   --dnd-badge-padding: var(--border-2) var(--space-2);
   --dnd-badge-offset: translate(-50%, -170%);
   --dnd-indicator-layer: var(--layer-fullscreen);
+}
+
+/* Notice palette: inverse text stays legible over saturated gradients. */
+:root {
+  --notice-mission-start: #6d5dfc;
+  --notice-mission-end: #a855f7;
+  --notice-on-accent: white;
+}
+
+body.dark-mode {
+  --notice-mission-start: #5846c9;
+  --notice-mission-end: #8336bd;
+  --notice-on-accent: white;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not(.light-mode):not(.dark-mode) {
+    --notice-mission-start: #5846c9;
+    --notice-mission-end: #8336bd;
+    --notice-on-accent: white;
+  }
+}
+
+/* Resolve aliases on the themed body, also for dynamically mounted sheets,
+   toasts and confetti. Custom themes inherit their interactive colors. */
+:root,
+body {
+  --notice-feature-start: var(--color-active);
+  --notice-feature-end: var(--color-link);
+  --notice-announcement-start: var(--color-warning);
+  --notice-announcement-end: color-mix(in srgb, var(--color-warning), var(--color-danger) 40%);
+  --notice-urgent-start: var(--color-danger);
+  --notice-urgent-end: color-mix(in srgb, var(--color-danger), var(--notice-mission-end) 40%);
+  --notice-success-start: var(--color-success);
+  --notice-success-end: color-mix(in srgb, var(--color-success), var(--notice-on-accent) 20%);
+  --notice-accent: var(--notice-mission-start);
+  --notice-accent-soft: color-mix(in srgb, var(--notice-accent) 45%, transparent);
+  --notice-accent-pulse: color-mix(in srgb, var(--notice-accent) 55%, transparent);
+  --notice-accent-clear: color-mix(in srgb, var(--notice-accent) 0%, transparent);
+  --notice-overlay: color-mix(in srgb, var(--notice-on-accent) 24%, transparent);
+  --notice-overlay-hover: color-mix(in srgb, var(--notice-on-accent) 20%, transparent);
+  --notice-toast-bg: var(--text-primary);
+  --notice-toast-text: var(--surface-bg);
+  --notice-toast-action: var(--surface-bg);
+  --notice-backdrop-bg: hsl(var(--shadow-color) / 45%);
+  --notice-tip-bg: var(--notice-mission-start);
+  --notice-toast-shadow: var(--shadow-3);
+  --notice-sheet-shadow: var(--shadow-4);
+  --notice-icon-shadow: 0 4px 10px hsl(var(--shadow-color) / 20%);
+  --notice-radius: var(--space-2);
+  --notice-hero-height: 132px;
+  --notice-hero-icon-size: 2.75rem;
+  --notice-pulse-duration: 1.4s;
+  --notice-tip-duration: 350ms;
+  --notice-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }

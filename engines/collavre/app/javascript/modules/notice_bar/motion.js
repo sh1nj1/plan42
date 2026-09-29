@@ -34,7 +34,7 @@ export function cancelAnimations(el) {
   el?.getAnimations?.({ subtree: true }).forEach((animation) => animation.cancel())
 }
 
-const CONFETTI_COLORS = ['rgb(245 158 11)', 'rgb(34 197 94)', 'rgb(59 130 246)', 'rgb(236 72 153)', 'rgb(168 85 247)', 'rgb(250 204 21)']
+const CONFETTI_COLORS = ['var(--notice-announcement-start)', 'var(--color-success)', 'var(--notice-feature-start)', 'var(--notice-urgent-end)', 'var(--notice-mission-end)', 'var(--color-warning)']
 
 export function confetti(fromEl, count = 46) {
   if (prefersReducedMotion() || !fromEl) return

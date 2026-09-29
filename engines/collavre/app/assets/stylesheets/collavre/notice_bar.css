@@ -11,20 +11,20 @@
 }
 
 .notice-kind-mission {
-    --notice-c1: rgb(109 93 252);
-    --notice-c2: rgb(168 85 247);
+    --notice-c1: var(--notice-mission-start);
+    --notice-c2: var(--notice-mission-end);
 }
 .notice-kind-feature {
-    --notice-c1: rgb(14 165 233);
-    --notice-c2: rgb(37 99 235);
+    --notice-c1: var(--notice-feature-start);
+    --notice-c2: var(--notice-feature-end);
 }
 .notice-kind-announcement {
-    --notice-c1: rgb(245 158 11);
-    --notice-c2: rgb(249 115 22);
+    --notice-c1: var(--notice-announcement-start);
+    --notice-c2: var(--notice-announcement-end);
 }
 .notice-kind-urgent {
-    --notice-c1: rgb(239 68 68);
-    --notice-c2: rgb(219 39 119);
+    --notice-c1: var(--notice-urgent-start);
+    --notice-c2: var(--notice-urgent-end);
 }
 
 .notice-zone__stack {
@@ -39,9 +39,9 @@
     height: var(--notice-strip-h);
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 0 6px 0 14px;
-    color: white;
+    gap: calc(var(--space-4) / 2);
+    padding: 0 calc(var(--space-1) * 1.5) 0 calc(var(--space-6) / 2);
+    color: var(--notice-on-accent);
     cursor: pointer;
     overflow: hidden;
     user-select: none;
@@ -50,14 +50,14 @@
     outline: none;
 }
 
-.notice-strip:focus-visible { box-shadow: inset 0 0 0 2px white; }
+.notice-strip:focus-visible { box-shadow: inset 0 0 0 var(--border-2) var(--notice-on-accent); }
 .notice-strip:hover .notice-strip__title {
     text-decoration: underline;
-    text-underline-offset: 3px;
+    text-underline-offset: calc(var(--space-1) * 0.75);
 }
 
 .notice-strip__icon {
-    font-size: 18px;
+    font-size: var(--text-lg);
     width: 24px;
     height: 24px;
     display: grid;
@@ -66,18 +66,18 @@
 }
 
 .notice-strip__tag {
-    font-size: 11px;
+    font-size: var(--text-caption);
     font-weight: var(--weight-7);
-    padding: 2px 8px;
+    padding: var(--border-2) var(--space-2);
     border-radius: var(--radius-round);
-    background: rgb(255 255 255 / 24%);
+    background: var(--notice-overlay);
     white-space: nowrap;
     flex: none;
 }
 
 .notice-strip__title {
     font-weight: var(--weight-6);
-    font-size: 14px;
+    font-size: var(--text-body-sm);
     white-space: nowrap;
     flex: none;
     max-width: 45%;
@@ -86,7 +86,7 @@
 }
 
 .notice-strip__summary {
-    font-size: 13px;
+    font-size: var(--text-sm);
     opacity: 0.88;
     white-space: nowrap;
     overflow: hidden;
@@ -96,19 +96,19 @@
 }
 
 .notice-strip__more {
-    font-size: 12px;
+    font-size: var(--text-0);
     opacity: 0.9;
     white-space: nowrap;
     flex: none;
 }
 
 .notice-strip__count {
-    font-size: 11px;
+    font-size: var(--text-caption);
     font-weight: var(--weight-8);
-    background: white;
+    background: var(--notice-on-accent);
     color: var(--notice-c2);
     border-radius: var(--radius-round);
-    padding: 2px 7px;
+    padding: var(--border-2) calc(var(--space-2) - var(--border-1));
     flex: none;
 }
 
@@ -116,23 +116,23 @@
     appearance: none;
     border: 0;
     background: transparent;
-    color: white;
+    color: var(--notice-on-accent);
     width: 32px;
     height: 32px;
-    border-radius: 8px;
-    font-size: 20px;
+    border-radius: var(--notice-radius);
+    font-size: var(--text-3);
     line-height: 1;
     cursor: pointer;
     opacity: 0.9;
     flex: none;
 }
 
-.notice-strip__close:hover { background: rgb(255 255 255 / 20%); }
+.notice-strip__close:hover { background: var(--notice-overlay-hover); }
 
 .notice-strip__sweep {
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, rgb(22 163 74), rgb(34 197 94));
+    background: linear-gradient(90deg, var(--notice-success-start), var(--notice-success-end));
     transform: scaleX(0);
     transform-origin: left;
     z-index: -1;
@@ -147,7 +147,7 @@
     position: absolute;
     top: 0;
     height: var(--notice-strip-h);
-    border-radius: 0 0 10px 10px;
+    border-radius: 0 0 var(--notice-radius) var(--notice-radius);
     background: linear-gradient(90deg, var(--notice-c1), var(--notice-c2));
     filter: brightness(0.8) saturate(0.8);
 }
@@ -180,17 +180,17 @@
 
 .notice-toast {
     pointer-events: auto;
-    margin-top: 10px;
+    margin-top: calc(var(--space-4) / 2);
     max-width: calc(100vw - 32px);
-    background: rgb(17 24 39);
-    color: white;
+    background: var(--notice-toast-bg);
+    color: var(--notice-toast-text);
     border-radius: var(--radius-round);
-    padding: 8px 16px;
-    font-size: 13px;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
     display: flex;
-    gap: 12px;
+    gap: calc(var(--space-5) / 2);
     align-items: center;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+    box-shadow: var(--notice-toast-shadow);
     position: relative;
     overflow: hidden;
 }
@@ -201,18 +201,18 @@
     bottom: 0;
     height: 2px;
     width: 100%;
-    background: rgb(52 211 153);
+    background: var(--color-success);
     transform-origin: left;
 }
 
 .notice-toast__action {
     background: none;
     border: 0;
-    color: rgb(147 197 253);
+    color: var(--notice-toast-action);
     font-weight: var(--weight-7);
     cursor: pointer;
     padding: 0;
-    font-size: 13px;
+    font-size: var(--text-sm);
 }
 
 /* Detail sheet — the strip morphs into it */
@@ -220,7 +220,7 @@
     position: fixed;
     inset: 0;
     z-index: 1300;
-    background: rgb(15 23 42 / 45%);
+    background: var(--notice-backdrop-bg);
     backdrop-filter: blur(3px);
     opacity: 0;
     pointer-events: none;
@@ -231,10 +231,10 @@
 .notice-sheet {
     position: fixed;
     z-index: 1301;
-    background: var(--color-bg);
-    color: var(--color-text);
+    background: var(--surface-bg);
+    color: var(--text-primary);
     overflow: hidden auto;
-    box-shadow: 0 30px 80px rgb(0 0 0 / 30%);
+    box-shadow: var(--notice-sheet-shadow);
 }
 
 .notice-sheet[hidden] { display: none; }
@@ -253,29 +253,29 @@
 }
 
 .notice-sheet__hero {
-    height: 132px;
+    height: var(--notice-hero-height);
     background: linear-gradient(120deg, var(--notice-c1), var(--notice-c2));
     position: relative;
     display: flex;
     align-items: flex-end;
-    gap: 12px;
-    padding: 18px 22px;
-    color: white;
+    gap: calc(var(--space-5) / 2);
+    padding: calc(var(--space-5) * 0.75) calc(var(--space-5) - var(--border-2));
+    color: var(--notice-on-accent);
 }
 
 .notice-sheet__icon {
-    font-size: 44px;
+    font-size: var(--notice-hero-icon-size);
     line-height: 1;
-    filter: drop-shadow(0 4px 10px rgb(0 0 0 / 20%));
+    filter: drop-shadow(var(--notice-icon-shadow));
 }
 
 .notice-sheet__tag {
-    font-size: 12px;
+    font-size: var(--text-0);
     font-weight: var(--weight-7);
-    padding: 3px 10px;
+    padding: calc(var(--space-1) * 0.75) calc(var(--space-4) / 2);
     border-radius: var(--radius-round);
-    background: rgb(255 255 255 / 25%);
-    margin-bottom: 6px;
+    background: var(--notice-overlay);
+    margin-bottom: calc(var(--space-1) * 1.5);
 }
 
 .notice-sheet__close {
@@ -284,50 +284,50 @@
     right: 10px;
     appearance: none;
     border: 0;
-    background: rgb(255 255 255 / 20%);
-    color: white;
+    background: var(--notice-overlay-hover);
+    color: var(--notice-on-accent);
     width: 32px;
     height: 32px;
-    border-radius: 50%;
-    font-size: 18px;
+    border-radius: var(--radius-round);
+    font-size: var(--text-lg);
     cursor: pointer;
 }
 
-.notice-sheet__content { padding: 20px 22px 22px; }
+.notice-sheet__content { padding: var(--space-4) calc(var(--space-5) - var(--border-2)) calc(var(--space-5) - var(--border-2)); }
 .notice-sheet__content h2 {
-    margin: 0 0 8px;
-    font-size: 20px;
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-3);
 }
 .notice-sheet__content p {
-    margin: 0 0 14px;
-    color: var(--color-muted);
-    font-size: 14px;
-    line-height: 1.6;
+    margin: 0 0 calc(var(--space-6) / 2);
+    color: var(--text-muted);
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-3);
 }
 
 .notice-sheet__steps {
     list-style: none;
     padding: 0;
-    margin: 0 0 16px;
+    margin: 0 0 var(--space-3);
     display: grid;
-    gap: 6px;
+    gap: calc(var(--space-1) * 1.5);
 }
 
 .notice-sheet__steps li {
     display: flex;
-    gap: 10px;
+    gap: calc(var(--space-4) / 2);
     align-items: center;
-    font-size: 14px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: var(--color-section-bg);
-    color: var(--color-muted);
+    font-size: var(--text-body-sm);
+    padding: var(--space-2) calc(var(--space-4) / 2);
+    border-radius: var(--notice-radius);
+    background: var(--surface-section);
+    color: var(--text-muted);
 }
 
 .notice-sheet__steps li.is-current {
-    color: var(--color-text);
+    color: var(--text-primary);
     font-weight: var(--weight-6);
-    box-shadow: inset 0 0 0 1px rgb(139 92 246 / 45%);
+    box-shadow: inset 0 0 0 var(--border-1) var(--notice-accent-soft);
 }
 
 .notice-sheet__steps li.is-done { color: var(--color-success); }
@@ -335,52 +335,52 @@
 .notice-sheet__step-no {
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: var(--radius-round);
     display: grid;
     place-items: center;
-    background: var(--color-border);
-    font-size: 12px;
+    background: var(--border-color);
+    font-size: var(--text-0);
     font-weight: var(--weight-7);
     flex: none;
 }
 
 .notice-sheet__steps li.is-current .notice-sheet__step-no {
-    background: rgb(139 92 246);
-    color: white;
+    background: var(--notice-accent);
+    color: var(--notice-on-accent);
 }
 .notice-sheet__steps li.is-done .notice-sheet__step-no {
-    background: rgb(34 197 94);
-    color: white;
+    background: var(--notice-success-end);
+    color: var(--notice-on-accent);
 }
 
 .notice-sheet__actions {
     display: flex;
     justify-content: flex-end;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     flex-wrap: wrap;
 }
 .notice-sheet__hint {
-    font-size: 12px;
-    color: var(--color-muted);
+    font-size: var(--text-0);
+    color: var(--text-muted);
     margin-right: auto;
 }
 
 .notice-sheet__button {
     appearance: none;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
-    color: var(--color-text);
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 13px;
+    border: var(--border-1) solid var(--border-color);
+    background: var(--surface-bg);
+    color: var(--text-primary);
+    border-radius: var(--notice-radius);
+    padding: calc(var(--space-1) * 1.5) calc(var(--space-5) / 2);
+    font-size: var(--text-sm);
     font-weight: var(--weight-6);
     cursor: pointer;
 }
 
 .notice-sheet__button--primary {
     background: linear-gradient(90deg, var(--notice-c1), var(--notice-c2));
-    color: white;
+    color: var(--notice-on-accent);
     border: 0;
 }
 
@@ -388,27 +388,27 @@
 .notice-spot {
     position: relative;
     z-index: 4;
-    outline: 2px solid rgb(139 92 246);
-    outline-offset: 3px;
-    animation: notice-spot-pulse 1.4s ease-out infinite;
+    outline: var(--border-2) solid var(--notice-accent);
+    outline-offset: calc(var(--space-1) * 0.75);
+    animation: notice-spot-pulse var(--notice-pulse-duration) var(--ease-out-3) infinite;
 }
 
 .notice-spot-tip {
     position: fixed;
     z-index: 1250;
-    background: rgb(76 29 149);
-    color: white;
-    font-size: 12px;
-    padding: 6px 10px;
-    border-radius: 8px;
+    background: var(--notice-tip-bg);
+    color: var(--notice-on-accent);
+    font-size: var(--text-0);
+    padding: calc(var(--space-1) * 1.5) calc(var(--space-4) / 2);
+    border-radius: var(--notice-radius);
     white-space: nowrap;
     pointer-events: none;
-    animation: notice-tip-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: notice-tip-in var(--notice-tip-duration) var(--notice-ease-spring);
 }
 
 @keyframes notice-spot-pulse {
-    0% { box-shadow: 0 0 0 0 rgb(139 92 246 / 55%); }
-    100% { box-shadow: 0 0 0 12px rgb(139 92 246 / 0%); }
+    0% { box-shadow: 0 0 0 0 var(--notice-accent-pulse); }
+    100% { box-shadow: 0 0 0 calc(var(--space-5) / 2) var(--notice-accent-clear); }
 }
 
 @keyframes notice-tip-in {
@@ -423,7 +423,7 @@
     z-index: 1400;
     width: 8px;
     height: 12px;
-    border-radius: 2px;
+    border-radius: var(--radius-1);
     pointer-events: none;
 }
 
