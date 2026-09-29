@@ -58,6 +58,7 @@ module Collavre
       ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf,
                                                   :reasoning_effort, :codex_fast_mode, tools: [])
       assign_ai_gateway(ai_params)
+      preserve_hidden_tools(ai_params)
       clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
       @has_stored_llm_api_key = @user.llm_api_key.present?
       @clear_llm_api_key = clear_llm_api_key
@@ -156,6 +157,23 @@ module Collavre
         name: user.llm_model,
         creator: Current.user
       )
+    end
+
+    # The tool checkboxes only list tools the editor may use. A tool restricted
+    # to the agent itself (e.g. Kollavy's source tools) is invisible to the
+    # admin editing it, so submitting the form would silently drop it; keep the
+    # ones the editor could not have unchecked, and ignore any the editor could
+    # not have checked.
+    def preserve_hidden_tools(ai_params)
+      return unless ai_params.key?(:tools)
+
+      hidden = Array(@user.tools).reject { |name| editor_tool?(name) }
+      submitted = Array(ai_params[:tools]).select { |name| editor_tool?(name) }
+      ai_params[:tools] = submitted | hidden
+    end
+
+    def editor_tool?(name)
+      Collavre::McpToolRegistry.user_permitted?(name, Current.user)
     end
 
     def load_available_tools

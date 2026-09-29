@@ -102,8 +102,9 @@ module Collavre
           # It is a dynamic tool; user must have write permission on its creative.
           accessible_tool_names.include?(name)
         else
-          # It is a system tool (not in McpTool database); allow it.
-          true
+          # A system tool (not in McpTool database): allowed unless it
+          # restricts itself to specific users.
+          McpToolRegistry.user_permitted?(name, user)
         end
       end
     end

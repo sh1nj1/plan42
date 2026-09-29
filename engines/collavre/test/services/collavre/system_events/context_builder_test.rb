@@ -38,6 +38,15 @@ module Collavre
         assert_equal @human_user.name, result["sender"]["name"]
         assert_equal false, result["sender"]["is_ai"]
         assert_equal "human", result["sender"]["type"]
+        assert_nil result["sender"]["locale"]
+      end
+
+      test "sender context carries the user's locale" do
+        @human_user.update!(locale: "ko")
+
+        result = ContextBuilder.new(comment: { id: 1, content: "Hi", user_id: @human_user.id }).build
+
+        assert_equal "ko", result["sender"]["locale"]
       end
 
       test "builds sender context for AI agent" do
