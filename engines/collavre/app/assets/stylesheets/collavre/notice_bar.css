@@ -428,6 +428,12 @@
 }
 
 @media (max-width: 640px) {
+    .notice-sheet__actions {
+        display: grid;
+        grid-template-columns: auto auto;
+    }
+    .notice-sheet__hint { grid-column: 1 / -1; }
+
     .notice-strip__summary,
     .notice-strip__more { display: none; }
     .notice-strip__title {
