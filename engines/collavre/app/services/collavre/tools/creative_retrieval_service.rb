@@ -192,7 +192,7 @@ module Tools
     end
 
     def recent_comments(creative)
-      creative.comments.visible_to(Current.user).order(created_at: :desc).limit(3).map do |comment|
+      creative.comments.visible_to(Current.user).without_approval_action.order(created_at: :desc).limit(3).map do |comment|
         {
           content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
           user: comment.user&.display_name || comment.user&.name,

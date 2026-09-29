@@ -36,6 +36,19 @@ module Tools
       end
     end
 
+    %w[markdown json].each do |format|
+      test "#{format} excludes approval actions before limiting recent comments" do
+        3.times do |i|
+          comment("approval-secret-#{i}", user: @agent, approver: @owner, private: false, skip_create_notifications: true, action: { action: "execute_tool" }.to_json)
+        end
+        as_agent do
+          result = @service.call(id: @inbox.id, level: 2, include_comments: true, format: format).to_s
+          refute_includes result, "approval-secret"
+          [ @public, @authored, @approved ].each { |comment| assert_includes result, comment.content }
+        end
+      end
+    end
+
     test "creative ownership does not grant visibility into another author's private comments" do
       Current.set(user: @owner) do
         assert_empty @service.call(query: "hidden-needle")

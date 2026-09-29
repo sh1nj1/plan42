@@ -82,6 +82,13 @@ class Collavre::Comments::ApprovedToolInvocationTest < ActiveSupport::TestCase
       Collavre::Comments::ActionExecutor.new(comment: comment, executor: @owner).call
     end
 
+    usage = Collavre::ToolUsage.find_by!(task_id: @task.id)
+    refute usage.succeeded
+    assert_no_difference "Collavre::ToolUsage.count" do
+      assert_raises(Collavre::Comments::ActionExecutor::ExecutionError) do
+        Collavre::Comments::ActionExecutor.new(comment: comment.reload, executor: @owner).call
+      end
+    end
     assert_equal "Original", @child.reload.description
     assert @task.reload.pending_tool_call.dig("result", "result", "error").present?
     assert_equal @owner, comment.reload.action_executed_by
@@ -94,6 +101,45 @@ class Collavre::Comments::ApprovedToolInvocationTest < ActiveSupport::TestCase
     ::Tools::MetaToolService.stub(:new, -> { service }) do
       assert_equal({ error: "Tool failed" }, invoke)
     end
+  end
+
+  test "approved execution records the original tool and task requesters" do
+    @task.update!(usage_attribution: { "requester_ids" => [ @owner.id ], "source_comment_ids" => [] })
+    assert_difference "Collavre::ToolUsage.count", 1 do
+      invoke
+    end
+    usage = Collavre::ToolUsage.last
+    assert_equal "creative_update_service", usage.tool_name
+    assert usage.succeeded
+    assert_equal "internal", usage.source
+    assert_equal @task.id, usage.task_id
+    assert_equal @agent.id, usage.agent_id
+    assert_nil usage.owner_id
+    assert_equal @owner.id, usage.requester_id
+    assert_equal [ @owner.id ], usage.requester_ids
+    assert_includes Collavre::ToolUsage.requested_by(@owner.id), usage
+    assert_operator usage.duration_ms, :>=, 0
+  end
+
+  test "approved failures and nested error results are recorded" do
+    [ ->(**) { raise "Tool failed" }, ->(**) { { tool: "nested", result: { error: "Denied" } } } ].each do |implementation|
+      service = Object.new
+      service.define_singleton_method(:call, implementation)
+      assert_difference "Collavre::ToolUsage.count", 1 do
+        ::Tools::MetaToolService.stub(:new, service) { invoke("meta_tool", {}) }
+      end
+      usage = Collavre::ToolUsage.last
+      refute usage.succeeded
+      assert_equal "meta_tool", usage.tool_name
+    end
+  end
+
+  test "telemetry failure does not change a completed tool result" do
+    Collavre::ToolUsage::Recorder.stub(:new, ->(**) { raise "Telemetry unavailable" }) do
+      result = invoke
+      refute result.key?(:error), result.inspect
+    end
+    assert_includes @child.reload.description, "Changed"
   end
 
   private
