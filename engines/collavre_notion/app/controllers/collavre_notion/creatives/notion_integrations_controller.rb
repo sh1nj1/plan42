@@ -60,10 +60,10 @@ module CollavreNotion
             CollavreNotion::NotionExportJob.perform_later(@creative, account, parent_page_id)
             render json: { success: true, message: "Export started" }
           when "sync"
-            # Sync existing page
-            link = linked_page_links(account).first
-            if link
-              CollavreNotion::NotionSyncJob.perform_later(@creative, account, link.page_id)
+            # Sync all exports displayed by the integration wizard.
+            links = linked_page_links(account)
+            if links.exists?
+              links.each { |link| CollavreNotion::NotionSyncJob.perform_later(@creative, account, link.page_id) }
               render json: { success: true, message: "Sync started" }
             else
               render json: { error: "no_linked_page" }, status: :unprocessable_entity

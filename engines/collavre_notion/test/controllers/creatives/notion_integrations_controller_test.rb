@@ -122,6 +122,34 @@ module CollavreNotion
         assert_response :unprocessable_entity
       end
 
+      test "sync enqueues every export for the current creative and account only" do
+        sign_in_as(@user)
+        %w[first-export second-export].each do |page_id|
+          NotionPageLink.create!(creative: @creative, notion_account: @account, page_id: page_id, page_title: page_id)
+        end
+        other_account = create_notion_account(create_user(email: "other-export@example.com"))
+        NotionPageLink.create!(creative: @creative, notion_account: other_account, page_id: "foreign", page_title: "Foreign")
+        NotionPageLink.create!(creative: create_creative(@user), notion_account: @account, page_id: "other", page_title: "Other")
+
+        queued = []
+        NotionSyncJob.stub(:perform_later, ->(*args) { queued << args }) do
+          patch "/notion/creatives/#{@creative.id}/notion_integration", params: { action: "sync" }, as: :json
+        end
+
+        assert_response :success
+        assert_equal %w[first-export second-export], queued.map(&:last).sort
+        assert queued.all? { |creative, account, _| creative == @creative && account == @account }
+      end
+
+      test "sync rejects requests without linked exports" do
+        sign_in_as(@user)
+        NotionSyncJob.stub(:perform_later, ->(*) { flunk "No sync job should be queued" }) do
+          patch "/notion/creatives/#{@creative.id}/notion_integration", params: { action: "sync" }, as: :json
+        end
+        assert_response :unprocessable_entity
+        assert_equal "no_linked_page", response.parsed_body["error"]
+      end
+
       # --- Destroy ---
 
       test "destroy removes all page links" do

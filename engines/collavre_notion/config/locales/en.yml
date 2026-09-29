@@ -24,7 +24,7 @@ en:
       connect: "Sign in with your Notion account to start exporting."
       login_button: "Sign in with Notion"
       existing_intro: "Linked Notion pages:"
-      sync_button: "Sync to Notion"
+      sync_button: "Sync all to Notion"
       workspace: "Your Notion workspace is connected. Choose how to export your creative."
       export_option: "Export option:"
       export_new_page: "Create new page"

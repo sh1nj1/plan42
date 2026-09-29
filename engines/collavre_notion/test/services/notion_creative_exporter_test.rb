@@ -83,6 +83,31 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "oversized HTML and markdown cells continue on aligned API sized rows" do
+    value = "가" * 200_000 + "끝"
+    [
+      "<table><tr><td>#{value}</td><td>short</td></tr><tr><td>next</td></tr></table>",
+      "| #{value} | short |\n| --- | --- |\n| next | |"
+    ].each do |html|
+      @creative.stub(:effective_description, html) do
+        rows = export.flat_map { |block| block[:table][:children] }.map { |row| row[:table_row][:cells] }
+        assert_equal 3, rows.size
+        assert_equal value, rows.first(2).flat_map(&:first).map { |chunk| chunk[:text][:content] }.join
+        assert_equal "short", rows.first.last.first[:text][:content]
+        assert_equal [], rows.second.last
+        assert_equal "next", rows.last.first.first[:text][:content]
+        assert rows.all? { |row| row.size == 2 && row.all? { |cell| cell.size <= 100 } }
+        assert rows.flatten.all? { |chunk| chunk[:text][:content].length <= 2000 }
+      end
+    end
+  end
+
+  test "cell at rich text limit does not add a continuation row" do
+    @creative.stub(:effective_description, "<table><tr><td>#{'x' * 200_000}</td></tr></table>") do
+      assert_equal 1, export.first[:table][:children].size
+    end
+  end
+
   test "image placeholders use the locale" do
     @creative.stub(:effective_description, '<img src="data:image/png;base64,abc" alt="">') do
       I18n.with_locale(:ko) { assert_equal "📷 이미지", text(export.last) }

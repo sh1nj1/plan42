@@ -43,7 +43,7 @@ module CollavreNotion
         table_html = table_match[1]
         table_data = parse_html_table(table_html)
         if table_data.any?
-          blocks.concat(table_data.each_slice(100).map { |rows| create_table_block(rows) })
+          blocks.concat(table_data.flat_map { |row| split_table_row(row) }.each_slice(100).map { |rows| create_table_block(rows) })
         end
       else
         # Try markdown table format
@@ -51,7 +51,7 @@ module CollavreNotion
         if markdown_table
           table_data = parse_markdown_table(markdown_table)
           if table_data.any?
-            blocks.concat(table_data.each_slice(100).map { |rows| create_table_block(rows) })
+            blocks.concat(table_data.flat_map { |row| split_table_row(row) }.each_slice(100).map { |rows| create_table_block(rows) })
           end
         end
       end
@@ -167,6 +167,14 @@ module CollavreNotion
           end
         }
       }
+    end
+
+    # Continue oversized cells on subsequent rows without losing column alignment.
+    def split_table_row(row)
+      count = [ (row.map(&:length).max.to_f / 100).ceil, 1 ].max
+      Array.new(count) do |index|
+        row.map { |cell| cell.slice(index * 100, 100) || [] }
+      end
     end
 
     def create_table_cell_content(text)
