@@ -38,10 +38,18 @@ module Collavre
       Creative.where(user: user).where.not(id: Creative.inboxes.select(:id))
     end
 
-    # The creative the user touched last is where the next step happens.
+    # The creative the user touched last is where the next step happens. A
+    # collaborator who only works in someone else's tree owns no root, so fall
+    # back to the last creative they visited and may comment on.
     def latest_creative_path(routes, user, **options)
-      creative = own_creatives(user).where(parent_id: nil, origin_id: nil).order(id: :desc).first
+      creative = own_creatives(user).where(parent_id: nil, origin_id: nil).order(id: :desc).first ||
+                 commentable_last_visit(user)
       creative ? routes.creative_path(creative, **options) : routes.creatives_path
+    end
+
+    def commentable_last_visit(user)
+      creative = user.last_visited_creative
+      creative if creative&.has_permission?(user, :feedback)
     end
 
     # Use the same mention resolver as live completion, including shared trees.

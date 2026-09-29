@@ -128,5 +128,27 @@ module Collavre
       Creative.create!(user: @user, parent: root, description: "Step")
       assert_equal routes.creative_path(root), OnboardingNotices.latest_creative_path(routes, @user)
     end
+
+    test "a collaborator without their own tree is sent to the shared creative they visited last" do
+      routes = Collavre::Engine.routes.url_helpers
+      mission = NoticeRegistry.find(:onboarding_call_agent)
+      shared = Creative.create!(user: create_notice_user("Owner"), description: "Team plan")
+      CreativeShare.create!(creative: shared, user: @user, permission: :feedback)
+      @user.update!(last_visited_creative: shared)
+
+      assert_equal routes.creative_path(shared, open_comments: true), mission.cta_path(routes, @user)
+
+      own = Creative.create!(user: @user, description: "Mine")
+      assert_equal routes.creative_path(own, open_comments: true), mission.cta_path(routes, @user)
+    end
+
+    test "a last visit the user cannot comment on is not a destination" do
+      routes = Collavre::Engine.routes.url_helpers
+      shared = Creative.create!(user: create_notice_user("Owner"), description: "Read only")
+      CreativeShare.create!(creative: shared, user: @user, permission: :read)
+      @user.update!(last_visited_creative: shared)
+
+      assert_equal routes.creatives_path, OnboardingNotices.latest_creative_path(routes, @user)
+    end
   end
 end
