@@ -19,6 +19,45 @@ class Collavre::KollavyAccessScopeTest < ActiveSupport::TestCase
 
   teardown { Collavre::Current.reset }
 
+  test "recursive rendering loads only candidate origin rows rather than the full tree per node" do
+    parent = @alice_inbox
+    12.times do |i|
+      parent = Collavre::Creative.create!(user: @alice, parent: parent, description: "Node #{i}")
+    end
+    origin_rows = 0
+    observer = lambda do |event|
+      payload = event.payload
+      if payload[:sql].match?(/SELECT .*"id", .*"origin_id" FROM .*creatives/)
+        origin_rows += payload.fetch(:row_count)
+      end
+    end
+    Collavre::Creative.uncached do
+      ActiveSupport::Notifications.subscribed(observer, "sql.active_record") do
+        result = @retrieval.call(id: @alice_inbox.id, level: 20, format: "markdown").to_s
+        assert_includes result, "Node 11"
+        refute_includes result, "Bob secret"
+      end
+    end
+    assert_operator origin_rows, :>, 0
+    assert_operator origin_rows, :<=, 14 * 8, "recursive scope checks must not repeatedly load all 14 tree rows"
+  end
+
+  test "scope observes moves new children and changed origins within the same turn" do
+    scope = Collavre::Kollavy::AccessScope
+    assert_equal [ @alice_child.id ], scope.filter([ @alice_child.id ])
+    @alice_child.update!(parent: @bob_inbox)
+    assert_empty scope.filter([ @alice_child.id ])
+    @alice_child.update!(parent: @alice_inbox)
+    assert_equal [ @alice_child.id ], scope.filter([ @alice_child.id ])
+    child = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, description: "New child")
+    link = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: child)
+    assert_equal [ link.id ], scope.filter([ link.id ])
+    Collavre::Creative.where(id: link.id).update_all(origin_id: @bob_child.id)
+    assert_empty scope.filter([ link.id ])
+    child.destroy!
+    assert_empty scope.filter([ child.id ])
+  end
+
   test "human approval cannot lend owner grants or escape the Kollavy conversation" do
     outside = Collavre::Creative.create!(user: @alice, description: "Outside unchanged")
     Collavre::CreativeShare.create!(creative: outside, user: @agent, permission: :write)

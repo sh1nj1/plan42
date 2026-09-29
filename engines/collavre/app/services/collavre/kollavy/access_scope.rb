@@ -18,10 +18,24 @@ module Collavre
         return [] unless root
 
         tree = CreativeHierarchy.where(ancestor_id: root.id).select(:descendant_id)
-        origins = Creative.where(id: tree).pluck(:id, :origin_id).to_h
         candidates = Creative.where(id: ids).where(id: tree).pluck(:id)
+        origins = origin_chains(candidates, tree)
         candidates.select { |id| contained_chain?(id, origins) }
       end
+
+      # Read only candidates and their origin hops, never the whole subtree.
+      # Re-query on each check so moves and draft rollbacks cannot leave stale grants.
+      def self.origin_chains(ids, tree)
+        origins = {}
+        pending = ids
+        until pending.empty?
+          rows = Creative.where(id: pending).where(id: tree).pluck(:id, :origin_id)
+          origins.merge!(rows.to_h)
+          pending = rows.filter_map(&:last).uniq - origins.keys
+        end
+        origins
+      end
+      private_class_method :origin_chains
 
       # Reject missing targets, cycles, and any hop outside the conversation.
       def self.contained_chain?(id, origins)
