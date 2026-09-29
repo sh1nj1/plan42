@@ -6,7 +6,7 @@ import csrfFetch from '../../lib/api/csrf_fetch'
 import { alertDialog } from '../../lib/utils/dialog'
 import PopupToggleGuard from '../../lib/popup_toggle_guard'
 import { elementAnchor } from '../../lib/common_popup'
-import { createUserMenu, healthStateFor, healthStateForUserId } from '../../comments/user_menu'
+import { createUserMenu, healthStateFor, healthStateForUserId, userMenuLabels } from '../../comments/user_menu'
 
 const TYPING_TIMEOUT = 3000
 const AGENT_TASK_POLL_INTERVAL = 15000 // Poll active task statuses every 15s
@@ -611,16 +611,7 @@ export default class extends Controller {
   }
 
   get participantUserMenuLabels() {
-    return {
-      open: this.element.dataset.userMenuOpenText || 'Open %{name}\'s profile menu',
-      viewProfile: this.element.dataset.userMenuViewProfileText || 'View profile',
-      mention: this.element.dataset.userMenuMentionText || 'Mention',
-      dragGuide: this.element.dataset.userMenuAgentDragGuideText || '',
-      online: this.element.dataset.participantOnlineText || 'Online',
-      offline: this.element.dataset.participantOfflineText || 'Offline',
-      unknown: this.element.dataset.participantHealthUnknownText || 'Health status unavailable',
-      check_error: this.element.dataset.participantHealthCheckErrorText || 'Health check error'
-    }
+    return userMenuLabels(this.element)
   }
 
   // The add and list buttons are pinned outside the horizontally scrolling avatar

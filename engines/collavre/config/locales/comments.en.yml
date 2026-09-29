@@ -197,6 +197,8 @@ en:
         open: "Open %{name}'s profile menu"
         view_profile: View profile
         mention: Mention
+        set_primary_agent: Set as primary agent for current topic
+        clear_primary_agent: Clear primary agent for current topic
         agent_drag_guide: Drag this avatar to a topic or the add-topic button to make this agent the primary AI agent.
       fullscreen: Full screen
       exit_fullscreen: Exit full screen
