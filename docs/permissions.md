@@ -353,3 +353,9 @@ tokens use the workspace agent's allowlist even when the token belongs to a
 human. Ordinary human MCP access remains governed by existing permissions.
 Creative permissions and tool approval requirements still apply independently.
 This controls Collavre tool execution, not a remote CLI's native shell tools.
+
+MCP `tools/list` and `meta_tool` discovery (`list`, `list_summary`, `search`,
+and `get`) expose only tools in the current agent's persisted allowlist,
+intersected with the existing tool/creative access restrictions. A meta-only
+grant exposes only `meta_tool`; it does not expose its unselected targets.
+Human configuration screens still offer tools the owner can grant.

@@ -78,6 +78,39 @@ class AgentToolPermissionTest < ActiveSupport::TestCase
     end
   end
 
+  test "discovery lists and details expose only selected tools and honor revocation" do
+    Collavre::Current.set(user: @agent) do
+      %w[list list_summary search].each do |action|
+        result = ::Tools::MetaToolService.new.call(action: action)
+        assert_equal %w[cron_list meta_tool], result.fetch(:tools).map { |tool| tool[:name] }.sort
+      end
+      result = ::Tools::MetaToolService.new.call(action: "search", query: "cron_cancel")
+      assert_empty result.fetch(:tools)
+      result = ::Tools::MetaToolService.new.call(action: "get", tool_name: "cron_list")
+      assert_equal "cron_list", result.dig(:tool, :name)
+      result = ::Tools::MetaToolService.new.call(action: "get", tool_name: "cron_cancel")
+      assert result[:error]
+      refute result[:tool]
+
+      Collavre::User.cache do
+        Collavre::User.find(@agent.id).update!(tools: [ "meta_tool" ])
+        result = ::Tools::MetaToolService.new.call(action: "list")
+        assert_equal [ "meta_tool" ], result.fetch(:tools).map { |tool| tool[:name] }
+      end
+      @agent.update!(tools: [])
+      assert_empty ::Tools::MetaToolService.new.call(action: "list")[:tools]
+    end
+  end
+
+  test "discovery filters string keys and tool classes using the active task agent" do
+    tools = [ { "name" => "cron_list" }, { name: "cron_cancel" }, Mcp::MetaTool ]
+    task = Struct.new(:agent).new(@agent)
+    Collavre::Current.set(user: users(:one), agent_turn: { task: task }) do
+      assert_equal [ tools.first, tools.last ], Collavre::McpService.filter_tools(tools, users(:one))
+    end
+    assert_equal tools, Collavre::McpService.filter_tools(tools, users(:one))
+  end
+
   test "RubyLLM execution boundary rejects revoked direct and nested calls before approval" do
     client = Collavre::AiClient.new(vendor: "openai", model: "test", system_prompt: nil, context: { user: @agent })
     client.define_singleton_method(:check_tool_approval!) { |_call| raise "Approval must not run" }

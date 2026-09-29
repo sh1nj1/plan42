@@ -74,13 +74,9 @@ module Collavre
 
       # Identify dynamic tools (user-defined) vs system tools.
       # Tools can be objects (FastMcp::Tool) or Hashes (from MetaToolService)
-      registered_names = tools.map do |tool|
-        if tool.respond_to?(:tool_name)
-          tool.tool_name
-        elsif tool.is_a?(Hash)
-          tool[:name] || tool["name"]
-        end
-      end
+      registered_names = tools.map { |tool| tool_name(tool) }
+
+      permitted_names = AgentToolPermission.filter_tools(registered_names) { |name| name }.to_set
 
       # Check strict loading? No, simple where is fine.
       dynamic_tools = McpTool.where(name: registered_names - McpToolRegistry.system_names.to_a).includes(:creative)
@@ -91,13 +87,9 @@ module Collavre
       accessible_tool_names = accessible_names(dynamic_tools, user)
 
       tools.select do |tool|
-        name = if tool.respond_to?(:tool_name)
-                 tool.tool_name
-        elsif tool.is_a?(Hash)
-                 tool[:name] || tool["name"]
-        else
-                 nil
-        end
+        name = tool_name(tool)
+        next false unless permitted_names.include?(name)
+
         if dynamic_tool_names.include?(name)
           # It is a dynamic tool; user must have write permission on its creative.
           accessible_tool_names.include?(name)
@@ -108,6 +100,15 @@ module Collavre
         end
       end
     end
+
+    def self.tool_name(tool)
+      if tool.respond_to?(:tool_name)
+        tool.tool_name
+      elsif tool.is_a?(Hash)
+        tool[:name] || tool["name"]
+      end
+    end
+    private_class_method :tool_name
 
     def self.accessible_names(dynamic_tools, user)
       return Set.new unless user

@@ -12,7 +12,7 @@ module Collavre
     end
     def call(action:, tool_name: nil, query: nil, arguments: nil)
       action = "run" if action == "call"
-      if action == "run" && !Collavre::AgentToolPermission.allowed?(tool_name)
+      if %w[get run].include?(action) && !Collavre::AgentToolPermission.allowed?(tool_name)
         return { error: I18n.t("collavre.mcp_tools.agent_tool_denied", tool_name: tool_name) }
       end
       allowed = Collavre::McpToolRegistrar.synchronize do

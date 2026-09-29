@@ -18,6 +18,14 @@ module Collavre
       Array(selected).include?(name)
     end
 
+    # Snapshot the current grants once per discovery response, not once per tool.
+    def self.filter_tools(tools, agent: current_agent)
+      return tools unless agent&.ai_user?
+
+      selected = agent.class.uncached { agent.class.where(id: agent.id).pick(:tools) }
+      tools.select { |tool| Array(selected).include?(yield(tool)) }
+    end
+
     def self.authorize_call!(name, arguments = nil, agent: current_agent)
       loop do
         unless allowed?(name, agent: agent)
