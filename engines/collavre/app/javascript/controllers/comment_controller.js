@@ -314,10 +314,11 @@ export default class extends Controller {
       onSelect: () => {
         const commentId = this.element.dataset.commentId
         const formController = this.findFormController()
+        // Clear the message selection before focus so WebKit keeps the typing caret.
+        window.getSelection().removeAllRanges()
         if (formController) {
           formController.appendReviewQuote(commentId, selectedText)
         }
-        window.getSelection().removeAllRanges()
         this.hideReviewPopup()
       },
       renderItem: () => reviewLabel,
@@ -360,6 +361,8 @@ export default class extends Controller {
     }
     const commentId = this.element.dataset.commentId
     const formController = this.findFormController()
+    // Clearing ranges after focus removes the textarea's typing caret in WebKit.
+    window.getSelection().removeAllRanges()
     if (formController) {
       formController.appendReviewQuote(commentId, selectedText)
       const textarea = formController.textareaTarget
@@ -369,7 +372,6 @@ export default class extends Controller {
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length
       }
     }
-    window.getSelection().removeAllRanges()
   }
 
   _showReviewHint(button) {
