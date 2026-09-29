@@ -29,6 +29,21 @@ module Collavre
       assert_equal "text/plain", response.media_type
     end
 
+    test "serves HTML attachments as binary downloads without executing HTML" do
+      content = "<!doctype html><h1>Report</h1><script>alert(1)</script>"
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new(content), filename: "report.html", content_type: "text/html"
+      )
+
+      get "/public-assets/blobs/#{blob.signed_id}/report.html"
+
+      assert_response :success
+      assert_equal content, response.body
+      assert_equal "application/octet-stream", response.media_type
+      assert_match(/\Aattachment;/, response.headers["Content-Disposition"])
+      assert_includes response.headers["Content-Disposition"], 'filename="report.html"'
+    end
+
     test "sets long-TTL public Cache-Control" do
       get "/public-assets/blobs/#{@blob.signed_id}/hello.txt"
       cache_control = response.headers["Cache-Control"].to_s
