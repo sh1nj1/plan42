@@ -140,6 +140,14 @@ function registerCreativeControllers(application) {
   application.register("creatives--workflow-rule", CreativesWorkflowRuleController)
 }
 
+// Agent new/edit forms and gateway settings.
+function registerAgentSettingsControllers(application) {
+  application.register("gateway-check", GatewayCheckController)
+  application.register("agent-connection", AgentConnectionController)
+  application.register("agent-vendor", AgentVendorController)
+  application.register("tool-category", ToolCategoryController)
+}
+
 // Registration function for use with a Stimulus application
 export function registerControllers(application) {
   application.register("creative-move", CreativeMoveController)
@@ -160,7 +168,6 @@ export function registerControllers(application) {
   application.register("comments--popup", CommentsPopupController)
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)
-  application.register("tool-category", ToolCategoryController)
   application.register("link-creative", LinkCreativeController)
   application.register("inline-creative-picker", InlineCreativePickerController)
   application.register("topic-search", TopicSearchController)
@@ -183,9 +190,7 @@ export function registerControllers(application) {
   registerAppChromeControllers(application)
   application.register("last-visited-creative", LastVisitedCreativeController)
   application.register("workspace-tree", WorkspaceTreeController)
-  application.register("gateway-check", GatewayCheckController)
-  application.register("agent-connection", AgentConnectionController)
-  application.register("agent-vendor", AgentVendorController)
+  registerAgentSettingsControllers(application)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
   application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)
