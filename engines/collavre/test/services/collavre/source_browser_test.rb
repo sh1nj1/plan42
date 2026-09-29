@@ -100,6 +100,36 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
     end
   end
 
+  test "clamps reversed end lines before slicing" do
+    write("app/long.rb", "x\n" * 1_000)
+    [ 0, -1, -500, 2 ].each do |last|
+      result = @browser.read("app/long.rb", start_line: 3, end_line: last)
+      assert_equal [ 3, 3 ], [ result[:start_line], result[:end_line] ]
+      assert_equal "3: x\n", result[:content]
+    end
+    assert_equal "1: x\n", @browser.read("app/long.rb", end_line: 0)[:content]
+  end
+
+  test "caps explicit oversized ranges after normalizing the start line" do
+    write("app/long.rb", "x\n" * 1_000)
+    [ -10, 0, 1, 20 ].each do |first|
+      result = @browser.read("app/long.rb", start_line: first, end_line: 10_000)
+      normalized = [ first, 1 ].max
+      assert_equal normalized, result[:start_line]
+      assert_equal normalized + Collavre::SourceBrowser::MAX_READ_LINES - 1, result[:end_line]
+      assert_equal Collavre::SourceBrowser::MAX_READ_LINES, result[:content].lines.size
+    end
+  end
+
+  test "empty files and ranges beyond EOF return no content" do
+    write("app/empty.rb", "")
+    assert_empty @browser.read("app/empty.rb", end_line: -1)[:content]
+    assert_empty @browser.read("app/models/topic.rb", start_line: 4, end_line: 0)[:content]
+    result = @browser.read("app/models/topic.rb", start_line: 3, end_line: 100)
+    assert_equal 3, result[:end_line]
+    assert_equal "3: end\n", result[:content]
+  end
+
   test "refuses secrets, traversal, symlinks out of the allowlist and missing files alike" do
     [ "config/master.key", "config/deploy.yml", "app/.env.local", "app/tmp/cache.rb", "storage/development.sqlite3",
       "app/../config/master.key", "../etc/passwd", "app/key_link.rb", "app/missing.rb", "engines/core/db/seeds.rb" ].each do |path|

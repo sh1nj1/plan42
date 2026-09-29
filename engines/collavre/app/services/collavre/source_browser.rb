@@ -74,7 +74,7 @@ module Collavre
       raise AccessDenied, "Binary file: #{path}" unless lines
 
       first = [ start_line.to_i, 1 ].max
-      last = [ (end_line || (first + MAX_READ_LINES - 1)).to_i, first + MAX_READ_LINES - 1, lines.size ].min
+      last = [ (end_line || (first + MAX_READ_LINES - 1)).to_i.clamp(first, first + MAX_READ_LINES - 1), lines.size ].min
       {
         path: relative(file),
         start_line: first,
