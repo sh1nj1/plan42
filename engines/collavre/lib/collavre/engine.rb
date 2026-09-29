@@ -185,13 +185,6 @@ module Collavre
     # the same way they register integrations.
     initializer "collavre.feature_cards", after: "collavre.navigation_reset" do
       Rails.application.config.to_prepare do
-        Collavre::FeatureCardRegistry.register(:kollavy, {
-          icon: "🥬",
-          title_key: "collavre.comments.empty_state.cards.kollavy.title",
-          description_key: "collavre.comments.empty_state.cards.kollavy.description",
-          guide: true
-        })
-
         Collavre::FeatureCardRegistry.register(:mention_agent, {
           icon: "🤖",
           title_key: "collavre.comments.empty_state.cards.mention_agent.title",
