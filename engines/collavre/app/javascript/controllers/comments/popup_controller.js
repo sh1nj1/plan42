@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
+import { scheduleOpenFromUrl, clearPendingOpenFromUrl } from './popup_url_open'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
@@ -157,7 +158,8 @@ export default class extends Controller {
     } else if (this.isDocked()) {
       this.enterDockedMode()
     } else {
-      this.openFromUrl()
+      // Wait for sibling controllers before opening a server-rendered inbox button.
+      scheduleOpenFromUrl(this)
     }
   }
 
@@ -999,14 +1001,7 @@ export default class extends Controller {
   }
 
   clearPendingOpenFromUrl() {
-    if (this.openFromUrlObserver) {
-      this.openFromUrlObserver.disconnect()
-      this.openFromUrlObserver = null
-    }
-    if (this.openFromUrlTimeout) {
-      window.clearTimeout(this.openFromUrlTimeout)
-      this.openFromUrlTimeout = null
-    }
+    clearPendingOpenFromUrl(this)
   }
 
   _markChatActiveRow(creativeId) {
