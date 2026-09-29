@@ -77,9 +77,8 @@ module CollavreGithub
           raw_md = creative.data.dig("source", "markdown")
           next if raw_md.blank?
 
-          processed, blobs = processor.process(raw_md, creative.data.dig("source", "path"))
-          comment = create_content_comment(creative, processed)
-          attach_blobs(comment, blobs) if blobs.any?
+          processed, _blobs = processor.process(raw_md, creative.data.dig("source", "path"))
+          created << ContentCreative.upsert!(creative, processed, user: @user)
         end
 
         resequence_directories_first(created)
@@ -124,20 +123,6 @@ module CollavreGithub
           path = c.data&.dig("source", "path")
           map[path] = c if path.present?
         end
-      end
-
-      def create_content_comment(creative, markdown_content)
-        topic = creative.content_topic(fallback_user: @user)
-        creative.comments.create!(
-          content: markdown_content,
-          topic: topic,
-          user: @user,
-          skip_dispatch: true
-        )
-      end
-
-      def attach_blobs(comment, blobs)
-        blobs.each { |blob| comment.images.attach(blob) }
       end
 
       def resequence_directories_first(creatives)

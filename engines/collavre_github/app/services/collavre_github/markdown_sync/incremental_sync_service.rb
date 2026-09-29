@@ -76,8 +76,9 @@ module CollavreGithub
           creative.skip_read_only_source_validation = true
           creative.update!(data: creative.data.merge("source" => source))
 
-          processed, blobs = processor.process(content, path)
-          update_content_comment(creative, processed, blobs)
+          processed, _blobs = processor.process(content, path)
+          content_creative = ContentCreative.upsert!(creative, processed, user: @user)
+          created << content_creative if content_creative
         end
 
         added_paths.each do |path|
@@ -111,10 +112,9 @@ module CollavreGithub
           creative.save!
           @synced_creatives[path] = creative
 
-          processed, blobs = processor.process(content, path)
-          comment = create_content_comment(creative, processed)
-          attach_blobs(comment, blobs) if blobs.any?
+          processed, _blobs = processor.process(content, path)
           created << creative
+          created << ContentCreative.upsert!(creative, processed, user: @user)
         end
 
         resequence_affected_parents(created)
@@ -143,34 +143,9 @@ module CollavreGithub
           .where(archived_at: nil)
           .where("CAST(data -> 'source' ->> 'repository_link_id' AS INTEGER) = ?", @link.id)
 
-        scope.each_with_object({}) { |c, h| h[c.data.dig("source", "path")] = c }
-      end
-
-      def create_content_comment(creative, markdown_content)
-        topic = creative.content_topic(fallback_user: @user)
-        creative.comments.create!(
-          content: markdown_content,
-          topic: topic,
-          user: @user,
-          skip_dispatch: true
-        )
-      end
-
-      def update_content_comment(creative, markdown_content, blobs = [])
-        topic = creative.content_topic(fallback_user: @user)
-        comment = creative.comments.where(topic: topic).order(:created_at).first
-        if comment
-          comment.images.purge if comment.images.attached?
-          comment.update!(content: markdown_content)
-          attach_blobs(comment, blobs) if blobs.any?
-        else
-          comment = create_content_comment(creative, markdown_content)
-          attach_blobs(comment, blobs) if blobs.any?
+        scope.each_with_object({}) do |c, h|
+          h[c.data.dig("source", "path")] = c unless ContentCreative.content?(c)
         end
-      end
-
-      def attach_blobs(comment, blobs)
-        blobs.each { |blob| comment.images.attach(blob) }
       end
 
       def resequence_affected_parents(new_creatives)
