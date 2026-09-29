@@ -39,6 +39,42 @@ module Collavre
       end
     end
 
+    test "inherited ownership does not credit the owner for a collaborator's child" do
+      create_shared_child
+      UserNotice.where(user: @owner).delete_all
+
+      Notices::Feed.new(@owner).items
+
+      assert UserNotice.find_by!(user: @owner, notice_key: :onboarding_first_creative).completed?
+      assert UserNotice.find_by!(user: @owner, notice_key: :onboarding_sub_creative).pending?
+    end
+
+    test "owned creations with actor history cannot use the legacy fallback" do
+      child = create_shared_child
+      child.update_columns(user_id: @user.id)
+      change_set = child.creative_changes.find_by!(operation: "create").change_set
+
+      change_set.update!(user_id: @owner.id)
+      refute done?(:onboarding_first_creative)
+      refute done?(:onboarding_sub_creative)
+
+      change_set.update!(user_id: @user.id, actor_kind: "system")
+      refute done?(:onboarding_first_creative)
+      refute done?(:onboarding_sub_creative)
+
+      change_set.update!(actor_kind: "human", status: "reverted")
+      refute done?(:onboarding_first_creative)
+      refute done?(:onboarding_sub_creative)
+    end
+
+    test "owned children without creation history retain legacy completion" do
+      root = Creative.create!(user: @user, description: "Legacy root")
+      Creative.create!(parent: root, description: "Legacy child")
+
+      assert done?(:onboarding_first_creative)
+      assert done?(:onboarding_sub_creative)
+    end
+
     test "another actor's creation and the user's edits do not count" do
       child = create_shared_child(actor: @owner)
       Creatives::History.track(actor: @user, origin: :editor) { child.update!(description: "Edited") }

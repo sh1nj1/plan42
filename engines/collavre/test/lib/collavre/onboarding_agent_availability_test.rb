@@ -14,6 +14,31 @@ module Collavre
 
     teardown { Current.reset }
 
+    test "a searchable agent needs an active commentable destination" do
+      users(:ai_bot).update!(searchable: true)
+      refute @mission.visible_to?(@user)
+
+      root = Creative.create!(user: @user, description: "Archived", archived_at: Time.current)
+      Creative.create!(parent: root, description: "Archived child", archived_at: Time.current)
+      @user.update!(last_visited_creative: root)
+      refute @mission.visible_to?(@user)
+      assert_empty Notices::Feed.new(@user).items
+
+      root.update!(archived_at: nil)
+      assert @mission.visible_to?(@user)
+    end
+
+    test "a link to an archived original is not a commentable destination" do
+      users(:ai_bot).update!(searchable: true)
+      original = Creative.create!(user: create_notice_user, description: "Original", archived_at: Time.current)
+      CreativeShare.create!(creative: original, user: @user, permission: :feedback)
+      link = Creative.create!(user: @user, origin: original)
+      @user.update!(last_visited_creative: link)
+
+      refute @mission.visible_to?(@user)
+      assert_nil OnboardingNotices.latest_creative(@user)
+    end
+
     test "no agents means two steps and no pending agent mission" do
       User.ai_agents.update_all(llm_vendor: nil)
       item = Notices::Feed.new(@user).items.first

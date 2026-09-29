@@ -43,15 +43,18 @@ module Collavre
     # Shared children inherit their parent's owner. Applied history retains the
     # actual creator; ownership remains a fallback for records predating history.
     def creative_created?(user, child: false)
-      owned = own_creatives(user)
+      history = CreativeChange.where(operation: "create").where("creative_changes.creative_id = creatives.id")
+      owned = own_creatives(user).where(history.arel.exists.not)
       owned = owned.where.not(parent_id: nil) if child
-      return true if owned.exists?
+      creation_history(user, child: child).exists? || owned.exists?
+    end
 
+    def creation_history(user, child:)
       changes = CreativeChange.joins(:change_set).where(operation: "create")
         .where(creative_change_sets: { user_id: user.id, status: "applied", actor_kind: "human" })
         .where(creative_id: Creative.where.not(id: Creative.inboxes.select(:id)).select(:id))
       changes = changes.where("creative_changes.after ->> 'parent_id' IS NOT NULL") if child
-      changes.exists?
+      changes
     end
 
     # The creative the user touched last is where the next step happens. A
@@ -69,12 +72,15 @@ module Collavre
     # Match the composer destination and its mention resolver, without depending
     # on a vendor engine. Availability can change after onboarding has started.
     def agent_available?(user)
-      !user.ai_user? && Collavre.user_class.mentionable_for(latest_creative(user)).ai_agents.exists?
+      return false if user.ai_user?
+
+      creative = latest_creative(user)
+      creative.present? && Collavre.user_class.mentionable_for(creative).ai_agents.exists?
     end
 
     def commentable_last_visit(user)
       creative = user.last_visited_creative
-      return if creative&.archived?
+      return if creative&.archived? || creative&.effective_origin&.archived?
 
       creative if creative&.has_permission?(user, :feedback)
     end
