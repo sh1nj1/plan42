@@ -4,12 +4,11 @@ module Collavre
 
     def search
       term = params[:q].to_s.strip.downcase
+      creative = Collavre::Creative.find_by(id: params[:creative_id])
 
-      if term.blank? && params[:scope] != "contacts"
+      if empty_global_search?(term, creative)
         return render json: []
       end
-
-      creative = Collavre::Creative.find_by(id: params[:creative_id])
 
       if creative.present? && !creative.has_permission?(Current.user, :read)
         head :forbidden and return
@@ -29,16 +28,23 @@ module Collavre
         users = users.where("LOWER(users.email) LIKE :term OR LOWER(users.name) LIKE :term", term: "#{term}%")
       end
 
-      limit = params[:limit].to_i
-      limit = 20 if limit <= 0
-      limit = 50 if limit > 50
-
-      user_ids = users.select(:id).distinct.limit(limit).pluck(:id)
-      users = Collavre::User.where(id: user_ids)
+      user_ids = users.distinct.order(:name, :id).limit(search_limit(creative, term)).pluck(:id, :name).map(&:first)
+      users = Collavre::User.where(id: user_ids).includes(avatar_attachment: :blob).order(:name, :id)
       render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
     end
 
     private
+
+    def empty_global_search?(term, creative)
+      term.blank? && params[:scope] != "contacts" && creative.nil?
+    end
+
+    def search_limit(creative, term)
+      return 100 if creative.present? && term.blank? && params[:scope] != "contacts"
+
+      limit = params[:limit].to_i
+      limit <= 0 ? 20 : [ limit, 50 ].min
+    end
 
     def prepare_contacts
       per_page = 20

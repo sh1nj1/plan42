@@ -321,6 +321,76 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute_includes emails, impostor.email
   end
 
+  test "empty mention search includes eligible users beyond the name search limit" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Mention list")
+    permitted = 51.times.map do |index|
+      user = User.create!(email: "mention-#{index}@example.com", name: "Mention #{index}",
+                          password: "password", searchable: false)
+      CreativeShare.create!(creative: creative, user: user, permission: :feedback)
+      user.id
+    end
+    hidden = User.create!(email: "mention-hidden@example.com", name: "Hidden", password: "password", searchable: false)
+    CreativeShare.create!(creative: creative, user: hidden, permission: :read)
+
+    get collavre.search_users_path, params: { q: "", creative_id: creative.id }
+    assert_response :success
+    ids = response.parsed_body.pluck("id")
+    assert_empty permitted - ids
+    assert_includes ids, @regular_user.id
+    refute_includes ids, hidden.id
+
+    get collavre.search_users_path, params: { q: "Mention", creative_id: creative.id, limit: 10 }
+    assert_equal 10, response.parsed_body.length
+  end
+
+  test "empty mention search caps results at 100 with deterministic ordering and preloaded avatars" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Bounded mention list")
+    101.times do |index|
+      User.create!(email: "bounded-#{index}@example.com", name: "Bounded #{index.to_s.rjust(3, '0')}",
+                   password: "password", searchable: true)
+    end
+    avatar_queries = []
+    subscriber = lambda do |*, payload|
+      avatar_queries << payload[:sql] if payload[:sql].match?(/SELECT.*active_storage_attachments/i)
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get collavre.search_users_path, params: { q: "", creative_id: creative.id, limit: 1000 }
+    end
+
+    assert_response :success
+    assert_equal 100, response.parsed_body.length
+    expected_ids = User.mentionable_for(creative).order(:name, :id).limit(100).pluck(:id)
+    assert_equal expected_ids, response.parsed_body.pluck("id")
+    assert_equal 1, avatar_queries.length, "Avatar attachments should be loaded in one query"
+  end
+
+  test "empty mention search requires access to the creative" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @admin, description: "Private mention list")
+    get collavre.search_users_path, params: { q: "", creative_id: creative.id }
+    assert_response :forbidden
+  end
+
+  test "empty search without creative context remains empty" do
+    sign_in_as(@regular_user, password: "password")
+    get collavre.search_users_path, params: { q: "" }
+    assert_response :success
+    assert_empty response.parsed_body
+  end
+
+  test "empty mention search with a nonexistent creative remains empty" do
+    sign_in_as(@regular_user, password: "password")
+    @regular_user.update!(searchable: true)
+
+    get collavre.search_users_path, params: { q: "  ", creative_id: Creative.maximum(:id).to_i + 1 }
+
+    assert_response :success
+    assert_empty response.parsed_body
+  end
+
   test "mention search falls back to searchable users without creative context" do
     sign_in_as(@regular_user, password: "password")
 

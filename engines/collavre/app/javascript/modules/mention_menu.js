@@ -1,6 +1,18 @@
 import CommonPopup from '../lib/common_popup'
 import { caretAnchor } from '../utils/caret_position'
 
+function renderMention(user) {
+  const item = document.createElement('div')
+  item.className = 'mention-item'
+  const avatar = document.createElement('img')
+  avatar.src = user.avatar_url
+  avatar.width = 20
+  avatar.height = 20
+  avatar.className = 'avatar'
+  item.append(avatar, document.createTextNode(` ${user.name}`))
+  return item.outerHTML
+}
+
 let mentionMenuInitialized = false
 
 if (!mentionMenuInitialized) {
@@ -13,11 +25,11 @@ if (!mentionMenuInitialized) {
     if (!textarea || !menu) return
 
     const list = menu.querySelector('.mention-results')
-    let fetchTimer
+    let fetchTimer, requestId = 0
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
-      renderItem: (user) => `<div class="mention-item"><img src="${user.avatar_url}" width="20" height="20" class="avatar" /> ${user.name}</div>`,
+      renderItem: renderMention,
       onSelect: (user) => {
         insert(user)
         popupMenu.hide()
@@ -49,28 +61,28 @@ if (!mentionMenuInitialized) {
       if (popupMenu.handleKey(event)) return
     })
 
+    function search(q, id) {
+      const creativeId = popup?.dataset.creativeId
+      const url = new URL('/users/search', window.location.origin)
+      url.searchParams.set('q', q)
+      if (creativeId) url.searchParams.set('creative_id', creativeId)
+      fetch(url, { headers: { Accept: 'application/json' } })
+        .then((r) => r.ok ? r.json() : [])
+        .catch(() => [])
+        .then((users) => {
+          if (id === requestId && creativeId === popup?.dataset.creativeId) show(users)
+        })
+    }
+
     textarea.addEventListener('input', function () {
-      const pos = textarea.selectionStart
-      const before = textarea.value.slice(0, pos)
+      clearTimeout(fetchTimer)
+      const id = ++requestId
+      const before = textarea.value.slice(0, textarea.selectionStart)
       const m = before.match(/@([^\s@]*)$/)
-      if (m) {
-        const q = m[1]
-        if (q.length === 0) { hide(); return }
-        clearTimeout(fetchTimer)
-        fetchTimer = setTimeout(function () {
-          const url = new URL('/users/search', window.location.origin)
-          url.searchParams.set('q', q)
-          if (popup && popup.dataset.creativeId) {
-            url.searchParams.set('creative_id', popup.dataset.creativeId)
-          }
-          fetch(url, { headers: { Accept: 'application/json' } })
-            .then(function (r) { return r.ok ? r.json() : [] })
-            .then(show)
-            .catch(function () { })
-        }, 200)
-      } else {
-        hide()
-      }
+      if (!m) return hide()
+      const q = m[1]
+      if (q.length === 0) search(q, id)
+      else fetchTimer = setTimeout(() => search(q, id), 200)
     })
   })
 }
