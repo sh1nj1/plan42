@@ -1,0 +1,13 @@
+en:
+  collavre:
+    tool_categories:
+      creative: Creatives
+      topic: Topics & Messages
+      source: Source Code
+      cron: Scheduled Jobs
+      preview: Preview
+      approval: Approval
+      custom: Custom Tools
+      other: Other
+      select_all_aria: "Select all %{category} tools"
+      parameters: Parameters

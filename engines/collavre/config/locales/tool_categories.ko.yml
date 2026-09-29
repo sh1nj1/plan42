@@ -1,0 +1,13 @@
+ko:
+  collavre:
+    tool_categories:
+      creative: 크리에이티브
+      topic: 토픽 & 메시지
+      source: 소스 코드
+      cron: 예약 작업
+      preview: 프리뷰
+      approval: 승인
+      custom: 사용자 정의 도구
+      other: 기타
+      select_all_aria: "%{category} 도구 모두 선택"
+      parameters: 매개변수

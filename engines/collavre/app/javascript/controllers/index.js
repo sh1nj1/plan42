@@ -28,6 +28,7 @@ import CommentsPlaceholderController from "./comments/placeholder_controller"
 import CommentsPopupController from "./comments/popup_controller"
 import ClickTargetController from "./click_target_controller"
 import TabsController from "./tabs_controller"
+import ToolCategoryController from "./tool_category_controller"
 import LinkCreativeController from "./link_creative_controller"
 import TopicSearchController from "./topic_search_controller"
 import TopicListController from "./topic_list_controller"
@@ -83,6 +84,7 @@ export {
   CommentsPopupController,
   ClickTargetController,
   TabsController,
+  ToolCategoryController,
   LinkCreativeController,
   TopicSearchController,
   TopicListController,
@@ -138,6 +140,14 @@ function registerCreativeControllers(application) {
   application.register("creatives--workflow-rule", CreativesWorkflowRuleController)
 }
 
+// Agent new/edit forms and gateway settings.
+function registerAgentSettingsControllers(application) {
+  application.register("gateway-check", GatewayCheckController)
+  application.register("agent-connection", AgentConnectionController)
+  application.register("agent-vendor", AgentVendorController)
+  application.register("tool-category", ToolCategoryController)
+}
+
 // Registration function for use with a Stimulus application
 export function registerControllers(application) {
   application.register("creative-move", CreativeMoveController)
@@ -180,9 +190,7 @@ export function registerControllers(application) {
   registerAppChromeControllers(application)
   application.register("last-visited-creative", LastVisitedCreativeController)
   application.register("workspace-tree", WorkspaceTreeController)
-  application.register("gateway-check", GatewayCheckController)
-  application.register("agent-connection", AgentConnectionController)
-  application.register("agent-vendor", AgentVendorController)
+  registerAgentSettingsControllers(application)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
   application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)

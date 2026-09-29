@@ -13,6 +13,16 @@ module Collavre
       end.to_set
     end
 
+    # Preserve only assignments hidden by permissions, not stale or inactive tools.
+    def self.permission_hidden_names(names, user)
+      system = names & system_names.to_a
+      restricted = system.reject { |name| user_permitted?(name, user) }
+      dynamic = McpTool.active.where(name: names - system).includes(:creative)
+      restricted + dynamic.filter_map do |tool|
+        tool.name if tool.creative && !tool.creative.has_permission?(user, :write)
+      end
+    end
+
     # A system tool may restrict itself to specific users by defining
     # `self.allowed_user_emails` or a stronger `self.user_permitted?` identity check.
     # Tools without that declaration, and non-system tools, are unrestricted

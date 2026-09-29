@@ -35,6 +35,91 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "label", I18n.t("collavre.users.edit_ai.meta_skills_title")
   end
 
+  { en: "Parameters", ko: "매개변수" }.each do |locale, label|
+    test "tool parameter summaries are localized in #{locale} on new and edit pages" do
+      @admin.update!(locale: locale)
+      tools = [ { name: "test_tool", description: "Test", params: {} } ]
+
+      Collavre::McpService.stub(:available_tools, tools) do
+        [ new_ai_users_url, edit_ai_user_url(@ai_user) ].each do |url|
+          get url
+          assert_response :success
+          assert_select ".tools-selection details summary", text: label, count: 1
+          assert_select "fieldset.tool-category" do
+            buttons = css_select("button[type='button'][aria-expanded='false'][data-action='tool-category#expand']")
+            assert_equal 1, buttons.size
+            assert_equal I18n.t("collavre.tool_categories.custom", locale: locale), buttons.first["aria-label"]
+            assert_select ".tool-category-heading > button:first-child + input.tool-category-toggle + strong",
+                          text: I18n.t("collavre.tool_categories.custom", locale: locale), count: 1
+            assert_select "[id=?][data-tool-category-target='body'][hidden]", buttons.first["aria-controls"]
+          end
+        end
+      end
+    end
+  end
+
+  test "new_ai groups tools into categories with a select-all toggle" do
+    mock_tools = [
+      { name: "topic_list", description: "List topics", parameters: {}, custom: false },
+      { name: "creative_create_service", description: "Create", parameters: {}, custom: false },
+      { name: "creative_update_service", description: "Update", parameters: {}, custom: false },
+      { name: "my_tool", description: "Mine", parameters: {}, custom: true }
+    ]
+    original_method = Collavre::UsersController.instance_method(:load_available_tools)
+    Collavre::UsersController.send(:define_method, :load_available_tools) { mock_tools }
+
+    get new_ai_users_url
+    assert_response :success
+
+    keys = css_select(".tools-selection fieldset.tool-category").map { |node| node["data-tool-category-key"] }
+    assert_equal %w[creative topic custom], keys
+    assert_select "fieldset.tool-category[data-controller='tool-category'][data-tool-category-key='creative']" do
+      assert_select "legend input#tool_category_creative[data-tool-category-target='toggle'][data-action='change->tool-category#toggle']:not([name])"
+      assert_select "legend strong", I18n.t("collavre.tool_categories.creative")
+      assert_select "legend [data-tool-category-target='count']", "0"
+      assert_select "input[name='tools[]'][data-tool-category-target='tool'][data-action='change->tool-category#sync']", count: 2
+    end
+    assert_select "fieldset[data-tool-category-key='custom'] input[name='tools[]'][value='my_tool']"
+  ensure
+    Collavre::UsersController.send(:define_method, :load_available_tools, original_method)
+  end
+
+  test "new_ai files tools that are not system tools under custom" do
+    system_tool = Collavre::McpToolRegistry.system_names.find { |name| name.start_with?("topic_") }
+    tools = [
+      { name: system_tool, description: "System", params: {} },
+      { name: "topic_homemade", description: "Dynamic", params: {} }
+    ]
+
+    Collavre::McpService.stub(:available_tools, tools) do
+      get new_ai_users_url
+    end
+
+    assert_response :success
+    assert_select "fieldset[data-tool-category-key='topic'] input[value=?]", system_tool
+    assert_select "fieldset[data-tool-category-key='custom'] input[value='topic_homemade']"
+  end
+
+  test "edit_ai shows selected tool counts per category" do
+    @ai_user.update!(tools: %w[creative_create_service])
+    mock_tools = [
+      { name: "creative_create_service", description: "Create", parameters: {}, custom: false },
+      { name: "creative_update_service", description: "Update", parameters: {}, custom: false }
+    ]
+    original_method = Collavre::UsersController.instance_method(:load_available_tools)
+    Collavre::UsersController.send(:define_method, :load_available_tools) { mock_tools }
+
+    get edit_ai_user_url(@ai_user)
+    assert_response :success
+    assert_select "fieldset[data-tool-category-key='creative']" do
+      assert_select "[data-tool-category-target='count']", "1"
+      assert_select "input[name='user[tools][]'][value='creative_create_service'][checked]"
+      assert_select "input[name='user[tools][]'][value='creative_update_service']:not([checked])"
+    end
+  ensure
+    Collavre::UsersController.send(:define_method, :load_available_tools, original_method)
+  end
+
   test "should get new_ai page and display available tools" do
     # Stub the controller's load_available_tools method to return mock tools
     mock_tools = [
@@ -624,5 +709,98 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
 
     patch update_ai_user_url(kollavy), params: { user: { name: "Kollavy renamed" } }
     assert_equal %w[topic_list collavre_source_read], kollavy.reload.tools
+  end
+
+  test "update_ai preserves assigned dynamic tools hidden by creative permissions and rejects new assignments" do
+    creative = Collavre::Creative.create!(user: users(:two), description: "Private tools")
+    names = %w[private_assigned_tool private_unassigned_tool]
+    names.each do |name|
+      Collavre::McpTool.create!(creative: creative, name: name, source_code: "class Foo; end", approved_at: Time.current)
+    end
+    @ai_user.update!(tools: [ names.first, "topic_list" ])
+    listed_tools = names.map { |name| { name: name, description: "Private tool", params: {} } }
+    listed_tools << { name: "topic_list", description: "Topics", params: {} }
+
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(listed_tools, user) }) do
+      get edit_ai_user_url(@ai_user)
+      names.each { |name| assert_select "input[name='user[tools][]'][value=?]", name, count: 0 }
+
+      patch update_ai_user_url(@ai_user), params: { user: { name: "Renamed bot", tools: [ "" ] } }
+      assert_response :redirect
+      assert_equal [ names.first ], @ai_user.reload.tools
+      assert_equal "Renamed bot", @ai_user.name
+
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "", names.last, "topic_list" ] } }
+      assert_response :redirect
+      assert_equal [ "topic_list", names.first ], @ai_user.reload.tools
+    end
+  end
+
+  test "update_ai removes deleted inactive and unloadable assignments but keeps permission-hidden tools" do
+    private_creative = Collavre::Creative.create!(user: users(:two), description: "Private tools")
+    writable_creative = Collavre::Creative.create!(user: @admin, description: "Writable tools")
+    deleted = Collavre::McpTool.create!(creative: private_creative, name: "deleted_tool", source_code: "class Foo; end", approved_at: Time.current)
+    deleted.destroy!
+    Collavre::McpTool.create!(creative: private_creative, name: "inactive_tool", source_code: "class Foo; end")
+    Collavre::McpTool.create!(creative: writable_creative, name: "unloadable_tool", source_code: "invalid ruby", approved_at: Time.current)
+    Collavre::McpTool.create!(creative: private_creative, name: "hidden_tool", source_code: "class Foo; end", approved_at: Time.current)
+    assigned = %w[deleted_tool inactive_tool unloadable_tool hidden_tool collavre_source_read topic_list]
+    @ai_user.update!(tools: assigned)
+
+    Collavre::McpService.stub(:available_tools, [ { name: "topic_list", description: "Topics", params: {} } ]) do
+      patch update_ai_user_url(@ai_user), params: { user: { name: "Unchanged tools" } }
+      assert_equal assigned, @ai_user.reload.tools
+
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "" ] + assigned } }
+      assert_response :redirect
+      assert_equal %w[topic_list collavre_source_read hidden_tool].sort, @ai_user.reload.tools.sort
+    end
+  end
+
+  test "update_ai preserves all assignments when tool discovery fails" do
+    assigned = %w[topic_list dynamic_tool collavre_source_read]
+    @ai_user.update!(tools: assigned)
+
+    Collavre::McpService.stub(:available_tools, []) do
+      [ [ "" ], [ "", "topic_list", "unavailable_tool" ] ].each do |submitted|
+        patch update_ai_user_url(@ai_user), params: { user: { name: "Renamed bot", tools: submitted } }
+        assert_response :redirect
+        assert_equal assigned, @ai_user.reload.tools
+        assert_equal "Renamed bot", @ai_user.name
+      end
+    end
+  end
+
+  test "update_ai can select and clear dynamic tools on writable creatives" do
+    creative = Collavre::Creative.create!(user: @admin, description: "Writable tool")
+    name = "writable_dynamic_tool"
+    Collavre::McpTool.create!(creative: creative, name: name, source_code: "class Foo; end", approved_at: Time.current)
+
+    listed_tools = [ { name: name, description: "Tool", params: {} } ]
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(listed_tools, user) }) do
+      get edit_ai_user_url(@ai_user)
+      assert_select "input[name='user[tools][]'][value=?]", name, count: 1
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "", name ] } }
+      assert_response :redirect
+      assert_equal [ name ], @ai_user.reload.tools
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "" ] } }
+      assert_response :redirect
+      assert_empty @ai_user.reload.tools
+    end
+  end
+
+  test "tool selection submits a blank placeholder so clearing every tool saves an empty list" do
+    @ai_user.update!(tools: %w[creative_create_service])
+
+    get edit_ai_user_url(@ai_user)
+    assert_select "input[type='hidden'][name='user[tools][]'][value='']", count: 1
+
+    patch update_ai_user_url(@ai_user), params: { user: { name: @ai_user.name, tools: [ "" ] } }
+    assert_equal [], @ai_user.reload.tools
+  end
+
+  test "create_ai drops the blank tool placeholder" do
+    post create_ai_users_url, params: { ai_id: "blanktools", name: "Blank Tools", system_prompt: "p", llm_vendor: "google", llm_model: "m", tools: [ "", "topic_list" ] }
+    assert_equal %w[topic_list], Collavre::User.find_by!(email: "blanktools@ai.local").tools
   end
 end

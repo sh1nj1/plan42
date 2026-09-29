@@ -93,7 +93,7 @@ module Collavre
         email: "#{params[:ai_id].to_s.strip.downcase}@ai.local",
         password: SecureRandom.hex(36),
         system_prompt: params[:system_prompt],
-        tools: params[:tools] || [],
+        tools: Array(params[:tools]).compact_blank,
         searchable: ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false)),
         email_verified_at: Time.current,
         created_by_id: Current.user.id,
@@ -167,21 +167,21 @@ module Collavre
     def preserve_hidden_tools(ai_params)
       return unless ai_params.key?(:tools)
 
-      hidden = Array(@user.tools).reject { |name| editor_tool?(name) }
-      submitted = Array(ai_params[:tools]).select { |name| editor_tool?(name) }
+      editable = load_available_tools.pluck(:name).to_set
+      return ai_params.delete(:tools) if editable.empty?
+      hidden = Collavre::McpToolRegistry.permission_hidden_names(Array(@user.tools), Current.user)
+      submitted = Array(ai_params[:tools]).compact_blank.select { |name| editable.include?(name) }
       ai_params[:tools] = submitted | hidden
     end
 
-    def editor_tool?(name)
-      Collavre::McpToolRegistry.user_permitted?(name, Current.user)
-    end
-
     def load_available_tools
+      system_names = Collavre::McpToolRegistry.system_names
       Collavre::McpService.available_tools(Current.user).map do |tool|
         {
           name: tool[:name],
           description: tool[:description],
-          parameters: tool[:params]
+          parameters: tool[:params],
+          custom: !system_names.include?(tool[:name])
         }
       end
     end
