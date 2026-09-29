@@ -167,13 +167,10 @@ module Collavre
     def preserve_hidden_tools(ai_params)
       return unless ai_params.key?(:tools)
 
-      hidden = Array(@user.tools).reject { |name| editor_tool?(name) }
-      submitted = Array(ai_params[:tools]).compact_blank.select { |name| editor_tool?(name) }
+      editable = load_available_tools.pluck(:name).to_set
+      hidden = Array(@user.tools).reject { |name| editable.include?(name) }
+      submitted = Array(ai_params[:tools]).compact_blank.select { |name| editable.include?(name) }
       ai_params[:tools] = submitted | hidden
-    end
-
-    def editor_tool?(name)
-      Collavre::McpToolRegistry.user_permitted?(name, Current.user)
     end
 
     def load_available_tools

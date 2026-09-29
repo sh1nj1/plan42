@@ -711,6 +711,49 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_equal %w[topic_list collavre_source_read], kollavy.reload.tools
   end
 
+  test "update_ai preserves assigned dynamic tools hidden by creative permissions and rejects new assignments" do
+    creative = Collavre::Creative.create!(user: users(:two), description: "Private tools")
+    names = %w[private_assigned_tool private_unassigned_tool]
+    names.each do |name|
+      Collavre::McpTool.create!(creative: creative, name: name, source_code: "class Foo; end", approved_at: Time.current)
+    end
+    @ai_user.update!(tools: [ names.first, "topic_list" ])
+    listed_tools = names.map { |name| { name: name, description: "Private tool", params: {} } }
+    listed_tools << { name: "topic_list", description: "Topics", params: {} }
+
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(listed_tools, user) }) do
+      get edit_ai_user_url(@ai_user)
+      names.each { |name| assert_select "input[name='user[tools][]'][value=?]", name, count: 0 }
+
+      patch update_ai_user_url(@ai_user), params: { user: { name: "Renamed bot", tools: [ "" ] } }
+      assert_response :redirect
+      assert_equal [ names.first ], @ai_user.reload.tools
+      assert_equal "Renamed bot", @ai_user.name
+
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "", names.last, "topic_list" ] } }
+      assert_response :redirect
+      assert_equal [ "topic_list", names.first ], @ai_user.reload.tools
+    end
+  end
+
+  test "update_ai can select and clear dynamic tools on writable creatives" do
+    creative = Collavre::Creative.create!(user: @admin, description: "Writable tool")
+    name = "writable_dynamic_tool"
+    Collavre::McpTool.create!(creative: creative, name: name, source_code: "class Foo; end", approved_at: Time.current)
+
+    listed_tools = [ { name: name, description: "Tool", params: {} } ]
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(listed_tools, user) }) do
+      get edit_ai_user_url(@ai_user)
+      assert_select "input[name='user[tools][]'][value=?]", name, count: 1
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "", name ] } }
+      assert_response :redirect
+      assert_equal [ name ], @ai_user.reload.tools
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "" ] } }
+      assert_response :redirect
+      assert_empty @ai_user.reload.tools
+    end
+  end
+
   test "tool selection submits a blank placeholder so clearing every tool saves an empty list" do
     @ai_user.update!(tools: %w[creative_create_service])
 
