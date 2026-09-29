@@ -55,6 +55,7 @@ module Collavre
         # those owned rows back in. (Owner has admin, so this is rank-independent.)
         accessible_ids |= children_scope.where(user_id: user.id).pluck(:id) if user
 
+        accessible_ids = Kollavy::AccessScope.filter(accessible_ids, user)
         children_scope.where(id: accessible_ids).order(:sequence).to_a
       end
 

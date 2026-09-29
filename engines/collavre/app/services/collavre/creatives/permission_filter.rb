@@ -31,7 +31,7 @@ module Creatives
       # Normalize to Integer so the final select (and owned-shell lookup) compare
       # against pluck-derived integer ids rather than string inputs; keeps the
       # canonical batch filter robust to param-sourced ids. Non-numeric ids drop.
-      ids = ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq
+      ids = Kollavy::AccessScope.filter(ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq, user)
       return [] if ids.empty?
 
       min_rank = rank_for(min_permission)

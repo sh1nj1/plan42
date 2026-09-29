@@ -302,3 +302,18 @@ declarative write-invalidation dispatcher per model, the skill-tree work can:
   deny-invariant at each call site.
 - Add new invalidating attributes/edges by extending the declarative maps,
   inheriting the "cannot silently skip invalidation" invariant for free.
+
+## Kollavy conversation isolation
+
+Kollavy is shared with every human Inbox, but those grants must never combine
+into one searchable workspace. During a Kollavy turn, `Kollavy::AccessScope`
+intersects ordinary creative permissions with the server-side task's creative
+and its descendants. A missing or mismatched task context allows no creative
+data. This is a restriction, not user impersonation or an additional grant.
+
+The boundary applies to search, direct reads, recursive tree output, topic and
+attachment tools, schedules, and creative mutations. Linked creatives must have
+both their placement and resolved origin inside the tree. Prompt references
+and configured context creatives follow the same boundary. Parentless creation
+is rejected; users should open another creative's chat to work in that tree.
+Source-code tools remain available independently of creative data.

@@ -69,6 +69,7 @@ module Tools
       elsif query.present?
         search_creatives(query)
       else
+        return Kollavy::AccessScope.roots if Kollavy::AccessScope.restricted?
         Creative.where(user: Current.user).roots.order(:sequence).to_a
       end
     end
@@ -102,7 +103,7 @@ module Tools
                      .where(user_id: Current.user.id)
                      .where.not(permission: :no_access)
                      .pluck(:creative_id)
-      own_ids | shared_ids
+      Kollavy::AccessScope.filter(own_ids | shared_ids)
     end
 
     def apply_filters(creatives, tags:, progress_min:, progress_max:, updated_since:)

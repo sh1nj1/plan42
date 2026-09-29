@@ -45,7 +45,7 @@ module Collavre
         return unless creative_id
 
         creative = Creative.find_by(id: creative_id)
-        return unless creative
+        return unless creative && Kollavy::AccessScope.allowed?(creative, @agent)
 
         effective = creative.effective_origin(Set.new)
         topic = current_topic
@@ -72,7 +72,7 @@ module Collavre
       end
 
       def build_ancestry_chain(creative)
-        ancestors = creative.self_and_ancestors.reverse
+        ancestors = creative.self_and_ancestors.reverse.select { |node| Kollavy::AccessScope.allowed?(node, @agent) }
         Creatives::OriginChainPreloader.preload(ancestors)
         ancestors.reject { |ancestor| workflow_context?(ancestor) }
                  .map { |ancestor| "#{ancestor.creative_snippet} (id: #{ancestor.id})" }.join(" > ")
@@ -83,7 +83,7 @@ module Collavre
         return unless creative_id
 
         creative = Creative.find_by(id: creative_id)
-        return unless creative
+        return unless creative && Kollavy::AccessScope.allowed?(creative, @agent)
 
         effective_origin = creative.effective_origin(Set.new)
         context_ids = effective_origin.effective_context_ids
@@ -120,7 +120,7 @@ module Collavre
       # rule titles as noise and as a prompt-injection surface.
       def load_prompt_context_creatives(active_ids)
         ids = active_ids.reject { |id| @injected_creative_ids.include?(id) }
-        creatives = Creative.where(id: ids).to_a
+        creatives = Creative.where(id: Kollavy::AccessScope.filter(ids, @agent)).to_a
         Creatives::OriginChainPreloader.preload(creatives)
         creatives.reject { |creative| workflow_context?(creative) }.index_by(&:id)
       end
@@ -211,7 +211,7 @@ module Collavre
 
       # Appends chat history messages and returns the count of messages added.
       def append_chat_history(messages)
-        creative_id = @context.dig("creative", "id")
+        creative_id = Kollavy::AccessScope.context_id(@context, @agent)
         return 0 unless creative_id
 
         topic_id = trigger_comment&.topic_id
