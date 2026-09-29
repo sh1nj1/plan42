@@ -3,6 +3,29 @@ require "test_helper"
 class ApplicationHelperTest < ActionView::TestCase
   include ApplicationHelper
 
+  test "preserves attachment download metadata through display sanitization" do
+    html = '<a href="/public-assets/blobs/signed/report.html" download="report.html" data-filesize="42" onclick="alert(1)">report.html</a>'
+    link = Nokogiri::HTML.fragment(embed_youtube_iframe(html)).at_css("a")
+
+    assert_equal "/public-assets/blobs/signed/report.html", link["href"]
+    assert_equal "report.html", link["download"]
+    assert_equal "42", link["data-filesize"]
+    assert_nil link["onclick"]
+  end
+
+  test "preserves an empty download attribute" do
+    link = Nokogiri::HTML.fragment(embed_youtube_iframe('<a href="/file.html" download>File</a>')).at_css("a")
+
+    assert link.key?("download")
+  end
+
+  test "download metadata does not allow unsafe attachment URLs" do
+    link = Nokogiri::HTML.fragment(embed_youtube_iframe('<a href="javascript:alert(1)" download="report.html">File</a>')).at_css("a")
+
+    assert_nil link["href"]
+    assert_equal "report.html", link["download"]
+  end
+
   test "embed_youtube_iframe preserves default-safe formatting" do
     html = "<del>removed</del><ins>added</ins><sub>low</sub><sup>high</sup><dl><dt>term</dt><dd>definition</dd></dl>"
 
