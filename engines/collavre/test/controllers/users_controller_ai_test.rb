@@ -736,6 +736,27 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "update_ai removes deleted inactive and unloadable assignments but keeps permission-hidden tools" do
+    private_creative = Collavre::Creative.create!(user: users(:two), description: "Private tools")
+    writable_creative = Collavre::Creative.create!(user: @admin, description: "Writable tools")
+    deleted = Collavre::McpTool.create!(creative: private_creative, name: "deleted_tool", source_code: "class Foo; end", approved_at: Time.current)
+    deleted.destroy!
+    Collavre::McpTool.create!(creative: private_creative, name: "inactive_tool", source_code: "class Foo; end")
+    Collavre::McpTool.create!(creative: writable_creative, name: "unloadable_tool", source_code: "invalid ruby", approved_at: Time.current)
+    Collavre::McpTool.create!(creative: private_creative, name: "hidden_tool", source_code: "class Foo; end", approved_at: Time.current)
+    assigned = %w[deleted_tool inactive_tool unloadable_tool hidden_tool collavre_source_read topic_list]
+    @ai_user.update!(tools: assigned)
+
+    Collavre::McpService.stub(:available_tools, []) do
+      patch update_ai_user_url(@ai_user), params: { user: { name: "Unchanged tools" } }
+      assert_equal assigned, @ai_user.reload.tools
+
+      patch update_ai_user_url(@ai_user), params: { user: { tools: [ "" ] + assigned } }
+      assert_response :redirect
+      assert_equal %w[collavre_source_read hidden_tool].sort, @ai_user.reload.tools.sort
+    end
+  end
+
   test "update_ai can select and clear dynamic tools on writable creatives" do
     creative = Collavre::Creative.create!(user: @admin, description: "Writable tool")
     name = "writable_dynamic_tool"
