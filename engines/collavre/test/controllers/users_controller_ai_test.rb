@@ -687,4 +687,19 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     patch update_ai_user_url(kollavy), params: { user: { name: "Kollavy renamed" } }
     assert_equal %w[topic_list collavre_source_read], kollavy.reload.tools
   end
+
+  test "tool selection submits a blank placeholder so clearing every tool saves an empty list" do
+    @ai_user.update!(tools: %w[creative_create_service])
+
+    get edit_ai_user_url(@ai_user)
+    assert_select "input[type='hidden'][name='user[tools][]'][value='']", count: 1
+
+    patch update_ai_user_url(@ai_user), params: { user: { name: @ai_user.name, tools: [ "" ] } }
+    assert_equal [], @ai_user.reload.tools
+  end
+
+  test "create_ai drops the blank tool placeholder" do
+    post create_ai_users_url, params: { ai_id: "blanktools", name: "Blank Tools", system_prompt: "p", llm_vendor: "google", llm_model: "m", tools: [ "", "topic_list" ] }
+    assert_equal %w[topic_list], Collavre::User.find_by!(email: "blanktools@ai.local").tools
+  end
 end

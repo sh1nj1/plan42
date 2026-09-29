@@ -93,7 +93,7 @@ module Collavre
         email: "#{params[:ai_id].to_s.strip.downcase}@ai.local",
         password: SecureRandom.hex(36),
         system_prompt: params[:system_prompt],
-        tools: params[:tools] || [],
+        tools: Array(params[:tools]).compact_blank,
         searchable: ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false)),
         email_verified_at: Time.current,
         created_by_id: Current.user.id,
@@ -168,7 +168,7 @@ module Collavre
       return unless ai_params.key?(:tools)
 
       hidden = Array(@user.tools).reject { |name| editor_tool?(name) }
-      submitted = Array(ai_params[:tools]).select { |name| editor_tool?(name) }
+      submitted = Array(ai_params[:tools]).compact_blank.select { |name| editor_tool?(name) }
       ai_params[:tools] = submitted | hidden
     end
 

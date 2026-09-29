@@ -1,6 +1,8 @@
 <%# locals: (tools:, field_name:, selected:) %>
 <% if tools.any? %>
   <div class="tools-selection">
+    <%# Unchecked boxes are not submitted; this keeps an all-cleared selection saving as []. %>
+    <%= hidden_field_tag field_name, "", id: nil %>
     <% Collavre::McpToolCategories.group(tools).each do |group| %>
       <fieldset class="tool-category" data-controller="tool-category" data-tool-category-key="<%= group[:key] %>">
         <legend class="tool-category-header">
