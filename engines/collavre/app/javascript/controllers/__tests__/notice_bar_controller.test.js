@@ -112,6 +112,7 @@ describe('NoticeBarController', () => {
   })
 
   afterEach(async () => {
+    window.history.replaceState({}, '', '/')
     application?.stop()
     document.body.innerHTML = ''
     delete window.Turbo
@@ -757,6 +758,29 @@ describe('NoticeBarController', () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       expect(target.classList.contains('notice-spot')).toBe(false)
       expect(document.querySelector('.notice-spot-tip')).toBeNull()
+    })
+
+    test.each([
+      '/creatives/99?open_comments=true&topic_id=20',
+      '/creatives/42?open_comments=true&topic_id=21',
+      '/creatives/42?open_comments=true&topic_id=20',
+    ])('opens the specified Inbox topic even with a visible composer at %s', async (currentUrl) => {
+      window.history.replaceState({}, '', currentUrl)
+      const target = makeVisible(document.createElement('textarea'))
+      target.setAttribute('data-comments--form-target', 'textarea')
+      document.body.appendChild(target)
+      const url = '/creatives/42?open_comments=true&topic_id=20'
+      const item = mission('onboarding_call_agent', {
+        cta_url: url, target: "[data-comments--form-target='textarea']",
+      })
+      await mount({ items: [item], top: item.key })
+      await openSheet()
+      sheetEl().querySelector('.notice-sheet__cta').click()
+      await flush()
+      expect(window.Turbo.visit).toHaveBeenCalledWith(url)
+      expect(sessionStorage.getItem(PENDING_KEY)).toBe(item.key)
+      expect(target.classList.contains('notice-spot')).toBe(false)
+      expect(csrfFetch).not.toHaveBeenCalled()
     })
 
     test('on a mission whose target lives on another page remembers the spotlight and visits', async () => {

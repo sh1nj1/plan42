@@ -8,6 +8,7 @@ module Collavre
     include NoticeTestHelpers
 
     setup do
+      Kollavy.seed!
       @user = create_notice_user
       Current.user = @user
     end
@@ -33,9 +34,7 @@ module Collavre
         Creative.create!(user: @user, parent: root, description: "Step")
         assert_equal "completed", status(:onboarding_sub_creative)
 
-        agent = users(:ai_bot)
-        agent.update!(searchable: true)
-        Comment.create!(creative: root, user: @user, content: "@#{agent.name}: summarize")
+        Comment.create!(creative: @user.inbox_creative, user: @user, content: "@Kollavy: How do I use Collavre?")
         assert_equal "completed", status(:onboarding_call_agent)
         assert_empty feed_keys
       end
@@ -178,10 +177,10 @@ module Collavre
     test "agent mission opens the comments popup without changing the sub-creative destination" do
       routes = Collavre::Engine.routes.url_helpers
       mission = NoticeRegistry.find(:onboarding_call_agent)
-      assert_equal routes.creatives_path, mission.cta_path(routes, @user)
+      assert_equal OnboardingNotices.agent_chat_path(routes, @user), mission.cta_path(routes, @user)
 
       root = Creative.create!(user: @user, description: "Plan")
-      assert_equal routes.creative_path(root, open_comments: true), mission.cta_path(routes, @user)
+      assert_equal OnboardingNotices.agent_chat_path(routes, @user), mission.cta_path(routes, @user)
       assert_equal routes.creative_path(root), NoticeRegistry.find(:onboarding_sub_creative).cta_path(routes, @user)
     end
 
@@ -194,17 +193,17 @@ module Collavre
       assert_equal routes.creative_path(root), OnboardingNotices.latest_creative_path(routes, @user)
     end
 
-    test "a collaborator without their own tree is sent to the shared creative they visited last" do
+    test "agent chat stays in the Inbox regardless of owned or visited creatives" do
       routes = Collavre::Engine.routes.url_helpers
       mission = NoticeRegistry.find(:onboarding_call_agent)
       shared = Creative.create!(user: create_notice_user("Owner"), description: "Team plan")
       CreativeShare.create!(creative: shared, user: @user, permission: :feedback)
       @user.update!(last_visited_creative: shared)
 
-      assert_equal routes.creative_path(shared, open_comments: true), mission.cta_path(routes, @user)
+      assert_equal OnboardingNotices.agent_chat_path(routes, @user), mission.cta_path(routes, @user)
 
-      own = Creative.create!(user: @user, description: "Mine")
-      assert_equal routes.creative_path(own, open_comments: true), mission.cta_path(routes, @user)
+      Creative.create!(user: @user, description: "Mine")
+      assert_equal OnboardingNotices.agent_chat_path(routes, @user), mission.cta_path(routes, @user)
     end
 
     test "a last visit the user cannot comment on is not a destination" do

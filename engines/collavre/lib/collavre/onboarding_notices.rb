@@ -30,8 +30,9 @@ module Collavre
         kind: :mission, group: :onboarding, icon: "🌳",
         target: "[data-comments--form-target='textarea']",
         audience: method(:agent_available?),
+        translation_options: ->(_user) { { agent_name: Kollavy.agent&.name } },
         allow_early_completion: true,
-        cta_path: ->(routes, user) { latest_creative_path(routes, user, open_comments: true) },
+        cta_path: method(:agent_chat_path),
         done_when: method(:agent_called?),
         completes_on: { COMMENT_CREATED => ->(payload) { payload[:comment].mentioned_users.ai_agents.exists? } })
     end
@@ -75,13 +76,18 @@ module Collavre
       own_creatives(user).active.where(parent_id: nil, origin_id: nil).order(id: :desc).first || commentable_last_visit(user)
     end
 
-    # Match the composer destination and its mention resolver, without depending
-    # on a vendor engine. Availability can change after onboarding has started.
+    def agent_chat_path(routes, user)
+      inbox = user.inbox_creative
+      routes.creative_path(inbox, open_comments: true, topic_id: inbox.main_topic.id)
+    end
+
+    # Only offer the guide while Kollavy can answer in the destination Inbox.
     def agent_available?(user)
       return false if user.ai_user?
 
-      creative = latest_creative(user)
-      creative.present? && Collavre.user_class.mentionable_for(creative).ai_agents.exists?
+      inbox = user.inbox_creative
+      agent = Kollavy.agent
+      agent&.ai_user? && !inbox.archived? && inbox.has_permission?(agent, :feedback)
     end
 
     def commentable_last_visit(user)

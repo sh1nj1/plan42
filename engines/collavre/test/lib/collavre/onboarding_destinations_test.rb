@@ -13,7 +13,7 @@ module Collavre
 
     teardown { Current.reset }
 
-    test "both later missions skip the newest archived root" do
+    test "the sub-creative mission skips the newest archived root" do
       active = Creative.create!(user: @user, description: "Active")
       Creative.create!(user: @user, description: "Archived", archived_at: Time.current)
 
@@ -48,10 +48,11 @@ module Collavre
     private
 
     def assert_destinations(creative)
-      { onboarding_sub_creative: {}, onboarding_call_agent: { open_comments: true } }.each do |key, options|
-        expected = creative ? @routes.creative_path(creative, **options) : @routes.creatives_path
-        assert_equal expected, NoticeRegistry.find(key).cta_path(@routes, @user)
-      end
+      expected = creative ? @routes.creative_path(creative) : @routes.creatives_path
+      assert_equal expected, NoticeRegistry.find(:onboarding_sub_creative).cta_path(@routes, @user)
+      inbox = @user.inbox_creative
+      assert_equal @routes.creative_path(inbox, open_comments: true, topic_id: inbox.main_topic.id),
+                   NoticeRegistry.find(:onboarding_call_agent).cta_path(@routes, @user)
     end
   end
 end

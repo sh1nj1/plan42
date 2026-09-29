@@ -305,9 +305,10 @@ export default class extends Controller {
   }
 
   startMission(item) {
-    const target = findTarget(item.target)
-    if (target) return this.spotlight.show(target, item.tip)
     const url = item.cta_url && new URL(item.cta_url, window.location.href)
+    const target = findTarget(item.target)
+    // A visible composer may belong to another topic, even when the URL is unchanged.
+    if (target && !url?.searchParams.has('topic_id')) return this.spotlight.show(target, item.tip)
     if (url && (['origin', 'pathname', 'search', 'hash'].some((part) => url[part] !== window.location[part]) || url.searchParams.get('open_comments') === 'true')) {
       rememberPendingSpotlight(item.key)
       return this.visit(item.cta_url)

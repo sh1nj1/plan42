@@ -107,12 +107,13 @@ module Collavre
     KEY_FORMAT = /\A[a-z0-9_]+\z/
     HUMANS_ONLY = ->(user) { !user.ai_user? }
 
-    attr_reader :key, :kind, :priority, :icon, :group, :target, :starts_at, :ends_at, :completes_on, :allow_early_completion
+    attr_reader :key, :kind, :priority, :icon, :group, :target, :starts_at, :ends_at, :completes_on, :allow_early_completion, :translation_options
 
     def initialize(key, config)
       @key = key.to_sym
       @kind = config.fetch(:kind, :announcement).to_sym
       @priority = config.fetch(:priority) { DEFAULT_PRIORITY[@kind] }
+      @translation_options = config.fetch(:translation_options, ->(_user) { {} })
       @icon = config[:icon]
       @group = config[:group]&.to_sym
       @target = config[:target]
