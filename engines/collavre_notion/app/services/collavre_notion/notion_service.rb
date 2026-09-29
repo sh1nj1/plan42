@@ -16,6 +16,10 @@ module CollavreNotion
       with_rate_limit_retry { client.search_pages(query: query, start_cursor: start_cursor, page_size: page_size) }
     end
 
+    def get_page(page_id)
+      with_rate_limit_retry { client.get_page(page_id) }
+    end
+
     def create_page(parent_id:, title:, blocks: [])
       with_rate_limit_retry { client.create_page(parent_id: parent_id, title: title, blocks: blocks) }
     end

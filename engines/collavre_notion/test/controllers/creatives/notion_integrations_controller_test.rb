@@ -96,6 +96,7 @@ module CollavreNotion
         stub_request(:patch, %r{/v1/pages/[^/]+$})
           .to_return(status: 200, body: "{}", headers: { "Content-Type" => "application/json" })
         stub_notion_create_page
+        stub_notion_get_page(".*", { "archived" => false })
         stub_notion_get_blocks(".*")
         stub_notion_append_blocks(".*")
 

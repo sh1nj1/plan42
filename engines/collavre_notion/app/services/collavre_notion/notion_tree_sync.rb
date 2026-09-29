@@ -56,6 +56,27 @@ module CollavreNotion
     end
 
     def sync_node(creative, node, parent_id)
+      page = @service.get_page(node.page_id)
+      raise NotionNotFoundError if page["archived"] || page["in_trash"]
+
+      sync_page(creative, node, parent_id)
+    rescue NotionNotFoundError
+      replace_missing_page(creative, node, parent_id)
+      sync_page(creative, node, parent_id)
+    end
+
+    def replace_missing_page(creative, node, parent_id)
+      title = NotionPageContent.title(creative)
+      response = @service.create_page(parent_id: parent_id, title: title)
+      node.transaction do
+        if node.page_id == @link.page_id
+          @link.update!(page_id: response.fetch("id"), page_url: response["url"], page_title: title)
+        end
+        node.update!(page_id: response.fetch("id"), parent_page_id: parent_id, body_block_ids: [], content_hash: nil)
+      end
+    end
+
+    def sync_page(creative, node, parent_id)
       if node.parent_page_id != parent_id
         @service.move_page(node.page_id, parent_id: parent_id)
         node.update!(parent_page_id: parent_id)

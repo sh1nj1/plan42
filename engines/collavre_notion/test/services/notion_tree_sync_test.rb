@@ -22,6 +22,11 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
       { "id" => id, "url" => "https://notion.so/#{id}" }
     end
 
+    def get_page(id)
+      raise CollavreNotion::NotionNotFoundError unless @pages.key?(id)
+      @pages.fetch(id).stringify_keys
+    end
+
     def update_page(id, properties:, **)
       @pages.fetch(id)[:title] = properties.dig(:title, :title, 0, :text, :content)
     end
@@ -78,6 +83,156 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
     assert_equal node(link, deepest).page_id, @client.pages.fetch(node(link, empty).page_id)[:parent]
     assert_equal I18n.t("collavre_notion.modal.untitled"), @client.pages.fetch(node(link, empty).page_id)[:title]
     assert link.last_synced_at
+  end
+
+  test "missing active child is recreated with fresh content and retained descendants reparented" do
+    a = child(@root, "A")
+    b = child(a, "B")
+    link = sync
+    old = node(link, a)
+    old_ids = old.body_block_ids
+    @client.pages.delete(old.page_id)
+    a.update!(description: "Changed A")
+    sync
+    replacement = node(link, a)
+    assert_equal old.id, replacement.id
+    assert_not_equal old.page_id, replacement.page_id
+    assert_equal "Changed A", @client.pages[replacement.page_id][:title]
+    assert_equal replacement.page_id, node(link, b).parent_page_id
+    assert_empty old_ids & replacement.body_block_ids
+    assert_empty old_ids & @client.deleted
+    assert replacement.content_hash
+    pages = @client.pages.deep_dup
+    sync
+    assert_equal pages, @client.pages
+  end
+
+  test "missing unchanged root and descendants recover through the original export link" do
+    a = child(@root, "A")
+    link = sync
+    old_root = link.page_id
+    @client.pages.clear
+    @service.sync_creative(@root, page_link: link)
+    assert_not_equal old_root, link.reload.page_id
+    assert_equal node(link, @root).page_id, link.page_id
+    assert_equal "https://notion.so/#{link.page_id}", link.page_url
+    assert_equal "workspace", @client.pages[link.page_id][:parent]
+    assert_equal link.page_id, node(link, a).parent_page_id
+    assert_equal 2, @client.pages.size
+    assert_equal link.id, sync.id
+    assert_equal 2, @client.pages.size
+  end
+
+  test "archived and trashed active pages recover even without content changes" do
+    link = sync
+    [ "archived", "in_trash" ].each do |flag|
+      old_id = link.reload.page_id
+      @client.pages[old_id][flag] = true
+      sync
+      assert_not_equal old_id, link.reload.page_id
+      assert node(link, @root).content_hash
+    end
+  end
+
+  test "pages deleted during update or move recover once and sync under the intended parent" do
+    a = child(@root, "A")
+    b = child(@root, "B")
+    link = sync
+    [ :update_page, :move_page ].each do |operation|
+      old_id = node(link, a).page_id
+      a.update!(description: "Changed A") if operation == :update_page
+      a.update!(parent: b) if operation == :move_page
+      original = @client.method(operation)
+      @client.stub(operation, ->(id, **args) {
+        raise CollavreNotion::NotionNotFoundError if id == old_id
+        original.call(id, **args)
+      }) { sync }
+      assert_not_equal old_id, node(link, a).page_id
+      expected_parent = operation == :move_page ? node(link, b).page_id : link.page_id
+      assert_equal expected_parent, node(link, a).parent_page_id
+      assert node(link, a).content_hash
+    end
+  end
+
+  test "failed replacement creation preserves mappings and later sync recovers" do
+    link = sync
+    old_id = link.page_id
+    old_ids = node(link, @root).body_block_ids
+    @client.pages.delete(old_id)
+    @client.fail_title = CollavreNotion::NotionPageContent.title(@root)
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    assert_equal old_id, link.reload.page_id
+    assert_equal old_id, node(link, @root).page_id
+    assert_equal old_ids, node(link, @root).body_block_ids
+    @client.fail_title = nil
+    sync
+    assert_not_equal old_id, link.reload.page_id
+  end
+
+  test "failed replacement content resumes on saved root and does not create duplicate pages" do
+    link = sync
+    last_synced_at = link.last_synced_at
+    @client.pages.clear
+    @client.fail_append = true
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    replacement = link.reload.page_id
+    assert_equal replacement, node(link, @root).page_id
+    assert_nil node(link, @root).content_hash
+    assert_equal last_synced_at, link.last_synced_at
+    @client.fail_append = false
+    sync
+    assert_equal replacement, link.reload.page_id
+    assert_equal 1, @client.pages.size
+    assert node(link, @root).content_hash
+  end
+
+  test "other retrieval errors preserve mappings and do not create replacement pages" do
+    link = sync
+    original = node(link, @root).attributes
+    [ 400, 401, 403, 429, 500 ].each do |status|
+      real_client = CollavreNotion::NotionClient.new(@account)
+      request = stub_request(:get, %r{/v1/pages/#{link.page_id}$}).to_return(status: status, body: "{}")
+      @client.stub(:get_page, ->(id) { real_client.get_page(id) }) do
+        assert_raises(CollavreNotion::NotionError) { sync }
+      end
+      assert_requested request, times: status == 429 ? 6 : 1
+      WebMock.reset_executed_requests!
+      assert_equal original, node(link, @root).attributes
+      assert_equal 1, @client.pages.size
+      assert_equal link.last_synced_at, link.reload.last_synced_at
+    end
+  end
+
+  test "real page retrieval 404 replaces only the selected export root" do
+    child(@root, "Child")
+    first = sync
+    second = @service.sync_creative(@root, parent_page_id: "other")
+    second_nodes = second.notion_page_nodes.map(&:attributes)
+    old_id = first.page_id
+    real_client = CollavreNotion::NotionClient.new(@account)
+    request = stub_request(:get, %r{/v1/pages/#{old_id}$}).to_return(status: 404, body: "{}")
+    original = @client.method(:get_page)
+    @client.stub(:get_page, ->(id) { id == old_id ? real_client.get_page(id) : original.call(id) }) do
+      sync
+      sync
+    end
+    assert_requested request, times: 1
+    assert_not_equal old_id, first.reload.page_id
+    assert_equal second_nodes, second.notion_page_nodes.reload.map(&:attributes)
+    assert_equal 2, @account.notion_page_links.count
+  end
+
+  test "repeated not found during replacement update terminates and preserves replacement for retry" do
+    link = sync
+    @root.update!(description: "Changed")
+    @client.stub(:update_page, ->(*) { raise CollavreNotion::NotionNotFoundError }) do
+      assert_raises(CollavreNotion::NotionNotFoundError) { sync }
+    end
+    assert_equal 2, @client.pages.size
+    assert_equal node(link, @root).page_id, link.reload.page_id
+    assert_nil node(link, @root).content_hash
+    sync
+    assert_equal 2, @client.pages.size
   end
 
   test "unchanged exports reuse pages and body blocks" do
