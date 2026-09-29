@@ -32,11 +32,11 @@ module Collavre
         raise CancelledError
       end
 
-      # A queued or approval-resumed turn must not use a revoked conversation,
+      # A queued or approval-resumed turn must retain permission to respond,
       # even while asynchronous permission-cache invalidation is still pending.
       def check_kollavy_authorization!
         return unless Kollavy::AccessScope.restricted?(@agent)
-        return if Creatives::PermissionChecker.current_allowed?(@task.creative_id, @agent, :read)
+        return if Creatives::PermissionChecker.current_allowed?(@task.creative_id, @agent, :feedback)
 
         @task.cancel_if_active!
         raise CancelledError

@@ -305,6 +305,11 @@ declarative write-invalidation dispatcher per model, the skill-tree work can:
 
 ## Kollavy conversation isolation
 
+Queued and approval-resumed Kollavy turns require current `feedback` permission
+before prompt construction, reply creation, and provider handoff. These checks
+read authoritative shares so a downgrade to `read` cancels the turn even while
+the permission cache still grants commenting access.
+
 Kollavy is shared with every human Inbox, but those grants must never combine
 into one searchable workspace. During a Kollavy turn, `Kollavy::AccessScope`
 intersects ordinary creative permissions with the server-side task's creative

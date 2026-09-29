@@ -13,7 +13,7 @@ class Collavre::KollavyHandoffTest < ActiveSupport::TestCase
 
   teardown { Collavre::Current.reset }
 
-  [ :destroy, :deny ].each do |change|
+  [ :destroy, :deny, :read ].each do |change|
     test "#{change} before execution cancels before building any prompt despite a stale grant" do
       revoke_share(change)
       @service.stub(:build_messages, -> { flunk "Revoked context must not be assembled" }) do
@@ -37,8 +37,36 @@ class Collavre::KollavyHandoffTest < ActiveSupport::TestCase
     assert_equal "cancelled", @task.reload.status
   end
 
-  test "read permission remains sufficient for ordinary conversation" do
-    @share.update!(permission: :read)
+  [ "approval_gate", "tool" ].each do |kind|
+    test "#{kind} resume cannot respond after feedback is downgraded to read" do
+      @task.update!(pending_tool_call: { "kind" => kind, "approved" => true,
+        "result" => "Approved", "messages" => [ { "role" => "user", "content" => "Earlier request" } ] })
+      revoke_share(:read)
+      @service.stub(:build_messages, -> { flunk "Read-only approval resume must not assemble context" }) do
+        assert_raises(Collavre::CancelledError) { @service.call }
+      end
+      assert_equal "cancelled", @task.reload.status
+      assert_nil @task.reply_comment
+    end
+  end
+
+  test "feedback downgrade during prompt preparation prevents reply creation" do
+    comment = @creative.comments.create!(user: @owner, content: "Please respond", skip_dispatch: true)
+    @task.update!(trigger_event_payload: { "creative" => { "id" => @creative.id },
+      "comment" => { "id" => comment.id, "content" => comment.content } })
+    @service = Collavre::AiAgentService.new(@task)
+    original_build = @service.method(:build_messages)
+    @service.stub(:build_messages, -> { result = original_build.call; revoke_share(:read); result }) do
+      Collavre::AiAgent::ReplyPlaceholder.stub(:call, ->(**) { flunk "Read-only agent must not create a reply" }) do
+        assert_raises(Collavre::CancelledError) { @service.call }
+      end
+    end
+    assert_equal "cancelled", @task.reload.status
+    assert_nil @task.reply_comment
+  end
+
+  test "feedback permission remains sufficient for ordinary conversation" do
+    @share.update!(permission: :feedback)
     client = Object.new
     def client.handed_off? = true
     def client.last_handoff_failed? = false
@@ -79,7 +107,7 @@ class Collavre::KollavyHandoffTest < ActiveSupport::TestCase
     if change == :destroy
       @share.delete
     else
-      @share.update_columns(permission: Collavre::CreativeShare.permissions[:no_access])
+      @share.update_columns(permission: Collavre::CreativeShare.permissions[change == :read ? :read : :no_access])
     end
     assert Collavre::CreativeSharesCache.where(creative: @creative, user: @agent)
       .where.not(permission: :no_access).exists?, "Keep the stale grant to exercise authoritative reads"

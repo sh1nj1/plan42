@@ -189,6 +189,7 @@ module Collavre
     end
 
     def create_reply_comment_if_needed
+      check_kollavy_authorization!
       AiAgent::ReplyPlaceholder.call(original_comment: @original_comment, agent: @agent, task: @task)
     end
 
