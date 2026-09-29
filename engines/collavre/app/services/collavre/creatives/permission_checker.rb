@@ -18,6 +18,10 @@ module Collavre
       end
 
       def allowed?(required_permission = :read)
+        if Current.authoritative_permissions && !@current_shares
+          return self.class.current_allowed?(creative.id, user, required_permission)
+        end
+
         return false unless Kollavy::AccessScope.allowed?(creative, user)
 
         base = EffectiveCreativeResolution.effective_creative(creative)

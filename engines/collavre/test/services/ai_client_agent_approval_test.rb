@@ -86,6 +86,7 @@ class AiClientAgentApprovalTest < ActiveSupport::TestCase
   end
 
   test "approval preserves the interrupted conversation and restores the executed result exactly once" do
+    @creative.creative_shares.create!(user: @agent, permission: :read)
     require_approval
     chat = conversation
     earlier = RubyLLM::ToolCall.new(id: "earlier", name: "read", arguments: {})

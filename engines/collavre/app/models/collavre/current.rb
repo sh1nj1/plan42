@@ -9,6 +9,7 @@ module Collavre
     attribute :mcp_agent_workspace
     attribute :user
     attribute :agent_turn
+    attribute :authoritative_permissions
     attribute :draft_capture_turn
     attribute :change_set
     attribute :creative_history_context

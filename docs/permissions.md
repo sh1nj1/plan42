@@ -321,3 +321,12 @@ Source-code tools remain available independently of creative data.
 Rollback-only review draft capture retains the original agent turn for scoped
 authorization while suspending normal turn history. Capture does not widen
 permissions, and its temporary authorization context is restored on failure.
+
+### Approved agent tool execution
+
+Approved invocations recheck the task creative's current read grant before
+dispatch. During execution, `Current.authoritative_permissions` routes each
+`PermissionChecker` check through current shares, including the tool's write
+target and move destination. This context follows nested meta-tool calls and
+is restored on success or failure. Approval never preserves a revoked grant
+or borrows the approver's permissions. Ordinary turns retain cached checks.
