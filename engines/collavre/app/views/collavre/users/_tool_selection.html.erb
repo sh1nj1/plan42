@@ -11,7 +11,9 @@
                     aria-label="<%= group[:label] %>"
                     aria-expanded="false" aria-controls="tool_category_body_<%= group[:key] %>"
                     data-tool-category-target="disclosure" data-action="tool-category#expand">
-              <span class="tool-category-chevron" aria-hidden="true">▸</span>
+              <svg class="tool-category-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M9 5 L16 12 L9 19 Z" />
+              </svg>
             </button>
             <input type="checkbox" class="form-check-input tool-category-toggle"
                    id="tool_category_<%= group[:key] %>"

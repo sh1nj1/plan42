@@ -176,8 +176,13 @@
 .tools-selection .tool-category-heading {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   cursor: pointer;
+}
+
+.tools-selection .tool-category-toggle {
+  margin: 0;
+  flex: none;
 }
 
 .tools-selection .tool-category [data-tool-category-target="body"] > .form-check {
@@ -188,9 +193,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 2rem;
-  width: 2rem;
+  flex: 0 0 1.5rem;
+  width: 1.5rem;
   height: 2rem;
+  margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -201,8 +207,9 @@
 
 .tools-selection .tool-category-chevron {
   display: block;
-  font-size: 1.5rem;
-  line-height: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
 }
 
 .tools-selection .tool-category-disclosure[aria-expanded="true"] .tool-category-chevron {
