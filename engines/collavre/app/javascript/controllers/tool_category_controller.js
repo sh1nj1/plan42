@@ -3,10 +3,15 @@ import { Controller } from "@hotwired/stimulus"
 // Category header checkbox that checks/unchecks every tool in its group and
 // reflects partial selection as indeterminate.
 export default class extends Controller {
-  static targets = [ "toggle", "tool", "count" ]
+  static targets = [ "toggle", "tool", "count", "disclosure", "body" ]
 
   connect() {
     this.sync()
+  }
+
+  expand() {
+    this.bodyTarget.hidden = !this.bodyTarget.hidden
+    this.disclosureTarget.setAttribute("aria-expanded", String(!this.bodyTarget.hidden))
   }
 
   toggle() {

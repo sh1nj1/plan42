@@ -173,13 +173,29 @@
   font-size: inherit;
 }
 
-.tools-selection .tool-category-header .form-check-label {
+.tools-selection .tool-category-heading {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   cursor: pointer;
 }
 
-.tools-selection .tool-category > .form-check {
+.tools-selection .tool-category [data-tool-category-target="body"] > .form-check {
   margin-left: var(--space-4);
+}
+
+.tools-selection .tool-category-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tools-selection .tool-category-disclosure[aria-expanded="true"] .tool-category-chevron {
+  transform: rotate(90deg);
 }

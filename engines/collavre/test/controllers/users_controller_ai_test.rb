@@ -45,6 +45,11 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
           get url
           assert_response :success
           assert_select ".tools-selection details summary", text: label, count: 1
+          assert_select "fieldset.tool-category" do
+            buttons = css_select("button[type='button'][aria-expanded='false'][data-action='tool-category#expand']")
+            assert_equal 1, buttons.size
+            assert_select "[id=?][data-tool-category-target='body'][hidden]", buttons.first["aria-controls"]
+          end
         end
       end
     end
