@@ -29,7 +29,7 @@ module Collavre
       NoticeRegistry.register(:onboarding_call_agent,
         kind: :mission, group: :onboarding, icon: "🌳",
         target: "[data-comments--form-target='textarea']",
-        cta_path: method(:latest_creative_path),
+        cta_path: ->(routes, user) { latest_creative_path(routes, user, open_comments: true) },
         done_when: method(:agent_called?),
         completes_on: { COMMENT_CREATED => ->(payload) { payload[:comment].mentioned_users.ai_agents.exists? } })
     end
@@ -39,9 +39,9 @@ module Collavre
     end
 
     # The creative the user touched last is where the next step happens.
-    def latest_creative_path(routes, user)
+    def latest_creative_path(routes, user, **options)
       creative = own_creatives(user).where(parent_id: nil, origin_id: nil).order(id: :desc).first
-      creative ? routes.creative_path(creative) : routes.creatives_path
+      creative ? routes.creative_path(creative, **options) : routes.creatives_path
     end
 
     # Use the same mention resolver as live completion, including shared trees.

@@ -110,6 +110,16 @@ module Collavre
                    %i[onboarding_first_creative onboarding_sub_creative onboarding_call_agent].map { |key| status(key) }
     end
 
+    test "agent mission opens the comments popup without changing the sub-creative destination" do
+      routes = Collavre::Engine.routes.url_helpers
+      mission = NoticeRegistry.find(:onboarding_call_agent)
+      assert_equal routes.creatives_path, mission.cta_path(routes, @user)
+
+      root = Creative.create!(user: @user, description: "Plan")
+      assert_equal routes.creative_path(root, open_comments: true), mission.cta_path(routes, @user)
+      assert_equal routes.creative_path(root), NoticeRegistry.find(:onboarding_sub_creative).cta_path(routes, @user)
+    end
+
     test "later steps point at the user's latest top-level creative" do
       routes = Collavre::Engine.routes.url_helpers
       assert_equal routes.creatives_path, OnboardingNotices.latest_creative_path(routes, @user)

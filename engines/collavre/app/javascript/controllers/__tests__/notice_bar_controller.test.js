@@ -471,6 +471,21 @@ describe('NoticeBarController', () => {
       expect(window.Turbo.visit).toHaveBeenCalledWith('/elsewhere')
     })
 
+    test('opens hidden chat even when the mission destination is the current page', async () => {
+      const target = document.createElement('textarea')
+      target.id = 'target'
+      target.style.display = 'none'
+      document.body.appendChild(target)
+      const url = `${window.location.pathname}?open_comments=true`
+      await mount({ items: [mission('m1', { cta_url: url })], top: 'm1' })
+      await openSheet()
+      sheetEl().querySelector('.notice-sheet__cta').click()
+      await flush()
+      expect(window.Turbo.visit).toHaveBeenCalledWith(url)
+      expect(sessionStorage.getItem(PENDING_KEY)).toBe('m1')
+      expect(target.classList.contains('notice-spot')).toBe(false)
+    })
+
     test('on a mission whose target is missing on this page shows a toast', async () => {
       await mount({ items: [mission('m1', { cta_url: window.location.pathname })], top: 'm1' })
       await openSheet()

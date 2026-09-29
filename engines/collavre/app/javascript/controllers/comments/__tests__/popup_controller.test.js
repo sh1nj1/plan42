@@ -53,6 +53,24 @@ describe('CommentsPopupController', () => {
         application.stop()
     })
 
+    test('onboarding URL opens chat on a mobile viewport', () => {
+        const previousWidth = window.innerWidth
+        const previousUrl = window.location.href
+        const trigger = document.getElementById('trigger-btn')
+        trigger.setAttribute('name', 'show-comments-btn')
+        const open = jest.spyOn(controller, 'open').mockImplementation(() => {})
+        try {
+            window.innerWidth = 390
+            window.history.replaceState({}, '', '/creatives/123?open_comments=true')
+            controller.openFromUrl()
+            expect(open).toHaveBeenCalledWith(trigger, { highlightId: undefined })
+        } finally {
+            window.innerWidth = previousWidth
+            window.history.replaceState({}, '', previousUrl)
+            open.mockRestore()
+        }
+    })
+
     test('close in fullscreen exits fullscreen state and cleans up body class', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')

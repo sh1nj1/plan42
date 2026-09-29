@@ -241,7 +241,8 @@ export default class extends Controller {
   startMission(item) {
     const target = findTarget(item.target)
     if (target) return this.spotlight.show(target, item.tip)
-    if (item.cta_url && new URL(item.cta_url, window.location.href).pathname !== window.location.pathname) {
+    const url = item.cta_url && new URL(item.cta_url, window.location.href)
+    if (url && (url.pathname !== window.location.pathname || url.searchParams.get('open_comments') === 'true')) {
       rememberPendingSpotlight(item.key)
       return this.visit(item.cta_url)
     }
