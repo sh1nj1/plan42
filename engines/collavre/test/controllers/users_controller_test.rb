@@ -381,6 +381,16 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_empty response.parsed_body
   end
 
+  test "empty mention search with a nonexistent creative remains empty" do
+    sign_in_as(@regular_user, password: "password")
+    @regular_user.update!(searchable: true)
+
+    get collavre.search_users_path, params: { q: "  ", creative_id: Creative.maximum(:id).to_i + 1 }
+
+    assert_response :success
+    assert_empty response.parsed_body
+  end
+
   test "mention search falls back to searchable users without creative context" do
     sign_in_as(@regular_user, password: "password")
 

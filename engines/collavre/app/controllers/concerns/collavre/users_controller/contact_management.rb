@@ -4,12 +4,11 @@ module Collavre
 
     def search
       term = params[:q].to_s.strip.downcase
+      creative = Collavre::Creative.find_by(id: params[:creative_id])
 
-      if empty_global_search?(term)
+      if empty_global_search?(term, creative)
         return render json: []
       end
-
-      creative = Collavre::Creative.find_by(id: params[:creative_id])
 
       if creative.present? && !creative.has_permission?(Current.user, :read)
         head :forbidden and return
@@ -36,8 +35,8 @@ module Collavre
 
     private
 
-    def empty_global_search?(term)
-      term.blank? && params[:scope] != "contacts" && params[:creative_id].blank?
+    def empty_global_search?(term, creative)
+      term.blank? && params[:scope] != "contacts" && creative.nil?
     end
 
     def search_limit(creative, term)
