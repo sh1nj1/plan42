@@ -1,13 +1,18 @@
 <%= stylesheet_link_tag 'collavre/mention_menu', media: 'all' %>
-<h1 class="text-center" style="margin-top: 0;"><%= t('collavre.users.edit_ai.title') %></h1>
+<h1 class="text-center" style="margin-top: 0;"><%= t(@read_only ? 'collavre.users.edit_ai.profile_title' : 'collavre.users.edit_ai.title') %></h1>
+
+<% if @read_only %>
+  <p class="text-center text-muted"><%= t('collavre.users.edit_ai.read_only_notice') %></p>
+<% end %>
 
 <%= form_with model: @user,
               url: collavre.update_ai_user_path(@user),
               method: :patch,
               class: "stacked-form",
-              data: { controller: "agent-vendor", agent_vendor_default_model_value: "paperclip/claude_local", turbo_action: "replace" } do |form| %>
+              data: { controller: (@read_only ? nil : "agent-vendor"), agent_vendor_default_model_value: "paperclip/claude_local", turbo_action: "replace" } do |form| %>
   <%= hidden_field_tag :return_to, @return_to if @return_to.present? %>
 
+  <%= tag.fieldset disabled: @read_only, style: "border: 0; padding: 0; margin: 0; min-width: 0;" do %>
   <div class="form-group">
     <%= form.label :name, t('collavre.users.new_ai.name_label') %>
     <%= form.text_field :name, required: true, class: "stacked-form-control", placeholder: "e.g. My Bot" %>
@@ -20,6 +25,7 @@
 
   <%= render "collavre/users/trigger_field", form: form, routing_expression: @user.routing_expression %>
 
+  <% unless @read_only %>
   <%= render "collavre/users/llm_fields",
              form: form,
              selected_vendor: @user.llm_vendor || "google",
@@ -47,18 +53,29 @@
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.gateway_url_help', default: 'Gateway/Base URL. Required for OpenClaw. For OpenAI-compatible providers, enter the base URL (e.g. https://api.openai.com/v1).') %></small>
   </div>
 
+  <% end %>
+
   <div class="form-group">
     <label class="form-label"><%= t('collavre.users.edit_ai.meta_skills_title') %></label>
     <p class="text-muted small"><%= t('collavre.users.edit_ai.meta_skills_description') %></p>
 
-    <%= render "collavre/users/tool_selection", tools: @available_tools, field_name: "user[tools][]", selected: Array(@user.tools) %>
+    <% if @read_only %>
+      <% @available_tools.each do |tool| %>
+        <p><strong><%= tool[:name] %></strong><br><%= tool[:description] %></p>
+      <% end %>
+    <% else %>
+      <%= render "collavre/users/tool_selection", tools: @available_tools, field_name: "user[tools][]", selected: Array(@user.tools) %>
+    <% end %>
   </div>
 
+  <% unless @read_only %>
   <div class="form-group">
     <%= form.label :agent_conf, t('collavre.users.edit_ai.agent_conf_label', default: 'Agent Configuration (YAML)') %>
     <%= form.text_area :agent_conf, class: "stacked-form-control", rows: 6, placeholder: "context:\n  chat_history: 50\n  chat_history_size: 100000", style: "font-family: monospace; font-size: 0.85em;" %>
     <small class="form-text text-muted"><%= t('collavre.users.edit_ai.agent_conf_help', default: 'YAML configuration for agent behavior. chat_history: max previous messages, chat_history_size: max total characters.') %></small>
   </div>
+
+  <% end %>
 
   <div class="form-group">
     <div class="form-check">
@@ -68,13 +85,18 @@
     <small class="form-text text-muted"><%= t('collavre.users.new_ai.searchable_help') %></small>
   </div>
 
-  <%= form.button t('common.save'), type: "submit", class: "primary-action-button" %>
+  <% end %>
+
+  <%= form.button t('common.save'), type: "submit", disabled: @read_only, class: "primary-action-button" %>
 <% end %>
 
-<% if @user.cli_proxy_agent? %>
+<% if !@read_only && @user.cli_proxy_agent? %>
   <section class="form-section" style="margin-top: 1.5rem;">
     <h2><%= t("collavre.agent_connections.card_title") %></h2>
     <p class="text-muted"><%= t("collavre.agent_connections.card_help") %></p>
+    <% if @user.agent_gateway %>
+      <p class="text-muted"><%= t("collavre.agent_connections.profile_help.#{@user.agent_gateway.workspace_mode}") %></p>
+    <% end %>
     <%= link_to t("collavre.agent_connections.manage"), collavre.agent_connection_user_path(@user), class: "primary-action-button" %>
   </section>
 <% end %>
