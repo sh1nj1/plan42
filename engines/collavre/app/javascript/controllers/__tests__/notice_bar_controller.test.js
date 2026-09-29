@@ -140,6 +140,47 @@ describe('NoticeBarController', () => {
     expect(controller.removed.has(item.key)).toBe(false)
   })
 
+  test.each(['dismiss', 'snooze', 'restore', 'complete'])('a %s broadcast supersedes an in-flight refresh', async (action) => {
+    const item = notice('n1')
+    await mount({ items: action === 'restore' ? [] : [item], top: item.key })
+    let resolve
+    csrfFetch.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    const request = controller.feedRefresh.refresh()
+    const current = action === 'restore' ? [item] : []
+    const deadline = action === 'snooze' ? new Date(Date.now() + 86400000).toISOString() : ''
+    const payload = payloadEl(current)
+    payload.dataset.changed = item.key
+    payload.dataset.refreshAt = deadline
+    controller.payloadTarget.replaceWith(payload)
+    await flush()
+    resolve({ ok: true, json: async () => ({
+      items: action === 'restore' ? [] : [item], refresh_at: new Date(Date.now() + 2000).toISOString(),
+    }) })
+    await request
+    await flush()
+    expect(controller.queue).toEqual(current)
+    expect(controller.feedRefresh.deadline || null).toBe(deadline ? Date.parse(deadline) : null)
+  })
+
+  test('a queued refresh is discarded when a payload arrives before the animation ends', async () => {
+    const item = mission('m1')
+    await mount({ items: [item], top: item.key })
+    let finishAnimation
+    controller.run(() => new Promise((done) => { finishAnimation = done }))
+    await Promise.resolve()
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [item], refresh_at: null }) })
+    const request = controller.feedRefresh.refresh()
+    await jest.advanceTimersByTimeAsync(0)
+    const reconcile = jest.spyOn(controller, 'reconcile')
+    await replacePayload([])
+    finishAnimation()
+    await request
+    await flush()
+    expect(reconcile).toHaveBeenCalledTimes(1)
+    expect(reconcile).toHaveBeenCalledWith([], null)
+    expect(controller.queue).toEqual([])
+  })
+
   test('a restored snapshot restarts its persisted snooze timer', async () => {
     const item = mission('m1')
     await mount({ items: [item], top: item.key })

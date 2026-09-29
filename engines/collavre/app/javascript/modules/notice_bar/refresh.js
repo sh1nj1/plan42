@@ -6,6 +6,7 @@ export default class NoticeRefresh {
   constructor(url, apply) {
     this.url = url
     this.apply = apply
+    this.generation = 0
   }
 
   schedule(date) {
@@ -25,17 +26,23 @@ export default class NoticeRefresh {
     return Math.min(2147483647, Math.max(this.minimumDelay, deadline - Date.now()))
   }
 
+  invalidate() {
+    this.generation += 1
+  }
+
   async refresh() {
+    const generation = ++this.generation
+    const current = () => !this.stopped && generation === this.generation
     this.deadline = null
     try {
       const response = await csrfFetch(this.url, { headers: { Accept: 'application/json' }, cache: 'no-store' })
       if (!response.ok) throw new Error('Notice refresh failed')
       const data = await response.json()
-      if (this.stopped) return
-      await this.apply(data.items)
-      this.schedule(data.refresh_at)
+      if (!current()) return
+      await this.apply(data.items, current)
+      if (current()) this.schedule(data.refresh_at)
     } catch {
-      this.schedule(new Date(Date.now() + 60000).toISOString())
+      if (current()) this.schedule(new Date(Date.now() + 60000).toISOString())
     }
   }
 

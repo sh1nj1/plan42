@@ -41,11 +41,7 @@ export default class extends Controller {
   }
 
   connect() {
-    this.feedRefresh = new NoticeRefresh(this.feedUrlValue, (items) => this.run(() => {
-      for (const key of this.snoozed) this.removed.delete(key)
-      this.snoozed.clear()
-      return this.reconcile(items)
-    }))
+    this.feedRefresh = new NoticeRefresh(this.feedUrlValue, (items, current) => this.applyRefresh(items, current))
     this.feedRefresh.schedule(this.refreshAtValue)
     this.beforeCache = () => {
       this.clearTransientUI()
@@ -56,6 +52,16 @@ export default class extends Controller {
       }
     }
     document.addEventListener('turbo:before-cache', this.beforeCache)
+  }
+
+  applyRefresh(items, current) {
+    return this.run(() => {
+      // A newer payload can arrive while this job waits for an animation.
+      if (!current()) return undefined
+      for (const key of this.snoozed) this.removed.delete(key)
+      this.snoozed.clear()
+      return this.reconcile(items)
+    })
   }
 
   disconnect() {
@@ -103,6 +109,7 @@ export default class extends Controller {
   }
 
   payloadTargetConnected(el) {
+    this.feedRefresh?.invalidate()
     const items = parseJSON(el.dataset.items, [])
     const completion = parseJSON(el.dataset.completion, null)
     this.run(() => {
@@ -226,6 +233,7 @@ export default class extends Controller {
       .then(() => csrfFetch(url, { method: 'POST', headers: { Accept: 'application/json' } }))
       .then((response) => {
         if (response.ok) {
+          this.feedRefresh?.invalidate()
           window.Turbo?.cache?.clear()
           this.scheduleRefresh(response.headers?.get('X-Notice-Snoozed-Until'))
         }

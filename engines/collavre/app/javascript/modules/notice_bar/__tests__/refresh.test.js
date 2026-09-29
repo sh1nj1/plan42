@@ -24,9 +24,9 @@ describe('notice deadline refresh', () => {
     refresh.schedule(deadline(1000))
     refresh.schedule(deadline(3000))
     await jest.advanceTimersByTimeAsync(1000)
-    expect(apply).toHaveBeenCalledWith([])
+    expect(apply).toHaveBeenCalledWith([], expect.any(Function))
     await jest.advanceTimersByTimeAsync(2000)
-    expect(apply).toHaveBeenLastCalledWith(['next'])
+    expect(apply).toHaveBeenLastCalledWith(['next'], expect.any(Function))
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
@@ -36,11 +36,11 @@ describe('notice deadline refresh', () => {
     fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], refresh_at: null }) })
     refresh.schedule(deadline(1000))
     await jest.advanceTimersByTimeAsync(1000)
-    expect(apply).toHaveBeenLastCalledWith(['scheduled'])
+    expect(apply).toHaveBeenLastCalledWith(['scheduled'], expect.any(Function))
     await jest.advanceTimersByTimeAsync(1999)
     expect(fetch).toHaveBeenCalledTimes(1)
     await jest.advanceTimersByTimeAsync(1)
-    expect(apply).toHaveBeenLastCalledWith([])
+    expect(apply).toHaveBeenLastCalledWith([], expect.any(Function))
     expect(jest.getTimerCount()).toBe(0)
   })
 
@@ -56,7 +56,7 @@ describe('notice deadline refresh', () => {
     await jest.advanceTimersByTimeAsync(9999)
     expect(fetch).toHaveBeenCalledTimes(1)
     await jest.advanceTimersByTimeAsync(1)
-    expect(apply).toHaveBeenLastCalledWith(['scheduled'])
+    expect(apply).toHaveBeenLastCalledWith(['scheduled'], expect.any(Function))
   })
 
   test.each(['offline', 'rejected'])('retries %s without restoring stale items', async (failure) => {
@@ -67,7 +67,7 @@ describe('notice deadline refresh', () => {
     await jest.advanceTimersByTimeAsync(1000)
     expect(apply).not.toHaveBeenCalled()
     await jest.advanceTimersByTimeAsync(60000)
-    expect(apply).toHaveBeenCalledWith([])
+    expect(apply).toHaveBeenCalledWith([], expect.any(Function))
   })
 
   test('backs off repeated past deadlines when the client clock is ahead', async () => {
@@ -87,7 +87,7 @@ describe('notice deadline refresh', () => {
     }
     fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: ['awake'], refresh_at: null }) })
     await jest.advanceTimersByTimeAsync(60000)
-    expect(apply).toHaveBeenLastCalledWith(['awake'])
+    expect(apply).toHaveBeenLastCalledWith(['awake'], expect.any(Function))
     expect(jest.getTimerCount()).toBe(0)
   })
 
@@ -102,7 +102,57 @@ describe('notice deadline refresh', () => {
     await jest.advanceTimersByTimeAsync(999)
     expect(fetch).toHaveBeenCalledTimes(2)
     await jest.advanceTimersByTimeAsync(1)
-    expect(apply).toHaveBeenLastCalledWith(['awake'])
+    expect(apply).toHaveBeenLastCalledWith(['awake'], expect.any(Function))
+  })
+
+  test('invalidation while JSON is loading preserves the newer deadline', async () => {
+    let resolve
+    fetch.mockResolvedValueOnce({ ok: true, json: () => new Promise((done) => { resolve = done }) })
+    const request = refresh.refresh()
+    await Promise.resolve()
+    refresh.invalidate()
+    const next = deadline(5000)
+    refresh.schedule(next)
+    resolve({ items: ['stale'], refresh_at: deadline(1000) })
+    await request
+    expect(apply).not.toHaveBeenCalled()
+    expect(refresh.deadline).toBe(Date.parse(next))
+  })
+
+  test('an invalidated failed request does not schedule a retry', async () => {
+    let reject
+    fetch.mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+    const request = refresh.refresh()
+    refresh.invalidate()
+    reject(new Error('offline'))
+    await request
+    expect(apply).not.toHaveBeenCalled()
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  test('invalidation during apply prevents the old deadline from being scheduled', async () => {
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], refresh_at: deadline(1000) }) })
+    apply.mockImplementationOnce(async (_, current) => {
+      expect(current()).toBe(true)
+      refresh.invalidate()
+      expect(current()).toBe(false)
+    })
+    await refresh.refresh()
+    expect(apply).toHaveBeenCalledTimes(1)
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  test('a newer request supersedes an older in-flight response', async () => {
+    let resolve
+    fetch.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: ['new'], refresh_at: null }) })
+    const older = refresh.refresh()
+    await refresh.refresh()
+    resolve({ ok: true, json: async () => ({ items: ['old'], refresh_at: deadline(1000) }) })
+    await older
+    expect(apply).toHaveBeenCalledTimes(1)
+    expect(apply).toHaveBeenCalledWith(['new'], expect.any(Function))
+    expect(jest.getTimerCount()).toBe(0)
   })
 
   test('disconnect cancels pending timers', async () => {
