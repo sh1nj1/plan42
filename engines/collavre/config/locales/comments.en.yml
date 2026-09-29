@@ -297,6 +297,9 @@ en:
         learn_more: Learn more
         no_search_results: No messages match your search.
         cards:
+          kollavy:
+            title: "Kollavy AI Agent"
+            description: "Ask Kollavy how to use Collavre. Start in Inbox → Main, or mention @Kollavy: in a shared Creative."
           mention_agent:
             title: Mention teammates & agents
             description: "Use @name: to ask a question or loop someone in."

@@ -3,6 +3,7 @@ require "json"
 
 class CommentsControllerTest < ActionDispatch::IntegrationTest
   setup do
+    Collavre::Kollavy.seed!
     @user = users(:one)
     @creative = creatives(:tshirt)
     @user.update!(email_verified_at: Time.current)
@@ -1581,13 +1582,26 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "0", response.headers["Expires"]
   end
 
+  test "empty chat and Inbox Main hide Kollavy until it is provisioned" do
+    Collavre::Kollavy.agent.destroy!
+    inbox = Creative.inbox_for(@user)
+
+    [ [ @creative, nil ], [ inbox, inbox.main_topic.id ] ].each do |creative, topic_id|
+      get creative_comments_path(creative), params: { topic_id: topic_id }
+
+      assert_response :success
+      assert_not_includes @response.body, %(data-key="kollavy")
+      assert_includes @response.body, %(data-key="mention_agent")
+    end
+  end
+
   test "index shows feature discovery cards when there are no comments" do
     get creative_comments_path(@creative)
 
     assert_response :success
     assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.title")
-    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+    %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(data-key="#{key}")
     end
     assert_not_includes @response.body, %(data-key="inbox_notifications")
@@ -1631,6 +1645,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes @response.body, %(data-key="mention_agent")
+    assert_includes @response.body, %(data-key="kollavy")
+    assert_select "a.feature-card-guide-link[href=?]", "/features/kollavy?locale=#{I18n.locale}"
     assert_not_includes @response.body, %(data-key="inbox_notifications")
   end
 
@@ -1663,7 +1679,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.learn_more")
-    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+    %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(href="/features/#{key}?locale=en"),
                       "expected the #{key} card to link its guide in the active locale"
     end
@@ -1673,7 +1689,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     get creative_comments_path(@creative), env: { "SCRIPT_NAME" => "/collavre" }
 
     assert_response :success
-    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+    %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(href="/collavre/features/#{key}?locale=en"),
                       "expected the #{key} card guide to retain the mount prefix"
     end
@@ -1690,7 +1706,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "index shows the minimal empty state once every card is dismissed" do
-    @user.update!(dismissed_notices: %w[mention_agent slash_command chat_context automation_trigger topic_management add_user])
+    @user.update!(dismissed_notices: %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user])
 
     get creative_comments_path(@creative)
 
@@ -1754,6 +1770,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.title")
     assert_includes @response.body, %(data-key="mention_agent")
+    assert_includes @response.body, %(data-key="kollavy")
+    assert_select "a.feature-card-guide-link[href=?]", "/features/kollavy?locale=#{I18n.locale}"
   end
 
   test "index still shows feature cards for an empty topic when the creative has no comments at all" do
@@ -1764,6 +1782,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, %(data-key="mention_agent")
+    assert_includes @response.body, %(data-key="kollavy")
+    assert_select "a.feature-card-guide-link[href=?]", "/features/kollavy?locale=#{I18n.locale}"
   end
 
   # A comment from another participant arrives as a Turbo Stream append into
