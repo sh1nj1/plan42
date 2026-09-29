@@ -52,6 +52,26 @@ module Collavre
         assert_equal({ tour_one: 2, tour_two: 2 }, calls)
       end
 
+      test "skips audience-ineligible predecessors without seeding their state" do
+        NoticeRegistry.register(:tour_one, kind: :mission, group: :tour,
+                                audience: ->(user) { user != @user }, done_when: ->(_) { false })
+
+        item = Feed.new(@user).items.find { |notice| notice[:key] == "tour_two" }
+        assert_not_nil item
+        assert_equal [ "current" ], item[:steps].map { |step| step[:state] }
+        assert_nil UserNotice.find_by(user: @user, notice_key: "tour_one")
+        assert_equal %w[outage tour_one release_note], keys(users(:one))
+      end
+
+      test "backfills an eligible mission after an audience-ineligible predecessor" do
+        NoticeRegistry.register(:tour_one, kind: :mission, group: :tour, audience: ->(_) { false }, done_when: ->(_) { false })
+        @done[:tour_two] = true
+
+        assert_equal %w[outage release_note], keys
+        assert UserNotice.find_by!(user: @user, notice_key: "tour_two").completed?
+        assert_nil UserNotice.find_by(user: @user, notice_key: "tour_one")
+      end
+
       test "orders by priority then registration and shows one mission per group" do
         assert_equal %w[outage tour_one release_note], keys
       end

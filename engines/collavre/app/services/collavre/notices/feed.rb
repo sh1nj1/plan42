@@ -64,7 +64,7 @@ module Collavre
 
       # Missions in a group run one at a time, in registration order.
       def head_of_group?(notice)
-        NoticeRegistry.group(notice.group).take_while { |member| member != notice }
+        visible_group(notice).take_while { |member| member != notice }
                       .all? { |member| state_for(member)&.completed? }
       end
 

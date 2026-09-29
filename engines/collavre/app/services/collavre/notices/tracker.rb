@@ -53,6 +53,7 @@ module Collavre
 
       def head_of_group?(notice, user)
         earlier = NoticeRegistry.group(notice.group).take_while { |member| member != notice }
+                                .select { |member| member.visible_to?(user) }
         return true if earlier.empty?
 
         UserNotice.completed.where(user: user, notice_key: earlier.map { |member| member.key.to_s }).count == earlier.size

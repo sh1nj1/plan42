@@ -66,6 +66,21 @@ module Collavre
         assert_equal %w[tour_two], kwargs[:locals][:items].map { |item| item[:key] }
       end
 
+      test "completes past an audience-ineligible predecessor but preserves eligible ordering" do
+        NoticeRegistry.register(:tour_one, kind: :mission, group: :tour,
+                                audience: ->(user) { user != @user }, completes_on: { EVENT => true })
+
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, two: true) }
+
+        assert_nil status(:tour_one)
+        assert_equal "completed", status(:tour_two)
+        completion = @broadcasts.sole.last[:locals][:completion]
+        assert_equal "tour_two", completion[:key]
+        assert_nil completion[:next_key]
+        assert_empty @broadcasts.sole.last[:locals][:items]
+        assert_not Tracker.head_of_group?(NoticeRegistry.find(:tour_two), users(:one))
+      end
+
       test "overlapping candidates broadcast completion only once" do
         candidates = Tracker.open_candidates(EVENT, @user)
         capture_broadcasts do
