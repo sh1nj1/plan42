@@ -67,8 +67,7 @@ if (!mentionMenuInitialized) {
       const id = ++requestId
       const before = textarea.value.slice(0, textarea.selectionStart)
       const m = before.match(/@([^\s@]*)$/)
-      hide()
-      if (!m) return
+      if (!m) return hide()
       const q = m[1]
       if (q.length === 0) search(q, id)
       else fetchTimer = setTimeout(() => search(q, id), 200)

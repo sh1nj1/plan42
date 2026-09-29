@@ -124,3 +124,22 @@ test('initialization tolerates pages without the chat', () => {
   document.dispatchEvent(new Event('turbo:load'))
   expect(fetch).not.toHaveBeenCalled()
 })
+
+test('keeps the menu visible while a new mention search is debounced and loading', async () => {
+  input('@Al')
+  await jest.advanceTimersByTimeAsync(200)
+  const menu = document.querySelector('#mention-menu')
+  expect(menu.style.display).toBe('block')
+  let resolve
+  fetch.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+  input('@Ali')
+  expect(menu.style.display).toBe('block')
+  await jest.advanceTimersByTimeAsync(200)
+  expect(menu.style.display).toBe('block')
+  resolve(response([{ id: 2, name: 'Alina', avatar_url: '/alina.png' }]))
+  await flush()
+  expect(menu.style.display).toBe('block')
+  expect(menu.textContent).toContain('Alina')
+  input('Hello')
+  expect(menu.style.display).toBe('none')
+})

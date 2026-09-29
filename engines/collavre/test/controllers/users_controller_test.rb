@@ -321,7 +321,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute_includes emails, impostor.email
   end
 
-  test "empty mention search returns every eligible user without the search limit" do
+  test "empty mention search includes eligible users beyond the name search limit" do
     sign_in_as(@regular_user, password: "password")
     creative = Creative.create!(user: @regular_user, description: "Mention list")
     permitted = 51.times.map do |index|
@@ -342,6 +342,29 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     get collavre.search_users_path, params: { q: "Mention", creative_id: creative.id, limit: 10 }
     assert_equal 10, response.parsed_body.length
+  end
+
+  test "empty mention search caps results at 100 with deterministic ordering and preloaded avatars" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Bounded mention list")
+    101.times do |index|
+      User.create!(email: "bounded-#{index}@example.com", name: "Bounded #{index.to_s.rjust(3, '0')}",
+                   password: "password", searchable: true)
+    end
+    avatar_queries = []
+    subscriber = lambda do |*, payload|
+      avatar_queries << payload[:sql] if payload[:sql].match?(/SELECT.*active_storage_attachments/i)
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get collavre.search_users_path, params: { q: "", creative_id: creative.id, limit: 1000 }
+    end
+
+    assert_response :success
+    assert_equal 100, response.parsed_body.length
+    expected_ids = User.mentionable_for(creative).order(:name, :id).limit(100).pluck(:id)
+    assert_equal expected_ids, response.parsed_body.pluck("id")
+    assert_equal 1, avatar_queries.length, "Avatar attachments should be loaded in one query"
   end
 
   test "empty mention search requires access to the creative" do
