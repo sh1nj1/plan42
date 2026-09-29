@@ -5,6 +5,7 @@ module Collavre
     def show
       @user = Collavre::User.find(params[:id])
       @active_tab = params[:tab].presence || "profile"
+      return redirect_to(edit_ai_user_path(@user)) if @user.ai_user?
       @active_tab = "contacts" if @active_tab == "org_chart"
       @contacts_view = params[:contacts_view].presence || "list"
       if Current.user

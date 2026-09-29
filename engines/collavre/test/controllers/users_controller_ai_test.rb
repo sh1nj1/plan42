@@ -298,6 +298,8 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     )
 
     get user_url(@ai_user)
+    assert_redirected_to edit_ai_user_url(@ai_user)
+    follow_redirect!
     assert_response :success
     assert_includes response.body, I18n.t("collavre.agent_connections.profile_help.shared", locale: :en)
     assert_not_includes response.body, I18n.t("collavre.agent_connections.profile_help.per_user", locale: :en)
@@ -305,6 +307,8 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     gateway.update!(workspace_mode: :per_user)
     @admin.update!(locale: "ko")
     get user_url(@ai_user)
+    assert_redirected_to edit_ai_user_url(@ai_user)
+    follow_redirect!
     assert_response :success
     assert_includes response.body, I18n.t("collavre.agent_connections.profile_help.per_user", locale: :ko)
     assert_not_includes response.body, I18n.t("collavre.agent_connections.profile_help.shared", locale: :ko)

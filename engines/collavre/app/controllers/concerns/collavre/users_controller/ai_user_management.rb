@@ -5,7 +5,8 @@ module Collavre
     included do
       before_action :set_user_for_ai_actions, only: [ :edit_ai, :update_ai ]
       before_action :verify_ai_user, only: [ :edit_ai, :update_ai ]
-      before_action :verify_ai_user_authorization, only: [ :edit_ai, :update_ai ]
+      before_action :verify_ai_profile_access, only: :edit_ai
+      before_action :verify_ai_user_authorization, only: :update_ai
     end
 
     def new_ai
@@ -47,11 +48,17 @@ module Collavre
     end
 
     def edit_ai
+      @return_to = safe_return_to(params[:return_to].presence || request.referer)
+      @read_only = !ai_profile_editable?
       @available_tools = load_available_tools
+      if @read_only
+        @available_tools.select! { |tool| Array(@user.tools).include?(tool[:name]) }
+        return
+      end
+
       @llm_models = Collavre::LlmModel.suggestions
       @agent_gateways = editable_agent_gateways(@user)
       @has_stored_llm_api_key = @user.llm_api_key.present?
-      @return_to = safe_return_to(params[:return_to].presence || request.referer)
     end
 
     def update_ai
@@ -234,8 +241,7 @@ module Collavre
     end
 
     def verify_ai_user_authorization
-      allowed = Current.user.system_admin? ||
-                (@user.ai_user? && @user.created_by_id == Current.user.id)
+      allowed = ai_profile_editable?
 
       unless allowed
         fallback = user_path(Current.user, tab: "contacts")

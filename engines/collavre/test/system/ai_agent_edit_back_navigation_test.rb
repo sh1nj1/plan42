@@ -40,6 +40,20 @@ class AiAgentEditBackNavigationTest < ApplicationSystemTestCase
     assert_current_path collavre.users_path
   end
 
+  test "non-owner profile uses the existing form with disabled fields and no connection settings" do
+    @admin.update!(system_admin: false)
+    @agent.update!(created_by_id: nil, searchable: true, llm_api_key: "hidden-profile-secret")
+
+    visit collavre.user_path(@agent)
+    assert_current_path collavre.edit_ai_user_path(@agent)
+    assert_field "user_name", with: @agent.name, disabled: true
+    assert_field "user_system_prompt", with: @agent.system_prompt, disabled: true
+    assert_button I18n.t("common.save"), disabled: true
+    assert_no_selector "#user_llm_vendor", visible: :all
+    assert_no_selector "#user_llm_api_key", visible: :all
+    assert_no_text "hidden-profile-secret"
+  end
+
   # Opening the form from the profile's user management tab used to leave the
   # edit form on screen after going back: switching tabs overwrote the history
   # entry's Turbo state, so Turbo skipped the restore and only the URL changed.

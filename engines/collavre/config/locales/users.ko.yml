@@ -60,6 +60,8 @@ ko:
       copy_ai:
         link: 복사
       edit_ai:
+        profile_title: AI 에이전트 프로필
+        read_only_notice: 소유자 또는 시스템 관리자만 이 에이전트를 수정할 수 있습니다.
         title: AI 에이전트 수정
         link: 수정
         not_an_ai: 이 사용자는 AI 에이전트가 아닙니다.

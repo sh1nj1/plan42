@@ -15,34 +15,6 @@
 <div class="tab-panels">
   <section class="tab-panel <%= 'active' if active_tab == 'profile' %>" data-tabs-target="panel" data-tab-name="profile">
 
-    <% if @user.ai_user? %>
-      <div class="ai-user-details">
-        <div class="alert alert-info">
-          <%= t('collavre.users.details_ai_notice') %>
-          <%= link_to t('collavre.users.edit_ai.title'), collavre.edit_ai_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
-        </div>
-        <% if @user.cli_proxy_agent? && @user.gateway_accessible_to?(Current.user) && (@user.agent_gateway.per_user? || @user.created_by_id == Current.user.id || Current.user.system_admin?) %>
-          <div class="alert alert-info">
-            <%= t("collavre.agent_connections.profile_help.#{@user.agent_gateway.workspace_mode}") %>
-            <%= link_to t("collavre.agent_connections.manage"), collavre.agent_connection_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
-          </div>
-        <% end %>
-
-        <dl class="row">
-          <dt class="col-sm-3"><%= t('collavre.users.name') %></dt>
-          <dd class="col-sm-9"><%= @user.name %></dd>
-
-          <dt class="col-sm-3"><%= t('collavre.users.new_ai.id_label') %></dt>
-          <dd class="col-sm-9"><%= @user.email.split('@').first %></dd>
-
-          <dt class="col-sm-3"><%= t('collavre.users.new_ai.model_label') %></dt>
-          <dd class="col-sm-9"><%= @user.llm_model %></dd>
-
-          <dt class="col-sm-3"><%= t('collavre.users.new_ai.system_prompt_label') %></dt>
-          <dd class="col-sm-9"><pre><%= @user.system_prompt %></pre></dd>
-        </dl>
-      </div>
-    <% else %>
       <div data-controller="avatar-preview">
 
         <div class="avatar-preview-row">
@@ -144,7 +116,6 @@
 
 
       </div>
-    <% end %>
   </section>
 
     <section class="tab-panel <%= 'active' if active_tab == 'contacts' %>" data-tabs-target="panel" data-tab-name="contacts">

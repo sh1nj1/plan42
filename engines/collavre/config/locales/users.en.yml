@@ -62,6 +62,8 @@ en:
       copy_ai:
         link: Copy
       edit_ai:
+        profile_title: AI Agent Profile
+        read_only_notice: Only the owner or a system administrator can edit this agent.
         title: Edit AI Agent
         link: Edit
         not_an_ai: This user is not an AI agent.

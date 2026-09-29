@@ -243,6 +243,6 @@ class ChatBarListPopupTest < ApplicationSystemTestCase
       touch.add_pointer_input(:touch, "finger")
       touch.click(find_link(I18n.t("collavre.comments.user_menu.view_profile")).native, device: "finger").perform
     end
-    assert_current_path Collavre::Engine.routes.url_helpers.user_path(agent)
+    assert_current_path Collavre::Engine.routes.url_helpers.edit_ai_user_path(agent)
   end
 end
