@@ -4,7 +4,7 @@ const fetch = jest.fn()
 jest.unstable_mockModule('../../../lib/api/csrf_fetch', () => ({ default: fetch }))
 const NoticeRefresh = (await import('../refresh')).default
 
-describe('notice snooze refresh', () => {
+describe('notice deadline refresh', () => {
   let refresh, apply
   const deadline = (ms) => new Date(Date.now() + ms).toISOString()
   beforeEach(() => {
@@ -28,6 +28,35 @@ describe('notice snooze refresh', () => {
     await jest.advanceTimersByTimeAsync(2000)
     expect(apply).toHaveBeenLastCalledWith(['next'])
     expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  test('refreshes at start and end boundaries without navigation', async () => {
+    const endsAt = deadline(3000)
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: ['scheduled'], refresh_at: endsAt }) })
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], refresh_at: null }) })
+    refresh.schedule(deadline(1000))
+    await jest.advanceTimersByTimeAsync(1000)
+    expect(apply).toHaveBeenLastCalledWith(['scheduled'])
+    await jest.advanceTimersByTimeAsync(1999)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(1)
+    expect(apply).toHaveBeenLastCalledWith([])
+    expect(jest.getTimerCount()).toBe(0)
+  })
+
+  test('caps distant windows to prevent browser timer overflow', async () => {
+    const future = deadline(2147483647 + 10000)
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], refresh_at: future }) })
+    fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: ['scheduled'], refresh_at: null }) })
+    refresh.schedule(future)
+    await jest.advanceTimersByTimeAsync(2147483646)
+    expect(fetch).not.toHaveBeenCalled()
+    await jest.advanceTimersByTimeAsync(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(9999)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(1)
+    expect(apply).toHaveBeenLastCalledWith(['scheduled'])
   })
 
   test.each(['offline', 'rejected'])('retries %s without restoring stale items', async (failure) => {

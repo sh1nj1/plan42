@@ -1,11 +1,11 @@
 module Collavre
-  # Records notice actions and serves authoritative feeds after snooze expiry.
+  # Records notice actions and serves authoritative feeds at notice deadlines.
   class UserNoticesController < ApplicationController
     before_action :set_notice, except: :index
 
     def index
       response.headers["Cache-Control"] = "no-store"
-      render json: { items: Notices::Feed.new(Current.user).items, refresh_at: next_snooze }
+      render json: { items: Notices::Feed.new(Current.user).items, refresh_at: Notices::RefreshDeadline.for(Current.user) }
     end
 
     # Closing a non-mission notice hides it for good.
@@ -45,10 +45,6 @@ module Collavre
 
     private
 
-    def next_snooze
-      UserNotice.where(user: Current.user).snoozed.where("snoozed_until > ?", Time.current).minimum(:snoozed_until)
-    end
-
     def set_notice
       @notice = NoticeRegistry.find(params[:key])
       head :not_found unless @notice&.visible_to?(Current.user)
@@ -62,7 +58,7 @@ module Collavre
     end
 
     def broadcast_mutation
-      Notices::Tracker.broadcast(Current.user, changed: @notice.key, refresh_at: next_snooze)
+      Notices::Tracker.broadcast(Current.user, changed: @notice.key)
     end
   end
 end

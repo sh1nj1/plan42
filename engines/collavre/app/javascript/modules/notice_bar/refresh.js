@@ -1,6 +1,6 @@
 import csrfFetch from '../../lib/api/csrf_fetch'
 
-// Wake at the server's earliest snooze deadline; retry offline tabs without
+// Wake at the server's earliest notice deadline; retry offline tabs without
 // restoring stale items locally. Destroy also invalidates in-flight responses.
 export default class NoticeRefresh {
   constructor(url, apply) {
@@ -21,7 +21,8 @@ export default class NoticeRefresh {
     // ahead. Bound successful retries as well as network-failure retries.
     this.minimumDelay = this.lastDeadline === deadline ? Math.min(this.minimumDelay * 2, 60000) : 1000
     this.lastDeadline = deadline
-    return Math.max(this.minimumDelay, deadline - Date.now())
+    // Browser timers overflow beyond a signed 32-bit delay (about 25 days).
+    return Math.min(2147483647, Math.max(this.minimumDelay, deadline - Date.now()))
   }
 
   async refresh() {

@@ -84,6 +84,47 @@ module Collavre
       end
     end
 
+    test "initial page and successive feeds schedule start and end boundaries" do
+      freeze_time do
+        starts_at = 1.hour.from_now
+        ends_at = 2.hours.from_now
+        NoticeRegistry.register(:scheduled, starts_at: starts_at, ends_at: ends_at)
+
+        get "/creatives"
+        assert_response :success
+        assert_select "[data-notice-bar-refresh-at-value=?]", starts_at.iso8601(3)
+        get "/user_notices"
+        assert_equal starts_at, Time.iso8601(response.parsed_body["refresh_at"])
+        refute_includes response.parsed_body["items"].pluck("key"), "scheduled"
+
+        travel_to starts_at
+        get "/user_notices"
+        assert_equal ends_at, Time.iso8601(response.parsed_body["refresh_at"])
+        assert_includes response.parsed_body["items"].pluck("key"), "scheduled"
+
+        travel_to ends_at
+        get "/user_notices"
+        assert_nil response.parsed_body["refresh_at"]
+        refute_includes response.parsed_body["items"].pluck("key"), "scheduled"
+      end
+    end
+
+    test "mutation and event broadcasts retain upcoming window boundaries" do
+      freeze_time do
+        deadline = 1.hour.from_now
+        NoticeRegistry.register(:scheduled, starts_at: deadline)
+        broadcasts = []
+        recorder = ->(*args, **options) { broadcasts << options[:locals] }
+        Turbo::StreamsChannel.stub(:broadcast_replace_to, recorder) do
+          post "/user_notices/tour_one/snooze"
+          assert_response :no_content
+          Notices::Tracker.broadcast(@user, completed: :release_note)
+        end
+        assert_equal 2, broadcasts.size
+        broadcasts.each { |locals| assert_equal deadline, locals[:refresh_at] }
+      end
+    end
+
     test "a stale snooze from an open sheet does not reopen a completed mission" do
       UserNotice.record!(@user, :tour_one, :completed)
       post "/user_notices/tour_one/snooze"
