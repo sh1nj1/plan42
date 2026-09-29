@@ -28,6 +28,22 @@ module Collavre
         UserNotice.find_by(user: @user, notice_key: key.to_s)&.status
       end
 
+      test "requestless completion broadcasts preserve mounted collection and member CTA paths" do
+        Rails.application.routes.draw { mount Collavre::Engine => "/collavre" }
+        NoticeRegistry.register(:collection_cta, cta_path: ->(routes, _user) { routes.creatives_path })
+        NoticeRegistry.register(:member_cta, cta_path: ->(routes, user) { routes.creative_path(user.id, open_comments: true) })
+
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true) }
+
+        locals = @broadcasts.sole.last[:locals]
+        assert_equal "tour_one", locals[:completion][:key]
+        urls = locals[:items].index_by { |item| item[:key] }
+        assert_equal "/collavre/creatives", urls.fetch("collection_cta")[:cta_url]
+        assert_equal "/collavre/creatives/#{@user.id}?open_comments=true", urls.fetch("member_cta")[:cta_url]
+      ensure
+        Rails.application.reload_routes!
+      end
+
       test "finished candidates skip audience checks while snoozed candidates remain eligible" do
         %i[completed dismissed].each do |status|
           NoticeRegistry.register(status, audience: ->(_) { flunk "finished audience evaluated" },

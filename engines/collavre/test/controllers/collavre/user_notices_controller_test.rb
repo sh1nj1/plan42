@@ -20,6 +20,26 @@ module Collavre
       UserNotice.find_by(user: @user, notice_key: key)
     end
 
+    test "refresh and mutation broadcasts preserve a non-root engine mount" do
+      Rails.application.routes.draw { mount Collavre::Engine => "/collavre" }
+      NoticeRegistry.register(:mounted_cta, cta_path: ->(routes, user) { routes.creative_path(user.id, open_comments: true) })
+      expected = "/collavre/creatives/#{@user.id}?open_comments=true"
+
+      get "/collavre/user_notices"
+      assert_response :success
+      assert_equal expected, response.parsed_body["items"].find { |item| item["key"] == "mounted_cta" }["cta_url"]
+
+      broadcasts = []
+      recorder = ->(*_args, **options) { broadcasts << options[:locals][:items] }
+      Turbo::StreamsChannel.stub(:broadcast_replace_to, recorder) do
+        post "/collavre/user_notices/release_note/dismiss"
+        assert_response :no_content
+      end
+      assert_equal expected, broadcasts.sole.find { |item| item[:key] == "mounted_cta" }[:cta_url]
+    ensure
+      Rails.application.reload_routes!
+    end
+
     test "successful mutations broadcast authoritative feeds to every subscribed tab" do
       freeze_time do
         [ [ "tour_one", "snooze", false ], [ "tour_one", "restore", true ],
