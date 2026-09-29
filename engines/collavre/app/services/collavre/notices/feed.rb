@@ -120,7 +120,7 @@ module Collavre
       end
 
       def translate(notice, field)
-        I18n.t("#{notice.i18n_scope}.#{field}", default: nil)
+        I18n.t("#{notice.i18n_scope}.#{field}", default: nil, **notice.translation_options.call(@user))
       end
     end
   end

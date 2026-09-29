@@ -30,6 +30,7 @@ module Collavre
         kind: :mission, group: :onboarding, icon: "🌳",
         target: "[data-comments--form-target='textarea']",
         audience: method(:agent_available?),
+        translation_options: ->(_user) { { agent_name: Kollavy.agent&.name } },
         allow_early_completion: true,
         cta_path: method(:agent_chat_path),
         done_when: method(:agent_called?),

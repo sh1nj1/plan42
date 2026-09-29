@@ -44,9 +44,9 @@ en:
           tip: "Add a sub-item here"
           done: "Your Creative has structure now!"
         onboarding_call_agent:
-          title: "Talk to Kollavy"
+          title: "Talk to %{agent_name}"
           summary: "Meet your AI guide in Inbox#Main"
-          body: "In Inbox#Main, mention @Kollavy and ask how to use Collavre. Kollavy is already there to help."
-          cta: "Talk to Kollavy"
-          tip: "Type @Kollavy: How do I use Collavre? and send"
+          body: "In Inbox#Main, mention @%{agent_name} and ask how to use Collavre. %{agent_name} is already there to help."
+          cta: "Talk to %{agent_name}"
+          tip: "Type @%{agent_name}: How do I use Collavre? and send"
           done: "Onboarding complete! 🎉"

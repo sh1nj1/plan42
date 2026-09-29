@@ -44,9 +44,9 @@ ko:
           tip: "여기서 하위 항목을 추가해요"
           done: "구조가 생겼어요!"
         onboarding_call_agent:
-          title: "Kollavy에게 말 걸어보세요"
+          title: "%{agent_name}에게 말 걸어보세요"
           summary: "Inbox#Main에서 AI 가이드와 대화해 보세요"
-          body: "Inbox#Main에 이미 있는 Kollavy를 @ 멘션하고 콜라브 사용법을 물어보세요."
-          cta: "Kollavy에게 말 걸기"
-          tip: "@Kollavy: 콜라브는 어떻게 사용하나요? 를 입력하고 전송하세요"
+          body: "Inbox#Main에 이미 있는 %{agent_name}를 @ 멘션하고 콜라브 사용법을 물어보세요."
+          cta: "%{agent_name}에게 말 걸기"
+          tip: "@%{agent_name}: 콜라브는 어떻게 사용하나요? 를 입력하고 전송하세요"
           done: "온보딩 완료! 🎉"

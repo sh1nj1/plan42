@@ -59,12 +59,27 @@ module Collavre
                    @mission.cta_path(routes, @user)
     end
 
-    test "both locales guide users to the existing Kollavy in Inbox Main" do
-      %i[en ko].each do |locale|
-        copy = I18n.t("collavre.notices.items.onboarding_call_agent", locale: locale)
-        assert_includes copy[:body], "Inbox#Main"
-        assert_includes copy[:body], "Kollavy"
-        assert_includes copy[:tip], "@Kollavy:"
+    test "completion copy remains available when Kollavy is absent" do
+      assert Notices::Feed.new(@user).completion(:onboarding_call_agent)[:done].present?
+    end
+
+    test "both locales use the current agent name in the guide and mention" do
+      agent = Kollavy.seed!
+      %i[onboarding_first_creative onboarding_sub_creative].each do |key|
+        UserNotice.seed!(@user, key, :completed)
+      end
+      [ "Kollavy", "Renamed Helper" ].each do |name|
+        agent.update!(name: name)
+        %i[en ko].each do |locale|
+          I18n.with_locale(locale) do
+            copy = Notices::Feed.new(@user).items.find { |item| item[:key] == "onboarding_call_agent" }
+            assert_includes copy[:body], "Inbox#Main"
+            %i[title body cta].each { |field| assert_includes copy[field], name }
+            assert_includes copy[:tip], "@#{name}:"
+            comment = Comment.new(creative: @user.inbox_creative, user: @user, content: "@#{name}: Help")
+            assert_includes comment.mentioned_users, agent
+          end
+        end
       end
     end
   end
