@@ -63,7 +63,7 @@ module Collavre
     end
 
     def latest_creative(user)
-      own_creatives(user).where(parent_id: nil, origin_id: nil).order(id: :desc).first || commentable_last_visit(user)
+      own_creatives(user).active.where(parent_id: nil, origin_id: nil).order(id: :desc).first || commentable_last_visit(user)
     end
 
     # Match the composer destination and its mention resolver, without depending
@@ -74,6 +74,8 @@ module Collavre
 
     def commentable_last_visit(user)
       creative = user.last_visited_creative
+      return if creative&.archived?
+
       creative if creative&.has_permission?(user, :feedback)
     end
 
