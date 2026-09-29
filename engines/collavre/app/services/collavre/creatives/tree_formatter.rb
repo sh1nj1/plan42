@@ -52,7 +52,7 @@ module Collavre
         lines << "#{indent}- [#{node.id}] #{desc} (#{progress}%)"
 
         if @include_comments
-          node.comments.order(created_at: :desc).limit(3).reverse_each do |comment|
+          node.comments.visible_to(Current.user).order(created_at: :desc).limit(3).reverse_each do |comment|
             comment_text = Collavre::HtmlText.truncated_label(comment.content, 100)
             lines << "#{indent}    > #{comment_text}"
           end

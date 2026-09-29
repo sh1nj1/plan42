@@ -23,6 +23,7 @@ module Collavre
       engines/*/app
       engines/*/lib
       engines/*/config/locales
+      engines/*/config/routes
       engines/*/config/routes.rb
     ].freeze
 

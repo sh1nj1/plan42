@@ -85,7 +85,7 @@ module Tools
                          .where("description LIKE ?", pattern)
                          .pluck(:id)
 
-      comment_ids = Comment.where(creative_id: accessible_ids)
+      comment_ids = Comment.visible_to(Current.user).where(creative_id: accessible_ids)
                            .where("content LIKE ?", pattern)
                            .pluck(:creative_id)
 
@@ -192,7 +192,7 @@ module Tools
     end
 
     def recent_comments(creative)
-      creative.comments.order(created_at: :desc).limit(3).map do |comment|
+      creative.comments.visible_to(Current.user).order(created_at: :desc).limit(3).map do |comment|
         {
           content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
           user: comment.user&.display_name || comment.user&.name,

@@ -45,6 +45,22 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
     assert_equal "file", @browser.list[:entries].find { |e| e[:path] == "config/routes.rb" }[:type]
   end
 
+  test "engine route fragments support read list and search without exposing adjacent secrets" do
+    path = "engines/core/config/routes/account_settings.rb"
+    write(path, "get 'account_settings'\n")
+    write("engines/core/config/credentials.yml", "ROUTE_SECRET\n")
+    File.symlink(File.join(@dir, "engines/core/config/credentials.yml"),
+                 File.join(@dir, "engines/core/config/routes/secret.rb"))
+
+    assert_includes @browser.read(path)[:content], "account_settings"
+    assert_equal [ path ], @browser.list("engines/core/config/routes")[:entries].pluck(:path)
+    assert_equal [ path ], @browser.search("account_settings")[:matches].pluck(:path)
+    assert_empty @browser.search("ROUTE_SECRET")[:matches]
+    assert_raises(Collavre::SourceBrowser::AccessDenied) do
+      @browser.read("engines/core/config/routes/secret.rb")
+    end
+  end
+
   test "lists a directory without denied entries" do
     result = @browser.list("app")
     names = result[:entries].map { |e| e[:path] }
