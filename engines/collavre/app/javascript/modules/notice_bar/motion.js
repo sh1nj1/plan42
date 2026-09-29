@@ -42,6 +42,7 @@ export function confetti(fromEl, count = 46) {
   for (let i = 0; i < count; i++) {
     const piece = document.createElement('div')
     piece.className = 'notice-confetti'
+    piece.setAttribute('data-turbo-temporary', '')
     piece.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length]
     piece.style.left = `${rect.left + rect.width * (0.25 + Math.random() * 0.5)}px`
     piece.style.top = `${rect.top + rect.height / 2}px`

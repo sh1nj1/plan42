@@ -181,6 +181,24 @@ describe('NoticeBarController', () => {
     expect(controller.queue).toEqual([item])
   })
 
+  test('replay broadcasts restore all reset missions without clearing unrelated removals', async () => {
+    const item = mission('first')
+    await mount({ items: [] })
+    const c = controller
+    for (const key of ['first', 'second', 'other']) {
+      c.removed.add(key)
+      c.snoozed.add(key)
+    }
+    const payload = document.createElement('div')
+    payload.dataset.items = JSON.stringify([item])
+    payload.dataset.changed = JSON.stringify(['first', 'second'])
+    c.payloadTargetConnected(payload)
+    await flush()
+    expect(c.queue.map(item => item.key)).toEqual(['first'])
+    expect([...c.removed]).toEqual(['other'])
+    expect([...c.snoozed]).toEqual(['other'])
+  })
+
   test('a restore broadcast clears the local removal for only the changed notice', async () => {
     const item = mission('remote')
     await mount({ items: [item], top: item.key })

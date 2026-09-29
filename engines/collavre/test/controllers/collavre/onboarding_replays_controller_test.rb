@@ -43,11 +43,31 @@ module Collavre
       end
     end
 
+    test "replay broadcasts the reset feed and all changed mission keys to other tabs" do
+      %i[first second third].each { |key| UserNotice.record!(@user, key, :completed) }
+      sign_in_as(@user, password: "password")
+      broadcasts = []
+      recorder = ->(*args, **options) { broadcasts << [ args, options ] }
+      Turbo::StreamsChannel.stub(:broadcast_replace_to, recorder) do
+        post collavre.onboarding_replay_path
+      end
+      assert_response :see_other
+      args, options = broadcasts.sole
+      assert_equal [ [ "inbox", @user ] ], args
+      assert_equal Notices::Tracker::PAYLOAD_TARGET, options[:target]
+      locals = options[:locals]
+      assert_equal "first", locals[:items].first[:key]
+      assert_nil locals[:completion]
+      html = ApplicationController.render(partial: options[:partial], locals: locals)
+      payload = Nokogiri::HTML.fragment(html).at_css("#notice-bar-payload")
+      assert_equal %w[first second third], JSON.parse(payload["data-changed"])
+    end
+
     test "seeds missing steps and advances only through new completion events" do
       sign_in_as(@user, password: "password")
       post collavre.onboarding_replay_path
       assert_response :see_other
-      assert_equal 3, UserNotice.pending.where(user: @user).count
+      assert_equal 3, UserNotice.pending.where(user: @user, notice_key: %w[first second third]).count
       assert_equal %w[first other_mission announcement], Notices::Feed.new(@user).items.map { |item| item[:key] }
       Notices::Tracker.handle("replay_step.collavre", user: @user, step: :first)
       assert UserNotice.find_by!(user: @user, notice_key: :first).completed?

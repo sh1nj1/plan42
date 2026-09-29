@@ -93,6 +93,7 @@ describe('notice bar motion', () => {
       confetti(from, 3)
       const pieces = document.querySelectorAll('.notice-confetti')
       expect(pieces).toHaveLength(3)
+      expect([...pieces].every(piece => piece.hasAttribute('data-turbo-temporary'))).toBe(true)
       expect(pieces[0].style.background).toBe('var(--notice-announcement-start)')
       expect(pieces[1].style.background).toBe('var(--color-success)')
       expect(pieces[2].style.background).toBe('var(--notice-feature-start)')
@@ -101,6 +102,24 @@ describe('notice bar motion', () => {
       await Promise.resolve()
       expect(document.querySelectorAll('.notice-confetti')).toHaveLength(0)
     } finally {
+      if (original) Element.prototype.animate = original
+      else delete Element.prototype.animate
+    }
+  })
+
+  test('Turbo removes an unfinished celebration before cloning its page snapshot', async () => {
+    const { session } = await import('@hotwired/turbo')
+    const original = Element.prototype.animate
+    Element.prototype.animate = jest.fn(() => ({ finished: new Promise(() => {}) }))
+    try {
+      session.start()
+      confetti(document.body.appendChild(document.createElement('div')))
+      expect(document.querySelectorAll('.notice-confetti')).toHaveLength(46)
+      document.dispatchEvent(new Event('turbo:before-cache', { bubbles: true }))
+      const snapshot = document.body.cloneNode(true)
+      expect(snapshot.querySelectorAll('.notice-confetti')).toHaveLength(0)
+    } finally {
+      session.stop()
       if (original) Element.prototype.animate = original
       else delete Element.prototype.animate
     }
