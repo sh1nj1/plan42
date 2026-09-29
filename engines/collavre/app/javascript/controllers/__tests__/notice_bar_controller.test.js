@@ -121,6 +121,47 @@ describe('NoticeBarController', () => {
     controller = null
   })
 
+  test.each(['complete', 'dismiss', 'snooze'])('%s stays removed after a Turbo snapshot restoration', async (action) => {
+    const item = action === 'snooze' ? mission('m1') : notice('n1')
+    await mount({ items: [item, notice('remaining')], top: item.key })
+    const operation = action === 'complete' ? controller.followCta(item) : controller.dismissTop()
+    await flush()
+    await operation
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    const snapshot = zone.cloneNode(true)
+    application.stop()
+    zone.remove()
+    document.body.appendChild(snapshot)
+    application = Application.start()
+    application.register('notice-bar', NoticeBarController)
+    await jest.advanceTimersByTimeAsync(0)
+    zone = snapshot
+    controller = application.getControllerForElementAndIdentifier(zone, 'notice-bar')
+    await flush(400)
+    expect(controller.queue.map(({ key }) => key)).toEqual(['remaining'])
+  })
+
+  test('undo remains present in a Turbo snapshot', async () => {
+    const item = mission('m1')
+    await mount({ items: [item], top: item.key })
+    const dismissal = controller.dismissTop()
+    await flush()
+    await dismissal
+    const restoration = controller.restore(item)
+    await flush()
+    await restoration
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    expect(JSON.parse(controller.payloadTarget.dataset.items)).toEqual([item])
+  })
+
+  test.each(['?tab=agents', '#agents', '?open_comments=true'])('navigates to a different URL state: %s', async (suffix) => {
+    const url = window.location.pathname + suffix
+    await mount({ items: [mission('m1', { cta_url: url })], top: 'm1' })
+    controller.startMission(controller.queue[0])
+    expect(window.Turbo.visit).toHaveBeenCalledWith(url)
+    expect(sessionStorage.getItem(PENDING_KEY)).toBe('m1')
+  })
+
   describe('first render', () => {
     test('drops in a notice that is new to this tab after a short delay', async () => {
       sessionStorage.setItem(TOP_KEY, 'other')

@@ -38,7 +38,18 @@ export default class extends Controller {
     this.deferred = []
   }
 
+  connect() {
+    this.beforeCache = () => {
+      for (const payload of this.payloadTargets) {
+        payload.dataset.items = JSON.stringify(parseJSON(payload.dataset.items, []).filter((item) => !this.removed.has(item.key)))
+        delete payload.dataset.completion
+      }
+    }
+    document.addEventListener('turbo:before-cache', this.beforeCache)
+  }
+
   disconnect() {
+    document.removeEventListener('turbo:before-cache', this.beforeCache)
     this.toastLayer?.destroy()
     this.sheetView?.destroy()
     this.spot?.clear()
@@ -242,7 +253,7 @@ export default class extends Controller {
     const target = findTarget(item.target)
     if (target) return this.spotlight.show(target, item.tip)
     const url = item.cta_url && new URL(item.cta_url, window.location.href)
-    if (url && (url.pathname !== window.location.pathname || url.searchParams.get('open_comments') === 'true')) {
+    if (url && (['origin', 'pathname', 'search', 'hash'].some((part) => url[part] !== window.location[part]) || url.searchParams.get('open_comments') === 'true')) {
       rememberPendingSpotlight(item.key)
       return this.visit(item.cta_url)
     }
