@@ -28,6 +28,7 @@ import CommentsPlaceholderController from "./comments/placeholder_controller"
 import CommentsPopupController from "./comments/popup_controller"
 import ClickTargetController from "./click_target_controller"
 import TabsController from "./tabs_controller"
+import ToolCategoryController from "./tool_category_controller"
 import LinkCreativeController from "./link_creative_controller"
 import TopicSearchController from "./topic_search_controller"
 import TopicListController from "./topic_list_controller"
@@ -83,6 +84,7 @@ export {
   CommentsPopupController,
   ClickTargetController,
   TabsController,
+  ToolCategoryController,
   LinkCreativeController,
   TopicSearchController,
   TopicListController,
@@ -158,6 +160,7 @@ export function registerControllers(application) {
   application.register("comments--popup", CommentsPopupController)
   application.register("click-target", ClickTargetController)
   application.register("tabs", TabsController)
+  application.register("tool-category", ToolCategoryController)
   application.register("link-creative", LinkCreativeController)
   application.register("inline-creative-picker", InlineCreativePickerController)
   application.register("topic-search", TopicSearchController)

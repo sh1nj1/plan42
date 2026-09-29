@@ -35,6 +35,68 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "label", I18n.t("collavre.users.edit_ai.meta_skills_title")
   end
 
+  test "new_ai groups tools into categories with a select-all toggle" do
+    mock_tools = [
+      { name: "topic_list", description: "List topics", parameters: {}, custom: false },
+      { name: "creative_create_service", description: "Create", parameters: {}, custom: false },
+      { name: "creative_update_service", description: "Update", parameters: {}, custom: false },
+      { name: "my_tool", description: "Mine", parameters: {}, custom: true }
+    ]
+    original_method = Collavre::UsersController.instance_method(:load_available_tools)
+    Collavre::UsersController.send(:define_method, :load_available_tools) { mock_tools }
+
+    get new_ai_users_url
+    assert_response :success
+
+    keys = css_select(".tools-selection fieldset.tool-category").map { |node| node["data-tool-category-key"] }
+    assert_equal %w[creative topic custom], keys
+    assert_select "fieldset.tool-category[data-controller='tool-category'][data-tool-category-key='creative']" do
+      assert_select "legend input#tool_category_creative[data-tool-category-target='toggle'][data-action='change->tool-category#toggle']:not([name])"
+      assert_select "legend strong", I18n.t("collavre.tool_categories.creative")
+      assert_select "legend [data-tool-category-target='count']", "0"
+      assert_select "input[name='tools[]'][data-tool-category-target='tool'][data-action='change->tool-category#sync']", count: 2
+    end
+    assert_select "fieldset[data-tool-category-key='custom'] input[name='tools[]'][value='my_tool']"
+  ensure
+    Collavre::UsersController.send(:define_method, :load_available_tools, original_method)
+  end
+
+  test "new_ai files tools that are not system tools under custom" do
+    system_tool = Collavre::McpToolRegistry.system_names.find { |name| name.start_with?("topic_") }
+    tools = [
+      { name: system_tool, description: "System", params: {} },
+      { name: "topic_homemade", description: "Dynamic", params: {} }
+    ]
+
+    Collavre::McpService.stub(:available_tools, tools) do
+      get new_ai_users_url
+    end
+
+    assert_response :success
+    assert_select "fieldset[data-tool-category-key='topic'] input[value=?]", system_tool
+    assert_select "fieldset[data-tool-category-key='custom'] input[value='topic_homemade']"
+  end
+
+  test "edit_ai shows selected tool counts per category" do
+    @ai_user.update!(tools: %w[creative_create_service])
+    mock_tools = [
+      { name: "creative_create_service", description: "Create", parameters: {}, custom: false },
+      { name: "creative_update_service", description: "Update", parameters: {}, custom: false }
+    ]
+    original_method = Collavre::UsersController.instance_method(:load_available_tools)
+    Collavre::UsersController.send(:define_method, :load_available_tools) { mock_tools }
+
+    get edit_ai_user_url(@ai_user)
+    assert_response :success
+    assert_select "fieldset[data-tool-category-key='creative']" do
+      assert_select "[data-tool-category-target='count']", "1"
+      assert_select "input[name='user[tools][]'][value='creative_create_service'][checked]"
+      assert_select "input[name='user[tools][]'][value='creative_update_service']:not([checked])"
+    end
+  ensure
+    Collavre::UsersController.send(:define_method, :load_available_tools, original_method)
+  end
+
   test "should get new_ai page and display available tools" do
     # Stub the controller's load_available_tools method to return mock tools
     mock_tools = [

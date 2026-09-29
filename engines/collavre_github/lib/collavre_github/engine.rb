@@ -41,6 +41,15 @@ module CollavreGithub
       end
     end
 
+    initializer "collavre_github.register_tool_category", after: :load_config_initializers do
+      Rails.application.config.to_prepare do
+        if defined?(Collavre::McpToolCategories)
+          Collavre::McpToolCategories.register(:github, prefixes: %w[github_ pr_],
+                                               label_key: "collavre_github.tool_category")
+        end
+      end
+    end
+
     initializer "collavre_github.user_associations", after: :load_config_initializers do
       Rails.application.config.to_prepare do
         user_class = Collavre.user_class rescue nil

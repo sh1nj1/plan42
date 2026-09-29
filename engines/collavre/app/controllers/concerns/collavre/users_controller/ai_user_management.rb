@@ -177,11 +177,13 @@ module Collavre
     end
 
     def load_available_tools
+      system_names = Collavre::McpToolRegistry.system_names
       Collavre::McpService.available_tools(Current.user).map do |tool|
         {
           name: tool[:name],
           description: tool[:description],
-          parameters: tool[:params]
+          parameters: tool[:params],
+          custom: !system_names.include?(tool[:name])
         }
       end
     end

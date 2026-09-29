@@ -1,0 +1,41 @@
+<%# locals: (tools:, field_name:, selected:) %>
+<% if tools.any? %>
+  <div class="tools-selection">
+    <% Collavre::McpToolCategories.group(tools).each do |group| %>
+      <fieldset class="tool-category" data-controller="tool-category" data-tool-category-key="<%= group[:key] %>">
+        <legend class="tool-category-header">
+          <label class="form-check-label">
+            <input type="checkbox" class="form-check-input tool-category-toggle"
+                   id="tool_category_<%= group[:key] %>"
+                   aria-label="<%= t('collavre.tool_categories.select_all_aria', category: group[:label]) %>"
+                   data-tool-category-target="toggle"
+                   data-action="change->tool-category#toggle">
+            <strong><%= group[:label] %></strong>
+            <span class="text-muted small tool-category-count">
+              (<span data-tool-category-target="count"><%= group[:tools].count { |tool| selected.include?(tool[:name]) } %></span>/<%= group[:tools].size %>)
+            </span>
+          </label>
+        </legend>
+
+        <% group[:tools].each do |tool| %>
+          <div class="form-check mb-2">
+            <%= check_box_tag field_name, tool[:name], selected.include?(tool[:name]),
+                  id: "tool_#{tool[:name]}", class: "form-check-input",
+                  data: { tool_category_target: "tool", action: "change->tool-category#sync" } %>
+            <label class="form-check-label" for="tool_<%= tool[:name] %>">
+              <strong><%= tool[:name] %></strong>
+              <br>
+              <span class="text-muted small"><%= tool[:description] %></span>
+            </label>
+            <details class="ml-4">
+              <summary class="text-muted small" style="cursor: pointer;">Parameters</summary>
+              <pre class="small bg-light p-2 mt-1"><code><%= JSON.pretty_generate(tool[:parameters]) %></code></pre>
+            </details>
+          </div>
+        <% end %>
+      </fieldset>
+    <% end %>
+  </div>
+<% else %>
+  <p class="text-muted"><%= t('collavre.users.edit_ai.no_tools_found') %></p>
+<% end %>

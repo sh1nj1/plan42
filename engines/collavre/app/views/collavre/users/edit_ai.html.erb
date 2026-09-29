@@ -51,26 +51,7 @@
     <label class="form-label"><%= t('collavre.users.edit_ai.meta_skills_title') %></label>
     <p class="text-muted small"><%= t('collavre.users.edit_ai.meta_skills_description') %></p>
 
-    <% if @available_tools.any? %>
-      <div class="tools-selection">
-        <% @available_tools.each do |tool| %>
-          <div class="form-check mb-2">
-            <%= check_box_tag "user[tools][]", tool[:name], (@user.tools || []).include?(tool[:name]), id: "tool_#{tool[:name]}", class: "form-check-input" %>
-            <label class="form-check-label" for="tool_<%= tool[:name] %>">
-              <strong><%= tool[:name] %></strong>
-              <br>
-              <span class="text-muted small"><%= tool[:description] %></span>
-            </label>
-            <details class="ml-4">
-              <summary class="text-muted small" style="cursor: pointer;">Parameters</summary>
-              <pre class="small bg-light p-2 mt-1"><code><%= JSON.pretty_generate(tool[:parameters]) %></code></pre>
-            </details>
-          </div>
-        <% end %>
-      </div>
-    <% else %>
-      <p class="text-muted"><%= t('collavre.users.edit_ai.no_tools_found') %></p>
-    <% end %>
+    <%= render "collavre/users/tool_selection", tools: @available_tools, field_name: "user[tools][]", selected: Array(@user.tools) %>
   </div>
 
   <div class="form-group">
