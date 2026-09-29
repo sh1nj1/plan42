@@ -38,14 +38,15 @@ module Collavre
         candidates.select { |notice| !finished.include?(notice.key.to_s) && notice.visible_to?(user) }
       end
 
-      def broadcast(user, completed: nil, awaiting: [])
+      def broadcast(user, completed: nil, awaiting: [], changed: nil, refresh_at: nil)
         I18n.with_locale(locale_for(user)) do
           feed = Feed.new(user, awaiting: awaiting)
           Turbo::StreamsChannel.broadcast_replace_to(
             [ "inbox", user ],
             target: PAYLOAD_TARGET,
             partial: "collavre/notices/payload",
-            locals: { items: feed.items, completion: completed && feed.completion(completed) }
+            locals: { items: feed.items, completion: completed && feed.completion(completed),
+                      changed: changed, refresh_at: refresh_at }
           )
         end
       end

@@ -1,4 +1,5 @@
 <%# Replaced over the ["inbox", user] stream by Notices::Tracker; the notice-bar
     controller diffs it against what is on screen to pick an animation. %>
 <%= tag.div id: Collavre::Notices::Tracker::PAYLOAD_TARGET, hidden: true,
-            data: { notice_bar_target: "payload", items: items, completion: completion } %>
+            data: { notice_bar_target: "payload", items: items, completion: completion,
+                    changed: local_assigns[:changed], refresh_at: local_assigns[:refresh_at]&.iso8601(3) } %>

@@ -162,6 +162,40 @@ describe('NoticeBarController', () => {
     expect(controller.queue).toEqual([item])
   })
 
+  test('a mutation from another tab removes the notice and schedules snooze expiry', async () => {
+    window.Turbo.cache = { clear: jest.fn() }
+    const item = mission('remote')
+    await mount({ items: [item], top: item.key })
+    const deadline = new Date(Date.now() + 5000).toISOString()
+    const payload = payloadEl([])
+    payload.dataset.changed = item.key
+    payload.dataset.refreshAt = deadline
+    controller.payloadTarget.replaceWith(payload)
+    await flush()
+    expect(controller.queue).toEqual([])
+    expect(controller.refreshAtValue).toBe(deadline)
+    expect(window.Turbo.cache.clear).toHaveBeenCalled()
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [item], refresh_at: null }) })
+    await jest.advanceTimersByTimeAsync(5000)
+    await flush()
+    expect(controller.queue).toEqual([item])
+  })
+
+  test('a restore broadcast clears the local removal for only the changed notice', async () => {
+    const item = mission('remote')
+    await mount({ items: [item], top: item.key })
+    await controller.run(() => controller.dismissTop())
+    controller.removed.add('other')
+    const payload = payloadEl([item, notice('other')])
+    payload.dataset.changed = item.key
+    controller.payloadTarget.replaceWith(payload)
+    await flush()
+    expect(controller.queue).toEqual([item])
+    expect(controller.removed.has(item.key)).toBe(false)
+    expect(controller.snoozed.has(item.key)).toBe(false)
+    expect(controller.removed.has('other')).toBe(true)
+  })
+
   test.each(['complete', 'dismiss', 'snooze'])('%s stays removed after a Turbo snapshot restoration', async (action) => {
     const item = action === 'snooze' ? mission('m1') : notice('n1')
     await mount({ items: [item, notice('remaining')], top: item.key })

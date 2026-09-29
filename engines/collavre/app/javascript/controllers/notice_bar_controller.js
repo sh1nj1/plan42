@@ -105,7 +105,18 @@ export default class extends Controller {
   payloadTargetConnected(el) {
     const items = parseJSON(el.dataset.items, [])
     const completion = parseJSON(el.dataset.completion, null)
-    this.run(() => this.reconcile(items, completion))
+    this.run(() => {
+      this.receiveMutation(el.dataset)
+      return this.reconcile(items, completion)
+    })
+  }
+
+  receiveMutation({ changed, refreshAt }) {
+    if (!changed) return
+    this.removed.delete(changed)
+    this.snoozed.delete(changed)
+    this.scheduleRefresh(refreshAt)
+    window.Turbo?.cache?.clear()
   }
 
   // Server updates queue behind any running animation; user input is dropped

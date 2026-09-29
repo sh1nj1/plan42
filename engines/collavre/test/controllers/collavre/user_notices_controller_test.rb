@@ -20,6 +20,50 @@ module Collavre
       UserNotice.find_by(user: @user, notice_key: key)
     end
 
+    test "successful mutations broadcast authoritative feeds to every subscribed tab" do
+      freeze_time do
+        [ [ "tour_one", "snooze", false ], [ "tour_one", "restore", true ],
+          [ "release_note", "dismiss", false ], [ "release_note", "restore", true ],
+          [ "release_note", "complete", false ] ].each do |key, action, visible|
+          broadcasts = []
+          recorder = ->(*args, **options) { broadcasts << [ args, options ] }
+          Turbo::StreamsChannel.stub(:broadcast_replace_to, recorder) do
+            post "/user_notices/#{key}/#{action}"
+          end
+          assert_response :no_content
+          args, options = broadcasts.sole
+          assert_equal [ [ "inbox", @user ] ], args
+          assert_equal Notices::Tracker::PAYLOAD_TARGET, options[:target]
+          locals = options[:locals]
+          assert_equal visible, locals[:items].any? { |item| item[:key] == key }
+          assert_equal key, locals[:changed].to_s
+          assert_nil locals[:completion], "mutations must not celebrate in other tabs"
+          html = ApplicationController.render(partial: options[:partial], locals: locals)
+          payload = Nokogiri::HTML.fragment(html).at_css("#notice-bar-payload")
+          assert_equal key, payload["data-changed"]
+          if action == "snooze"
+            assert_equal 1.day.from_now.iso8601(3), payload["data-refresh-at"]
+          else
+            assert_nil payload["data-refresh-at"]
+          end
+        end
+      end
+    end
+
+    test "rejected mutations do not broadcast" do
+      reject_broadcast = ->(*) { flunk "rejected action broadcast a feed" }
+      Turbo::StreamsChannel.stub(:broadcast_replace_to, reject_broadcast) do
+        %w[tour_one/dismiss tour_one/complete release_note/snooze tour_one/restore].each do |action|
+          post "/user_notices/#{action}"
+          assert_response :unprocessable_entity
+        end
+        post "/user_notices/nope/dismiss"
+        assert_response :not_found
+        post "/user_notices/admins_only/dismiss"
+        assert_response :not_found
+      end
+    end
+
     test "feed returns snooze deadline and restores only expired pending missions" do
       freeze_time do
         post "/user_notices/tour_one/snooze"

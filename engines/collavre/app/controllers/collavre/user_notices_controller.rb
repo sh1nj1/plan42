@@ -37,7 +37,10 @@ module Collavre
       return head(:unprocessable_entity) unless state&.snoozed? || state&.dismissed?
 
       restored = UserNotice.record!(Current.user, @notice.key, :pending)
-      head(restored.pending? ? :no_content : :unprocessable_entity)
+      return head(:unprocessable_entity) unless restored.pending?
+
+      broadcast_mutation
+      head :no_content
     end
 
     private
@@ -54,7 +57,12 @@ module Collavre
     def record!(status, snoozed_until: nil)
       state = UserNotice.record!(Current.user, @notice.key, status, snoozed_until: snoozed_until)
       response.headers["X-Notice-Snoozed-Until"] = state.snoozed_until.iso8601(3) if state.snoozed?
+      broadcast_mutation
       head :no_content
+    end
+
+    def broadcast_mutation
+      Notices::Tracker.broadcast(Current.user, changed: @notice.key, refresh_at: next_snooze)
     end
   end
 end
