@@ -45,7 +45,7 @@ class ToolCategoryAlignmentTest < ApplicationSystemTestCase
     assert_in_delta positions.fetch("iconY"), positions.fetch("checkboxY"), 1
     assert_in_delta positions.fetch("iconY"), positions.fetch("labelY"), 1
     assert_in_delta 4, positions.fetch("gap"), 0.5
-    assert_in_delta 24, positions.fetch("iconSize"), 0.5
+    assert_in_delta 20, positions.fetch("iconSize"), 0.5
     assert_in_delta Math.sqrt(3) / 2, positions.fetch("triangleRatio"), 0.02
   end
 end
