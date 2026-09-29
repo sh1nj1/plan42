@@ -11,7 +11,8 @@ module Collavre
 
         raise ArgumentError, "Approved task has no agent" unless task.agent
 
-        Creatives::AgentTurnHistory.call(task.agent, Current.user, task, &invocation)
+        workspace_user = AiAgent::TaskWorkspaceUser.resolve(task)
+        Creatives::AgentTurnHistory.call(task.agent, workspace_user, task, &invocation)
       rescue StandardError => e
         Rails.logger.error("Tool execution failed: #{e.message}")
         { error: e.message }

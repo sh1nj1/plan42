@@ -102,7 +102,7 @@ module Collavre
           break if matches.size >= MAX_SEARCH_RESULTS
         end
       end
-      { query: query, matches: matches, truncated: matches.size >= MAX_SEARCH_RESULTS }
+      { query: query, matches: matches, truncated: matches.size >= MAX_SEARCH_RESULTS || files_scanned >= MAX_SEARCH_FILES }
     end
 
     private

@@ -149,6 +149,24 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
     end
   end
 
+  test "file scan limit reports incomplete searches even with no matches" do
+    write("app/search/a.rb", "first hit\n")
+    write("app/search/b.rb", "last hit\n")
+    stub_const(:MAX_SEARCH_FILES, 1) do
+      result = @browser.search("hit", path: "app/search")
+      assert_equal [ "first hit" ], result[:matches].pluck(:text)
+      assert result[:truncated]
+      empty = @browser.search("absent", path: "app/search")
+      assert_empty empty[:matches]
+      assert empty[:truncated]
+    end
+    stub_const(:MAX_SEARCH_FILES, 3) do
+      result = @browser.search("hit", path: "app/search")
+      assert_equal 2, result[:matches].size
+      refute result[:truncated]
+    end
+  end
+
   test "all documentation is excluded from reads listings searches and aliases" do
     %w[test.md send-fcm-test.rb operations/new-guide.md].each do |name|
       write("docs/#{name}", "PRIVATE_OPERATIONAL_VALUE\n")

@@ -120,6 +120,38 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     end
   end
 
+  [ :explicit, :comment, :anonymous, :missing ].each do |principal_source|
+    test "approved tools preserve #{principal_source} workspace principal independently of approver" do
+      requester = users(:three)
+      source = @creative.comments.create!(user: requester, content: "Original request")
+      payload = @task.trigger_event_payload.merge("comment" => { "id" => source.id })
+      payload["workspace_user_id"] = requester.id if principal_source == :explicit
+      payload["workspace_user_id"] = nil if principal_source == :anonymous
+      payload["workspace_user_id"] = -1 if principal_source == :missing
+      @task.update!(trigger_event_payload: payload)
+      expected_user = [ :explicit, :comment ].include?(principal_source) ? requester : nil
+      observed = nil
+      service = Object.new
+      service.define_singleton_method(:call) do |**_args|
+        observed = [ Collavre::Current.user, Collavre::Current.agent_turn[:user], Collavre::Current.agent_turn[:task] ]
+        { result: "success" }
+      end
+      comment = approval_comment
+
+      Collavre::Current.set(user: @user, agent_turn: nil) do
+        ::Tools::MetaToolService.stub(:new, -> { service }) do
+          Collavre::AiAgentJob.stub(:perform_later, nil) do
+            Comments::ActionExecutor.new(comment: comment, executor: @user).call
+          end
+        end
+        assert_equal [ @agent, expected_user, @task ], observed
+        assert_equal @user, Collavre::Current.user
+        assert_nil Collavre::Current.agent_turn
+      end
+      assert_equal @user, comment.reload.action_executed_by
+    end
+  end
+
   test "missing tasks and altered approval payloads never execute" do
     [ "task_id", "tool_name", "arguments" ].each do |field|
       comment = approval_comment
