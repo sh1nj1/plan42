@@ -21,6 +21,8 @@ module Collavre
           # boundary through the lifecycle throttle: the first tool call can
           # arrive during the manager's initial one-second quiet period.
           @before_tool_call&.call(true)
+          AgentToolPermission.authorize_call!(tool_call.name, tool_call.arguments,
+            agent: context[:task]&.agent || context[:user] || AgentToolPermission.current_agent)
           check_tool_approval!(tool_call)
           start_tool_usage(tool_call)
         end

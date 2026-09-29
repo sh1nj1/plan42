@@ -52,4 +52,55 @@ class McpServerTest < ActionDispatch::IntegrationTest
     assert_equal [ "mcp", "cron_list", true ], [ usage.source, usage.tool_name, usage.succeeded ]
     assert_equal [ users(:one).id ], usage.requester_ids
   end
+
+  test "agent token rejects unselected direct and nested tools and accepts selected tools" do
+    agent = users(:ai_bot)
+    agent.update!(tools: %w[meta_tool cron_list])
+    @token.update!(resource_owner_id: agent.id)
+    assert_mcp_denied("cron_cancel", { key: "missing" })
+    assert_mcp_denied("meta_tool", { action: "run", tool_name: "cron_cancel", arguments: { key: "missing" } })
+    assert_mcp_denied("meta_tool", { action: "run", tool_name: "meta_tool", arguments: {
+      action: "call", tool_name: "cron_cancel", arguments: { key: "missing" }
+    } })
+    call_mcp("cron_list")
+    assert Collavre::ToolUsage.last.succeeded
+    agent.update!(tools: [])
+    assert_mcp_denied("cron_list")
+    refute Collavre::ToolUsage.last.succeeded
+  end
+
+  test "per-user workspace callback token enforces the agent selection instead of human token owner" do
+    gateway = Collavre::AgentGateway.create!(owner: users(:one), name: "Permission test",
+      base_url: "https://proxy.example.com", admin_key: "admin", completion_key: "completion",
+      identity_secret: "p" * 32, workspace_mode: :per_user)
+    agent = users(:ai_bot)
+    agent.update!(created_by_id: users(:one).id, llm_vendor: "cli_proxy", agent_gateway: gateway, tools: %w[meta_tool cron_list])
+    workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: users(:one))
+    @token = Doorkeeper::AccessToken.find(workspace.callback_access_token_id)
+    @bearer = workspace.callback_token
+    assert_equal users(:one).id, @token.resource_owner_id
+    assert_mcp_denied("cron_cancel", { key: "missing" })
+    assert_mcp_denied("meta_tool", { action: "run", tool_name: "cron_cancel", arguments: { key: "missing" } })
+    call_mcp("cron_list")
+    assert Collavre::ToolUsage.last.succeeded
+    agent.update!(tools: [])
+    assert_mcp_denied("cron_list")
+  end
+
+  private
+
+  def call_mcp(name, arguments = {})
+    post "/mcp/messages",
+      params: { jsonrpc: "2.0", method: "tools/call", id: 3, params: { name: name, arguments: arguments } }.to_json,
+      headers: { "Authorization" => "Bearer #{@bearer || @token.token}", "Content-Type" => "application/json" }
+    assert_response :success
+  end
+
+  def assert_mcp_denied(name, arguments = {})
+    Collavre::Tools::CronCancelService.stub(:new, -> { flunk "Denied tool must not execute" }) do
+      call_mcp(name, arguments)
+    end
+    assert_equal name, Collavre::ToolUsage.last.tool_name
+    refute Collavre::ToolUsage.last.succeeded
+  end
 end

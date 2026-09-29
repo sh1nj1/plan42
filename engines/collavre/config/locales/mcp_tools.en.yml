@@ -1,5 +1,6 @@
 en:
   collavre:
     mcp_tools:
+      agent_tool_denied: "This agent is not allowed to execute %{tool_name}."
       unavailable: "Tool not found or not approved for your access."
       reserved_name: "Tool '%{tool_name}' is reserved by the application. Choose another tool name."

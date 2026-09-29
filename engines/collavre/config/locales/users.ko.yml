@@ -66,7 +66,7 @@ ko:
         tools_title: 사용 가능한 도구
         tools_description: 에이전트가 사용할 수 있는 도구 목록입니다.
         meta_skills_title: Collavre 메타 스킬
-        meta_skills_description: 프로비저닝되는 collavre-cli 스킬 하나가 선택된 도구를 메타 스킬로 실행합니다. 현재는 이 선택을 callback token 권한으로 강제하지 않습니다.
+        meta_skills_description: 선택한 도구만 이 에이전트가 실행할 수 있습니다. meta_tool 및 CLI 콜백 호출에도 권한을 검사합니다. meta_tool을 선택해도 내부에서 호출하는 도구의 권한은 별도로 필요합니다.
         gateway_mode: "워크스페이스 모드: %{mode}. 선택한 게이트웨이 설정에서 변경할 수 있습니다."
         no_tools_found: 사용 가능한 도구가 없습니다.
         clear_api_key_label: 저장된 API 키 삭제

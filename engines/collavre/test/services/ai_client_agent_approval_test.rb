@@ -133,6 +133,7 @@ class AiClientAgentApprovalTest < ActiveSupport::TestCase
   end
 
   test "wrapped approval executes its original arguments once and replays the outer result" do
+    @agent.update!(tools: %w[meta_tool creative_update_service])
     require_approval
     @creative.creative_shares.create!(user: @agent, permission: :write)
     @call = RubyLLM::ToolCall.new(id: "wrapped-update", name: "meta_tool",
