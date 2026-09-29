@@ -5,6 +5,10 @@ module Collavre
   # their copy comes entirely from config/locales/features.*.yml keyed off the
   # feature card registry.
   class FeaturesControllerTest < ActionDispatch::IntegrationTest
+    setup do
+      Collavre::Kollavy.seed!
+    end
+
     GUIDE_KEYS = %w[
       kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user
       inbox_notifications inbox_reply inbox_source
@@ -14,6 +18,23 @@ module Collavre
     # every body assertion compares against the escaped form.
     def escaped(key, **options)
       ERB::Util.html_escape(I18n.t(key, **options))
+    end
+
+    test "Kollavy is hidden before provisioning and appears after seeding without restarting" do
+      Collavre::Kollavy.agent.destroy!
+
+      get "/features"
+      assert_response :success
+      assert_select "a[href*='/features/kollavy']", count: 0
+      get "/features/kollavy"
+      assert_response :not_found
+
+      Collavre::Kollavy.seed!
+
+      get "/features"
+      assert_select "a[href*='/features/kollavy']", count: 1
+      get "/features/kollavy"
+      assert_response :success
     end
 
     test "index lists every card that opts into the built-in guide" do

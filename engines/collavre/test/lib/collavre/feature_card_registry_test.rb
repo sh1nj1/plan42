@@ -2,6 +2,10 @@ require "test_helper"
 
 module Collavre
   class FeatureCardRegistryTest < ActiveSupport::TestCase
+    setup do
+      Collavre::Kollavy.seed!
+    end
+
     def teardown
       Collavre::FeatureCardRegistry.unregister(:test_card)
     end
@@ -11,6 +15,39 @@ module Collavre
         title_key: "collavre.comments.empty_state.cards.add_user.title",
         description_key: "collavre.comments.empty_state.cards.add_user.description"
       }.merge(extra))
+    end
+
+    test "Kollavy availability follows the system identity without restarting" do
+      agent = Collavre::Kollavy.agent
+      Collavre.user_class.where(id: agent.id).update_all(system_agent: false)
+      creative = creatives(:tshirt)
+      inbox = Creative.inbox_for(users(:one))
+
+      [ [ creative, nil ], [ inbox, inbox.main_topic ] ].each do |item, topic|
+        assert_not_includes FeatureCardRegistry.for(creative: item, topic: topic).map(&:key), :kollavy
+      end
+      assert_not_includes FeatureCardRegistry.with_builtin_guide.map(&:key), :kollavy
+      assert_not FeatureCardRegistry.find(:kollavy).builtin_guide?
+
+      Collavre.user_class.where(id: agent.id).update_all(system_agent: true)
+
+      assert_includes FeatureCardRegistry.for(creative: creative, topic: nil).map(&:key), :kollavy
+      assert_includes FeatureCardRegistry.with_builtin_guide.map(&:key), :kollavy
+    end
+
+    test "registration does not evaluate availability before the database is ready" do
+      card = register(guide: true, available: -> { raise "database unavailable" })
+
+      assert_equal :test_card, card.key
+    end
+
+    test "a conditional card evaluates availability lazily for external guides too" do
+      available = false
+      card = register(available: -> { available }, guide_url: "https://example.com/docs")
+
+      assert_not card.visible_on?(:default)
+      available = true
+      assert card.visible_on?(:default)
     end
 
     test "a card without a guide renders no learn-more link and has no page" do

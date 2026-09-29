@@ -3,6 +3,7 @@ require "json"
 
 class CommentsControllerTest < ActionDispatch::IntegrationTest
   setup do
+    Collavre::Kollavy.seed!
     @user = users(:one)
     @creative = creatives(:tshirt)
     @user.update!(email_verified_at: Time.current)
@@ -1579,6 +1580,19 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "no-store", response.headers["Cache-Control"]
     assert_equal "no-cache", response.headers["Pragma"]
     assert_equal "0", response.headers["Expires"]
+  end
+
+  test "empty chat and Inbox Main hide Kollavy until it is provisioned" do
+    Collavre::Kollavy.agent.destroy!
+    inbox = Creative.inbox_for(@user)
+
+    [ [ @creative, nil ], [ inbox, inbox.main_topic.id ] ].each do |creative, topic_id|
+      get creative_comments_path(creative), params: { topic_id: topic_id }
+
+      assert_response :success
+      assert_not_includes @response.body, %(data-key="kollavy")
+      assert_includes @response.body, %(data-key="mention_agent")
+    end
   end
 
   test "index shows feature discovery cards when there are no comments" do

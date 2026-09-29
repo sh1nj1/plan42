@@ -5,6 +5,10 @@ require_relative "../application_system_test_case"
 # breadcrumb markup is present either way — so visibility is asserted in a real
 # browser instead.
 class FeatureGuideTest < ApplicationSystemTestCase
+  setup do
+    Collavre::Kollavy.seed!
+  end
+
   test "the default help link opens the complete feature guide in the current window" do
     registry = Navigation::Registry.instance
     original_help_item = registry.find(:help)
