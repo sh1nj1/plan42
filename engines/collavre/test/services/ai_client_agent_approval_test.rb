@@ -25,6 +25,47 @@ class AiClientAgentApprovalTest < ActiveSupport::TestCase
     assert_equal @task, error.task
   end
 
+  test "meta run and call wrappers including nested calls enforce inner approval" do
+    require_approval
+    %w[run call].each do |action|
+      inner = { action: action, tool_name: @call.name, arguments: { description: "approved change" } }
+      [ inner, { "action" => action, "tool_name" => "meta_tool", "arguments" => inner } ].each do |arguments|
+        call = RubyLLM::ToolCall.new(id: "wrapped", name: "meta_tool", arguments: arguments)
+        error = assert_raises(Collavre::ApprovalPendingError) { @client.send(:check_tool_approval!, call) }
+        assert_equal call, error.tool_call
+        assert_equal arguments, error.tool_arguments
+        assert_equal "wrapped", error.tool_call_id
+      end
+    end
+  end
+
+  test "meta discovery and ungated execution do not require inner approval" do
+    require_approval
+    %w[list search get].each do |action|
+      call = RubyLLM::ToolCall.new(id: "discovery", name: "meta_tool",
+        arguments: { action: action, tool_name: @call.name })
+      assert_nil @client.send(:check_tool_approval!, call)
+    end
+    call = RubyLLM::ToolCall.new(id: "read", name: "meta_tool",
+      arguments: { action: "run", tool_name: "creative_retrieval_service", arguments: {} })
+    assert_nil @client.send(:check_tool_approval!, call)
+    @agent.update!(agent_conf: { "approval" => { "tools" => [ "meta_tool" ] } }.to_yaml)
+    assert_raises(Collavre::ApprovalPendingError) { @client.send(:check_tool_approval!, call) }
+  end
+
+  test "wrapped system and dynamic tool approval is enforced without agent config" do
+    call = RubyLLM::ToolCall.new(id: "system", name: "meta_tool",
+      arguments: { action: "run", tool_name: "creative_batch_service", arguments: {} })
+    Collavre::Tools::CreativeBatchService.stub(:requires_approval?, true) do
+      assert_raises(Collavre::ApprovalPendingError) { @client.send(:check_tool_approval!, call) }
+    end
+    McpTool.create!(creative: @creative, name: "gated_meta_test", source_code: "x",
+      approved_at: Time.current, requires_approval: true)
+    call = RubyLLM::ToolCall.new(id: "dynamic", name: "meta_tool",
+      arguments: { action: "call", tool_name: "gated_meta_test" })
+    assert_raises(Collavre::ApprovalPendingError) { @client.send(:check_tool_approval!, call) }
+  end
+
   test "other tools and agents without the config run directly" do
     assert_nil check
 
@@ -87,6 +128,38 @@ class AiClientAgentApprovalTest < ActiveSupport::TestCase
       assert JSON.parse(results.find { |message| message.tool_call_id == skipped.id }.content).key?("error")
     end
     assert_equal 1, executions
+    assert_raises(Collavre::ApprovalPendingError) { check }
+  end
+
+  test "wrapped approval executes its original arguments once and replays the outer result" do
+    require_approval
+    @creative.creative_shares.create!(user: @agent, permission: :write)
+    @call = RubyLLM::ToolCall.new(id: "wrapped-update", name: "meta_tool",
+      arguments: { "action" => "run", "tool_name" => "creative_update_service",
+        "arguments" => { "id" => @creative.id, "description" => "Approved wrapped update" } })
+    chat = conversation
+    chat.add_message(role: :assistant, content: nil, tool_calls: { @call.id => @call })
+    @client.instance_variable_set(:@conversation, chat)
+    original = @creative.description
+    error = assert_raises(Collavre::ApprovalPendingError) { check }
+    Collavre::AiAgent::ApprovalHandler.new(task: @task, agent: @agent,
+      context: {}, creative: @creative).handle(error)
+    assert_equal original, @creative.reload.description
+    assert_equal @call.arguments, @task.reload.pending_tool_call["arguments"]
+    comment = @creative.comments.order(:id).last
+    Collavre::AiAgentJob.stub(:perform_later, nil) do
+      Collavre::Comments::ActionExecutor.new(comment: comment, executor: comment.approver).call
+    end
+    assert_includes @creative.reload.description, "Approved wrapped update"
+    assert_raises(Collavre::Comments::ActionExecutor::ExecutionError) do
+      Collavre::Comments::ActionExecutor.new(comment: comment, executor: comment.approver).call
+    end
+    @task.reload
+    @client.instance_variable_set(:@conversation, conversation)
+    assert @client.send(:restore_tool_approval, [])
+    result = @client.instance_variable_get(:@conversation).messages.last
+    assert_equal @call.id, result.tool_call_id
+    assert_equal @task.pending_tool_call["result"], JSON.parse(result.content)
     assert_raises(Collavre::ApprovalPendingError) { check }
   end
 

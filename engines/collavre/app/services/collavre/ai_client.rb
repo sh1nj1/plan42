@@ -366,7 +366,7 @@ module Collavre
       tool_name = tool_call.name
       task = context&.dig(:task)
 
-      return unless ToolApprovalPolicy.required?(tool_name, agent: task&.agent)
+      return unless ToolApprovalPolicy.required_for_call?(tool_call, agent: task&.agent)
 
       # Requires approval - raise error to halt execution
       raise ApprovalPendingError.new(

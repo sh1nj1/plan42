@@ -6,6 +6,21 @@ module Collavre
   # own calls via agent_conf `approval: { tools: [...] }` — so one agent can
   # gate its write tools without changing them for every other agent.
   class ToolApprovalPolicy
+    # Check every executable wrapper without changing the call persisted for
+    # approval and conversation replay. Discovery never executes its target.
+    def self.required_for_call?(tool_call, agent: nil)
+      name, arguments = tool_call.name, tool_call.arguments
+      loop do
+        return true if required?(name, agent: agent)
+        return false unless name == "meta_tool" && arguments.is_a?(Hash)
+
+        args = arguments.stringify_keys
+        return false unless %w[run call].include?(args["action"])
+
+        name, arguments = args["tool_name"], args["arguments"]
+      end
+    end
+
     def self.required?(tool_name, agent: nil)
       McpTool.find_by(name: tool_name)&.requires_approval? ||
         system_tool_requires_approval?(tool_name) ||
