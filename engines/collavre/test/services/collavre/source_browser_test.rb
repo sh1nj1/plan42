@@ -133,6 +133,20 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
     end
   end
 
+  test "sensitive QA documentation is excluded from reads listings searches and aliases" do
+    write("docs/test.md", "PRIVATE_QA_CREDENTIAL\n")
+    File.symlink(File.join(@dir, "docs/test.md"), File.join(@dir, "app/qa.md"))
+
+    [ "docs/test.md", "app/../docs/test.md", "app/qa.md" ].each do |path|
+      assert_raises(Collavre::SourceBrowser::AccessDenied) { @browser.read(path) }
+      assert_raises(Collavre::SourceBrowser::AccessDenied) { @browser.search("PRIVATE", path: path) }
+    end
+    refute_includes @browser.list("docs")[:entries].map { |entry| entry[:path] }, "docs/test.md"
+    assert_empty @browser.search("PRIVATE_QA_CREDENTIAL")[:matches]
+    assert_empty @browser.search("PRIVATE_QA_CREDENTIAL", path: "docs")[:matches]
+    assert_includes @browser.read("docs/guide.md")[:content], "Guide"
+  end
+
   test "requires a query" do
     assert_raises(ArgumentError) { @browser.search(" ") }
   end

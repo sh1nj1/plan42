@@ -19,6 +19,35 @@ class Collavre::KollavyAccessScopeTest < ActiveSupport::TestCase
 
   teardown { Collavre::Current.reset }
 
+  test "human approval cannot lend owner grants or escape the Kollavy conversation" do
+    outside = Collavre::Creative.create!(user: @alice, description: "Outside unchanged")
+    Collavre::CreativeShare.create!(creative: outside, user: @agent, permission: :write)
+    allowed = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, description: "Allowed original")
+    Collavre::CreativeShare.create!(creative: allowed, user: @agent, permission: :write)
+    [ @alice_child, outside, allowed ].each do |target|
+      args = { "id" => target.id, "description" => "Approved edit" }
+      @task.update!(status: "pending_approval", pending_tool_call: {
+        "tool_name" => "creative_update_service", "tool_call_id" => "call-#{target.id}", "arguments" => args
+      })
+      comment = @alice_inbox.comments.create!(user: @agent, approver: @alice, content: "Approve edit",
+        action: { action: "execute_tool", tool_name: "creative_update_service", arguments: args,
+          resume: { task_id: @task.id, tool_call_id: "call-#{target.id}" } }.to_json)
+      original = target.description
+      Collavre::Current.set(user: @alice, agent_turn: nil) do
+        Collavre::AiAgentJob.stub(:perform_later, nil) do
+          Collavre::Comments::ActionExecutor.new(comment: comment, executor: @alice).call
+        end
+        assert_equal @alice, Collavre::Current.user
+        assert_nil Collavre::Current.agent_turn
+      end
+      if target == allowed
+        assert_includes target.reload.description, "Approved edit"
+      else
+        assert_equal original, target.reload.description
+      end
+    end
+  end
+
   test "search excludes other inbox descriptions and comments" do
     assert_equal [ @alice_child.id ], @retrieval.call(query: "shared-word").map { |row| row[:id] }
     assert_empty @retrieval.call(query: "private-search")

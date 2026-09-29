@@ -368,21 +368,12 @@ module Collavre
 
       return unless ToolApprovalPolicy.required?(tool_name, agent: task&.agent)
 
-      # Check if we already have approval for this specific call (resume scenario)
-      if task&.pending_tool_call.present?
-        pending = task.pending_tool_call
-        if pending["tool_name"] == tool_name && pending["approved"]
-          # Already approved, clear the pending state and proceed
-          task.update!(pending_tool_call: nil)
-          return
-        end
-      end
-
       # Requires approval - raise error to halt execution
       raise ApprovalPendingError.new(
         "Tool '#{tool_name}' requires approval before execution",
         tool_call: tool_call,
-        task: task
+        task: task,
+        messages: AiAgent::ApprovalConversation.dump(@conversation&.messages || [])
       )
     end
 

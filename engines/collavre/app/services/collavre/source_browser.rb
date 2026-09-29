@@ -139,7 +139,7 @@ module Collavre
     def denied?(path)
       rel = path.to_s.delete_prefix("#{root}/")
       segments = rel.split("/")
-      return true if segments.intersect?(DENIED_SEGMENTS)
+      return true if rel == "docs/test.md" || segments.intersect?(DENIED_SEGMENTS)
 
       base = segments.last.to_s
       DENIED_BASENAME_PATTERNS.any? { |pattern| base.match?(pattern) }

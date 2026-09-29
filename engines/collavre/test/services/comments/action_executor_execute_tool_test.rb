@@ -100,6 +100,44 @@ class Comments::ActionExecutorExecuteToolTest < ActiveSupport::TestCase
     assert_equal @user, comment.action_executed_by
   end
 
+  test "approved tools run as the task agent and restore the approver context on errors" do
+    Collavre::Current.set(user: @user, agent_turn: nil) do
+      service = Object.new
+      task, agent = @task, @agent
+      service.define_singleton_method(:call) do |**_args|
+        raise "Wrong principal" unless Collavre::Current.user == agent
+        raise "Wrong turn" unless Collavre::Current.agent_turn[:task] == task
+        raise "Expected tool failure"
+      end
+      ::Tools::MetaToolService.stub(:new, -> { service }) do
+        Collavre::AiAgentJob.stub(:perform_later, nil) do
+          Comments::ActionExecutor.new(comment: approval_comment, executor: @user).call
+        end
+      end
+      assert_equal({ "error" => "Expected tool failure" }, @task.reload.pending_tool_call["result"])
+      assert_equal @user, Collavre::Current.user
+      assert_nil Collavre::Current.agent_turn
+    end
+  end
+
+  test "missing tasks and altered approval payloads never execute" do
+    [ "task_id", "tool_name", "arguments" ].each do |field|
+      comment = approval_comment
+      payload = JSON.parse(comment.action)
+      if field == "task_id"
+        payload["resume"][field] = -1
+      else
+        payload[field] = field == "arguments" ? { "param" => "changed" } : "another_tool"
+      end
+      comment.update!(action: payload.to_json)
+      ::Tools::MetaToolService.stub(:new, -> { flunk "Invalid approval must not execute" }) do
+        assert_raises(Comments::ActionExecutor::ExecutionError) do
+          Comments::ActionExecutor.new(comment: comment, executor: @user).call
+        end
+      end
+    end
+  end
+
   test "execute_tool action fails without tool_name" do
     action_payload = {
       "action" => "execute_tool",

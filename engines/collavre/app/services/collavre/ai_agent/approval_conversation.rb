@@ -47,7 +47,7 @@ module Collavre
           next if answered.include?(call.id)
 
           result = if call.id == pending.fetch("tool_call_id")
-            pending.fetch("decision")
+            pending.key?("result") ? pending.fetch("result") : pending.fetch("decision")
           else
             { error: "Not executed because another call paused for human approval. Retry this call if still needed." }
           end
