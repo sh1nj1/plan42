@@ -321,6 +321,43 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     refute_includes emails, impostor.email
   end
 
+  test "empty mention search returns every eligible user without the search limit" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Mention list")
+    permitted = 51.times.map do |index|
+      user = User.create!(email: "mention-#{index}@example.com", name: "Mention #{index}",
+                          password: "password", searchable: false)
+      CreativeShare.create!(creative: creative, user: user, permission: :feedback)
+      user.id
+    end
+    hidden = User.create!(email: "mention-hidden@example.com", name: "Hidden", password: "password", searchable: false)
+    CreativeShare.create!(creative: creative, user: hidden, permission: :read)
+
+    get collavre.search_users_path, params: { q: "", creative_id: creative.id }
+    assert_response :success
+    ids = response.parsed_body.pluck("id")
+    assert_empty permitted - ids
+    assert_includes ids, @regular_user.id
+    refute_includes ids, hidden.id
+
+    get collavre.search_users_path, params: { q: "Mention", creative_id: creative.id, limit: 10 }
+    assert_equal 10, response.parsed_body.length
+  end
+
+  test "empty mention search requires access to the creative" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @admin, description: "Private mention list")
+    get collavre.search_users_path, params: { q: "", creative_id: creative.id }
+    assert_response :forbidden
+  end
+
+  test "empty search without creative context remains empty" do
+    sign_in_as(@regular_user, password: "password")
+    get collavre.search_users_path, params: { q: "" }
+    assert_response :success
+    assert_empty response.parsed_body
+  end
+
   test "mention search falls back to searchable users without creative context" do
     sign_in_as(@regular_user, password: "password")
 

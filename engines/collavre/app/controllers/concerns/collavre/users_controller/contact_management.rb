@@ -5,7 +5,7 @@ module Collavre
     def search
       term = params[:q].to_s.strip.downcase
 
-      if term.blank? && params[:scope] != "contacts"
+      if term.blank? && params[:scope] != "contacts" && params[:creative_id].blank?
         return render json: []
       end
 
@@ -33,12 +33,16 @@ module Collavre
       limit = 20 if limit <= 0
       limit = 50 if limit > 50
 
-      user_ids = users.select(:id).distinct.limit(limit).pluck(:id)
+      user_ids = users.select(:id).distinct.limit(mention_list?(creative, term) ? nil : limit).pluck(:id)
       users = Collavre::User.where(id: user_ids)
       render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
     end
 
     private
+
+    def mention_list?(creative, term)
+      creative.present? && term.blank? && params[:scope] != "contacts"
+    end
 
     def prepare_contacts
       per_page = 20
