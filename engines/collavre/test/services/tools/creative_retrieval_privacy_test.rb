@@ -49,6 +49,34 @@ module Tools
       end
     end
 
+    %w[markdown json].each do |format|
+      test "#{format} excludes generated approval inbox notifications before limiting comments" do
+        ordinary = nil
+        approval = nil
+        perform_enqueued_jobs(only: Collavre::CommentNotificationJob) do
+          ordinary = 3.times.map { |i| comment("ordinary-inbox-needle-#{i}", private: false) }
+          approval = comment("approval-inbox-secret", user: @agent, approver: @owner,
+                             private: false, action: { action: "execute_tool", tool_name: "creative_update" }.to_json)
+        end
+        notices = @inbox.comments.where(quoted_comment: approval)
+        assert_equal 2, notices.count
+        assert notices.any? { |notice| notice.content.include?(approval.content) }
+        assert notices.all? { |notice| notice.action.blank? }
+        assert_equal 3, @inbox.comments.where(quoted_comment: ordinary).count
+
+        as_agent do
+          result = @service.call(id: @inbox.id, level: 1, include_comments: true, format: format).to_s
+          refute_includes result, "creative_update"
+          refute_includes result, approval.content
+          ordinary.each { |source| assert_includes result, source.content }
+        end
+        scope = Collavre::Topics::MessageScope.for(@inbox.system_topic, user: @agent, include_system: true)
+        assert_empty scope.where(id: notices.select(:id))
+        assert_equal 3, scope.where(quoted_comment: ordinary).count
+        assert_equal 2, @inbox.comments.visible_to(@owner).where(id: notices.select(:id)).count
+      end
+    end
+
     test "creative ownership does not grant visibility into another author's private comments" do
       Current.set(user: @owner) do
         assert_empty @service.call(query: "hidden-needle")
