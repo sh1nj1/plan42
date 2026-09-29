@@ -48,6 +48,58 @@ class Collavre::KollavyAccessScopeTest < ActiveSupport::TestCase
     end
   end
 
+  test "review batches capture scoped create update and delete without applying them" do
+    Collavre::CreativeShare.find_by!(creative: @alice_inbox, user: @agent).update!(permission: :admin)
+    @alice_inbox.update!(data: @alice_inbox.data.merge("ai_write_policy" => "review"))
+    deleted = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, description: "Keep until approved")
+    original_turn = Collavre::Current.agent_turn
+    result = Collavre::Tools::CreativeBatchService.new.call(operations: [
+      { "action" => "create", "parent_id" => @alice_inbox.id, "description" => "Draft child" },
+      { "action" => "update", "id" => @alice_child.id, "description" => "Draft edit" },
+      { "action" => "delete", "id" => deleted.id }
+    ])
+
+    assert result[:success], result.inspect
+    assert result[:pending_review], result.inspect
+    draft = Collavre::CreativeChangeSet.find(result[:change_set_id])
+    assert_equal @task.id, draft.task_id
+    assert_equal @agent.id, draft.user_id
+    assert_equal "draft", draft.status
+    assert_operator draft.creative_changes.count, :>=, 3
+    assert_equal "shared-word Alice", @alice_child.reload.description
+    assert Collavre::Creative.exists?(deleted.id)
+    refute Collavre::Creative.exists?(description: "Draft child")
+    assert_same original_turn, Collavre::Current.agent_turn
+    assert_nil Collavre::Current.draft_capture_turn
+  end
+
+  test "review capture preserves scope and grants and restores context after errors" do
+    @alice_inbox.update!(data: @alice_inbox.data.merge("ai_write_policy" => "review"))
+    Collavre::CreativeShare.find_by!(creative: @bob_inbox, user: @agent).update!(permission: :admin)
+    [ @alice_child, @bob_child ].each do |target|
+      result = Collavre::Tools::CreativeBatchService.new.call(operations: [
+        { "action" => "update", "id" => target.id, "description" => "Forbidden" },
+        { "action" => "create", "parent_id" => @alice_inbox.id, "description" => "Draft child" }
+      ])
+      refute result[:success], result.inspect
+      refute_equal "Forbidden", target.reload.description
+      assert_nil Collavre::Current.draft_capture_turn
+    end
+    assert_empty Collavre::CreativeChangeSet.where(task: @task, status: "draft")
+    original_turn = Collavre::Current.agent_turn
+    assert_raises(RuntimeError) do
+      Collavre::Creatives::DraftChangeSetCapture.new(anchor: @alice_inbox, origin: :tool).call do
+        assert_nil Collavre::Current.agent_turn
+        assert_same original_turn, Collavre::Current.draft_capture_turn
+        assert @alice_child.has_permission?(@agent, :read)
+        refute @bob_child.has_permission?(@agent, :read)
+        raise "capture failed"
+      end
+    end
+    assert_same original_turn, Collavre::Current.agent_turn
+    assert_nil Collavre::Current.draft_capture_turn
+  end
+
   test "search excludes other inbox descriptions and comments" do
     assert_equal [ @alice_child.id ], @retrieval.call(query: "shared-word").map { |row| row[:id] }
     assert_empty @retrieval.call(query: "private-search")

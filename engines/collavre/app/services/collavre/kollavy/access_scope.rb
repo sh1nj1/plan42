@@ -49,7 +49,9 @@ module Collavre
       end
 
       def self.anchor(user)
-        task = Current.agent_turn&.dig(:task)
+        # Draft capture suspends turn history, but must retain its authorization boundary.
+        turn = Current.agent_turn || Current.draft_capture_turn
+        task = turn&.dig(:task)
         return unless task&.agent_id == user.id && task.creative_id
 
         Creative.find_by(id: task.creative_id)&.effective_origin

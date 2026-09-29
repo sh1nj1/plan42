@@ -317,3 +317,7 @@ both their placement and resolved origin inside the tree. Prompt references
 and configured context creatives follow the same boundary. Parentless creation
 is rejected; users should open another creative's chat to work in that tree.
 Source-code tools remain available independently of creative data.
+
+Rollback-only review draft capture retains the original agent turn for scoped
+authorization while suspending normal turn history. Capture does not widen
+permissions, and its temporary authorization context is restored on failure.
