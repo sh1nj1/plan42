@@ -75,6 +75,7 @@ module Collavre
 
       keys = Collavre::FeatureCardRegistry.for(creative: inbox, topic: main_topic).map(&:key)
 
+      assert_includes keys, :kollavy
       assert_includes keys, :mention_agent
       assert_not_includes keys, :inbox_notifications
     end
@@ -85,6 +86,7 @@ module Collavre
 
       keys = Collavre::FeatureCardRegistry.for(creative: creative, topic: topic).map(&:key)
 
+      assert_includes keys, :kollavy
       assert_includes keys, :mention_agent
       assert_not_includes keys, :inbox_notifications
     end
@@ -95,6 +97,7 @@ module Collavre
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 
       assert_not_includes keys, :test_card
+      assert_includes keys, :kollavy
       assert_includes keys, :mention_agent, "the core cards should all have built-in guides"
     end
 
@@ -141,7 +144,7 @@ module Collavre
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 
       %i[
-        mention_agent slash_command chat_context automation_trigger topic_management add_user
+        kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user
         inbox_notifications inbox_reply inbox_source
       ].each do |key|
         assert_includes keys, key
