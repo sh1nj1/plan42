@@ -6,7 +6,7 @@
   <button type="button"
           class="popup-menu-toggle comment-user-menu-trigger"
           data-popup-menu-target="button"
-          data-action="click->popup-menu#toggle<%= " click->comment-agent-model#load" if user.ai_user? %>"
+          data-action="click->comment-user-menu#syncPrimaryAgent click->popup-menu#toggle<%= " click->comment-agent-model#load" if user.ai_user? %>"
           aria-label="<%= t('collavre.comments.user_menu.open', name: user.display_name) %>"
           aria-haspopup="menu"
           aria-expanded="false">
@@ -48,5 +48,12 @@
       <%= t('collavre.comments.user_menu.mention') %>
     </button>
 
+    <% if user.ai_user? %>
+      <button type="button" class="popup-menu-item" role="menuitem" disabled
+              data-comment-user-menu-target="primaryAgent"
+              data-action="click->comment-user-menu#setPrimaryAgent">
+        <%= t('collavre.comments.user_menu.set_primary_agent') %>
+      </button>
+    <% end %>
   </div>
 </div>

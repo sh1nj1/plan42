@@ -103,6 +103,19 @@ function enableAgentModel(root, user) {
   }
 }
 
+function appendPrimaryAgentButton(menu, user, labels) {
+  if (!user.ai_user) return
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'popup-menu-item'
+  button.setAttribute('role', 'menuitem')
+  button.dataset.commentUserMenuTarget = 'primaryAgent'
+  button.dataset.action = 'click->comment-user-menu#setPrimaryAgent'
+  button.textContent = labels.setPrimaryAgent
+  button.disabled = true
+  menu.appendChild(button)
+}
+
 export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
   const state = menuState(online, healthStatus, statusText, labels)
   const root = document.createElement('div')
@@ -116,7 +129,7 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   trigger.type = 'button'
   trigger.className = 'popup-menu-toggle comment-user-menu-trigger'
   trigger.dataset.popupMenuTarget = 'button'
-  trigger.dataset.action = 'click->popup-menu#toggle' + (user.ai_user ? ' click->comment-agent-model#load' : '')
+  trigger.dataset.action = 'click->comment-user-menu#syncPrimaryAgent click->popup-menu#toggle' + (user.ai_user ? ' click->comment-agent-model#load' : '')
   trigger.setAttribute('aria-label', labels.open.replace('%{name}', user.name))
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', 'false')
@@ -146,6 +159,7 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   mention.setAttribute('role', 'menuitem')
   mention.textContent = labels.mention
   menu.appendChild(mention)
+  appendPrimaryAgentButton(menu, user, labels)
 
   if (draggable) {
     const guide = document.createElement('p')

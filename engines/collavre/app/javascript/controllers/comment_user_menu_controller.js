@@ -1,7 +1,7 @@
 import { Controller } from '@hotwired/stimulus'
 
 export default class extends Controller {
-  static targets = ['status', 'statusLabel']
+  static targets = ['status', 'statusLabel', 'primaryAgent']
   static values = {
     userId: Number,
     userName: String,
@@ -39,6 +39,38 @@ export default class extends Controller {
     mentionMenu.insertMention({ id: this.userIdValue, name: this.userNameValue })
     mentionMenu.textareaTarget?.focus()
     this.popupMenuController?.hide()
+  }
+
+  get topicsController() {
+    return this.application.getControllerForElementAndIdentifier(this.popupElement, 'comments--topics')
+  }
+
+  get assignableTopic() {
+    const topics = this.topicsController
+    if (!topics?.canSetPrimaryAgent || !topics.currentTopicId) return null
+    const topic = (topics.topics || []).find(t => String(t.id) === String(topics.currentTopicId))
+    if (!topic || topic.agent_locked || topic.archived || topic.read_only) return null
+    if (String(topic.primary_agent?.id) === String(this.userIdValue)) return null
+    return topic
+  }
+
+  syncPrimaryAgent() {
+    if (this.hasPrimaryAgentTarget) this.primaryAgentTarget.disabled = this.assigning || !this.assignableTopic
+  }
+
+  async setPrimaryAgent(event) {
+    event.stopPropagation()
+    const topic = this.assignableTopic
+    if (!this.hasPrimaryAgentTarget || !topic || this.assigning) return
+
+    this.assigning = true
+    this.syncPrimaryAgent()
+    try {
+      await this.topicsController.setTopicPrimaryAgent(topic.id, { id: this.userIdValue })
+    } finally {
+      this.assigning = false
+      this.syncPrimaryAgent()
+    }
   }
 
   handlePresenceChanged(event) {

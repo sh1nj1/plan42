@@ -615,6 +615,7 @@ export default class extends Controller {
       open: this.element.dataset.userMenuOpenText || 'Open %{name}\'s profile menu',
       viewProfile: this.element.dataset.userMenuViewProfileText || 'View profile',
       mention: this.element.dataset.userMenuMentionText || 'Mention',
+      setPrimaryAgent: this.element.dataset.userMenuSetPrimaryAgentText,
       dragGuide: this.element.dataset.userMenuAgentDragGuideText || '',
       online: this.element.dataset.participantOnlineText || 'Online',
       offline: this.element.dataset.participantOfflineText || 'Offline',

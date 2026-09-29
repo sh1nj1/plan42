@@ -16,6 +16,7 @@ class CommentUserMenuComponentTest < ViewComponent::TestCase
     assert_selector profile_selector, text: I18n.t("collavre.comments.user_menu.view_profile")
     assert_selector "button[data-action='click->comment-user-menu#mention']",
       text: I18n.t("collavre.comments.user_menu.mention")
+    assert_no_selector "[data-comment-user-menu-target='primaryAgent']"
     assert_no_selector "[draggable='true']"
     assert_no_selector ".comment-user-popup-guide"
   end
@@ -26,6 +27,9 @@ class CommentUserMenuComponentTest < ViewComponent::TestCase
     render_inline(Collavre::CommentUserMenuComponent.new(user: agent, menu_id: "comment-agent-menu-1"))
 
     assert_selector "button.comment-user-menu-trigger[data-action~='click->comment-agent-model#load']"
+    assert_selector "button[data-comment-user-menu-target='primaryAgent'][disabled]",
+      text: I18n.t("collavre.comments.user_menu.set_primary_agent")
+    assert_selector "button.comment-user-menu-trigger[data-action~='click->comment-user-menu#syncPrimaryAgent']"
     assert_no_selector ".ai-agent-draggable"
     assert_no_selector "[draggable='true']"
     assert_no_selector ".comment-user-popup-guide"
