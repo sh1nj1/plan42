@@ -195,6 +195,7 @@ ko:
         view_profile: 프로필 보기
         mention: 멘션
         set_primary_agent: 현재 토픽 우선 응답자로 설정
+        clear_primary_agent: 현재 토픽 우선 응답자 해제
         agent_drag_guide: 이 아바타를 토픽 또는 토픽 추가 버튼으로 드래그하면 해당 에이전트가 Primary AI Agent가 됩니다.
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료

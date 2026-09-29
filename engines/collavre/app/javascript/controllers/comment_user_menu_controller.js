@@ -50,12 +50,19 @@ export default class extends Controller {
     if (!topics?.canSetPrimaryAgent || !topics.currentTopicId) return null
     const topic = (topics.topics || []).find(t => String(t.id) === String(topics.currentTopicId))
     if (!topic || topic.agent_locked || topic.archived || topic.read_only) return null
-    if (String(topic.primary_agent?.id) === String(this.userIdValue)) return null
     return topic
   }
 
+  isPrimaryAgent(topic) {
+    return String(topic?.primary_agent?.id) === String(this.userIdValue)
+  }
+
   syncPrimaryAgent() {
-    if (this.hasPrimaryAgentTarget) this.primaryAgentTarget.disabled = this.assigning || !this.assignableTopic
+    if (!this.hasPrimaryAgentTarget) return
+    const topic = this.assignableTopic
+    const button = this.primaryAgentTarget
+    button.disabled = this.assigning || !topic
+    button.textContent = this.isPrimaryAgent(topic) ? button.dataset.clearText : button.dataset.setText
   }
 
   async setPrimaryAgent(event) {
@@ -66,7 +73,7 @@ export default class extends Controller {
     this.assigning = true
     this.syncPrimaryAgent()
     try {
-      await this.topicsController.setTopicPrimaryAgent(topic.id, { id: this.userIdValue })
+      await this.topicsController.setTopicPrimaryAgent(topic.id, this.isPrimaryAgent(topic) ? null : { id: this.userIdValue })
     } finally {
       this.assigning = false
       this.syncPrimaryAgent()

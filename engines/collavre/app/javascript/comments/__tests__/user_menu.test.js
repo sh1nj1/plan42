@@ -8,6 +8,7 @@ const LABELS = {
   viewProfile: 'View profile',
   mention: 'Mention',
   setPrimaryAgent: '현재 토픽 우선 응답자로 설정',
+  clearPrimaryAgent: '현재 토픽 우선 응답자 해제',
   dragGuide: 'Drag this avatar to a topic.',
   online: 'Online',
   offline: 'Offline',
@@ -29,6 +30,8 @@ describe('createUserMenu', () => {
   test('reads localized menu labels from the popup', () => {
     const element = document.createElement('div')
     element.dataset.userMenuSetPrimaryAgentText = LABELS.setPrimaryAgent
+    element.dataset.userMenuClearPrimaryAgentText = LABELS.clearPrimaryAgent
+    expect(userMenuLabels(element).clearPrimaryAgent).toBe(LABELS.clearPrimaryAgent)
     expect(userMenuLabels(element).setPrimaryAgent).toBe(LABELS.setPrimaryAgent)
     expect(userMenuLabels(element).mention).toBe('Mention')
   })
@@ -40,6 +43,8 @@ describe('createUserMenu', () => {
       expect(button).toBeNull()
       return
     }
+    expect(button.dataset.setText).toBe(LABELS.setPrimaryAgent)
+    expect(button.dataset.clearText).toBe(LABELS.clearPrimaryAgent)
     expect(button.textContent).toBe(LABELS.setPrimaryAgent)
     expect(button.disabled).toBe(true)
     expect(button.dataset.action).toBe('click->comment-user-menu#setPrimaryAgent')

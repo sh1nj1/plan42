@@ -35,6 +35,16 @@ class CommentUserMenuComponentTest < ViewComponent::TestCase
     assert_no_selector ".comment-user-popup-guide"
   end
 
+  test "provides localized assignment and release labels in both languages" do
+    %i[en ko].each do |locale|
+      I18n.with_locale(locale) do
+        render_inline(Collavre::CommentUserMenuComponent.new(user: users(:ai_bot), menu_id: "agent-menu"))
+        assert_selector "button[data-set-text='#{I18n.t('collavre.comments.user_menu.set_primary_agent')}']"
+        assert_selector "button[data-clear-text='#{I18n.t('collavre.comments.user_menu.clear_primary_agent')}']"
+      end
+    end
+  end
+
   test "uses the supplied menu id" do
     render_inline(Collavre::CommentUserMenuComponent.new(user: users(:one), menu_id: "message-author-menu"))
 

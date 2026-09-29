@@ -111,6 +111,8 @@ function appendPrimaryAgentButton(menu, user, labels) {
   button.setAttribute('role', 'menuitem')
   button.dataset.commentUserMenuTarget = 'primaryAgent'
   button.dataset.action = 'click->comment-user-menu#setPrimaryAgent'
+  button.dataset.setText = labels.setPrimaryAgent
+  button.dataset.clearText = labels.clearPrimaryAgent
   button.textContent = labels.setPrimaryAgent
   button.disabled = true
   menu.appendChild(button)
@@ -178,6 +180,7 @@ export function userMenuLabels(element) {
     viewProfile: element.dataset.userMenuViewProfileText || 'View profile',
     mention: element.dataset.userMenuMentionText || 'Mention',
     setPrimaryAgent: element.dataset.userMenuSetPrimaryAgentText,
+    clearPrimaryAgent: element.dataset.userMenuClearPrimaryAgentText,
     dragGuide: element.dataset.userMenuAgentDragGuideText || '',
     online: element.dataset.participantOnlineText || 'Online',
     offline: element.dataset.participantOfflineText || 'Offline',

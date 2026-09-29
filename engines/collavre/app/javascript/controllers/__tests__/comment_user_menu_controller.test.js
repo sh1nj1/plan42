@@ -50,6 +50,8 @@ describe('CommentUserMenuController', () => {
     beforeEach(() => {
       button = document.createElement('button')
       button.dataset.commentUserMenuTarget = 'primaryAgent'
+      button.dataset.setText = 'Set primary agent'
+      button.dataset.clearText = 'Clear primary agent'
       controller.element.appendChild(button)
       topics = {
         canSetPrimaryAgent: true,
@@ -86,13 +88,56 @@ describe('CommentUserMenuController', () => {
       ['locked topic', t => { t.topics[0].agent_locked = true }],
       ['archived topic', t => { t.topics[0].archived = true }],
       ['read-only topic', t => { t.topics[0].read_only = true }],
-      ['already assigned', t => { t.topics[0].primary_agent = { id: '9' } }],
     ])('disables and rejects assignment for %s', async (_name, configure) => {
       configure(topics)
       controller.syncPrimaryAgent()
       expect(button.disabled).toBe(true)
       await controller.setPrimaryAgent(event())
       expect(topics.setTopicPrimaryAgent).not.toHaveBeenCalled()
+    })
+
+    test('clears the assigned agent and switches back to assignment after success', async () => {
+      topics.topics[0].primary_agent = { id: '9' }
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Clear primary agent')
+      topics.setTopicPrimaryAgent.mockImplementation(async () => { topics.topics[0].primary_agent = null })
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(1, null)
+      expect(button.textContent).toBe('Set primary agent')
+    })
+
+    test('rechecks the assignment at click time', async () => {
+      controller.syncPrimaryAgent()
+      topics.topics[0].primary_agent = { id: 9 }
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(1, null)
+    })
+
+    test.each(['agent_locked', 'archived', 'read_only'])('prevents clearing a %s topic', async flag => {
+      topics.topics[0].primary_agent = { id: 9 }
+      topics.topics[0][flag] = true
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(true)
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).not.toHaveBeenCalled()
+    })
+
+    test('rechecks permission before clearing an assigned agent', async () => {
+      topics.topics[0].primary_agent = { id: 9 }
+      controller.syncPrimaryAgent()
+      topics.canSetPrimaryAgent = false
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).not.toHaveBeenCalled()
+    })
+
+    test('keeps the clear action available after a failed release', async () => {
+      topics.topics[0].primary_agent = { id: 9 }
+      await controller.setPrimaryAgent(event())
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Clear primary agent')
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenNthCalledWith(2, 1, null)
     })
 
     test('allows replacing another primary agent', async () => {
@@ -121,7 +166,8 @@ describe('CommentUserMenuController', () => {
       topics.topics[0].primary_agent = { id: 9 }
       finish()
       await saving
-      expect(button.disabled).toBe(true)
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Clear primary agent')
     })
 
     test('allows retry after the existing API reports a failed request', async () => {

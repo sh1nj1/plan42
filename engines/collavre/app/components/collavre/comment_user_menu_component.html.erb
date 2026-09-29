@@ -50,6 +50,8 @@
 
     <% if user.ai_user? %>
       <button type="button" class="popup-menu-item" role="menuitem" disabled
+              data-set-text="<%= t('collavre.comments.user_menu.set_primary_agent') %>"
+              data-clear-text="<%= t('collavre.comments.user_menu.clear_primary_agent') %>"
               data-comment-user-menu-target="primaryAgent"
               data-action="click->comment-user-menu#setPrimaryAgent">
         <%= t('collavre.comments.user_menu.set_primary_agent') %>
