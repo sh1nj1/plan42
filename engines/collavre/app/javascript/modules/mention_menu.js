@@ -13,8 +13,7 @@ if (!mentionMenuInitialized) {
     if (!textarea || !menu) return
 
     const list = menu.querySelector('.mention-results')
-    let fetchTimer
-    let requestId = 0
+    let fetchTimer, requestId = 0
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,

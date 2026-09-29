@@ -95,3 +95,32 @@ test('handles failed requests', async () => {
   await flush()
   expect(document.querySelector('#mention-menu').style.display).toBe('none')
 })
+
+test('non-success responses leave the menu hidden', async () => {
+  fetch.mockResolvedValue({ ok: false })
+  input('@')
+  await flush()
+  expect(document.querySelector('#mention-menu').style.display).toBe('none')
+})
+
+test('supports missing creative context without adding a creative id', async () => {
+  document.querySelector('#comments-popup').remove()
+  document.querySelector('textarea').replaceWith(document.createElement('textarea'))
+  textarea = document.querySelector('textarea')
+  document.dispatchEvent(new Event('turbo:load'))
+  input('@')
+  await flush()
+  expect(fetch.mock.calls[0][0].searchParams.has('creative_id')).toBe(false)
+})
+
+test('leaves ordinary keyboard input alone', () => {
+  const event = new KeyboardEvent('keydown', { key: 'a', cancelable: true })
+  textarea.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(false)
+})
+
+test('initialization tolerates pages without the chat', () => {
+  document.body.innerHTML = ''
+  document.dispatchEvent(new Event('turbo:load'))
+  expect(fetch).not.toHaveBeenCalled()
+})
