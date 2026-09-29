@@ -388,9 +388,22 @@
 .notice-spot {
     position: relative;
     z-index: 4;
+    animation: notice-spot-pulse var(--notice-pulse-duration) var(--ease-out-3) infinite;
+}
+
+/* Keep the mission ring when the chat composer receives autofocus. */
+.notice-spot,
+textarea.notice-spot:focus,
+textarea.notice-spot:focus-visible {
     outline: var(--border-2) solid var(--notice-accent);
     outline-offset: calc(var(--space-1) * 0.75);
-    animation: notice-spot-pulse var(--notice-pulse-duration) var(--ease-out-3) infinite;
+}
+
+textarea.notice-spot,
+textarea.notice-spot:focus,
+textarea.notice-spot:focus-visible {
+    border-color: var(--notice-accent);
+    box-shadow: none;
 }
 
 .notice-spot-tip {
