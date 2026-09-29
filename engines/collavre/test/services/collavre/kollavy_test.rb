@@ -90,7 +90,7 @@ class Collavre::KollavyTest < ActiveSupport::TestCase
   end
 
   test "an existing lower share is left alone and Kollavy is not pinned" do
-    kollavy = Collavre::User.create!(email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
+    kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
                                      llm_vendor: "google", llm_model: "m")
     Collavre::CreativeShare.create!(creative: @inbox, user: kollavy, permission: :read)
 
@@ -101,7 +101,7 @@ class Collavre::KollavyTest < ActiveSupport::TestCase
   end
 
   test "a concurrent share insert is reused" do
-    kollavy = Collavre::User.create!(email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
+    kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
                                      llm_vendor: "google", llm_model: "m")
     existing = Collavre::CreativeShare.create!(creative: @inbox, user: kollavy, permission: :feedback)
     Collavre::CreativeShare.stub(:find_or_create_by!, ->(*) { raise ActiveRecord::RecordNotUnique }) do

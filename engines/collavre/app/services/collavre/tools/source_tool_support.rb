@@ -13,6 +13,10 @@ module Collavre
       end
 
       module ClassMethods
+        def user_permitted?(user)
+          Collavre::Kollavy::Identity.agent?(user)
+        end
+
         def allowed_user_emails
           [ Collavre::Kollavy::EMAIL ]
         end

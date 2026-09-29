@@ -4,7 +4,7 @@ require "test_helper"
 
 class McpToolRestrictionTest < ActiveSupport::TestCase
   setup do
-    @kollavy = Collavre::User.create!(email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
+    @kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
                                       llm_vendor: "google", llm_model: "gemini-2.5-flash")
     @user = users(:one)
   end

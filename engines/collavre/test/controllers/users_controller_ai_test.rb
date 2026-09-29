@@ -609,7 +609,7 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
   end
 
   test "update_ai keeps tools the editor cannot see and ignores ones they could not pick" do
-    kollavy = Collavre::User.create!(email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
+    kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
                                      llm_vendor: "google", llm_model: "m",
                                      tools: %w[collavre_source_read creative_retrieval_service])
 

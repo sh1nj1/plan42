@@ -1197,6 +1197,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.integer "typo_correction_threshold", default: 80, null: false
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
+    t.boolean "system_agent", default: false, null: false
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
     t.index ["created_at", "id"], name: "index_users_on_created_at_and_id"
     t.index ["desktop_preset_adapter"], name: "index_users_on_desktop_preset_adapter", unique: true, where: "desktop_preset_adapter IS NOT NULL"

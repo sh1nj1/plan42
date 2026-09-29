@@ -71,14 +71,13 @@ module Collavre
 
     class << self
       def agent
-        Collavre.user_class.find_by(email: EMAIL)
+        Collavre.user_class.find_by(email: EMAIL, system_agent: true)
       end
 
       # Idempotent: creates or refreshes the agent, then onboards every Inbox
       # that has not been onboarded yet.
       def seed!
-        kollavy = Collavre.user_class.find_or_initialize_by(email: EMAIL)
-        kollavy.password = SecureRandom.hex(32) if kollavy.new_record?
+        kollavy = Identity.for_seed
         kollavy.email_verified_at ||= Time.current
         kollavy.assign_attributes(agent_attributes)
         kollavy.save!
@@ -90,7 +89,7 @@ module Collavre
       # Shares the Inbox with Kollavy (:feedback) and makes it the Main topic's
       # primary agent, once. Does nothing before Kollavy has been seeded.
       def onboard_inbox(inbox, kollavy = agent)
-        return false unless kollavy && onboardable?(inbox)
+        return false unless Identity.agent?(kollavy) && onboardable?(inbox)
 
         Creative.transaction do
           share = ensure_share(inbox, kollavy)
