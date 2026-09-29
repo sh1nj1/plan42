@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -302,6 +302,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
     t.index ["reverts_id"], name: "index_creative_change_sets_on_reverts_id"
     t.index ["status"], name: "index_creative_change_sets_on_status"
     t.index ["task_id"], name: "index_creative_change_sets_on_task_id"
+    t.index ["user_id", "status", "actor_kind"], name: "index_creative_change_sets_on_actor_lookup"
   end
 
   create_table "creative_changes", force: :cascade do |t|
