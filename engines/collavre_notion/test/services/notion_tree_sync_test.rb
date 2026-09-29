@@ -201,6 +201,57 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
     assert_not link.notion_page_nodes.exists?(page_id: page_id)
   end
 
+  test "missing removed pages clear tracking and allow subsequent syncs" do
+    archived = child(@root, "Archived")
+    moved = child(@root, "Moved")
+    deleted = child(@root, "Deleted")
+    link = sync
+    page_ids = [ archived, moved, deleted ].map { |creative| node(link, creative).page_id }
+    last_synced_at = link.last_synced_at
+    archived.update_column(:archived_at, Time.current)
+    moved.update!(parent: nil)
+    deleted.destroy!
+    real_client = CollavreNotion::NotionClient.new(@account)
+    requests = page_ids.map do |id|
+      stub_request(:patch, %r{/v1/pages/#{id}$}).with(body: { archived: true }.to_json)
+        .to_return(status: 404, body: "{}")
+    end
+
+    @client.stub(:archive_page, ->(id) { real_client.archive_page(id) }) do
+      travel 1.minute do
+        sync
+        assert_equal [ @root.id ], link.notion_page_nodes.pluck(:creative_id)
+        assert_operator link.reload.last_synced_at, :>, last_synced_at
+        sync
+      end
+    end
+    requests.each { |request| assert_requested request, times: 1 }
+  end
+
+  test "other archive errors preserve removed page tracking and sync timestamp for retry" do
+    removed = child(@root, "Removed")
+    link = sync
+    page_id = node(link, removed).page_id
+    last_synced_at = link.last_synced_at
+    removed.update!(parent: nil)
+    real_client = CollavreNotion::NotionClient.new(@account)
+
+    [ 400, 401, 403, 429, 500 ].each do |status|
+      stub_request(:patch, %r{/v1/pages/#{page_id}$}).with(body: { archived: true }.to_json)
+        .to_return(status: status, body: "{}")
+      @client.stub(:archive_page, ->(id) { real_client.archive_page(id) }) do
+        travel 1.minute do
+          assert_raises(CollavreNotion::NotionError) { sync }
+          assert link.notion_page_nodes.exists?(page_id: page_id)
+          assert_equal last_synced_at, link.reload.last_synced_at
+        end
+      end
+    end
+    sync
+    assert_not link.notion_page_nodes.exists?(page_id: page_id)
+    assert_includes @client.archived, page_id
+  end
+
   test "destinations have independent mappings and explicit sync targets" do
     a = child(@root, "A")
     first = sync

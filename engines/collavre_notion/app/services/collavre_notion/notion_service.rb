@@ -49,6 +49,9 @@ module CollavreNotion
 
     def archive_page(page_id)
       with_rate_limit_retry { client.archive_page(page_id) }
+    rescue NotionNotFoundError
+      # An already missing owned page needs no further cleanup.
+      nil
     end
 
     private
