@@ -5,6 +5,7 @@
 import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
+import CommentController from '../../comment_controller'
 
 describe('FormController - Review Quote Chips', () => {
   let application
@@ -139,6 +140,45 @@ describe('FormController - Review Quote Chips', () => {
         focus.mockRestore()
       }
     })
+  })
+
+  test.each(['popup', 'button'])('review %s clears the message selection before focusing the composer', (entry) => {
+    const comment = document.createElement('div')
+    comment.dataset.commentId = '42'
+    comment.innerHTML = '<div class="comment-content">Selected message</div>'
+    container.querySelector('#comments-popup').appendChild(comment)
+    const commentController = Object.create(CommentController.prototype)
+    Object.defineProperty(commentController, 'element', { value: comment })
+    commentController.findFormController = () => controller
+    const selection = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(comment.firstElementChild)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    const clearSelection = jest.spyOn(selection, 'removeAllRanges')
+    const focus = jest.spyOn(controller.textareaTarget, 'focus')
+    controller.textareaTarget.scrollIntoView = jest.fn()
+
+    try {
+      if (entry === 'popup') {
+        commentController.showReviewPopup(comment.getBoundingClientRect(), selection.toString())
+        commentController._reviewPopup.onSelect()
+      } else {
+        commentController.reviewClick({ preventDefault: jest.fn() })
+      }
+
+      expect(getQuotes(controller)[0]).toMatchObject({ commentId: '42', text: 'Selected message' })
+      expect(selection.toString()).toBe('')
+      expect(clearSelection).toHaveBeenCalledTimes(1)
+      expect(focus).toHaveBeenCalled()
+      // In WebKit, clearing ranges after focus removes the textarea's typing caret.
+      expect(clearSelection.mock.invocationCallOrder[0]).toBeLessThan(focus.mock.invocationCallOrder[0])
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    } finally {
+      commentController.hideReviewPopup()
+      clearSelection.mockRestore()
+      focus.mockRestore()
+    }
   })
 
   describe('appendReviewQuote', () => {
