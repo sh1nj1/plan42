@@ -84,6 +84,35 @@ module Collavre
       assert_equal "collavre.notices.items.dynamic", dynamic.i18n_scope
     end
 
+    test "providers rebuild reloadable definitions and remove obsolete entries" do
+      keys = %i[vendor_old]
+      NoticeRegistry.register_provider(:vendor) do
+        keys.each { |key| NoticeRegistry.register(key, kind: :feature) }
+      end
+      NoticeRegistry.register(:direct)
+      NoticeRegistry.prepare!
+      assert NoticeRegistry.find(:vendor_old)
+      keys = %i[vendor_new]
+      2.times { NoticeRegistry.prepare! }
+      assert_nil NoticeRegistry.find(:vendor_old)
+      assert_equal %i[vendor_new direct], NoticeRegistry.all.map(&:key)
+      NoticeRegistry.unregister(:direct)
+      NoticeRegistry.prepare!
+      assert_nil NoticeRegistry.find(:direct)
+    end
+
+    test "failed preparation does not prevent subsequent direct registrations from surviving" do
+      NoticeRegistry.register_provider(:broken) { raise "broken provider" }
+      assert_raises(RuntimeError) { NoticeRegistry.prepare! }
+      NoticeRegistry.register(:after_failure)
+      NoticeRegistry.register_provider(:broken) { NoticeRegistry.register(:recovered) }
+      NoticeRegistry.prepare!
+      assert_equal %i[recovered after_failure], NoticeRegistry.all.map(&:key)
+      NoticeRegistry.reset!
+      NoticeRegistry.prepare!
+      assert_empty NoticeRegistry.all
+    end
+
     test "install routes collavre events to the tracker and re-registers on reload" do
       subscriptions = []
       prepares = []
@@ -102,9 +131,10 @@ module Collavre
       end
       assert_equal [ [ "x.collavre", { user: 1 } ] ], handled
 
-      NoticeRegistry.register(:stale)
-      prepares.sole.call
-      assert_nil NoticeRegistry.find(:stale)
+      NoticeRegistry.register(:vendor, kind: :feature)
+      2.times { prepares.sole.call }
+      assert_equal :feature, NoticeRegistry.find(:vendor).kind
+      assert_includes Notices::Feed.new(users(:two)).items.map { |item| item[:key] }, "vendor"
       assert NoticeRegistry.find(:onboarding_first_creative)
     end
   end

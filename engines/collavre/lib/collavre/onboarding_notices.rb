@@ -30,6 +30,7 @@ module Collavre
         kind: :mission, group: :onboarding, icon: "🌳",
         target: "[data-comments--form-target='textarea']",
         audience: method(:agent_available?),
+        allow_early_completion: true,
         cta_path: ->(routes, user) { latest_creative_path(routes, user, open_comments: true) },
         done_when: method(:agent_called?),
         completes_on: { COMMENT_CREATED => ->(payload) { payload[:comment].mentioned_users.ai_agents.exists? } })

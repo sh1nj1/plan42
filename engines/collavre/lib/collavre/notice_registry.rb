@@ -20,17 +20,24 @@ module Collavre
 
     def initialize
       @notices = {}
+      @providers = {}
       @mutex = Mutex.new
     end
 
     def register(key, config = {})
       notice = NoticeDefinition.new(key, config)
-      @mutex.synchronize { @notices[notice.key] = notice }
+      @mutex.synchronize do
+        @providers[[ :notice, notice.key ]] = -> { register(key, config) } unless @preparing
+        @notices[notice.key] = notice
+      end
       notice
     end
 
     def unregister(key)
-      @mutex.synchronize { @notices.delete(key.to_sym) }
+      @mutex.synchronize do
+        @providers.delete([ :notice, key.to_sym ])
+        @notices.delete(key.to_sym)
+      end
     end
 
     def find(key)
@@ -53,7 +60,27 @@ module Collavre
     end
 
     def reset!
-      @mutex.synchronize { @notices = {} }
+      @mutex.synchronize do
+        @notices = {}
+        @providers = {}
+      end
+    end
+
+    # Providers resolve reloadable constants when preparation runs. Direct
+    # initializer registrations are retained as individual providers as well.
+    def register_provider(key, &block)
+      @mutex.synchronize { @providers[[ :provider, key.to_sym ]] = block }
+    end
+
+    def prepare!
+      providers = @mutex.synchronize do
+        @notices = {}
+        @providers.values
+      end
+      @preparing = true
+      providers.each(&:call)
+    ensure
+      @preparing = false
     end
 
     # Boot hook: re-registers the engine's notices on every code reload and
@@ -62,15 +89,13 @@ module Collavre
       ActiveSupport::Notifications.subscribe(/\.collavre\z/) do |event|
         Collavre::Notices::Tracker.handle(event.name, event.payload)
       end
+      register_provider(:onboarding) { OnboardingNotices.register }
       registry = self
-      Rails.application.config.to_prepare do
-        registry.reset!
-        OnboardingNotices.register
-      end
+      Rails.application.config.to_prepare { registry.prepare! }
     end
 
     class << self
-      delegate :register, :unregister, :find, :all, :group, :listening_to, :reset!, :install, to: :instance
+      delegate :register, :unregister, :find, :all, :group, :listening_to, :reset!, :register_provider, :prepare!, :install, to: :instance
     end
   end
 
@@ -82,7 +107,7 @@ module Collavre
     KEY_FORMAT = /\A[a-z0-9_]+\z/
     HUMANS_ONLY = ->(user) { !user.ai_user? }
 
-    attr_reader :key, :kind, :priority, :icon, :group, :target, :starts_at, :ends_at, :completes_on
+    attr_reader :key, :kind, :priority, :icon, :group, :target, :starts_at, :ends_at, :completes_on, :allow_early_completion
 
     def initialize(key, config)
       @key = key.to_sym
@@ -93,6 +118,7 @@ module Collavre
       @target = config[:target]
       @cta_path = config[:cta_path]
       @done_when = config[:done_when]
+      @allow_early_completion = config.fetch(:allow_early_completion, false)
       @completes_on = (config[:completes_on] || {}).transform_keys(&:to_s)
       @audience = config.fetch(:audience, HUMANS_ONLY)
       @starts_at = config[:starts_at]

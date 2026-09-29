@@ -70,17 +70,44 @@ module Collavre
       assert_nil UserNotice.find_by(user: owner, notice_key: "onboarding_sub_creative")
     end
 
-    test "an early agent invocation is backfilled without waiting for its reply" do
+    test "an early agent invocation completes without waiting for its reply" do
       agent = users(:ai_bot)
       agent.update!(searchable: true)
       Turbo::StreamsChannel.stub(:broadcast_replace_to, nil) do
         root = Creative.create!(user: @user, description: "Plan")
         Comment.create!(creative: root, user: @user, content: "@#{agent.name}: summarize")
-        assert_nil status(:onboarding_call_agent)
+        assert_equal "completed", status(:onboarding_call_agent)
 
         Creative.create!(user: @user, parent: root, description: "Step")
         assert_equal "completed", status(:onboarding_call_agent)
         assert_empty feed_keys
+      end
+    end
+
+    test "replay remembers an early agent call but never reuses a previous replay" do
+      agent = users(:ai_bot)
+      agent.update!(searchable: true)
+      broadcasts = []
+      Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*, **options) { broadcasts << options[:locals] if options[:target] == Notices::Tracker::PAYLOAD_TARGET }) do
+        root = Creative.create!(user: @user, description: "Existing plan")
+        Comment.create!(creative: root, user: @user, content: "@#{agent.name}: old call")
+        Notices::OnboardingReplay.call(@user)
+        assert_equal "pending", status(:onboarding_call_agent)
+        assert_equal %w[onboarding_first_creative], feed_keys
+
+        broadcasts.clear
+        Comment.create!(creative: root, user: @user, content: "@#{agent.name}: replay call")
+        assert_equal "completed", status(:onboarding_call_agent)
+        assert_nil broadcasts.sole[:completion], "an early call must not celebrate ahead of the current step"
+        assert_equal %w[onboarding_first_creative], feed_keys
+        Creative.create!(user: @user, description: "New plan")
+        Creative.create!(user: @user, parent: root, description: "New step")
+        assert_empty feed_keys
+
+        Notices::OnboardingReplay.call(@user)
+        Creative.create!(user: @user, parent: root, description: "Another replay")
+        assert_equal "pending", status(:onboarding_call_agent)
+        assert_equal %w[onboarding_call_agent], feed_keys
       end
     end
 

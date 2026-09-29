@@ -2,7 +2,8 @@ module Collavre
   module Notices
     # An explicit user-requested restart is the sole exception to terminal
     # completion. Seed every step as pending so Feed does not backfill it from
-    # historical activity on the next render.
+    # historical activity on the next render. New events may still complete
+    # steps that explicitly allow early completion.
     class OnboardingReplay
       def self.call(user)
         rows = NoticeRegistry.group(:onboarding).select(&:mission?).map do |notice|

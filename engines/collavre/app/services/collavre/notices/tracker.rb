@@ -14,12 +14,13 @@ module Collavre
 
         candidates = open_candidates(event_name, user)
         candidates.each_with_index do |notice, index|
-          next if notice.mission? && !head_of_group?(notice, user)
+          current = !notice.mission? || head_of_group?(notice, user)
+          next unless current || notice.allow_early_completion
           next unless notice.completed_by?(event_name, payload, user)
 
           next unless UserNotice.complete!(user, notice.key)
 
-          broadcast(user, completed: notice.key, awaiting: candidates.drop(index + 1).map(&:key))
+          broadcast(user, completed: current ? notice.key : nil, awaiting: candidates.drop(index + 1).map(&:key))
         end
       rescue StandardError => e
         # Progress tracking must never break the action that emitted the event.
