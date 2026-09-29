@@ -23,11 +23,12 @@ describe('initial mobile inbox URL', () => {
     document.body.innerHTML = ''
     await Promise.resolve()
     application.stop()
+    jest.restoreAllMocks()
     window.innerWidth = previousWidth
     window.history.replaceState({}, '', previousUrl)
   })
 
-  test.each([390, 767])('loads topics and comments with a pre-rendered inbox button at %ipx', async width => {
+  async function connectPopup(width) {
     window.innerWidth = width
     window.history.replaceState({}, '', '/creatives?id=123&open_comments=true&topic_id=456&locale=ko')
     document.body.innerHTML = `
@@ -49,6 +50,10 @@ describe('initial mobile inbox URL', () => {
     application.register('comments--list', ListController)
     application.register('comments--topics', TopicsController)
     await new Promise(resolve => setTimeout(resolve, 0))
+  }
+
+  test.each([390, 767])('loads topics and comments with a pre-rendered inbox button at %ipx', async width => {
+    await connectPopup(width)
     await new Promise(resolve => requestAnimationFrame(resolve))
     await Promise.resolve()
 
@@ -61,5 +66,38 @@ describe('initial mobile inbox URL', () => {
     expect(list.creativeId).toBe('123')
     expect(list.suppressTopicChangeLoad).toBe(false)
     expect(popup.style.display).toBe('flex')
+    const controller = application.getControllerForElementAndIdentifier(popup, 'comments--popup')
+    expect(controller.openFromUrlFrame).toBeNull()
+  })
+
+  test.each([true, false])('does not open a removed popup (disconnect delivered: %s)', async disconnectDelivered => {
+    let pendingFrame
+    jest.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      pendingFrame = callback
+      return 0
+    })
+    const cancelFrame = jest.spyOn(window, 'cancelAnimationFrame')
+    await connectPopup(390)
+    const popup = document.getElementById('comments-popup')
+    const controller = application.getControllerForElementAndIdentifier(popup, 'comments--popup')
+    const open = jest.spyOn(controller, 'open')
+    const openFromUrl = jest.spyOn(controller, 'openFromUrl')
+
+    popup.remove()
+    if (disconnectDelivered) {
+      await Promise.resolve()
+      expect(cancelFrame).toHaveBeenCalledWith(0)
+      expect(controller.openFromUrlFrame).toBeNull()
+    }
+    // Also guard against a callback delivered before Stimulus observes removal.
+    pendingFrame()
+    await Promise.resolve()
+
+    expect(openFromUrl).not.toHaveBeenCalled()
+    expect(open).not.toHaveBeenCalled()
+    expect(topicsOpened).not.toHaveBeenCalled()
+    expect(listOpened).not.toHaveBeenCalled()
+    expect(controller.openFromUrlObserver).toBeFalsy()
+    expect(controller.openFromUrlFrame).toBeNull()
   })
 })

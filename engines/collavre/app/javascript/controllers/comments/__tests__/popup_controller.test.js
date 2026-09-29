@@ -40,7 +40,7 @@ describe('CommentsPopupController', () => {
 
         // Manual controller access for testing internals if needed, 
         // though usually better to test via DOM/events.
-        // Waiting for connection:
+        // Wait for connection and the deferred URL-open frame before each test.
         return new Promise(resolve => setTimeout(resolve, 0))
           .then(() => new Promise(resolve => requestAnimationFrame(resolve))).then(() => {
             const element = document.getElementById('comments-popup')
