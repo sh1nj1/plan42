@@ -66,6 +66,22 @@ module Collavre
       assert_nil state("tour_one").snoozed_until
     end
 
+    test "restore rejects a completion committed after it reads the snoozed row" do
+      UserNotice.record!(@user, :tour_one, :snoozed, snoozed_until: 1.day.from_now)
+      original = UserNotice.method(:record!)
+      complete_before_restore = lambda do |user, key, status, **options|
+        original.call(user, key, :completed)
+        original.call(user, key, status, **options)
+      end
+
+      UserNotice.stub(:record!, complete_before_restore) do
+        post "/user_notices/tour_one/restore"
+      end
+
+      assert_response :unprocessable_entity
+      assert state("tour_one").completed?
+    end
+
     test "404s for unknown notices and ones outside the audience" do
       post "/user_notices/nope/dismiss"
       assert_response :not_found

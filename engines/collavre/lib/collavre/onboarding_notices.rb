@@ -30,7 +30,7 @@ module Collavre
         kind: :mission, group: :onboarding, icon: "🌳",
         target: "[data-comments--form-target='textarea']",
         cta_path: method(:latest_creative_path),
-        done_when: method(:agent_replied_in_own_creative?),
+        done_when: method(:agent_called?),
         completes_on: { COMMENT_CREATED => ->(payload) { payload[:comment].mentioned_users.ai_agents.exists? } })
     end
 
@@ -44,12 +44,11 @@ module Collavre
       creative ? routes.creative_path(creative) : routes.creatives_path
     end
 
-    # Backfill proxy for "has called an agent": an agent has answered in one of
-    # the user's own creatives. Both lookups are indexed, unlike scanning the
-    # user's comments for mentions.
-    def agent_replied_in_own_creative?(user)
-      Comment.where(creative_id: own_creatives(user).select(:id),
-                    user_id: Collavre.user_class.ai_agents.select(:id)).exists?
+    # Use the same mention resolver as live completion, including shared trees.
+    # This one-time backfill must not depend on an asynchronous agent reply.
+    def agent_called?(user)
+      Comment.where(user: user).where("content LIKE ?", "%@%").includes(:user, :creative)
+             .find_each.any? { |comment| comment.mentioned_users.ai_agents.exists? }
     end
   end
 end

@@ -32,7 +32,8 @@ module Collavre
       state = UserNotice.find_by(user: Current.user, notice_key: @notice.key.to_s)
       return head(:unprocessable_entity) unless state&.snoozed? || state&.dismissed?
 
-      record!(:pending)
+      restored = UserNotice.record!(Current.user, @notice.key, :pending)
+      head(restored.pending? ? :no_content : :unprocessable_entity)
     end
 
     private

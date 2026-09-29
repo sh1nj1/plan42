@@ -69,11 +69,41 @@ module Collavre
       assert_nil UserNotice.find_by(user: owner, notice_key: "onboarding_sub_creative")
     end
 
+    test "an early agent invocation is backfilled without waiting for its reply" do
+      agent = users(:ai_bot)
+      agent.update!(searchable: true)
+      Turbo::StreamsChannel.stub(:broadcast_replace_to, nil) do
+        root = Creative.create!(user: @user, description: "Plan")
+        Comment.create!(creative: root, user: @user, content: "@#{agent.name}: summarize")
+        assert_nil status(:onboarding_call_agent)
+
+        Creative.create!(user: @user, parent: root, description: "Step")
+        assert_equal "completed", status(:onboarding_call_agent)
+        assert_empty feed_keys
+      end
+    end
+
+    test "backfill recognizes calls in shared creatives but not another user's calls" do
+      agent = users(:ai_bot)
+      agent.update!(searchable: true)
+      shared = Creative.create!(user: create_notice_user, description: "Shared")
+      Comment.create!(creative: shared, user: shared.user, content: "@#{agent.name}: summarize")
+      refute NoticeRegistry.find(:onboarding_call_agent).done_for?(@user)
+
+      Comment.create!(creative: shared, user: @user, content: "ordinary note")
+      refute NoticeRegistry.find(:onboarding_call_agent).done_for?(@user)
+
+      Comment.create!(creative: shared, user: @user, content: "@#{agent.name}: summarize")
+      assert NoticeRegistry.find(:onboarding_call_agent).done_for?(@user)
+    end
+
     test "existing users are backfilled past what they already did" do
       root = Creative.create!(user: @user, description: "Plan")
       Creative.create!(user: @user, parent: root, description: "Step")
       UserNotice.where(user: @user).delete_all
-      Comment.create!(creative: root, user: users(:ai_bot), content: "Done")
+      agent = users(:ai_bot)
+      agent.update!(searchable: true)
+      Comment.create!(creative: root, user: @user, content: "@#{agent.name}: summarize")
 
       assert_empty feed_keys
       assert_equal %w[completed completed completed],
