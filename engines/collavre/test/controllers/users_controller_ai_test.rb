@@ -747,13 +747,27 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assigned = %w[deleted_tool inactive_tool unloadable_tool hidden_tool collavre_source_read topic_list]
     @ai_user.update!(tools: assigned)
 
-    Collavre::McpService.stub(:available_tools, []) do
+    Collavre::McpService.stub(:available_tools, [ { name: "topic_list", description: "Topics", params: {} } ]) do
       patch update_ai_user_url(@ai_user), params: { user: { name: "Unchanged tools" } }
       assert_equal assigned, @ai_user.reload.tools
 
       patch update_ai_user_url(@ai_user), params: { user: { tools: [ "" ] + assigned } }
       assert_response :redirect
-      assert_equal %w[collavre_source_read hidden_tool].sort, @ai_user.reload.tools.sort
+      assert_equal %w[topic_list collavre_source_read hidden_tool].sort, @ai_user.reload.tools.sort
+    end
+  end
+
+  test "update_ai preserves all assignments when tool discovery fails" do
+    assigned = %w[topic_list dynamic_tool collavre_source_read]
+    @ai_user.update!(tools: assigned)
+
+    Collavre::McpService.stub(:available_tools, []) do
+      [ [ "" ], [ "", "topic_list", "unavailable_tool" ] ].each do |submitted|
+        patch update_ai_user_url(@ai_user), params: { user: { name: "Renamed bot", tools: submitted } }
+        assert_response :redirect
+        assert_equal assigned, @ai_user.reload.tools
+        assert_equal "Renamed bot", @ai_user.name
+      end
     end
   end
 

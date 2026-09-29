@@ -168,6 +168,7 @@ module Collavre
       return unless ai_params.key?(:tools)
 
       editable = load_available_tools.pluck(:name).to_set
+      return ai_params.delete(:tools) if editable.empty?
       hidden = Collavre::McpToolRegistry.permission_hidden_names(Array(@user.tools), Current.user)
       submitted = Array(ai_params[:tools]).compact_blank.select { |name| editable.include?(name) }
       ai_params[:tools] = submitted | hidden
