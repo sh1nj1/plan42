@@ -10,3 +10,4 @@ en:
       custom: Custom Tools
       other: Other
       select_all_aria: "Select all %{category} tools"
+      parameters: Parameters

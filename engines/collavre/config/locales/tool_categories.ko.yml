@@ -10,3 +10,4 @@ ko:
       custom: 사용자 정의 도구
       other: 기타
       select_all_aria: "%{category} 도구 모두 선택"
+      parameters: 매개변수

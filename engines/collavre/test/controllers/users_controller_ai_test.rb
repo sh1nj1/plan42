@@ -35,6 +35,21 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_select "label", I18n.t("collavre.users.edit_ai.meta_skills_title")
   end
 
+  { en: "Parameters", ko: "매개변수" }.each do |locale, label|
+    test "tool parameter summaries are localized in #{locale} on new and edit pages" do
+      @admin.update!(locale: locale)
+      tools = [ { name: "test_tool", description: "Test", params: {} } ]
+
+      Collavre::McpService.stub(:available_tools, tools) do
+        [ new_ai_users_url, edit_ai_user_url(@ai_user) ].each do |url|
+          get url
+          assert_response :success
+          assert_select ".tools-selection details summary", text: label, count: 1
+        end
+      end
+    end
+  end
+
   test "new_ai groups tools into categories with a select-all toggle" do
     mock_tools = [
       { name: "topic_list", description: "List topics", parameters: {}, custom: false },

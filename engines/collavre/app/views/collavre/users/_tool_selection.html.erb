@@ -30,7 +30,7 @@
               <span class="text-muted small"><%= tool[:description] %></span>
             </label>
             <details class="ml-4">
-              <summary class="text-muted small" style="cursor: pointer;">Parameters</summary>
+              <summary class="text-muted small" style="cursor: pointer;"><%= t('collavre.tool_categories.parameters') %></summary>
               <pre class="small bg-light p-2 mt-1"><code><%= JSON.pretty_generate(tool[:parameters]) %></code></pre>
             </details>
           </div>
