@@ -129,6 +129,14 @@ module CollavreNotion
       delete("blocks/#{format_id(block_id)}")
     end
 
+    def move_page(page_id, parent_id:)
+      post("pages/#{format_id(page_id)}/move", { parent: { type: "page_id", page_id: parent_id } }, version: "2025-09-03")
+    end
+
+    def archive_page(page_id)
+      patch("pages/#{format_id(page_id)}", { archived: true })
+    end
+
     def get_workspace
       get("users/me")
     end
@@ -148,10 +156,10 @@ module CollavreNotion
       handle_response(response)
     end
 
-    def post(path, body)
+    def post(path, body, version: API_VERSION)
       response = HTTParty.post(
         "#{@base_url}/#{path}",
-        headers: headers,
+        headers: headers.merge("Notion-Version" => version),
         body: body.to_json,
         timeout: 30
       )
@@ -218,6 +226,10 @@ module CollavreNotion
       CollavreNotion.mock_enabled? ? CollavreNotion.mock_server_base_url : DEFAULT_BASE_URL
     end
 
+    def rate_limit_error(response)
+      NotionRateLimitError.new(retry_after: response.headers["retry-after"])
+    end
+
     def handle_response(response)
       Rails.logger.info("Notion API Response: #{response.code} for #{response.request.last_uri}")
       Rails.logger.debug("Notion API Response Body: #{response.body}")
@@ -238,8 +250,7 @@ module CollavreNotion
         Rails.logger.error("Notion API 404 error: #{response.body}")
         raise NotionError, "Resource not found"
       when 429
-        Rails.logger.error("Notion API 429 error: #{response.body}")
-        raise NotionRateLimitError, "Rate limit exceeded"
+        raise rate_limit_error(response)
       else
         Rails.logger.error("Notion API error: #{response.code} #{response.body}")
         raise NotionError, "API error: #{response.code}"
@@ -249,9 +260,4 @@ module CollavreNotion
       raise NotionConnectionError, "Connection failed: #{e.message}"
     end
   end
-
-  class NotionError < StandardError; end
-  class NotionAuthError < NotionError; end
-  class NotionRateLimitError < NotionError; end
-  class NotionConnectionError < NotionError; end
 end

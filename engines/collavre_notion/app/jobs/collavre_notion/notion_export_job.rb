@@ -1,6 +1,7 @@
 module CollavreNotion
   class NotionExportJob < ApplicationJob
     queue_as :default
+    retry_on NotionRateLimitError, wait: :polynomially_longer, attempts: 8
 
     def perform(creative, notion_account, parent_page_id = nil)
       service = CollavreNotion::NotionService.new(user: notion_account.user)

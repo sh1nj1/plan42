@@ -1,5 +1,8 @@
 en:
   collavre_notion:
+    export:
+      image_attachment: "Image attachment"
+      image: "Image"
     integration:
       label: "Notion"
       description: "Export creative trees to Notion pages"
@@ -32,7 +35,7 @@ en:
       creative_title: "Root Creative:"
       workspace_label: "Workspace:"
       export_as: "Export as:"
-      tree_note: "This will export the selected creative and all its descendants as a structured document."
+      tree_note: "Each Creative, including every descendant, becomes a separate Notion page under its parent."
       export_button: "Export to Notion"
       loading: "Loading..."
       load_failed: "Failed to load integration status"

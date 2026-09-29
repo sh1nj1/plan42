@@ -1,0 +1,316 @@
+require_relative "../test_helper"
+
+class NotionTreeSyncTest < ActiveSupport::TestCase
+  class FakeClient
+    attr_reader :pages, :blocks, :deleted, :moves, :archived
+    attr_accessor :fail_title, :fail_append, :fail_delete, :search_results
+
+    def initialize
+      @pages, @blocks, @deleted, @moves, @archived = {}, {}, [], [], []
+      @sequence = 0
+      @search_results = [ { "id" => "workspace" } ]
+    end
+
+    def search_pages(**)
+      { "results" => search_results }
+    end
+
+    def create_page(parent_id:, title:, blocks: [])
+      raise CollavreNotion::NotionRateLimitError if title == fail_title
+      id = next_id
+      @pages[id] = { parent: parent_id, title: title }
+      { "id" => id, "url" => "https://notion.so/#{id}" }
+    end
+
+    def update_page(id, properties:, **)
+      @pages.fetch(id)[:title] = properties.dig(:title, :title, 0, :text, :content)
+    end
+
+    def append_blocks(id, blocks)
+      raise CollavreNotion::NotionRateLimitError if fail_append
+      { "results" => blocks.map { |block| block_id = next_id; @blocks[block_id] = [ id, block ]; { "id" => block_id } } }
+    end
+
+    def delete_block(id)
+      raise CollavreNotion::NotionRateLimitError if fail_delete
+      @deleted << id
+      @blocks.delete(id)
+    end
+
+    def move_page(id, parent_id:)
+      @moves << [ id, parent_id ]
+      @pages.fetch(id)[:parent] = parent_id
+    end
+
+    def archive_page(id)
+      @archived << id
+    end
+
+    private
+
+    def next_id
+      @sequence += 1
+      "notion-#{@sequence}"
+    end
+  end
+
+  setup do
+    @user = create_user
+    @account = create_notion_account(@user)
+    @root = create_creative(@user)
+    @service = CollavreNotion::NotionService.new(user: @user)
+    @client = FakeClient.new
+    @service.instance_variable_set(:@client, @client)
+    def @service.sleep(*) = nil
+  end
+
+  test "every creative including deep and empty leaves gets a page in sibling order" do
+    first = child(@root, "first")
+    second = child(@root, "second")
+    deepest = 8.times.reduce(first) { |parent, n| child(parent, "level #{n}") }
+    empty = child(deepest, "temporary")
+    empty.update_column(:description, "")
+    link = sync
+    assert_equal 12, link.notion_page_nodes.count
+    assert_equal 12, @client.pages.size
+    assert_equal node(link, first).page_id, @client.pages.keys[1]
+    assert_equal node(link, second).page_id, @client.pages.keys.last
+    assert_equal node(link, deepest).page_id, @client.pages.fetch(node(link, empty).page_id)[:parent]
+    assert_equal I18n.t("collavre_notion.modal.untitled"), @client.pages.fetch(node(link, empty).page_id)[:title]
+    assert link.last_synced_at
+  end
+
+  test "unchanged exports reuse pages and body blocks" do
+    child(@root, "child")
+    link = sync
+    pages = @client.pages.deep_dup
+    blocks = @client.blocks.deep_dup
+    assert_equal link.id, sync.id
+    assert_equal pages, @client.pages
+    assert_equal blocks, @client.blocks
+    assert_empty @client.deleted
+  end
+
+  test "content updates preserve child pages and user blocks" do
+    nested = child(@root, "child")
+    link = sync
+    nested_id = node(link, nested).page_id
+    @client.blocks["user-block"] = [ link.page_id, { type: "paragraph" } ]
+    old_ids = node(link, @root).body_block_ids
+    @root.update!(description: "Updated root")
+    sync
+    assert_equal "Updated root", @client.pages[link.page_id][:title]
+    assert_equal old_ids, @client.deleted
+    assert @client.blocks.key?("user-block")
+    assert_equal nested_id, node(link, nested).page_id
+  end
+
+  test "new descendants are added and moved descendants retain page IDs" do
+    a = child(@root, "A")
+    b = child(@root, "B")
+    c = child(a, "C")
+    link = sync
+    original = node(link, c).page_id
+    c.update!(parent: b)
+    d = child(a, "D")
+    sync
+    assert_equal original, node(link, c).page_id
+    assert_equal [ [ original, node(link, b).page_id ] ], @client.moves
+    assert_equal node(link, a).page_id, node(link, d).parent_page_id
+  end
+
+  test "archived and moved-out creatives are removed only after successful sync" do
+    a = child(@root, "A")
+    b = child(a, "B")
+    c = child(@root, "C")
+    link = sync
+    removed_ids = [ a, b, c ].map { |creative| node(link, creative).page_id }
+    a.update_column(:archived_at, Time.current)
+    c.update!(parent: nil)
+    sync
+    assert_equal removed_ids.sort, @client.archived.sort
+    assert_equal [ @root.id ], link.notion_page_nodes.pluck(:creative_id)
+  end
+
+  test "hard-deleted creative mapping survives until remote cleanup" do
+    a = child(@root, "A")
+    link = sync
+    page_id = node(link, a).page_id
+    a.destroy!
+    assert link.notion_page_nodes.exists?(page_id: page_id)
+    sync
+    assert_includes @client.archived, page_id
+    assert_not link.notion_page_nodes.exists?(page_id: page_id)
+  end
+
+  test "destinations have independent mappings and explicit sync targets" do
+    a = child(@root, "A")
+    first = sync
+    second = @service.sync_creative(@root, parent_page_id: "other")
+    assert_not_equal first.id, second.id
+    assert_not_equal node(first, a).page_id, node(second, a).page_id
+    @root.update!(description: "Second only")
+    @service.sync_creative(@root, page_link: second)
+    assert_equal "Second only", @client.pages[second.page_id][:title]
+    assert_not_equal "Second only", @client.pages[first.page_id][:title]
+  end
+
+  test "partial failure keeps completed pages and retries without duplicating them" do
+    first = child(@root, "first")
+    second = child(@root, "second")
+    @client.fail_title = "second"
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    link = @account.notion_page_links.sole
+    original = node(link, first).page_id
+    assert_nil link.last_synced_at
+    assert_equal 2, @client.pages.size
+    @client.fail_title = nil
+    sync
+    assert_equal original, node(link, first).page_id
+    assert_equal 3, @client.pages.size
+    assert node(link, second)
+  end
+
+  test "body failure retries on the already created page" do
+    @client.fail_append = true
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    link = @account.notion_page_links.sole
+    assert_nil node(link, @root).content_hash
+    @client.fail_append = false
+    sync
+    assert_equal 1, @client.pages.size
+    assert node(link, @root).content_hash
+  end
+
+  test "legacy blocks remain on failure then only tracked blocks are deleted" do
+    link = sync
+    child(@root, "new")
+    legacy = link.notion_block_links.create!(creative: @root, block_id: "legacy")
+    @client.blocks["user"] = [ link.page_id, {} ]
+    @client.fail_title = "new"
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    assert legacy.reload
+    @client.fail_title = nil
+    @client.fail_delete = true
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    assert legacy.reload
+    @client.fail_delete = false
+    sync
+    assert_empty link.notion_block_links.reload
+    assert_includes @client.deleted, "legacy"
+    assert @client.blocks.key?("user")
+  end
+
+  test "default parent search and empty workspace" do
+    @client.search_results = []
+    assert_raises(CollavreNotion::NotionError) { @service.sync_creative(@root) }
+    @client.search_results = [ { "id" => "workspace" } ]
+    link = @service.sync_creative(@root)
+    assert_equal "workspace", link.parent_page_id
+    assert_equal link.id, @service.sync_creative(@root).id
+  end
+
+  test "rejects an export link owned by another root or account" do
+    link = sync
+    other = create_creative(@user)
+    assert_raises(CollavreNotion::NotionError) { @service.sync_creative(other, page_link: link) }
+  end
+
+  test "long descriptions are preserved in chunks within the API limit" do
+    description = "가" * 4010
+    @root.update!(description: description)
+    link = sync
+    content = @client.blocks.values.map { |_, block| block.dig(:paragraph, :rich_text, 0, :text, :content) }
+    assert_equal description, content.join
+    assert content.all? { |part| part.length <= 2000 }
+    assert_operator @client.pages[link.page_id][:title].length, :<=, 2000
+  end
+
+  test "legacy root page is reused when no page nodes exist yet" do
+    nested = child(@root, "Nested")
+    @client.pages["legacy-root"] = { parent: "workspace", title: "Old title" }
+    link = @account.notion_page_links.create!(creative: @root, page_id: "legacy-root", page_title: "Old title", parent_page_id: "workspace")
+    link.notion_block_links.create!(creative: nested, block_id: "old-heading")
+    sync
+    assert_equal "legacy-root", node(link, @root).page_id
+    assert_equal 2, @client.pages.size
+    assert_equal "legacy-root", node(link, nested).parent_page_id
+    assert_equal [ "old-heading" ], @client.deleted
+  end
+
+  test "retained descendants move out before a removed parent is archived" do
+    a = child(@root, "A")
+    b = child(a, "B")
+    link = sync
+    old_parent = node(link, a).page_id
+    b_id = node(link, b).page_id
+    b.update!(parent: @root)
+    a.update_column(:archived_at, Time.current)
+    sync
+    assert_equal [ [ b_id, link.page_id ] ], @client.moves
+    assert_equal [ old_parent ], @client.archived
+  end
+
+  test "failure after a body batch does not duplicate blocks on retry" do
+    calls = 0
+    @client.define_singleton_method(:append_blocks) do |*args|
+      calls += 1
+      raise CollavreNotion::NotionRateLimitError if calls > 1
+      super(*args)
+    end
+    @root.stub(:effective_description, "x" * 202000) do
+      assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+      link = @account.notion_page_links.sole
+      assert_equal 100, node(link, @root).body_block_ids.size
+      assert_nil node(link, @root).content_hash
+      @client.singleton_class.remove_method(:append_blocks)
+      sync
+      assert_equal 101, @client.blocks.size
+      assert_equal 101, node(link, @root).body_block_ids.size
+      assert_equal 1, @client.pages.size
+    end
+  end
+
+  test "reverting source content after a failed update restores the original body" do
+    link = sync
+    original = @root.description
+    @root.update!(description: "Changed")
+    @client.fail_append = true
+    assert_raises(CollavreNotion::NotionRateLimitError) { sync }
+    @root.update!(description: original)
+    @client.fail_append = false
+    sync
+    assert_equal 1, node(link, @root).body_block_ids.size
+    assert_equal original, @client.blocks.values.first.last.dig(:paragraph, :rich_text, 0, :text, :content)
+  end
+
+  test "an incomplete append response is not marked synced" do
+    @client.define_singleton_method(:append_blocks) { |*| { "results" => [] } }
+    assert_raises(CollavreNotion::NotionError) { sync }
+    link = @account.notion_page_links.sole
+    assert_nil link.last_synced_at
+    assert_nil node(link, @root).content_hash
+  end
+
+  test "disconnecting deletes page mappings without modifying Notion" do
+    child(@root, "Nested")
+    link = sync
+    assert_difference("CollavreNotion::NotionPageNode.count", -2) { link.destroy! }
+    assert_equal 2, @client.pages.size
+    assert_empty @client.archived
+  end
+
+  private
+
+  def sync
+    @service.sync_creative(@root, parent_page_id: "workspace")
+  end
+
+  def child(parent, description)
+    Collavre::Creative.create!(user: @user, parent: parent, description: description)
+  end
+
+  def node(link, creative)
+    link.notion_page_nodes.find_by!(creative_id: creative.id)
+  end
+end
