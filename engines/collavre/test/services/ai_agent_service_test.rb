@@ -47,20 +47,30 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     ActiveJob::Base.queue_adapter = previous
   end
 
-  test "gate resumption does not mark new topic history as delivered" do
-    @task.update!(pending_tool_call: { kind: "approval_gate", decision: { decision: "approved" } })
-    @creative.comments.create!(user: @user, content: "New message while awaiting approval", topic_id: @task.topic_id)
-    client = Object.new
-    def client.chat(*)
-      yield "Continuing approved work"
-    end
-    def client.handed_off? = true
-    def client.last_handoff_failed? = false
+  [
+    { kind: "approval_gate", decision: { decision: "approved" } },
+    { approved: true, result: { success: true }, messages: [ { role: "user", content: "Old snapshot" } ] },
+    { approved: true, result: { success: true } }
+  ].each_with_index do |pending, index|
+    test "approval resumption #{index} records only history included in the provider payload" do
+      @task.update!(pending_tool_call: pending)
+      arrived = @creative.comments.create!(user: @user, content: "New message while awaiting approval", topic_id: @task.topic_id)
+      client = Object.new
+      def client.chat(*)
+        yield "Continuing approved work"
+      end
+      def client.handed_off? = true
+      def client.last_handoff_failed? = false
 
-    Collavre::Orchestration::DeliveryRecord.stub(:record!, ->(*) { flunk "Unseen history must not be recorded" }) do
       AiClient.stub(:new, client) { AiAgentService.new(@task).call }
+      assert_equal "Continuing approved work", @task.reload.reply_comment.content
+      delivered = Collavre::Orchestration::DeliveryRecord.ids_in(@task.trigger_event_payload)
+      if index == 2
+        assert_includes delivered, arrived.id, "Legacy approvals without snapshots include rebuilt history"
+      else
+        refute_includes delivered, arrived.id, "Snapshot resumes must leave new comments eligible for dispatch"
+      end
     end
-    assert_equal "Continuing approved work", @task.reload.reply_comment.content
   end
 
   test "engine login failure creates an inline card without dispatching another agent" do

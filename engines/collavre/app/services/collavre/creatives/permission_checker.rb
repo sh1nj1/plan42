@@ -18,6 +18,12 @@ module Collavre
       end
 
       def allowed?(required_permission = :read)
+        if Current.authoritative_permissions && !@current_shares
+          return self.class.current_allowed?(creative.id, user, required_permission)
+        end
+
+        return false unless Kollavy::AccessScope.allowed?(creative, user)
+
         base = EffectiveCreativeResolution.effective_creative(creative)
 
         # Owner always has admin permission (fallback for fixtures and missing cache entries)

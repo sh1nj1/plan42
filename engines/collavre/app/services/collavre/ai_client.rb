@@ -366,28 +366,14 @@ module Collavre
       tool_name = tool_call.name
       task = context&.dig(:task)
 
-      # Check if this tool requires approval (dynamic McpTool or system tool)
-      mcp_tool = McpTool.find_by(name: tool_name)
-      system_tool_class = ToolMeta.registry.find { |klass| klass.tool_metadata[:name] == tool_name }
-      requires = mcp_tool&.requires_approval? ||
-                 (system_tool_class.respond_to?(:requires_approval?) && system_tool_class.requires_approval?)
-      return unless requires
-
-      # Check if we already have approval for this specific call (resume scenario)
-      if task&.pending_tool_call.present?
-        pending = task.pending_tool_call
-        if pending["tool_name"] == tool_name && pending["approved"]
-          # Already approved, clear the pending state and proceed
-          task.update!(pending_tool_call: nil)
-          return
-        end
-      end
+      return unless ToolApprovalPolicy.required_for_call?(tool_call, agent: task&.agent)
 
       # Requires approval - raise error to halt execution
       raise ApprovalPendingError.new(
         "Tool '#{tool_name}' requires approval before execution",
         tool_call: tool_call,
-        task: task
+        task: task,
+        messages: AiAgent::ApprovalConversation.dump(@conversation&.messages || [])
       )
     end
 

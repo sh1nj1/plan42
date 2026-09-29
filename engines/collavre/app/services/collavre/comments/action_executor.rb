@@ -183,7 +183,7 @@ module Collavre
           # turn waits on approval, and stopping it leaves the approval comment on
           # screen — approving afterwards would fire the side effect for a turn that
           # is already gone, since the resumed job just exits on a cancelled task.
-          task = task_id.present? ? claim_pending_task!(task_id, tool_call_id) : nil
+          task = task_id.present? ? claim_pending_task!(task_id, tool_call_id, tool_name, arguments) : nil
 
           # Already claimed — hand back what that run recorded. A duplicate entry in
           # one actions array shares the row lock, so the approval marker is the only
@@ -192,27 +192,18 @@ module Collavre
             return task.pending_tool_call["result"]
           end
 
-          result = begin
-            ::Tools::MetaToolService.new.call(
-              action: "call",
-              tool_name: tool_name,
-              arguments: arguments
-            )
-          rescue StandardError => e
-            Rails.logger.error("Tool execution failed: #{e.message}")
-            { error: e.message }
-          end
+          result = ApprovedToolInvocation.call(task, tool_name, arguments)
 
           if task
             task.update!(
-              pending_tool_call: {
-                tool_name: tool_name,
-                tool_call_id: tool_call_id,
-                arguments: arguments,
-                approved: true,
-                result: result,
-                approved_at: Time.current.iso8601
-              }
+              pending_tool_call: task.pending_tool_call.merge(
+                "tool_name" => tool_name,
+                "tool_call_id" => tool_call_id,
+                "arguments" => arguments,
+                "approved" => true,
+                "result" => result,
+                "approved_at" => Time.current.iso8601
+              )
             )
 
             AiAgentJob.perform_later(task)
@@ -223,20 +214,19 @@ module Collavre
 
         # The row lock is held until the outer transaction commits, so a Stop racing
         # this approval either blocks and lands after it or wins and makes the claim
-        # fail. A missing task keeps the pre-existing "run, nothing to resume" path.
+        # fail. A missing task cannot fall back to the human authorizer.
         # The status stays pending_approval on purpose: only AiAgentJob may promote
         # it to running, since a Stop before the job starts relies on a
         # HELD_SLOT_WITHOUT_WORKER status to release the slot it still holds.
-        def claim_pending_task!(task_id, tool_call_id)
+        def claim_pending_task!(task_id, tool_call_id, tool_name, arguments)
           task = Task.lock.find_by(id: task_id)
-          return nil unless task
-
-          unless task.status == "pending_approval"
+          unless task&.status == "pending_approval"
             raise InvalidActionError, I18n.t("collavre.comments.approve_task_not_pending")
           end
 
           # A re-paused turn leaves its earlier approval comment behind.
-          unless task.pending_tool_call&.dig("tool_call_id") == tool_call_id
+          pending = task.pending_tool_call || {}
+          unless pending.values_at("tool_call_id", "tool_name", "arguments") == [ tool_call_id, tool_name, arguments ]
             raise InvalidActionError, I18n.t("collavre.comments.approve_task_superseded")
           end
 

@@ -28,7 +28,7 @@ module Collavre
     private_class_method :load_missing
 
     def self.allowed?(name)
-      return true if McpToolRegistry.system_names.include?(name)
+      return McpToolRegistry.user_permitted?(name, Current.user) if McpToolRegistry.system_names.include?(name)
 
       tool = McpTool.find_by(name: name)
       return false unless tool&.active? && Current.user

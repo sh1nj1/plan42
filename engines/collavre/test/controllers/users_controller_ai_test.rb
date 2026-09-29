@@ -607,4 +607,22 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_select "input[type='hidden'][name='return_to'][value=?]", users_path
   end
+
+  test "update_ai keeps tools the editor cannot see and ignores ones they could not pick" do
+    kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
+                                     llm_vendor: "google", llm_model: "m",
+                                     tools: %w[collavre_source_read creative_retrieval_service])
+
+    get edit_ai_user_url(kollavy)
+    assert_select "input[name='user[tools][]'][value='collavre_source_read']", count: 0
+
+    patch update_ai_user_url(kollavy), params: { user: { name: "Kollavy", tools: %w[topic_list] } }
+    assert_equal %w[topic_list collavre_source_read], kollavy.reload.tools
+
+    patch update_ai_user_url(@ai_user), params: { user: { name: "Bot", tools: %w[topic_list collavre_source_list] } }
+    assert_equal %w[topic_list], @ai_user.reload.tools
+
+    patch update_ai_user_url(kollavy), params: { user: { name: "Kollavy renamed" } }
+    assert_equal %w[topic_list collavre_source_read], kollavy.reload.tools
+  end
 end

@@ -5,6 +5,13 @@ module Collavre
     # Persist provider-neutral messages, including tool IDs and Gemini thinking
     # signatures. Never re-run side effects from an interrupted tool batch.
     module ApprovalConversation
+      def self.restoring_snapshot?(pending)
+        return false unless pending
+
+        pending["kind"] == "approval_gate" ||
+          (pending["approved"] && pending.key?("result") && pending["messages"].present?)
+      end
+
       def self.dump(messages)
         messages.map do |message|
           message.to_h.merge(
@@ -47,7 +54,7 @@ module Collavre
           next if answered.include?(call.id)
 
           result = if call.id == pending.fetch("tool_call_id")
-            pending.fetch("decision")
+            pending.key?("result") ? pending.fetch("result") : pending.fetch("decision")
           else
             { error: "Not executed because another call paused for human approval. Retry this call if still needed." }
           end

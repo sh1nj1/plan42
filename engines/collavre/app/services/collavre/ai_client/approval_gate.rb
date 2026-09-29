@@ -10,7 +10,7 @@ module Collavre
         @conversation = build_conversation(tools)
         install_usage_tracking(@conversation)
         install_cli_tool_events(@conversation)
-        add_messages(@conversation, contents) unless restore_approval_gate
+        add_messages(@conversation, contents) unless restore_approval_gate || restore_tool_approval(contents)
       end
 
       def install_tool_boundary(chat)
@@ -55,6 +55,24 @@ module Collavre
         return unless args["tool_name"] == "approval_request"
 
         (args["arguments"] || {}).stringify_keys
+      end
+
+      def restore_tool_approval(contents)
+        pending = context&.dig(:task)&.pending_tool_call
+        return false unless pending&.dig("approved") && pending.key?("result")
+
+        if pending["messages"].present?
+          AiAgent::ApprovalConversation.restore(@conversation, pending)
+        else
+          # Approvals paused before snapshots were introduced still resume with
+          # their stored result, never with permission to execute another call.
+          add_messages(@conversation, contents)
+          call = RubyLLM::ToolCall.new(id: pending.fetch("tool_call_id"),
+            name: pending.fetch("tool_name"), arguments: pending.fetch("arguments", {}))
+          @conversation.add_message(role: :assistant, content: nil, tool_calls: { call.id => call })
+          @conversation.add_message(role: :tool, tool_call_id: call.id, content: pending["result"].to_json)
+        end
+        true
       end
 
       def restore_approval_gate

@@ -37,7 +37,9 @@ module Collavre
           "name" => user.name,
           "display_name" => user.respond_to?(:display_name) ? user.display_name : user.name,
           "is_ai" => user.ai_user?,
-          "type" => user.ai_user? ? AgentTypeClassifier.classify(user) : "human"
+          "type" => user.ai_user? ? AgentTypeClassifier.classify(user) : "human",
+          # Preferred UI language, so a prompt can answer in it ({{ sender.locale }}).
+          "locale" => user.try(:locale).presence
         }
       end
 

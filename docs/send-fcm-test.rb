@@ -130,6 +130,7 @@ def send_v1(service, project_id, token, message, link)
   end
 end
 
-test_token = "eVgDudbc8UfcjwElNpDT_Y:APA91bEWxJdqbJFiXPAFQ8SjIF3NadvblT-VtGigL63ixeKqBtMTwB7Yt2UaQUwqNCLu6V0gsIfUqUMABw7OE3QZzv-rTnobsW0HmxmDo6owh1aBQxyNmuc"
+# Supply the device registration token locally; never commit it.
+test_token = ARGV.fetch(0)
 
 send_v1(service, project_id, test_token, "test message", "https://google.com")

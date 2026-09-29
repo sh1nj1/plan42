@@ -46,7 +46,8 @@ module Collavre
       def capture
         payload = { result: nil, change_set: nil, changes: nil, blobs: [] }
         ApplicationRecord.transaction(requires_new: true) do
-          Current.set(user: @actor, agent_turn: nil, mcp_request: nil, change_set: nil, creative_history_context: nil) do
+          Current.set(user: @actor, agent_turn: nil, draft_capture_turn: @agent_turn,
+                      mcp_request: nil, change_set: nil, creative_history_context: nil) do
             History.track(**history_context) do
               payload[:result] = yield
               serialize_capture(payload) if payload[:result]&.dig(:success)

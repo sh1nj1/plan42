@@ -21,11 +21,7 @@ module Collavre
     def call
       begin
         Creatives::AgentTurnHistory.call(@agent, workspace_user, @task) do
-          if @agent.claude_channel_agent?
-            delegate_to_claude_channel
-          else
-            execute_llm_conversation
-          end
+          execute_authorized_conversation
         end
       rescue ApprovalPendingError => e
         summary = generate_approval_summary(e) unless e.is_a?(ApprovalGatePendingError)
@@ -91,7 +87,8 @@ module Collavre
       # still on its way for it should be dropped rather than queued behind this
       # turn. Recorded off `resolved` — after the session filter — because a
       # session-backed agent is sent only its :trigger and swallows nothing.
-      Orchestration::DeliveryRecord.record!(@task, resolved) unless @task.pending_tool_call&.dig("kind") == "approval_gate"
+      # Approval snapshots omit newly rebuilt history; those comments still need dispatch.
+      Orchestration::DeliveryRecord.record!(@task, resolved) unless AiAgent::ApprovalConversation.restoring_snapshot?(@task.pending_tool_call)
 
       @reply_comment = create_reply_comment_if_needed
 
@@ -192,6 +189,7 @@ module Collavre
     end
 
     def create_reply_comment_if_needed
+      check_kollavy_authorization!
       AiAgent::ReplyPlaceholder.call(original_comment: @original_comment, agent: @agent, task: @task)
     end
 
@@ -238,6 +236,7 @@ module Collavre
       # Bypass the new manager's initial polling throttle at this handoff
       # boundary so a terminal turn cannot start remote tool side effects.
       @lifecycle_manager.check_cancelled!(force: true)
+      check_kollavy_authorization!
       check_replay_authorization!
       response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
@@ -277,6 +276,8 @@ module Collavre
     end
 
     def handle_cancelled(action_type: "cancelled", message: "Task cancelled by user")
+      return unless @lifecycle_manager
+
       @lifecycle_manager.handle_cancelled(
         reply_comment: @reply_comment,
         response_content: @streamer.content,

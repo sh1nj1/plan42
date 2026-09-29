@@ -19,6 +19,10 @@ module Tools
     def call(description:, parent_id: nil, progress: nil, after_id: nil, before_id: nil)
       raise "Current.user is required" unless Current.user
 
+      if parent_id.blank? && Kollavy::AccessScope.restricted?
+        return { error: I18n.t("collavre.kollavy.parent_required") }
+      end
+
       # Validate parent permission if specified
       parent = nil
       if parent_id.present?

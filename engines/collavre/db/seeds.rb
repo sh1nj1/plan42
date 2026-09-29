@@ -18,3 +18,4 @@ end
 
 Collavre::ChannelBotSeed.call
 Collavre::LlmModel.seed_default_suggestions!
+Collavre::Kollavy.seed!

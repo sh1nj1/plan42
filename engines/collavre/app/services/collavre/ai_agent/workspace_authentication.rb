@@ -3,6 +3,15 @@ module Collavre
     module WorkspaceAuthentication
       private
 
+      def execute_authorized_conversation
+        check_kollavy_authorization!
+        if @agent.claude_channel_agent?
+          delegate_to_claude_channel
+        else
+          execute_llm_conversation
+        end
+      end
+
       def stream_with_handoff(resolved)
         stream_response(@client, resolved)
       ensure
@@ -18,6 +27,16 @@ module Collavre
           CliProxy::ReplayWorkspace.permitted?(@context, @agent) &&
             Creatives::PermissionChecker.current_allowed?(@context.dig("creative", "id"), @agent, :feedback)
         }
+
+        @task.cancel_if_active!
+        raise CancelledError
+      end
+
+      # A queued or approval-resumed turn must retain permission to respond,
+      # even while asynchronous permission-cache invalidation is still pending.
+      def check_kollavy_authorization!
+        return unless Kollavy::AccessScope.restricted?(@agent)
+        return if Creatives::PermissionChecker.current_allowed?(@task.creative_id, @agent, :feedback)
 
         @task.cancel_if_active!
         raise CancelledError
