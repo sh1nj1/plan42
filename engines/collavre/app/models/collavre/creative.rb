@@ -66,6 +66,7 @@ module Collavre
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
+    before_create :capture_creation_event_actor
 
     include TypeSelectable
     include Linkable
@@ -307,10 +308,13 @@ module Collavre
 
     private
 
-    # A child added to a shared tree is owned by the tree's owner, but the
-    # creation event belongs to whoever added it.
-    def creation_event_actor
-      Current.user || user
+    # Capture before commit: an enclosing transaction can outlive History.track.
+    # An explicit nil actor denotes system work, not the inherited tree owner.
+    attr_reader :creation_event_actor
+
+    def capture_creation_event_actor
+      context = Current.creative_history_context
+      @creation_event_actor = context ? context[:actor] : (Current.user || user)
     end
 
     def assign_default_user

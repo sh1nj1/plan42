@@ -59,8 +59,10 @@ module Collavre
       owner = create_notice_user
       Turbo::StreamsChannel.stub(:broadcast_replace_to, nil) do
         Creative.create!(user: @user, description: "Mine")
+        Current.reset # Each user action has its own request/history context.
         Current.user = owner
         shared = Creative.create!(user: owner, description: "Shared")
+        Current.reset
         Current.user = @user
 
         Creative.create!(user: owner, parent: shared, description: "Their step")
@@ -68,6 +70,41 @@ module Collavre
 
       assert_equal "completed", status(:onboarding_sub_creative)
       assert_predicate UserNotice.find_by!(user: owner, notice_key: "onboarding_sub_creative"), :pending?
+    end
+
+    test "explicit system and sync actors do not credit the owner" do
+      [ :sync, :system ].each do |origin|
+        [ nil, @user ].each do |current_user|
+          Current.reset
+          Current.user = current_user
+          Creatives::History.track(actor: nil, origin: origin) do
+            root = Creative.create!(user: @user, description: "Imported root")
+            Creative.create!(parent: root, description: "Imported child")
+          end
+          assert_nil status(:onboarding_first_creative)
+          assert_nil status(:onboarding_sub_creative)
+        end
+      end
+    end
+
+    test "creation event retains its actor after the history context ends" do
+      creative = nil
+      Creatives::History.track(actor: nil, origin: :sync) do
+        creative = Creative.create!(user: @user, description: "Imported")
+      end
+      # Model the delayed after-commit callback of an enclosing transaction.
+      Current.reset
+      Current.user = @user
+      creative.send(:instrument_created_event)
+      assert_nil status(:onboarding_first_creative)
+
+      actor = create_notice_user("Collaborator")
+      Current.reset
+      Creatives::History.track(actor: actor, origin: :editor) do
+        creative = Creative.create!(user: @user, description: "Contribution")
+      end
+      Current.reset
+      assert_equal actor, creative.send(:creation_event_actor)
     end
 
     test "an early agent invocation completes without waiting for its reply" do

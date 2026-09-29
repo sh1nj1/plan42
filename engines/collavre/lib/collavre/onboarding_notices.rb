@@ -45,10 +45,12 @@ module Collavre
     end
 
     # Shared children inherit their parent's owner. Applied history retains the
-    # actual creator; ownership remains a fallback for records predating history.
+    # actual creator. A positive revision survives pruning, so missing history
+    # alone cannot establish legacy ownership. Edited legacy rows without their
+    # creation evidence conservatively require the user to create content again.
     def creative_created?(user, child: false)
       history = CreativeChange.where(operation: "create").where("creative_changes.creative_id = creatives.id")
-      owned = own_creatives(user).where(history.arel.exists.not)
+      owned = own_creatives(user).where(revision: 0).where(history.arel.exists.not)
       owned = owned.where.not(parent_id: nil) if child
       creation_history(user, child: child).exists? || owned.exists?
     end

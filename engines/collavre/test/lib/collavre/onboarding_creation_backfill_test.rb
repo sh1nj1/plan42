@@ -91,6 +91,54 @@ module Collavre
       assert done?(:onboarding_sub_creative)
     end
 
+    test "pruned collaborator creation cannot fall back to inherited ownership" do
+      child = nil
+      travel_to 200.days.ago do
+        child = create_shared_child
+      end
+      Creatives::History.track(actor: @owner, origin: :editor) { child.update!(description: "Updated") }
+      SystemSetting.stub(:creative_history_retention_count, 1) do
+        SystemSetting.stub(:creative_history_retention_days, 7) { CreativeHistoryPruneJob.perform_now }
+      end
+      assert_not child.creative_changes.where(operation: "create").exists?
+      assert_operator child.reload.revision, :>, 0
+      UserNotice.where(user: @owner).delete_all
+
+      Notices::Feed.new(@owner).items
+
+      assert UserNotice.find_by!(user: @owner, notice_key: :onboarding_sub_creative).pending?
+    end
+
+    test "pruned sync history cannot become legacy owner activity" do
+      creative = nil
+      travel_to 200.days.ago do
+        Creatives::History.track(actor: nil, origin: :sync) do
+          creative = Creative.create!(user: @user, description: "Imported")
+        end
+      end
+      CreativeHistoryPruneJob.perform_now
+      assert_empty creative.creative_changes
+      refute done?(:onboarding_first_creative)
+    end
+
+    test "untracked legacy ownership still counts" do
+      Current.reset
+      root = Creative.create!(user: @user, description: "Legacy")
+      child = Creative.create!(parent: root, description: "Legacy child")
+      assert_equal 0, child.reload.revision
+      assert_empty child.creative_changes
+      assert done?(:onboarding_first_creative)
+      assert done?(:onboarding_sub_creative)
+    end
+
+    test "edited legacy rows without creation evidence do not prove owner creation" do
+      Current.reset
+      root = Creative.create!(user: @user, description: "Legacy")
+      Creatives::History.track(actor: @user, origin: :editor) { root.update!(description: "Edited legacy") }
+      assert_operator root.reload.revision, :>, 0
+      refute done?(:onboarding_first_creative)
+    end
+
     test "another actor's creation and the user's edits do not count" do
       child = create_shared_child(actor: @owner)
       Creatives::History.track(actor: @user, origin: :editor) { child.update!(description: "Edited") }
