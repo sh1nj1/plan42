@@ -313,7 +313,10 @@ data. This is a restriction, not user impersonation or an additional grant.
 
 The boundary applies to search, direct reads, recursive tree output, topic and
 attachment tools, schedules, and creative mutations. Linked creatives must have
-both their placement and resolved origin inside the tree. Prompt references
+both their placement and resolved origin inside the tree. The server-owned task
+shell is admitted when a turn starts on a link outside its origin hierarchy;
+its origin chain must still stay within that hierarchy. Other external shells
+and placement ancestors remain excluded. Prompt references
 and configured context creatives follow the same boundary. Parentless creation
 is rejected; users should open another creative's chat to work in that tree.
 Source-code tools remain available independently of creative data.

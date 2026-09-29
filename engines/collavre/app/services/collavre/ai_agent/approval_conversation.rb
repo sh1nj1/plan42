@@ -5,6 +5,13 @@ module Collavre
     # Persist provider-neutral messages, including tool IDs and Gemini thinking
     # signatures. Never re-run side effects from an interrupted tool batch.
     module ApprovalConversation
+      def self.restoring_snapshot?(pending)
+        return false unless pending
+
+        pending["kind"] == "approval_gate" ||
+          (pending["approved"] && pending.key?("result") && pending["messages"].present?)
+      end
+
       def self.dump(messages)
         messages.map do |message|
           message.to_h.merge(

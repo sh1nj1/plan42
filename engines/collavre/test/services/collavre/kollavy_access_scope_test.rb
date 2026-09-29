@@ -293,6 +293,27 @@ class Collavre::KollavyAccessScopeTest < ActiveSupport::TestCase
     assert_empty @retrieval.call(id: @bob_inbox.id, format: "json")
   end
 
+  test "linked anchor admits only its shell and origin tree while retaining permission checks" do
+    link = Collavre::Creative.create!(user: @alice, parent: @bob_inbox, origin: @alice_inbox)
+    sibling = Collavre::Creative.create!(user: @alice, parent: @bob_inbox, origin: @alice_inbox)
+    @task.update!(creative: link)
+    scope = Collavre::Kollavy::AccessScope
+    assert_equal [ link.id, @alice_inbox.id, @alice_child.id ].sort,
+      scope.filter([ link.id, @alice_inbox.id, @alice_child.id, sibling.id, @bob_inbox.id ]).sort
+    assert_equal link.id, scope.context_id({ "creative" => { "id" => link.id } }, @agent)
+    assert Collavre::Creatives::PermissionChecker.current_allowed?(link.id, @agent)
+    refute Collavre::Creatives::PermissionChecker.current_allowed?(link.id, @agent, :write)
+    Collavre::CreativeShare.find_by!(creative: @alice_inbox, user: @agent).delete
+    refute Collavre::Creatives::PermissionChecker.current_allowed?(link.id, @agent)
+  end
+
+  test "linked anchor rejects an origin chain with an external intermediate hop" do
+    inner = Collavre::Creative.create!(user: @alice, parent: @bob_inbox, origin: @alice_inbox)
+    outer = Collavre::Creative.create!(user: @alice, origin: inner)
+    @task.update!(creative: outer)
+    assert_empty Collavre::Kollavy::AccessScope.filter([ outer.id, inner.id ])
+  end
+
   test "child conversations do not inject ancestor titles" do
     @alice_inbox.update!(description: "Ancestor private context")
     @task.update!(creative: @alice_child)

@@ -87,7 +87,8 @@ module Collavre
       # still on its way for it should be dropped rather than queued behind this
       # turn. Recorded off `resolved` — after the session filter — because a
       # session-backed agent is sent only its :trigger and swallows nothing.
-      Orchestration::DeliveryRecord.record!(@task, resolved) unless @task.pending_tool_call&.dig("kind") == "approval_gate"
+      # Approval snapshots omit newly rebuilt history; those comments still need dispatch.
+      Orchestration::DeliveryRecord.record!(@task, resolved) unless AiAgent::ApprovalConversation.restoring_snapshot?(@task.pending_tool_call)
 
       @reply_comment = create_reply_comment_if_needed
 

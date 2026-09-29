@@ -17,11 +17,19 @@ module Collavre
         root = anchor(user)
         return [] unless root
 
-        tree = CreativeHierarchy.where(ancestor_id: root.id).select(:descendant_id)
+        tree = anchor_tree(root)
         candidates = Creative.where(id: ids).where(id: tree).pluck(:id)
         origins = origin_chains(candidates, tree)
         candidates.select { |id| contained_chain?(id, origins) }
       end
+
+      # Admit only the server-owned task shell outside the origin hierarchy.
+      # Origin hops still pass contained_chain?, so external aliases stay excluded.
+      def self.anchor_tree(shell)
+        descendants = CreativeHierarchy.where(ancestor_id: shell.effective_origin.id).select(:descendant_id)
+        Creative.where(id: descendants).or(Creative.where(id: shell.id)).select(:id)
+      end
+      private_class_method :anchor_tree
 
       # Read only candidates and their origin hops, never the whole subtree.
       # Re-query on each check so moves and draft rollbacks cannot leave stale grants.
@@ -58,7 +66,7 @@ module Collavre
       end
 
       def self.roots
-        Creative.where(id: filter([ anchor(Current.user)&.id ].compact))
+        Creative.where(id: filter([ anchor(Current.user)&.effective_origin&.id ].compact))
           .select { |creative| creative.has_permission?(Current.user, :read) }
       end
 
@@ -68,7 +76,7 @@ module Collavre
         task = turn&.dig(:task)
         return unless task&.agent_id == user.id && task.creative_id
 
-        Creative.find_by(id: task.creative_id)&.effective_origin
+        Creative.find_by(id: task.creative_id)
       end
       private_class_method :anchor
     end

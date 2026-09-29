@@ -51,6 +51,27 @@ class Collavre::KollavyHandoffTest < ActiveSupport::TestCase
     assert_equal "running", @task.reload.status
   end
 
+  test "linked conversation reaches the provider with origin context but no placement ancestors" do
+    placement = Collavre::Creative.create!(user: @owner, description: "Private placement ancestor")
+    link = Collavre::Creative.create!(user: @owner, parent: placement, origin: @creative)
+    @creative.update!(description: "Readable origin context")
+    comment = link.comments.create!(user: @owner, content: "Hello from link", skip_dispatch: true)
+    @task.update!(creative: link, trigger_event_payload: {
+      "creative" => { "id" => link.id }, "comment" => { "id" => comment.id, "content" => comment.content }
+    })
+    client = Object.new
+    captured = nil
+    client.define_singleton_method(:chat) { |contents, **_, &block| captured = contents; block.call("Linked reply") }
+    def client.handed_off? = true
+    def client.last_handoff_failed? = false
+    Collavre::AiClient.stub(:new, client) do
+      assert_equal "Linked reply", Collavre::AiAgentService.new(@task).call
+    end
+    assert_includes captured.to_s, "Readable origin context"
+    refute_includes captured.to_s, "Private placement ancestor"
+    assert_equal @creative.id, @task.reload.reply_comment.creative_id
+  end
+
   private
 
   def revoke_share(change)
