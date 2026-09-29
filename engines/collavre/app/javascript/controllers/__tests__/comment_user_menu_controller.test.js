@@ -81,6 +81,7 @@ describe('CommentUserMenuController', () => {
     test.each([
       ['no permission', t => { t.canSetPrimaryAgent = false }],
       ['all messages', t => { t.currentTopicId = '' }],
+      ['topics still loading', t => { t.topics = undefined }],
       ['unknown topic', t => { t.currentTopicId = '99' }],
       ['locked topic', t => { t.topics[0].agent_locked = true }],
       ['archived topic', t => { t.topics[0].archived = true }],
@@ -129,6 +130,11 @@ describe('CommentUserMenuController', () => {
       await controller.setPrimaryAgent(event())
       expect(topics.setTopicPrimaryAgent).toHaveBeenCalledTimes(2)
     })
+  })
+
+  test('treats presence events without details as an empty presence list', () => {
+    controller.handlePresenceChanged({})
+    expect(controller.statusLabelTarget.textContent).toBe('Offline')
   })
 
   test('updates the localized status when presence changes', () => {

@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { createUserMenu, healthStateFor, healthStateForUserId } from '../user_menu'
+import { createUserMenu, healthStateFor, healthStateForUserId, userMenuLabels } from '../user_menu'
 
 const LABELS = {
   open: 'Open %{name}\'s profile menu',
@@ -26,6 +26,13 @@ const USER = {
 }
 
 describe('createUserMenu', () => {
+  test('reads localized menu labels from the popup', () => {
+    const element = document.createElement('div')
+    element.dataset.userMenuSetPrimaryAgentText = LABELS.setPrimaryAgent
+    expect(userMenuLabels(element).setPrimaryAgent).toBe(LABELS.setPrimaryAgent)
+    expect(userMenuLabels(element).mention).toBe('Mention')
+  })
+
   test.each([true, false])('offers assignment only for AI agents (AI: %s)', ai_user => {
     const menu = createUserMenu({ user: { ...USER, ai_user }, labels: LABELS, menuId: 'agent' })
     const button = menu.querySelector('[data-comment-user-menu-target="primaryAgent"]')

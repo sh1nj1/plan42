@@ -171,3 +171,17 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   root.appendChild(menu)
   return root
 }
+
+export function userMenuLabels(element) {
+  return {
+    open: element.dataset.userMenuOpenText || 'Open %{name}\'s profile menu',
+    viewProfile: element.dataset.userMenuViewProfileText || 'View profile',
+    mention: element.dataset.userMenuMentionText || 'Mention',
+    setPrimaryAgent: element.dataset.userMenuSetPrimaryAgentText,
+    dragGuide: element.dataset.userMenuAgentDragGuideText || '',
+    online: element.dataset.participantOnlineText || 'Online',
+    offline: element.dataset.participantOfflineText || 'Offline',
+    unknown: element.dataset.participantHealthUnknownText || 'Health status unavailable',
+    check_error: element.dataset.participantHealthCheckErrorText || 'Health check error'
+  }
+}
