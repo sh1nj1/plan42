@@ -48,6 +48,7 @@ import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
 import InboxBadgeController from "./inbox_badge_controller"
+import NoticeBarController from "./notice_bar_controller"
 import LastVisitedCreativeController from "./last_visited_creative_controller"
 import WorkspaceTreeController from "./workspace_tree_controller"
 import GatewayCheckController from "./gateway_check_controller"
@@ -101,6 +102,7 @@ export {
   CommentBadgeController,
   LandingVideoController,
   InboxBadgeController,
+  NoticeBarController,
   LastVisitedCreativeController,
   WorkspaceTreeController,
   GatewayCheckController,
@@ -116,6 +118,12 @@ export {
 function registerImageLightboxControllers(application) {
   application.register("image-lightbox", ImageLightboxController)
   application.register("creative-image-lightbox", CreativeImageLightboxController)
+}
+
+// Always-present app chrome: the top notice bar and the inbox badge.
+function registerAppChromeControllers(application) {
+  application.register("notice-bar", NoticeBarController)
+  application.register("inbox-badge", InboxBadgeController)
 }
 
 function registerCreativeControllers(application) {
@@ -169,7 +177,7 @@ export function registerControllers(application) {
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
-  application.register("inbox-badge", InboxBadgeController)
+  registerAppChromeControllers(application)
   application.register("last-visited-creative", LastVisitedCreativeController)
   application.register("workspace-tree", WorkspaceTreeController)
   application.register("gateway-check", GatewayCheckController)

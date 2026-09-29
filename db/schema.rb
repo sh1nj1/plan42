@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1116,6 +1116,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
     t.index ["user_id"], name: "index_user_creative_preferences_on_user_id_root_unique", unique: true, where: "creative_id IS NULL"
   end
 
+  create_table "user_notices", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.string "notice_key", null: false
+    t.datetime "snoozed_until"
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "notice_key"], name: "index_user_notices_on_user_id_and_notice_key", unique: true
+  end
+
   create_table "user_themes", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "name"
@@ -1367,6 +1378,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_24_070000) do
   add_foreign_key "user_creative_preferences", "creatives"
   add_foreign_key "user_creative_preferences", "topics", column: "last_topic_id", on_delete: :nullify
   add_foreign_key "user_creative_preferences", "users"
+  add_foreign_key "user_notices", "users", on_delete: :cascade
   add_foreign_key "user_themes", "users"
   add_foreign_key "users", "agent_gateways"
   add_foreign_key "users", "creatives", column: "last_visited_creative_id", on_delete: :nullify

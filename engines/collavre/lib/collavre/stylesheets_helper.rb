@@ -35,6 +35,7 @@ module Collavre
       collavre/search_popup
       collavre/agent_connections
       collavre/agent_gateways
+      collavre/notice_bar
     ].freeze
 
     COLLAVRE_PRINT_STYLESHEETS = %w[

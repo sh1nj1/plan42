@@ -112,15 +112,11 @@ module Collavre
       app.config.assets.precompile += %w[collavre.js] if app.config.respond_to?(:assets)
 
       # Add engine stylesheets to asset paths for Propshaft
-      if app.config.respond_to?(:assets) && app.config.assets.respond_to?(:paths)
-        app.config.assets.paths << root.join("app/assets/stylesheets")
-      end
+      app.config.assets.paths << root.join("app/assets/stylesheets") if app.config.respond_to?(:assets) && app.config.assets.respond_to?(:paths)
     end
 
     initializer "collavre.importmap", before: "importmap" do |app|
-      if app.config.respond_to?(:importmap)
-        app.config.importmap.paths << Engine.root.join("config/importmap.rb")
-      end
+      app.config.importmap.paths << Engine.root.join("config/importmap.rb") if app.config.respond_to?(:importmap)
     end
 
     # Allow engine controllers to fall back to host app views during migration
@@ -386,6 +382,12 @@ module Collavre
           ]
         )
       end
+    end
+
+    # Notice bar: registers the onboarding missions and completes notices from
+    # "*.collavre" domain events. Vendor engines register notices after this.
+    initializer "collavre.notices" do
+      Collavre::NoticeRegistry.install
     end
   end
 end

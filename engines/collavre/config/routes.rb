@@ -153,8 +153,7 @@ Collavre::Engine.routes.draw do
   resource :invite, only: [ :show, :create ]
   draw :creative_preferences
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
-  post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
-  delete "/notices", to: "notices#restore_all", as: :restore_notices
+  draw :notices
 
   # Agent API (Claude Channel MCP plugin)
   namespace :api do

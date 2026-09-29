@@ -72,7 +72,7 @@ module Collavre
     include Permissible
     include Describable
     include RealtimeBroadcastable
-    include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy
+    include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
