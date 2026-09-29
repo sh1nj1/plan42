@@ -6,7 +6,10 @@ module Collavre
   # FastMcp::Server calls this for every /mcp tools/call; nothing in-process does.
   module McpToolUsageTracking
     def call_with_schema_validation!(**args)
-      Collavre::ToolUsage::McpCall.track(self.class.tool_name, args) { super }
+      Collavre::ToolUsage::McpCall.track(self.class.tool_name, args) do
+        Collavre::AgentToolPermission.authorize_call!(self.class.tool_name, args)
+        super
+      end
     end
   end
 end

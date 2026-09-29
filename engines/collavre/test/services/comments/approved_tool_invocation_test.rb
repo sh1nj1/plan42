@@ -16,6 +16,14 @@ class Collavre::Comments::ApprovedToolInvocationTest < ActiveSupport::TestCase
 
   teardown { Collavre::Current.reset }
 
+  test "tool revocation after approval blocks a stale task agent" do
+    Collavre::User.find(@agent.id).update!(tools: [])
+    assert_includes @task.agent.tools, "creative_update_service"
+    result = invoke
+    assert_equal I18n.t("collavre.mcp_tools.agent_tool_denied", tool_name: "creative_update_service"), result[:error]
+    assert_equal "Original", @child.reload.description
+  end
+
   test "revoked conversation share blocks dispatch even if the target retains a grant" do
     Collavre::CreativeShare.create!(creative: @child, user: @agent, permission: :write)
     @share.delete
@@ -40,6 +48,7 @@ class Collavre::Comments::ApprovedToolInvocationTest < ActiveSupport::TestCase
     share = Collavre::CreativeShare.create!(creative: @child, user: @agent, permission: :write)
     share.update_columns(permission: Collavre::CreativeShare.permissions[:read])
     assert_stale_write(@child)
+    @agent.update!(tools: @agent.tools + [ "meta_tool" ])
     arguments = { action: "run", tool_name: "meta_tool", arguments: {
       action: "call", tool_name: "creative_update_service", arguments: { id: @child.id, description: "Changed" }
     } }

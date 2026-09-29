@@ -68,7 +68,7 @@ en:
         tools_title: Available Tools
         tools_description: These tools are available for the agent to use.
         meta_skills_title: Collavre meta-skills
-        meta_skills_description: The single provisioned collavre-cli skill runs the selected tools as meta-skills. These selections are not enforced as callback-token permissions yet.
+        meta_skills_description: Selected tools are the tools this agent may execute. Calls through meta_tool and CLI callbacks also check this permission. Selecting meta_tool does not grant access to its target tools.
         gateway_mode: "Workspace mode: %{mode}. Change it in the selected gateway's settings."
         no_tools_found: No tools found.
         clear_api_key_label: Remove stored API key

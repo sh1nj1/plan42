@@ -338,3 +338,18 @@ dispatch. During execution, `Current.authoritative_permissions` routes each
 target and move destination. This context follows nested meta-tool calls and
 is restored on success or failure. Approval never preserves a revoked grant
 or borrows the approver's permissions. Ordinary turns retain cached checks.
+
+### Agent tool execution allowlist
+
+An AI agent's persisted `tools` selection authorizes execution, in addition to
+choosing provider tool schemas. An empty selection grants no tools. Execution
+checks read the current database value without the request query cache so a
+queued call or approval cannot retain a revoked grant.
+
+The guard applies to RubyLLM calls, direct MCP calls, and targets dispatched by
+`meta_tool` (including nested `run`/`call` aliases and approval replay). Selecting
+`meta_tool` grants no implicit permission to its targets. CLI workspace callback
+tokens use the workspace agent's allowlist even when the token belongs to a
+human. Ordinary human MCP access remains governed by existing permissions.
+Creative permissions and tool approval requirements still apply independently.
+This controls Collavre tool execution, not a remote CLI's native shell tools.
