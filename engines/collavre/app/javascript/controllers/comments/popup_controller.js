@@ -157,7 +157,8 @@ export default class extends Controller {
     } else if (this.isDocked()) {
       this.enterDockedMode()
     } else {
-      this.openFromUrl()
+      // Wait for sibling controllers before opening a server-rendered inbox button.
+      requestAnimationFrame(() => this.openFromUrl())
     }
   }
 
