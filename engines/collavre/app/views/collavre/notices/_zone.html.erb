@@ -4,6 +4,8 @@
 <div class="notice-zone"
      data-controller="notice-bar"
      data-action="keydown@document->notice-bar#escape"
+     data-notice-bar-feed-url-value="<%= collavre.user_notices_path %>"
+     data-notice-bar-refresh-at-value="<%= Collavre::UserNotice.where(user: Current.user).snoozed.where("snoozed_until > ?", Time.current).minimum(:snoozed_until)&.iso8601(3) %>"
      data-notice-bar-url-value="<%= collavre.snooze_user_notice_path("__key__").delete_suffix("/snooze") %>"
      data-notice-bar-i18n-value="<%= t("collavre.notices.bar").to_json %>">
   <div class="notice-zone__stack" data-notice-bar-target="stack" data-action="click->notice-bar#stackClick keydown->notice-bar#stackKeydown" role="region" aria-label="<%= t("collavre.notices.bar.region") %>"></div>

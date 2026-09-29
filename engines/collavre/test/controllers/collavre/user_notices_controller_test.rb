@@ -20,6 +20,26 @@ module Collavre
       UserNotice.find_by(user: @user, notice_key: key)
     end
 
+    test "feed returns snooze deadline and restores only expired pending missions" do
+      freeze_time do
+        post "/user_notices/tour_one/snooze"
+        assert_equal 1.day.from_now.iso8601(3), response.headers["X-Notice-Snoozed-Until"]
+        get "/user_notices"
+        assert_response :success
+        assert_equal "no-store", response.headers["Cache-Control"]
+        assert_equal 1.day.from_now, Time.iso8601(response.parsed_body["refresh_at"])
+        refute_includes response.parsed_body["items"].pluck("key"), "tour_one"
+
+        travel 1.day
+        get "/user_notices"
+        assert_includes response.parsed_body["items"].pluck("key"), "tour_one"
+        assert_nil response.parsed_body["refresh_at"]
+        UserNotice.complete!(@user, :tour_one)
+        get "/user_notices"
+        refute_includes response.parsed_body["items"].pluck("key"), "tour_one"
+      end
+    end
+
     test "a stale snooze from an open sheet does not reopen a completed mission" do
       UserNotice.record!(@user, :tour_one, :completed)
       post "/user_notices/tour_one/snooze"
@@ -93,6 +113,8 @@ module Collavre
   class UserNoticesSignedOutTest < ActionDispatch::IntegrationTest
     test "requires a session" do
       post "/user_notices/onboarding_first_creative/snooze"
+      assert_response :redirect
+      get "/user_notices"
       assert_response :redirect
     end
   end

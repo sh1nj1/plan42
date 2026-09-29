@@ -1,8 +1,12 @@
 module Collavre
-  # Records what the user did with a notice-bar notice. The bar updates
-  # optimistically, so these actions answer with an empty 204.
+  # Records notice actions and serves authoritative feeds after snooze expiry.
   class UserNoticesController < ApplicationController
-    before_action :set_notice
+    before_action :set_notice, except: :index
+
+    def index
+      response.headers["Cache-Control"] = "no-store"
+      render json: { items: Notices::Feed.new(Current.user).items, refresh_at: next_snooze }
+    end
 
     # Closing a non-mission notice hides it for good.
     def dismiss
@@ -38,13 +42,18 @@ module Collavre
 
     private
 
+    def next_snooze
+      UserNotice.where(user: Current.user).snoozed.where("snoozed_until > ?", Time.current).minimum(:snoozed_until)
+    end
+
     def set_notice
       @notice = NoticeRegistry.find(params[:key])
       head :not_found unless @notice&.visible_to?(Current.user)
     end
 
     def record!(status, snoozed_until: nil)
-      UserNotice.record!(Current.user, @notice.key, status, snoozed_until: snoozed_until)
+      state = UserNotice.record!(Current.user, @notice.key, status, snoozed_until: snoozed_until)
+      response.headers["X-Notice-Snoozed-Until"] = state.snoozed_until.iso8601(3) if state.snoozed?
       head :no_content
     end
   end

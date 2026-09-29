@@ -15,6 +15,22 @@ module Collavre
 
     teardown { Current.reset }
 
+    test "linked placements never count with or without human creation history" do
+      link = @shared.create_linked_creative_for_user(@user)
+      assert_not OnboardingNotices.content_creation?(link)
+      refute done?(:onboarding_first_creative)
+      refute done?(:onboarding_sub_creative)
+      UserNotice.where(user: @user).delete_all
+      assert_equal "onboarding_first_creative", Notices::Feed.new(@user).items.first[:key]
+
+      Creatives::History.track(actor: @user, origin: :editor) do
+        Creative.create!(user: @user, origin: @shared, parent: link, description: "Linked child")
+      end
+      refute done?(:onboarding_first_creative)
+      refute done?(:onboarding_sub_creative)
+      assert UserNotice.find_by!(user: @user, notice_key: :onboarding_first_creative).pending?
+    end
+
     def create_shared_child(actor: @user)
       Creatives::History.track(actor: actor, origin: :editor) do
         Creative.create!(parent: @shared, description: "Contribution")

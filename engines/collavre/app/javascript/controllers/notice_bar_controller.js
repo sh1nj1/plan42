@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../lib/api/csrf_fetch'
 import { animate, confetti, sleep, EASE, HOLD, FADE_OUT } from '../modules/notice_bar/motion'
 import { buildStrip, buildPeeks, CHECK_SVG } from '../modules/notice_bar/view'
+import NoticeRefresh from '../modules/notice_bar/refresh'
 import NoticeSheet from '../modules/notice_bar/sheet'
 import Toasts from '../modules/notice_bar/toasts'
 import { Spotlight, findTarget, rememberPendingSpotlight, takePendingSpotlight } from '../modules/notice_bar/spotlight'
@@ -28,19 +29,27 @@ const EXIT_UP = [[{ transform: 'none', opacity: 1 }, { transform: 'translateY(-1
 
 export default class extends Controller {
   static targets = ['stack', 'toasts', 'flash', 'payload']
-  static values = { url: String, i18n: Object }
+  static values = { url: String, feedUrl: String, refreshAt: String, i18n: Object }
 
   initialize() {
     this.queue = []
     this.removed = new Set()
+    this.snoozed = new Set()
     this.work = Promise.resolve()
     this.busy = false
     this.deferred = []
   }
 
   connect() {
+    this.feedRefresh = new NoticeRefresh(this.feedUrlValue, (items) => this.run(() => {
+      for (const key of this.snoozed) this.removed.delete(key)
+      this.snoozed.clear()
+      return this.reconcile(items)
+    }))
+    this.feedRefresh.schedule(this.refreshAtValue)
     this.beforeCache = () => {
       this.clearTransientUI()
+      this.feedRefresh?.destroy()
       for (const payload of this.payloadTargets) {
         payload.dataset.items = JSON.stringify(parseJSON(payload.dataset.items, []).filter((item) => !this.removed.has(item.key)))
         delete payload.dataset.completion
@@ -52,6 +61,7 @@ export default class extends Controller {
   disconnect() {
     document.removeEventListener('turbo:before-cache', this.beforeCache)
     this.clearTransientUI()
+    this.feedRefresh?.destroy()
   }
 
   clearTransientUI() {
@@ -201,11 +211,19 @@ export default class extends Controller {
     this.requests = (this.requests || Promise.resolve())
       .then(() => csrfFetch(url, { method: 'POST', headers: { Accept: 'application/json' } }))
       .then((response) => {
-        if (response.ok) window.Turbo?.cache?.clear()
+        if (response.ok) {
+          window.Turbo?.cache?.clear()
+          this.scheduleRefresh(response.headers?.get('X-Notice-Snoozed-Until'))
+        }
         return response.ok
       })
       .catch((error) => { console.error('[notice-bar]', action, error); return false })
     return this.requests
+  }
+
+  scheduleRefresh(deadline) {
+    this.feedRefresh?.schedule(deadline)
+    if (this.feedRefresh?.deadline) this.refreshAtValue = new Date(this.feedRefresh.deadline).toISOString()
   }
 
   async dismissTop() {
@@ -215,6 +233,7 @@ export default class extends Controller {
     if (!(await this.post(item.key, mission ? 'snooze' : 'dismiss'))) return
     this.queue.shift()
     this.removed.add(item.key)
+    if (mission) this.snoozed.add(item.key)
     await animate(this.strip, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(45%)', opacity: 0 }], { duration: 260, easing: EASE.exit, fill: 'forwards' }, FADE_OUT)
     await this.renderStack('rise')
     if (mission) this.toasts.show(this.t.snoozed, { label: this.t.undo, run: () => this.run(() => this.restore(item)) })
@@ -225,6 +244,7 @@ export default class extends Controller {
   async restore(item) {
     if (!(await this.post(item.key, 'restore'))) return
     this.removed.delete(item.key)
+    this.snoozed.delete(item.key)
     this.queue.unshift(item)
     await this.renderStack('drop')
   }

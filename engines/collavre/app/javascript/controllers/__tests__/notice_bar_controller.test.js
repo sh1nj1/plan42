@@ -66,6 +66,7 @@ describe('NoticeBarController', () => {
     zone.className = 'notice-zone'
     zone.setAttribute('data-controller', 'notice-bar')
     zone.setAttribute('data-action', 'keydown@document->notice-bar#escape')
+    zone.setAttribute('data-notice-bar-feed-url-value', '/user_notices')
     zone.setAttribute('data-notice-bar-url-value', '/user_notices/__key__')
     zone.setAttribute('data-notice-bar-i18n-value', JSON.stringify(I18N))
     zone.innerHTML = `
@@ -119,6 +120,46 @@ describe('NoticeBarController', () => {
     jest.clearAllTimers()
     jest.useRealTimers()
     controller = null
+  })
+
+  test.each([true, false])('snooze expiry follows the server visibility (%s) without navigation', async (visible) => {
+    const item = mission('m1')
+    await mount({ items: [item], top: item.key })
+    csrfFetch.mockResolvedValueOnce({ ok: true, headers: new Headers({
+      'X-Notice-Snoozed-Until': new Date(Date.now() + 86400000).toISOString(),
+    }) })
+    await controller.dismissTop()
+    await replacePayload([item])
+    await flush()
+    expect(controller.queue).toEqual([])
+    expect(zone.dataset.noticeBarRefreshAtValue).toBeTruthy()
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: visible ? [item] : [], refresh_at: null }) })
+    await flush(21600000)
+    expect(controller.queue).toEqual(visible ? [item] : [])
+    expect(postedUrls()).toContain('/user_notices')
+    expect(controller.removed.has(item.key)).toBe(false)
+  })
+
+  test('a restored snapshot restarts its persisted snooze timer', async () => {
+    const item = mission('m1')
+    await mount({ items: [item], top: item.key })
+    csrfFetch.mockResolvedValueOnce({ ok: true, headers: new Headers({
+      'X-Notice-Snoozed-Until': new Date(Date.now() + 86400000).toISOString(),
+    }) })
+    await controller.dismissTop()
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    const snapshot = zone.cloneNode(true)
+    application.stop()
+    zone.remove()
+    document.body.appendChild(snapshot)
+    application = Application.start()
+    application.register('notice-bar', NoticeBarController)
+    await jest.advanceTimersByTimeAsync(0)
+    zone = snapshot
+    controller = application.getControllerForElementAndIdentifier(zone, 'notice-bar')
+    csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [item] }) })
+    await flush(21600000)
+    expect(controller.queue).toEqual([item])
   })
 
   test.each(['complete', 'dismiss', 'snooze'])('%s stays removed after a Turbo snapshot restoration', async (action) => {
@@ -204,7 +245,8 @@ describe('NoticeBarController', () => {
       // Mount without flushing the drop delay.
       zone = document.createElement('div')
       zone.setAttribute('data-controller', 'notice-bar')
-      zone.setAttribute('data-notice-bar-url-value', '/user_notices/__key__')
+      zone.setAttribute('data-notice-bar-feed-url-value', '/user_notices')
+    zone.setAttribute('data-notice-bar-url-value', '/user_notices/__key__')
       zone.setAttribute('data-notice-bar-i18n-value', JSON.stringify(I18N))
       zone.innerHTML = '<div data-notice-bar-target="stack"></div><div data-notice-bar-target="toasts"></div>'
       zone.appendChild(payloadEl(items))
@@ -229,7 +271,8 @@ describe('NoticeBarController', () => {
       sessionStorage.setItem(TOP_KEY, 'n1')
       zone = document.createElement('div')
       zone.setAttribute('data-controller', 'notice-bar')
-      zone.setAttribute('data-notice-bar-url-value', '/user_notices/__key__')
+      zone.setAttribute('data-notice-bar-feed-url-value', '/user_notices')
+    zone.setAttribute('data-notice-bar-url-value', '/user_notices/__key__')
       zone.setAttribute('data-notice-bar-i18n-value', JSON.stringify(I18N))
       zone.innerHTML = '<div data-notice-bar-target="stack"></div><div data-notice-bar-target="toasts"></div>'
       zone.appendChild(payloadEl([notice('n1')]))

@@ -17,14 +17,14 @@ module Collavre
         target: ".new-root-creative-btn, .add-creative-btn",
         cta_path: ->(routes, _user) { routes.creatives_path },
         done_when: ->(user) { creative_created?(user) },
-        completes_on: { CREATIVE_CREATED => ->(payload) { !payload[:creative].inbox? } })
+        completes_on: { CREATIVE_CREATED => ->(payload) { content_creation?(payload[:creative]) } })
 
       NoticeRegistry.register(:onboarding_sub_creative,
         kind: :mission, group: :onboarding, icon: "🌿",
         target: ".add-creative-btn",
         cta_path: method(:latest_creative_path),
         done_when: ->(user) { creative_created?(user, child: true) },
-        completes_on: { CREATIVE_CREATED => ->(payload) { payload[:creative].parent_id.present? } })
+        completes_on: { CREATIVE_CREATED => ->(payload) { content_creation?(payload[:creative]) && payload[:creative].parent_id.present? } })
 
       NoticeRegistry.register(:onboarding_call_agent,
         kind: :mission, group: :onboarding, icon: "🌳",
@@ -36,8 +36,12 @@ module Collavre
         completes_on: { COMMENT_CREATED => ->(payload) { payload[:comment].mentioned_users.ai_agents.exists? } })
     end
 
+    def content_creation?(creative)
+      !creative.inbox? && creative.origin_id.nil?
+    end
+
     def own_creatives(user)
-      Creative.where(user: user).where.not(id: Creative.inboxes.select(:id))
+      Creative.where(user: user, origin_id: nil).where.not(id: Creative.inboxes.select(:id))
     end
 
     # Shared children inherit their parent's owner. Applied history retains the
@@ -52,7 +56,7 @@ module Collavre
     def creation_history(user, child:)
       changes = CreativeChange.joins(:change_set).where(operation: "create")
         .where(creative_change_sets: { user_id: user.id, status: "applied", actor_kind: "human" })
-        .where(creative_id: Creative.where.not(id: Creative.inboxes.select(:id)).select(:id))
+        .where(creative_id: Creative.where(origin_id: nil).where.not(id: Creative.inboxes.select(:id)).select(:id))
       changes = changes.where("creative_changes.after ->> 'parent_id' IS NOT NULL") if child
       changes
     end
