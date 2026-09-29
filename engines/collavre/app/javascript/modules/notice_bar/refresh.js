@@ -13,7 +13,15 @@ export default class NoticeRefresh {
     if (!Number.isFinite(deadline) || this.stopped || (Number.isFinite(this.deadline) && this.deadline <= deadline)) return
     clearTimeout(this.timer)
     this.deadline = deadline
-    this.timer = setTimeout(() => this.refresh(), Math.max(0, deadline - Date.now()))
+    this.timer = setTimeout(() => this.refresh(), this.delayUntil(deadline))
+  }
+
+  delayUntil(deadline) {
+    // Absolute server deadlines may still be pending when the client's clock is
+    // ahead. Bound successful retries as well as network-failure retries.
+    this.minimumDelay = this.lastDeadline === deadline ? Math.min(this.minimumDelay * 2, 60000) : 1000
+    this.lastDeadline = deadline
+    return Math.max(this.minimumDelay, deadline - Date.now())
   }
 
   async refresh() {
