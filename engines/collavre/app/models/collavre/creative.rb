@@ -307,6 +307,12 @@ module Collavre
 
     private
 
+    # A child added to a shared tree is owned by the tree's owner, but the
+    # creation event belongs to whoever added it.
+    def creation_event_actor
+      Current.user || user
+    end
+
     def assign_default_user
       return if user.present?
       if parent_id.present? && parent

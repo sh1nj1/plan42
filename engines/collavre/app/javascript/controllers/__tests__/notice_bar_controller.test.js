@@ -305,6 +305,39 @@ describe('NoticeBarController', () => {
       expect(strip().dataset.key).toBe('m1')
     })
 
+    test('undo waits for the snooze to reach the server before restoring', async () => {
+      let finishSnooze
+      csrfFetch.mockImplementationOnce(() => new Promise((resolve) => { finishSnooze = resolve }))
+      await mount({ items: [mission('m1'), notice('n1')], top: 'm1' })
+      strip().querySelector('.notice-strip__close').click()
+      await flush()
+      zone.querySelector('.notice-toast__action').click()
+      await jest.advanceTimersByTimeAsync(0) // flush() would wait on the blocked undo
+      expect(postedUrls()).toEqual(['/user_notices/m1/snooze'])
+      expect(strip().dataset.key).toBe('n1')
+
+      finishSnooze({ ok: true })
+      await flush()
+      expect(postedUrls()).toEqual(['/user_notices/m1/snooze', '/user_notices/m1/restore'])
+      expect(strip().dataset.key).toBe('m1')
+    })
+
+    test('a refused restore keeps the mission hidden', async () => {
+      await mount({ items: [mission('m1'), notice('n1')], top: 'm1' })
+      strip().querySelector('.notice-strip__close').click()
+      await flush()
+      csrfFetch.mockResolvedValueOnce({ ok: false })
+      zone.querySelector('.notice-toast__action').click()
+      await flush()
+      expect(postedUrls()).toEqual(['/user_notices/m1/snooze', '/user_notices/m1/restore'])
+      expect(strip().dataset.key).toBe('n1')
+
+      // Still filtered from replays: the server kept it snoozed or completed it.
+      await replacePayload([mission('m1'), notice('n1')])
+      await flush()
+      expect(strip().dataset.key).toBe('n1')
+    })
+
     test('× on a non-mission dismisses it without a toast', async () => {
       await mount({ items: [notice('n1'), notice('n2')], top: 'n1' })
       strip().querySelector('.notice-strip__close').click()

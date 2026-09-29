@@ -54,6 +54,21 @@ module Collavre
       end
     end
 
+    test "a child added to someone else's tree counts for whoever added it" do
+      owner = create_notice_user
+      Turbo::StreamsChannel.stub(:broadcast_replace_to, nil) do
+        Creative.create!(user: @user, description: "Mine")
+        Current.user = owner
+        shared = Creative.create!(user: owner, description: "Shared")
+        Current.user = @user
+
+        Creative.create!(user: owner, parent: shared, description: "Their step")
+      end
+
+      assert_equal "completed", status(:onboarding_sub_creative)
+      assert_nil UserNotice.find_by(user: owner, notice_key: "onboarding_sub_creative")
+    end
+
     test "existing users are backfilled past what they already did" do
       root = Creative.create!(user: @user, description: "Plan")
       Creative.create!(user: @user, parent: root, description: "Step")

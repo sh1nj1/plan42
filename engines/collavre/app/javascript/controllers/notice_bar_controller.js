@@ -5,6 +5,7 @@ import { buildStrip, buildPeeks, CHECK_SVG } from '../modules/notice_bar/view'
 import NoticeSheet from '../modules/notice_bar/sheet'
 import Toasts from '../modules/notice_bar/toasts'
 import { Spotlight, findTarget, rememberPendingSpotlight, takePendingSpotlight } from '../modules/notice_bar/spotlight'
+import { parseJSON, readSession, writeSession } from '../modules/notice_bar/storage'
 
 // Top notice bar: one strip with the remaining notices peeking behind it.
 // Clicking the strip morphs it into a detail sheet; × dismisses it (missions
@@ -24,18 +25,6 @@ const STRIP_MOTION = {
   flipIn: [[{ transform: 'rotateX(90deg)' }, { transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.2,.8,.3,1.2)' }],
 }
 const EXIT_UP = [[{ transform: 'none', opacity: 1 }, { transform: 'translateY(-100%)', opacity: 0 }], { duration: 280, easing: 'ease-in', fill: 'forwards' }, FADE_OUT]
-
-function parseJSON(value, fallback) {
-  try { return value ? JSON.parse(value) : fallback } catch { return fallback }
-}
-
-function readSession(key) {
-  try { return sessionStorage.getItem(key) } catch { return null }
-}
-
-function writeSession(key, value) {
-  try { sessionStorage.setItem(key, value) } catch { /* storage disabled */ }
-}
 
 export default class extends Controller {
   static targets = ['stack', 'toasts', 'flash', 'payload']
@@ -187,10 +176,15 @@ export default class extends Controller {
     animate(this.stackTarget.querySelector('.notice-peek--1'), [{ transform: 'translateY(12px)' }, { transform: 'translateY(5px)' }], spring, HOLD)
   }
 
+  // One request at a time, so an Undo cannot overtake the snooze it reverts.
+  // Resolves to whether the server accepted the change.
   post(key, action) {
     const url = `${this.urlValue.replace('__key__', encodeURIComponent(key))}/${action}`
-    return csrfFetch(url, { method: 'POST', headers: { Accept: 'application/json' } })
-      .catch((error) => console.error('[notice-bar]', action, error))
+    this.requests = (this.requests || Promise.resolve())
+      .then(() => csrfFetch(url, { method: 'POST', headers: { Accept: 'application/json' } }))
+      .then((response) => response.ok)
+      .catch((error) => { console.error('[notice-bar]', action, error); return false })
+    return this.requests
   }
 
   async dismissTop() {
@@ -204,9 +198,11 @@ export default class extends Controller {
     if (mission) this.toasts.show(this.t.snoozed, { label: this.t.undo, run: () => this.run(() => this.restore(item)) })
   }
 
+  // The mission only comes back once the server has restored it (it may have
+  // been completed meanwhile, in which case the broadcast already moved on).
   async restore(item) {
+    if (!(await this.post(item.key, 'restore'))) return
     this.removed.delete(item.key)
-    this.post(item.key, 'restore')
     this.queue.unshift(item)
     await this.renderStack('drop')
   }

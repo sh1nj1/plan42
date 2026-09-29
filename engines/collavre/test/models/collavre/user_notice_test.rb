@@ -18,21 +18,29 @@ module Collavre
       assert_equal 1, UserNotice.where(user: user).count
     end
 
-    test "record! retries when a concurrent insert wins the race" do
+    test "record! inserts the first row with every attribute" do
       user = users(:two)
-      calls = 0
-      original = UserNotice.method(:for)
-      concurrent = lambda do |owner, key|
-        calls += 1
-        record = original.call(owner, key)
-        UserNotice.create!(user: owner, notice_key: key.to_s, status: :pending) if calls == 1
-        record
+      until_time = 1.day.from_now.change(usec: 0)
+
+      notice = UserNotice.record!(user, :fresh, :snoozed, snoozed_until: until_time)
+
+      assert notice.snoozed?
+      assert_equal until_time, notice.snoozed_until
+      assert_nil notice.completed_at
+    end
+
+    test "record! cannot overwrite a completion committed after the caller read the row" do
+      user = users(:two)
+      UserNotice.record!(user, :tour, :pending)
+      stale = UserNotice.find_by!(user: user, notice_key: "tour")
+      UserNotice.where(id: stale.id).update_all(status: "completed", completed_at: Time.current)
+
+      result = UserNotice.stub(:seed!, stale) do
+        UserNotice.record!(user, :tour, :snoozed, snoozed_until: 1.day.from_now)
       end
 
-      UserNotice.stub(:for, concurrent) { UserNotice.record!(user, :race, :completed) }
-
-      assert_equal 2, calls
-      assert UserNotice.find_by(user: user, notice_key: "race").completed?
+      assert result.completed?
+      assert_nil result.snoozed_until
     end
 
     test "record! keeps a completion over a stale snooze or dismissal" do
