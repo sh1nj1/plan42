@@ -1,6 +1,18 @@
 import CommonPopup from '../lib/common_popup'
 import { caretAnchor } from '../utils/caret_position'
 
+function renderMention(user) {
+  const item = document.createElement('div')
+  item.className = 'mention-item'
+  const avatar = document.createElement('img')
+  avatar.src = user.avatar_url
+  avatar.width = 20
+  avatar.height = 20
+  avatar.className = 'avatar'
+  item.append(avatar, document.createTextNode(` ${user.name}`))
+  return item.outerHTML
+}
+
 let mentionMenuInitialized = false
 
 if (!mentionMenuInitialized) {
@@ -17,7 +29,7 @@ if (!mentionMenuInitialized) {
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
-      renderItem: (user) => `<div class="mention-item"><img src="${user.avatar_url}" width="20" height="20" class="avatar" /> ${user.name}</div>`,
+      renderItem: renderMention,
       onSelect: (user) => {
         insert(user)
         popupMenu.hide()
@@ -56,10 +68,10 @@ if (!mentionMenuInitialized) {
       if (creativeId) url.searchParams.set('creative_id', creativeId)
       fetch(url, { headers: { Accept: 'application/json' } })
         .then((r) => r.ok ? r.json() : [])
+        .catch(() => [])
         .then((users) => {
           if (id === requestId && creativeId === popup?.dataset.creativeId) show(users)
         })
-        .catch(() => {})
     }
 
     textarea.addEventListener('input', function () {

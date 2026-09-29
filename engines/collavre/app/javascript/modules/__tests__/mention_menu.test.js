@@ -143,3 +143,48 @@ test('keeps the menu visible while a new mention search is debounced and loading
   input('Hello')
   expect(menu.style.display).toBe('none')
 })
+
+
+test('renders profile HTML and avatar attribute injection as literal data', async () => {
+  const name = '<img src=x onerror="alert(1)"> & "Alice"'
+  const avatarUrl = '/avatar.png" onerror="alert(2)'
+  fetch.mockResolvedValue(response([{ id: 2, name, avatar_url: avatarUrl }]))
+  input('@')
+  await flush()
+  const item = document.querySelector('.mention-item')
+  expect(item.textContent).toBe(` ${name}`)
+  expect(item.querySelectorAll('img')).toHaveLength(1)
+  expect(item.querySelector('img').getAttribute('src')).toBe(avatarUrl)
+  expect(item.querySelector('[onerror]')).toBeNull()
+  textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+  expect(textarea.value).toBe(`@${name}: `)
+})
+
+test.each(['network', 'json'])('hides previous suggestions when the current %s request fails', async (failure) => {
+  input('@Ali')
+  await jest.advanceTimersByTimeAsync(200)
+  expect(document.querySelector('#mention-menu').style.display).toBe('block')
+  if (failure === 'network') fetch.mockRejectedValueOnce(new Error('offline'))
+  else fetch.mockResolvedValueOnce({ ok: true, json: async () => { throw new Error('invalid JSON') } })
+  input('@')
+  await flush()
+  expect(document.querySelector('#mention-menu').style.display).toBe('none')
+})
+
+test.each(['input', 'creative'])('ignores a rejected request after the %s changes', async (change) => {
+  input('@')
+  await flush()
+  let reject
+  fetch.mockReturnValueOnce(new Promise((resolve, fail) => { reject = fail }))
+  input('@A')
+  await jest.advanceTimersByTimeAsync(200)
+  if (change === 'input') {
+    input('@Bob')
+    await jest.advanceTimersByTimeAsync(200)
+  } else {
+    document.querySelector('#comments-popup').dataset.creativeId = '8'
+  }
+  reject(new Error('offline'))
+  await flush()
+  expect(document.querySelector('#mention-menu').style.display).toBe('block')
+})
