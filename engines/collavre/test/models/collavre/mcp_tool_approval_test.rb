@@ -9,6 +9,7 @@ module Collavre
     self.use_transactional_tests = false
 
     setup do
+      @existing_creative_ids = Creative.ids
       @creative = Creative.create!(user: users(:one), description: "Approval lock")
       @earlier = McpTool.create!(creative: @creative, name: "lock_probe_a", source_code: source("lock_probe_a"))
       @later = McpTool.create!(creative: @creative, name: "lock_probe_b", source_code: source("lock_probe_b"))
@@ -17,6 +18,8 @@ module Collavre
     teardown do
       McpTool.where(creative: @creative).destroy_all
       @creative&.destroy!
+      # Onboarding can create the owner's inbox and its topics after a real commit.
+      Creative.where.not(id: @existing_creative_ids).destroy_all if @existing_creative_ids
       ::Tools.send(:remove_const, :LockProbeService) if ::Tools.const_defined?(:LockProbeService, false)
     end
 
