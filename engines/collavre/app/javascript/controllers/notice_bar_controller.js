@@ -40,6 +40,7 @@ export default class extends Controller {
 
   connect() {
     this.beforeCache = () => {
+      this.clearTransientUI()
       for (const payload of this.payloadTargets) {
         payload.dataset.items = JSON.stringify(parseJSON(payload.dataset.items, []).filter((item) => !this.removed.has(item.key)))
         delete payload.dataset.completion
@@ -50,10 +51,16 @@ export default class extends Controller {
 
   disconnect() {
     document.removeEventListener('turbo:before-cache', this.beforeCache)
+    this.clearTransientUI()
+  }
+
+  clearTransientUI() {
     this.toastLayer?.destroy()
     this.sheetView?.destroy()
     this.spot?.clear()
     this.toastLayer = this.sheetView = this.spot = null
+    this.toastsTarget.replaceChildren()
+    if (this.strip) this.strip.style.visibility = ''
   }
 
   // Targets connect before connect() runs, so collaborators are created lazily.
@@ -202,11 +209,12 @@ export default class extends Controller {
   }
 
   async dismissTop() {
-    const item = this.queue.shift()
+    const item = this.queue[0]
     if (!item) return
     const mission = item.kind === 'mission'
+    if (!(await this.post(item.key, mission ? 'snooze' : 'dismiss'))) return
+    this.queue.shift()
     this.removed.add(item.key)
-    this.post(item.key, mission ? 'snooze' : 'dismiss')
     await animate(this.strip, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(45%)', opacity: 0 }], { duration: 260, easing: EASE.exit, fill: 'forwards' }, FADE_OUT)
     await this.renderStack('rise')
     if (mission) this.toasts.show(this.t.snoozed, { label: this.t.undo, run: () => this.run(() => this.restore(item)) })

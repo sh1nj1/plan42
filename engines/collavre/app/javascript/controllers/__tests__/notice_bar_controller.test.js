@@ -380,21 +380,44 @@ describe('NoticeBarController', () => {
       expect(strip().dataset.key).toBe('m1')
     })
 
-    test('undo waits for the snooze to reach the server before restoring', async () => {
+    test('snooze waits for persistence before removing the mission and offering undo', async () => {
       let finishSnooze
       csrfFetch.mockImplementationOnce(() => new Promise((resolve) => { finishSnooze = resolve }))
       await mount({ items: [mission('m1'), notice('n1')], top: 'm1' })
       strip().querySelector('.notice-strip__close').click()
-      await flush()
-      zone.querySelector('.notice-toast__action').click()
-      await jest.advanceTimersByTimeAsync(0) // flush() would wait on the blocked undo
+      await jest.advanceTimersByTimeAsync(0)
       expect(postedUrls()).toEqual(['/user_notices/m1/snooze'])
-      expect(strip().dataset.key).toBe('n1')
+      expect(strip().dataset.key).toBe('m1')
+      expect(zone.querySelector('.notice-toast__action')).toBeNull()
+      document.dispatchEvent(new Event('turbo:before-cache'))
+      expect(JSON.parse(controller.payloadTarget.dataset.items).map(({ key }) => key)).toEqual(['m1', 'n1'])
 
       finishSnooze({ ok: true })
       await flush()
+      zone.querySelector('.notice-toast__action').click()
+      await flush()
       expect(postedUrls()).toEqual(['/user_notices/m1/snooze', '/user_notices/m1/restore'])
       expect(strip().dataset.key).toBe('m1')
+    })
+
+    test.each(['dismiss', 'snooze'].flatMap((action) => ['rejected', 'offline'].map((failure) => [action, failure])))('%s retains the notice after %s and allows retry', async (action, failure) => {
+      const item = action === 'snooze' ? mission('m1') : notice('n1')
+      await mount({ items: [item], top: item.key })
+      if (failure === 'offline') csrfFetch.mockRejectedValueOnce(new Error('offline'))
+      else csrfFetch.mockResolvedValueOnce({ ok: false })
+      strip().querySelector('.notice-strip__close').click()
+      await flush()
+      expect(controller.removed.has(item.key)).toBe(false)
+      expect(strip().dataset.key).toBe(item.key)
+      expect(zone.querySelector('.notice-toast__action')).toBeNull()
+      document.dispatchEvent(new Event('turbo:before-cache'))
+      expect(JSON.parse(controller.payloadTarget.dataset.items)).toEqual([item])
+      await replacePayload([item])
+      await flush()
+      expect(strip().dataset.key).toBe(item.key)
+      strip().querySelector('.notice-strip__close').click()
+      await flush()
+      expect(strip()).toBeNull()
     })
 
     test('a refused restore keeps the mission hidden', async () => {
@@ -751,6 +774,25 @@ describe('NoticeBarController', () => {
       expect(flash.querySelector('.notice-toast__timer')).not.toBeNull()
       await jest.advanceTimersByTimeAsync(4000)
       expect(flash.isConnected).toBe(false)
+    })
+
+    test('before-cache removes transient UI before the document is cloned', async () => {
+      const target = makeVisible(document.createElement('textarea'))
+      target.id = 'target'
+      document.body.appendChild(target)
+      await mount({ items: [mission('m1')], top: 'm1', flash: 'Hi' })
+      await openSheet()
+      controller.startMission(mission('m1'))
+      expect(strip().style.visibility).toBe('hidden')
+      document.dispatchEvent(new Event('turbo:before-cache'))
+      const snapshot = document.body.cloneNode(true)
+      expect(snapshot.querySelector('.notice-sheet, .notice-backdrop, .notice-spot-tip, .notice-spot, .notice-toast')).toBeNull()
+      expect(snapshot.querySelector('.notice-strip').style.visibility).toBe('')
+      expect(jest.getTimerCount()).toBe(0)
+      // Cleanup is repeatable and collaborators can be recreated if navigation stops.
+      document.dispatchEvent(new Event('turbo:before-cache'))
+      await openSheet()
+      expect(document.querySelectorAll('.notice-sheet')).toHaveLength(1)
     })
 
     test('disconnect tears down the sheet, toasts and spotlight', async () => {
