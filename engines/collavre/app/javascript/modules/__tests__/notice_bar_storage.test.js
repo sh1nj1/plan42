@@ -1,3 +1,7 @@
+/**
+ * @jest-environment jsdom
+ */
+
 import { jest } from '@jest/globals'
 import { parseJSON, readSession, writeSession } from '../notice_bar/storage'
 
