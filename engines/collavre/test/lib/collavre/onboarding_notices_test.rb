@@ -67,7 +67,7 @@ module Collavre
       end
 
       assert_equal "completed", status(:onboarding_sub_creative)
-      assert_nil UserNotice.find_by(user: owner, notice_key: "onboarding_sub_creative")
+      assert_predicate UserNotice.find_by!(user: owner, notice_key: "onboarding_sub_creative"), :pending?
     end
 
     test "an early agent invocation completes without waiting for its reply" do

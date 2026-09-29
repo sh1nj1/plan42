@@ -12,11 +12,12 @@ module Collavre
         user = payload[:user]
         return if user.nil? || user.ai_user?
 
-        candidates = open_candidates(event_name, user)
+        # Only matching events reserve a later mission's backfill for its own
+        # completion broadcast. Rejected payloads must not defer that backfill.
+        candidates = open_candidates(event_name, user).select { |notice| notice.completed_by?(event_name, payload, user) }
         candidates.each_with_index do |notice, index|
           current = !notice.mission? || head_of_group?(notice, user)
           next unless current || notice.allow_early_completion
-          next unless notice.completed_by?(event_name, payload, user)
 
           next unless UserNotice.complete!(user, notice.key)
 

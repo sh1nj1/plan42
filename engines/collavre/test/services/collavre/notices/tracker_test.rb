@@ -42,7 +42,7 @@ module Collavre
         capture_broadcasts { ActiveSupport::Notifications.instrument(EVENT, user: @user, one: true) }
 
         assert_equal "completed", status(:tour_one)
-        assert_nil status(:tour_two), "the event that is still evaluating tour_two leaves its backfill for later"
+        assert_equal "pending", status(:tour_two), "a rejected event lets the feed check historical completion"
         args, kwargs = @broadcasts.sole
         assert_equal [ [ "inbox", @user ] ], args
         assert_equal Tracker::PAYLOAD_TARGET, kwargs[:target]
@@ -114,6 +114,34 @@ module Collavre
         assert_equal "tour_two", first[:completion][:next_key]
         assert_equal %w[tour_two], first[:items].map { |item| item[:key] }
         assert_equal [ "tour_two", nil ], [ second[:completion][:key], second[:completion][:next_key] ]
+      end
+
+      test "backfills a later mission that rejects the triggering payload before broadcasting" do
+        NoticeRegistry.register(:tour_two, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                           completes_on: { EVENT => ->(payload) { payload[:two] } })
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true, two: false) }
+
+        assert_equal %w[completed completed], [ status(:tour_one), status(:tour_two) ]
+        locals = @broadcasts.sole.last[:locals]
+        assert_empty locals[:items]
+        assert_equal "tour_one", locals[:completion][:key]
+        assert_nil locals[:completion][:next_key]
+      end
+
+      test "backfills a rejected middle mission while reserving the next matching completion" do
+        NoticeRegistry.register(:tour_two, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                           completes_on: { EVENT => ->(_) { false } })
+        NoticeRegistry.register(:tour_three, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                             completes_on: { EVENT => true })
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true) }
+
+        first, last = @broadcasts.map { |_, kwargs| kwargs[:locals] }
+        assert_equal %w[tour_three], first[:items].map { |item| item[:key] }
+        assert_equal "tour_three", first[:completion][:next_key]
+        assert_equal "tour_three", last[:completion][:key]
+        assert_empty last[:items]
+        assert_nil last[:completion][:next_key]
+        assert_equal %w[completed completed completed], %i[tour_one tour_two tour_three].map { |key| status(key) }
       end
 
       test "renders the broadcast in the user's locale" do
