@@ -1,6 +1,9 @@
 en:
   collavre:
     notices:
+      replay:
+        link: "Replay onboarding"
+        restarted: "Onboarding restarted. Try the first mission again."
       kinds:
         urgent: "Urgent"
         mission: "Mission"

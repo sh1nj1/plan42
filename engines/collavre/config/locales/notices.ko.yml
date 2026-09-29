@@ -1,6 +1,9 @@
 ko:
   collavre:
     notices:
+      replay:
+        link: "온보딩 다시보기"
+        restarted: "온보딩을 다시 시작합니다. 첫 미션부터 따라 해보세요."
       kinds:
         urgent: "긴급"
         mission: "미션"

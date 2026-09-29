@@ -11,3 +11,6 @@ resources :user_notices, only: [], param: :key, constraints: { key: /[a-z0-9_]+/
     post :restore
   end
 end
+
+# Explicitly restart only the current user's onboarding missions.
+resource :onboarding_replay, only: :create
