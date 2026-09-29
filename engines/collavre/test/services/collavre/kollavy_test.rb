@@ -100,6 +100,29 @@ class Collavre::KollavyTest < ActiveSupport::TestCase
     assert_nil @inbox.main_topic.reload.primary_agent
   end
 
+  test "onboarding preserves settings committed after the inbox was loaded" do
+    kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
+                                     llm_vendor: "google", llm_model: "m")
+    current = Collavre::Creative.find(@inbox.id)
+    settings = current.data.merge("context_ids" => [ creatives(:tshirt).id ], "ai_write_policy" => "review")
+    current.update!(data: settings)
+
+    assert Collavre::Kollavy.onboard_inbox(@inbox, kollavy)
+    assert_equal settings, @inbox.reload.data.except(Collavre::Kollavy::ONBOARDED_KEY)
+    assert @inbox.data[Collavre::Kollavy::ONBOARDED_KEY].present?
+  end
+
+  test "stale inbox does not repeat onboarding after the owner removes the share" do
+    stale = Collavre::Creative.find(@inbox.id)
+    kollavy = seed
+    @inbox.main_topic.update!(primary_agent: nil)
+    Collavre::CreativeShare.find_by!(creative: @inbox, user: kollavy).destroy!
+
+    refute Collavre::Kollavy.onboard_inbox(stale, kollavy)
+    assert_nil @inbox.main_topic.reload.primary_agent
+    refute Collavre::CreativeShare.exists?(creative: @inbox, user: kollavy)
+  end
+
   test "a concurrent share insert is reused" do
     kollavy = Collavre::User.create!(system_agent: true, email: Collavre::Kollavy::EMAIL, name: "Kollavy", password: "password-123",
                                      llm_vendor: "google", llm_model: "m")

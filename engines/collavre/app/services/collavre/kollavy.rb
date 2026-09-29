@@ -89,9 +89,11 @@ module Collavre
       # Shares the Inbox with Kollavy (:feedback) and makes it the Main topic's
       # primary agent, once. Does nothing before Kollavy has been seeded.
       def onboard_inbox(inbox, kollavy = agent)
-        return false unless Identity.agent?(kollavy) && onboardable?(inbox)
+        return false unless Identity.agent?(kollavy)
 
-        Creative.transaction do
+        inbox.with_lock do
+          return false unless onboardable?(inbox)
+
           share = ensure_share(inbox, kollavy)
           assign_primary_agent(inbox, kollavy) if share_allows_reply?(share)
           inbox.update_columns(data: inbox.data.merge(ONBOARDED_KEY => Time.current.iso8601))

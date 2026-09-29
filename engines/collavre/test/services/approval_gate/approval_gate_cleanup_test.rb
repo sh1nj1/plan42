@@ -40,6 +40,33 @@ class ApprovalGateCleanupTest < ActiveSupport::TestCase
     assert_equal @payload, @task.pending_tool_call
   end
 
+  %w[done failed cancelled escalated].each do |status|
+    [ false, true ].each do |approved|
+      test "#{status} clears tool approval snapshots with approved #{approved}" do
+        payload = @payload.except("kind", "decision").merge(
+          "tool_name" => "creative_update_service", "arguments" => { "id" => 42 },
+          "approved" => approved, "result" => { "success" => true }
+        )
+        @task.update!(pending_tool_call: payload)
+        Collavre::Task::ACTIVE_STATUSES.each do |active_status|
+          @task.update!(status: active_status)
+          assert_equal payload, @task.reload.pending_tool_call
+        end
+
+        Collavre::Task.transaction do
+          @task.update!(status: status)
+          assert_nil @task.reload.pending_tool_call
+          raise ActiveRecord::Rollback
+        end
+        assert_equal "suspended", @task.reload.status
+        assert_equal payload, @task.pending_tool_call
+
+        @task.update!(status: status)
+        assert_nil @task.reload.pending_tool_call
+      end
+    end
+  end
+
   test "ordinary tool approval payloads are unchanged" do
     payload = { "tool_name" => "other_tool" }
     @task.update!(pending_tool_call: payload, status: "done")
