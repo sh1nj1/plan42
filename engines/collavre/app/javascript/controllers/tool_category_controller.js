@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from "../utils/chevron_icons"
 
 // Category header checkbox that checks/unchecks every tool in its group and
 // reflects partial selection as indeterminate.
@@ -7,11 +8,18 @@ export default class extends Controller {
 
   connect() {
     this.sync()
+    this.renderDisclosure()
   }
 
   expand() {
     this.bodyTarget.hidden = !this.bodyTarget.hidden
-    this.disclosureTarget.setAttribute("aria-expanded", String(!this.bodyTarget.hidden))
+    this.renderDisclosure()
+  }
+
+  renderDisclosure() {
+    const expanded = !this.bodyTarget.hidden
+    this.disclosureTarget.setAttribute("aria-expanded", String(expanded))
+    this.disclosureTarget.innerHTML = expanded ? CHEVRON_EXPANDED : CHEVRON_COLLAPSED
   }
 
   toggle() {

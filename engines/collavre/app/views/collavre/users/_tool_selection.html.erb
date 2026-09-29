@@ -7,13 +7,10 @@
       <fieldset class="tool-category" data-controller="tool-category" data-tool-category-key="<%= group[:key] %>">
         <legend class="tool-category-header">
           <span class="tool-category-heading">
-            <button type="button" class="tool-category-disclosure"
+            <button type="button" class="creative-toggle-btn creative-action-btn tool-category-disclosure"
                     aria-label="<%= group[:label] %>"
                     aria-expanded="false" aria-controls="tool_category_body_<%= group[:key] %>"
                     data-tool-category-target="disclosure" data-action="tool-category#expand">
-              <svg class="tool-category-chevron" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M6 5 L18 12 L6 19 Z" />
-              </svg>
             </button>
             <input type="checkbox" class="form-check-input tool-category-toggle"
                    id="tool_category_<%= group[:key] %>"

@@ -29,15 +29,13 @@ class ToolCategoryAlignmentTest < ApplicationSystemTestCase
         const heading = document.querySelector('.tool-category-heading');
         const box = selector => heading.querySelector(selector).getBoundingClientRect();
         const button = box('.tool-category-disclosure');
-        const icon = box('.tool-category-chevron');
-        const triangle = box('.tool-category-chevron path');
+        const icon = box('.tool-category-disclosure svg');
         const checkbox = box('.tool-category-toggle');
         const label = box('strong');
         const centerY = rect => rect.top + rect.height / 2;
         return {
           iconY: centerY(icon), checkboxY: centerY(checkbox), labelY: centerY(label),
-          gap: checkbox.left - button.right, iconSize: icon.width,
-          triangleRatio: Math.min(triangle.width, triangle.height) / Math.max(triangle.width, triangle.height)
+          gap: checkbox.left - button.right, iconSize: icon.width, buttonSize: button.width
         };
       })()
     JS
@@ -45,7 +43,7 @@ class ToolCategoryAlignmentTest < ApplicationSystemTestCase
     assert_in_delta positions.fetch("iconY"), positions.fetch("checkboxY"), 1
     assert_in_delta positions.fetch("iconY"), positions.fetch("labelY"), 1
     assert_in_delta 4, positions.fetch("gap"), 0.5
-    assert_in_delta 20, positions.fetch("iconSize"), 0.5
-    assert_in_delta Math.sqrt(3) / 2, positions.fetch("triangleRatio"), 0.02
+    assert_in_delta 16, positions.fetch("iconSize"), 0.5
+    assert_in_delta 16, positions.fetch("buttonSize"), 0.5
   end
 end

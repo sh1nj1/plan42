@@ -190,28 +190,7 @@
 }
 
 .tools-selection .tool-category-disclosure {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 1.5rem;
-  width: 1.5rem;
-  height: 2rem;
+  visibility: visible;
   margin: 0;
   padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.tools-selection .tool-category-chevron {
-  display: block;
-  width: 1.25rem;
-  height: 1.25rem;
-  fill: currentColor;
-}
-
-.tools-selection .tool-category-disclosure[aria-expanded="true"] .tool-category-chevron {
-  transform: rotate(90deg);
 }

@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { Application } from '@hotwired/stimulus'
+import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../../utils/chevron_icons'
 
 const { default: ToolCategoryController } = await import('../tool_category_controller')
 
@@ -91,12 +92,15 @@ describe('ToolCategoryController', () => {
     const body = document.getElementById('body')
     expect(body.hidden).toBe(true)
     expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(button.innerHTML).toBe(CHEVRON_COLLAPSED.replace('/>', '></path>'))
     button.click()
     expect(body.hidden).toBe(false)
     expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(button.innerHTML).toBe(CHEVRON_EXPANDED.replace('/>', '></path>'))
     button.click()
     expect(body.hidden).toBe(true)
     expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(button.innerHTML).toBe(CHEVRON_COLLAPSED.replace('/>', '></path>'))
     expect(tools().map((tool) => tool.checked)).toEqual([true, false])
     expect(toggle().indeterminate).toBe(true)
     toggle().click()
