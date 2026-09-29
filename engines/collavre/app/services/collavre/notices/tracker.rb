@@ -17,7 +17,8 @@ module Collavre
           next if notice.mission? && !head_of_group?(notice, user)
           next unless notice.completed_by?(event_name, payload, user)
 
-          UserNotice.record!(user, notice.key, :completed)
+          next unless UserNotice.complete!(user, notice.key)
+
           broadcast(user, completed: notice.key, awaiting: candidates.drop(index + 1).map(&:key))
         end
       rescue StandardError => e

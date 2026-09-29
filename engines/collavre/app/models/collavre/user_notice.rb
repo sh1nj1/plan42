@@ -29,11 +29,21 @@ module Collavre
       notice = seed!(user, key, status, snoozed_until: snoozed_until)
       return notice if notice.previously_new_record?
 
-      rows = where(id: notice.id)
-      rows = rows.where.not(status: "completed") unless status.to_s == "completed"
+      rows = where(id: notice.id).where.not(status: "completed")
       rows.update_all(status: status.to_s, snoozed_until: snoozed_until,
                       completed_at: completed_at_for(status), updated_at: Time.current)
       notice.reload
+    end
+
+    # Returns true only for the request that inserts or transitions the row.
+    # The conditional UPDATE arbitrates overlapping events in the database.
+    def self.complete!(user, key)
+      notice = seed!(user, key, :completed)
+      return true if notice.previously_new_record?
+
+      where(id: notice.id, status: %w[pending snoozed]).update_all(
+        status: "completed", snoozed_until: nil, completed_at: Time.current, updated_at: Time.current
+      ) == 1
     end
 
     # Writes the initial state only when the user has no row yet; a row that

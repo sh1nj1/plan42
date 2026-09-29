@@ -50,6 +50,21 @@ module Collavre
         assert_equal %w[tour_two], kwargs[:locals][:items].map { |item| item[:key] }
       end
 
+      test "overlapping candidates broadcast completion only once" do
+        candidates = Tracker.open_candidates(EVENT, @user)
+        capture_broadcasts do
+          Tracker.stub(:open_candidates, candidates) do
+            Tracker.handle(EVENT, user: @user, one: true)
+            completed_at = UserNotice.find_by!(user: @user, notice_key: "tour_one").completed_at
+            travel 1.hour do
+              Tracker.handle(EVENT, user: @user, one: true)
+            end
+            assert_equal completed_at, UserNotice.find_by!(user: @user, notice_key: "tour_one").completed_at
+          end
+        end
+        assert_equal 1, @broadcasts.size
+      end
+
       test "ignores agents, unmatched payloads, finished notices and other events" do
         capture_broadcasts do
           Tracker.handle(EVENT, user: users(:ai_bot), one: true)

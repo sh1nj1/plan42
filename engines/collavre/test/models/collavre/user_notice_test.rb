@@ -52,6 +52,47 @@ module Collavre
       assert UserNotice.find_by(user: user, notice_key: "tour").completed?
     end
 
+    test "repeated completion preserves the original timestamps" do
+      notice = UserNotice.record!(users(:two), :tour, :completed)
+      timestamps = notice.attributes.slice("completed_at", "updated_at")
+
+      travel 1.hour do
+        result = UserNotice.record!(users(:two), :tour, :completed)
+        assert_equal timestamps, result.attributes.slice("completed_at", "updated_at")
+      end
+    end
+
+    test "complete! reports only the winning insert or update" do
+      user = users(:two)
+      assert UserNotice.complete!(user, :fresh)
+      assert_not UserNotice.complete!(user, :fresh)
+
+      %i[pending snoozed].each do |state|
+        UserNotice.record!(user, state, state, snoozed_until: 1.day.from_now)
+        assert UserNotice.complete!(user, state)
+        notice = UserNotice.find_by!(user: user, notice_key: state.to_s)
+        assert notice.completed?
+        assert_nil notice.snoozed_until
+        assert_not UserNotice.complete!(user, state)
+      end
+      UserNotice.record!(user, :closed, :dismissed)
+      assert_not UserNotice.complete!(user, :closed)
+    end
+
+    test "complete! loses when another completion commits after seed reads pending" do
+      user = users(:two)
+      UserNotice.seed!(user, :tour, :pending)
+      stale = UserNotice.find_by!(user: user, notice_key: "tour")
+      winner = UserNotice.record!(user, :tour, :completed)
+
+      travel 1.hour do
+        UserNotice.stub(:seed!, stale) do
+          assert_not UserNotice.complete!(user, :tour)
+        end
+      end
+      assert_equal winner.completed_at, stale.reload.completed_at
+    end
+
     test "seed! writes the first state and never overwrites an existing row" do
       user = users(:two)
 
