@@ -329,6 +329,33 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
     end
   end
 
+  test "byte limited appends track split blocks and recover after partial failure" do
+    calls = 0
+    @client.define_singleton_method(:append_blocks) do |id, blocks|
+      raise "Oversized request" if { children: blocks }.to_json.bytesize > 500_000
+      calls += 1
+      raise CollavreNotion::NotionError if calls == 2
+      super(id, blocks)
+    end
+    value = "😀" * 200_000
+    @root.stub(:effective_description, "<table><tr><td>#{value}</td></tr></table>") do
+      assert_raises(CollavreNotion::NotionError) { sync }
+      link = @account.notion_page_links.sole
+      saved_ids = node(link, @root).body_block_ids
+      assert_equal 1, saved_ids.size
+      assert_nil node(link, @root).content_hash
+      sync
+      assert_equal saved_ids, @client.deleted
+      assert_equal @client.blocks.keys, node(link, @root).body_block_ids
+      assert node(link, @root).content_hash
+      rows = @client.blocks.values.flat_map { |_, block| block.dig(:table, :children) }
+      assert_equal value, rows.flat_map { |row| row.dig(:table_row, :cells, 0) }.map { |text| text.dig(:text, :content) }.join
+      before = calls
+      sync
+      assert_equal before, calls
+    end
+  end
+
   test "large tables are appended separately in order between paragraph batches" do
     batches = []
     @client.define_singleton_method(:append_blocks) do |id, blocks|
