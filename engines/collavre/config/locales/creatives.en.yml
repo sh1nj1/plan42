@@ -169,7 +169,7 @@ en:
         inline_add_sibling_tooltip: Add sibling (Shift+Enter)
         inline_level_down_tooltip: Indent / add as child (Ctrl/Cmd+Shift+.)
         inline_level_up_tooltip: Outdent / move up a level (Ctrl/Cmd+Shift+,)
-        inline_close_tooltip: Close editor (Esc)
+        inline_close_tooltip: Save and close (Esc)
         metadata_tooltip: Edit metadata
         metadata_title: Metadata
         metadata_save: Save
@@ -204,8 +204,8 @@ en:
       inline_editor:
         heading: "Heading %{level}"
         insert_emoji: "Insert emoji"
-        placeholder: Describe the creative…
-        markdown_placeholder: Write in Markdown…
+        placeholder: Describe the creative… Changes save automatically and when you close the editor.
+        markdown_placeholder: Write in Markdown… Changes save automatically and when you close the editor.
         markdown_preview_placeholder: Preview
       edit_title: Edit creative
       edit:

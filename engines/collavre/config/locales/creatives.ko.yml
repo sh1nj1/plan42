@@ -155,7 +155,7 @@ ko:
         inline_add_sibling_tooltip: 형제 크리에이티브 추가 (Shift+Enter)
         inline_level_down_tooltip: 들여쓰기 / 자식으로 이동 (Ctrl/Cmd+Shift+.)
         inline_level_up_tooltip: 내어쓰기 / 상위로 이동 (Ctrl/Cmd+Shift+,)
-        inline_close_tooltip: 편집기 닫기 (Esc)
+        inline_close_tooltip: 저장하고 닫기 (Esc)
         metadata_tooltip: 메타데이터 편집
         metadata_title: 메타데이터
         metadata_save: 저장
@@ -187,8 +187,8 @@ ko:
       inline_editor:
         heading: "제목 %{level}"
         insert_emoji: "이모지 삽입"
-        placeholder: 크리에이티브를 설명해주세요…
-        markdown_placeholder: 마크다운으로 작성…
+        placeholder: 크리에이티브를 설명해주세요… 자동 저장되며, 닫기 버튼을 눌러도 저장됩니다.
+        markdown_placeholder: 마크다운으로 작성… 자동 저장되며, 닫기 버튼을 눌러도 저장됩니다.
         markdown_preview_placeholder: 미리보기
       edit_title: 크리에이티브 수정
       edit:
