@@ -420,6 +420,15 @@ module Collavre
   class CommentNotificationConcurrencyTest < ActiveSupport::TestCase
     self.use_transactional_tests = false
 
+    setup do
+      @existing_creative_ids = Creative.ids
+    end
+
+    teardown do
+      # Onboarding may also create an inbox for the commenter, not just the recipient.
+      Creative.where.not(id: @existing_creative_ids).destroy_all if @existing_creative_ids
+    end
+
     test "concurrent retries create and push one notification" do
       creative = creatives(:tshirt)
       commenter = users(:two)
