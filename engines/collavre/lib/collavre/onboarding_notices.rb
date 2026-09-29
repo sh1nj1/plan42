@@ -16,14 +16,14 @@ module Collavre
         kind: :mission, group: :onboarding, icon: "🌱",
         target: ".new-root-creative-btn, .add-creative-btn",
         cta_path: ->(routes, _user) { routes.creatives_path },
-        done_when: ->(user) { own_creatives(user).exists? },
+        done_when: ->(user) { creative_created?(user) },
         completes_on: { CREATIVE_CREATED => ->(payload) { !payload[:creative].inbox? } })
 
       NoticeRegistry.register(:onboarding_sub_creative,
         kind: :mission, group: :onboarding, icon: "🌿",
         target: ".add-creative-btn",
         cta_path: method(:latest_creative_path),
-        done_when: ->(user) { own_creatives(user).where.not(parent_id: nil).exists? },
+        done_when: ->(user) { creative_created?(user, child: true) },
         completes_on: { CREATIVE_CREATED => ->(payload) { payload[:creative].parent_id.present? } })
 
       NoticeRegistry.register(:onboarding_call_agent,
@@ -37,6 +37,20 @@ module Collavre
 
     def own_creatives(user)
       Creative.where(user: user).where.not(id: Creative.inboxes.select(:id))
+    end
+
+    # Shared children inherit their parent's owner. Applied history retains the
+    # actual creator; ownership remains a fallback for records predating history.
+    def creative_created?(user, child: false)
+      owned = own_creatives(user)
+      owned = owned.where.not(parent_id: nil) if child
+      return true if owned.exists?
+
+      changes = CreativeChange.joins(:change_set).where(operation: "create")
+        .where(creative_change_sets: { user_id: user.id, status: "applied", actor_kind: "human" })
+        .where(creative_id: Creative.where.not(id: Creative.inboxes.select(:id)).select(:id))
+      changes = changes.where("creative_changes.after ->> 'parent_id' IS NOT NULL") if child
+      changes.exists?
     end
 
     # The creative the user touched last is where the next step happens. A
