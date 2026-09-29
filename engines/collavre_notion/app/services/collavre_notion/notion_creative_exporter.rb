@@ -9,7 +9,7 @@ module CollavreNotion
 
     # Descendant Creatives are exported by NotionTreeSync as child pages.
     def export_blocks
-      html = @creative.effective_description.to_s.gsub(/<!--.*?-->/m, "").strip
+      html = export_html
       blocks = html.split(/(<table\b[^>]*>.*?<\/table>)/mi).flat_map do |part|
         contains_table?(part) ? convert_table_to_blocks(part) : paragraph_blocks(extract_text_content(part))
       end
@@ -18,6 +18,12 @@ module CollavreNotion
     end
 
     private
+
+    def export_html
+      fragment = Nokogiri::HTML5.fragment(@creative.effective_description.to_s)
+      fragment.xpath(".//comment()").remove
+      fragment.to_html.strip
+    end
 
     def paragraph_blocks(text)
       text.scan(/.{1,2000}/m).map { |part| create_paragraph_block(part) }

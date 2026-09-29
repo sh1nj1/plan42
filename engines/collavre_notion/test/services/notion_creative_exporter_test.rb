@@ -24,6 +24,21 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "unterminated comments cannot export hidden tables or images" do
+    html = '<p>Visible</p><!-- hidden <table><tr><td>Secret</td></tr></table><img src="data:image/png;base64,abc" alt="Secret">'
+    @creative.stub(:effective_description, html) do
+      blocks = export
+      assert_equal [ "paragraph" ], blocks.pluck(:type)
+      assert_equal "Visible", text(blocks.first)
+    end
+  end
+
+  test "comment removal does not assemble a new comment opener" do
+    @creative.stub(:effective_description, "<!<!-- hidden -->-->Visible") do
+      assert_equal "-->Visible", text(export.first)
+    end
+  end
+
   test "splits long text without truncating whitespace at chunk boundaries" do
     value = "가" * 1999 + "  " + "나" * 2000
     @creative.stub(:effective_description, value) do
