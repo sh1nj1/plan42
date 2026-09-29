@@ -1,0 +1,197 @@
+require "test_helper"
+require_relative "../../../support/notice_test_helpers"
+
+module Collavre
+  module Notices
+    class TrackerTest < ActiveSupport::TestCase
+      include NoticeTestHelpers
+
+      EVENT = "thing_done.collavre".freeze
+
+      setup do
+        isolate_notice_registry
+        @user = users(:two)
+        { tour_one: :one, tour_two: :two }.each do |key, flag|
+          NoticeRegistry.register(key, kind: :mission, group: :tour, completes_on: { EVENT => ->(payload) { payload[flag] } })
+        end
+        @broadcasts = []
+      end
+
+      teardown { restore_notice_registry }
+
+      def capture_broadcasts(&block)
+        recorder = ->(*args, **kwargs) { @broadcasts << [ args, kwargs ] }
+        Turbo::StreamsChannel.stub(:broadcast_replace_to, recorder, &block)
+      end
+
+      def status(key)
+        UserNotice.find_by(user: @user, notice_key: key.to_s)&.status
+      end
+
+      test "requestless completion broadcasts preserve mounted collection and member CTA paths" do
+        Rails.application.routes.draw { mount Collavre::Engine => "/collavre" }
+        NoticeRegistry.register(:collection_cta, cta_path: ->(routes, _user) { routes.creatives_path })
+        NoticeRegistry.register(:member_cta, cta_path: ->(routes, user) { routes.creative_path(user.id, open_comments: true) })
+
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true) }
+
+        locals = @broadcasts.sole.last[:locals]
+        assert_equal "tour_one", locals[:completion][:key]
+        urls = locals[:items].index_by { |item| item[:key] }
+        assert_equal "/collavre/creatives", urls.fetch("collection_cta")[:cta_url]
+        assert_equal "/collavre/creatives/#{@user.id}?open_comments=true", urls.fetch("member_cta")[:cta_url]
+      ensure
+        Rails.application.reload_routes!
+      end
+
+      test "finished candidates skip audience checks while snoozed candidates remain eligible" do
+        %i[completed dismissed].each do |status|
+          NoticeRegistry.register(status, audience: ->(_) { flunk "finished audience evaluated" },
+                                           completes_on: { EVENT => true })
+          UserNotice.record!(@user, status, status)
+        end
+        UserNotice.record!(@user, :tour_one, :snoozed, snoozed_until: 1.hour.from_now)
+        assert_equal %i[tour_one tour_two], Tracker.open_candidates(EVENT, @user).map(&:key)
+      end
+
+      test "completes the head mission and broadcasts the refreshed bar" do
+        capture_broadcasts { ActiveSupport::Notifications.instrument(EVENT, user: @user, one: true) }
+
+        assert_equal "completed", status(:tour_one)
+        assert_equal "pending", status(:tour_two), "a rejected event lets the feed check historical completion"
+        args, kwargs = @broadcasts.sole
+        assert_equal [ [ "inbox", @user ] ], args
+        assert_equal Tracker::PAYLOAD_TARGET, kwargs[:target]
+        assert_equal "tour_two", kwargs[:locals][:completion][:next_key]
+        assert_equal %w[tour_two], kwargs[:locals][:items].map { |item| item[:key] }
+      end
+
+      test "completes past an audience-ineligible predecessor but preserves eligible ordering" do
+        NoticeRegistry.register(:tour_one, kind: :mission, group: :tour,
+                                audience: ->(user) { user != @user }, completes_on: { EVENT => true })
+
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, two: true) }
+
+        assert_nil status(:tour_one)
+        assert_equal "completed", status(:tour_two)
+        completion = @broadcasts.sole.last[:locals][:completion]
+        assert_equal "tour_two", completion[:key]
+        assert_nil completion[:next_key]
+        assert_empty @broadcasts.sole.last[:locals][:items]
+        assert_not Tracker.head_of_group?(NoticeRegistry.find(:tour_two), users(:one))
+      end
+
+      test "overlapping candidates broadcast completion only once" do
+        candidates = Tracker.open_candidates(EVENT, @user)
+        capture_broadcasts do
+          Tracker.stub(:open_candidates, candidates) do
+            Tracker.handle(EVENT, user: @user, one: true)
+            completed_at = UserNotice.find_by!(user: @user, notice_key: "tour_one").completed_at
+            travel 1.hour do
+              Tracker.handle(EVENT, user: @user, one: true)
+            end
+            assert_equal completed_at, UserNotice.find_by!(user: @user, notice_key: "tour_one").completed_at
+          end
+        end
+        assert_equal 1, @broadcasts.size
+      end
+
+      test "ignores agents, unmatched payloads, finished notices and other events" do
+        capture_broadcasts do
+          Tracker.handle(EVENT, user: users(:ai_bot), one: true)
+          Tracker.handle(EVENT, user: nil, one: true)
+          Tracker.handle(EVENT, user: @user, one: false)
+          Tracker.handle("other.collavre", user: @user, one: true)
+          Tracker.handle(EVENT, user: @user, two: true)
+        end
+        assert_nil status(:tour_one)
+        assert_nil status(:tour_two), "a later mission cannot finish before its head"
+
+        UserNotice.record!(@user, :tour_one, :dismissed)
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true, two: true) }
+        assert_equal "dismissed", status(:tour_one)
+        assert_nil status(:tour_two)
+        assert_empty @broadcasts
+      end
+
+      test "advances through a group one event at a time" do
+        capture_broadcasts do
+          Tracker.handle(EVENT, user: @user, one: true)
+          Tracker.handle(EVENT, user: @user, two: true)
+        end
+
+        assert_equal "completed", status(:tour_two)
+        assert_nil @broadcasts.last.last[:locals][:completion][:next_key]
+      end
+
+      # Creating a sub-item before the first mission finishes both at once; each
+      # completion is broadcast so the bar can celebrate them in turn.
+      test "cascades when one event satisfies consecutive missions" do
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true, two: true) }
+
+        assert_equal %w[completed completed], [ status(:tour_one), status(:tour_two) ]
+        assert_equal %w[tour_one tour_two], @broadcasts.map { |_, kwargs| kwargs[:locals][:completion][:key] }
+      end
+
+      # The first broadcast must not backfill the mission the same event is
+      # about to complete, or the bar would skip straight to "all done".
+      test "cascade keeps the intermediate step when later missions are already done" do
+        NoticeRegistry.register(:tour_two, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                           completes_on: { EVENT => ->(payload) { payload[:two] } })
+        UserNotice.record!(@user, :tour_one, :pending)
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true, two: true) }
+
+        first, second = @broadcasts.map { |_, kwargs| kwargs[:locals] }
+        assert_equal "tour_two", first[:completion][:next_key]
+        assert_equal %w[tour_two], first[:items].map { |item| item[:key] }
+        assert_equal [ "tour_two", nil ], [ second[:completion][:key], second[:completion][:next_key] ]
+      end
+
+      test "backfills a later mission that rejects the triggering payload before broadcasting" do
+        NoticeRegistry.register(:tour_two, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                           completes_on: { EVENT => ->(payload) { payload[:two] } })
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true, two: false) }
+
+        assert_equal %w[completed completed], [ status(:tour_one), status(:tour_two) ]
+        locals = @broadcasts.sole.last[:locals]
+        assert_empty locals[:items]
+        assert_equal "tour_one", locals[:completion][:key]
+        assert_nil locals[:completion][:next_key]
+      end
+
+      test "backfills a rejected middle mission while reserving the next matching completion" do
+        NoticeRegistry.register(:tour_two, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                           completes_on: { EVENT => ->(_) { false } })
+        NoticeRegistry.register(:tour_three, kind: :mission, group: :tour, done_when: ->(_) { true },
+                                             completes_on: { EVENT => true })
+        capture_broadcasts { Tracker.handle(EVENT, user: @user, one: true) }
+
+        first, last = @broadcasts.map { |_, kwargs| kwargs[:locals] }
+        assert_equal %w[tour_three], first[:items].map { |item| item[:key] }
+        assert_equal "tour_three", first[:completion][:next_key]
+        assert_equal "tour_three", last[:completion][:key]
+        assert_empty last[:items]
+        assert_nil last[:completion][:next_key]
+        assert_equal %w[completed completed completed], %i[tour_one tour_two tour_three].map { |key| status(key) }
+      end
+
+      test "renders the broadcast in the user's locale" do
+        @user.update!(locale: "ko")
+        locales = []
+        Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*, **) { locales << I18n.locale }) do
+          Tracker.broadcast(@user)
+        end
+        assert_equal [ :ko ], locales
+
+        @user.update!(locale: "xx")
+        assert_equal I18n.default_locale, Tracker.locale_for(@user)
+      end
+
+      test "never raises into the code that emitted the event" do
+        NoticeRegistry.register(:broken, kind: :feature, completes_on: { EVENT => ->(_payload) { raise "boom" } })
+
+        assert_nothing_raised { Tracker.handle(EVENT, user: @user, one: false) }
+      end
+    end
+  end
+end

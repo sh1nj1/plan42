@@ -133,8 +133,7 @@ module Collavre
       end
 
       respond_to do |format|
-        redirect_options = { id: @creative.id }
-        redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
+        redirect_options = params.permit(:comment_id, :open_comments).to_h.compact_blank.merge(id: @creative.id)
         format.html { redirect_to creatives_path(redirect_options) }
         format.json do
           # Use HTTP caching with ETag - must vary by user since response includes user-specific data

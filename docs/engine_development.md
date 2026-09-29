@@ -432,3 +432,38 @@ class ActionDispatch::IntegrationTest
   end
 end
 ```
+
+## Notice Bar Providers
+
+Register notices in an initializer ordered after `collavre.notices`. Direct
+registrations survive boot preparation and development reloads:
+
+```ruby
+initializer "my_engine.notices", after: "collavre.notices" do
+  Collavre::NoticeRegistry.register(:my_release, kind: :feature,
+    cta_path: "/my_engine/settings")
+end
+```
+
+For definitions that depend on reloadable code, register a named provider. Its
+block runs on each preparation, resolves current constants, and replaces the
+provider's previous definitions (including removing entries it no longer emits).
+Do not capture reloadable class objects outside the block.
+
+```ruby
+initializer "my_engine.notices", after: "collavre.notices" do
+  Collavre::NoticeRegistry.register_provider(:my_engine) do
+    MyEngine::Notices.register
+  end
+end
+```
+
+Use unique provider and notice keys. Provider order and registration order within
+a provider define mission order. `reset!` clears both definitions and providers;
+it is intended for test isolation, not reload hooks.
+
+Missions normally complete only at the head of their group. Set
+`allow_early_completion: true` to retain qualifying events before that step is
+shown. Early completion updates progress without displaying a completion toast
+for a future step. Onboarding's agent-call mission uses this option so a new
+call during replay is retained; replay still resets earlier completion records.

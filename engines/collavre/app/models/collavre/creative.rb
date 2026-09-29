@@ -66,13 +66,14 @@ module Collavre
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
+    before_create :capture_creation_event_actor
 
     include TypeSelectable
     include Linkable
     include Permissible
     include Describable
     include RealtimeBroadcastable
-    include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy
+    include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
@@ -306,6 +307,15 @@ module Collavre
     end
 
     private
+
+    # Capture before commit: an enclosing transaction can outlive History.track.
+    # An explicit nil actor denotes system work, not the inherited tree owner.
+    attr_reader :creation_event_actor
+
+    def capture_creation_event_actor
+      context = Current.creative_history_context
+      @creation_event_actor = context ? context[:actor] : (Current.user || user)
+    end
 
     def assign_default_user
       return if user.present?

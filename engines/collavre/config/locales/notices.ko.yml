@@ -1,0 +1,52 @@
+ko:
+  collavre:
+    notices:
+      replay:
+        link: "온보딩 다시보기"
+        restarted: "온보딩을 다시 시작합니다. 첫 미션부터 따라 해보세요."
+      kinds:
+        urgent: "긴급"
+        mission: "미션"
+        announcement: "공지"
+        feature: "새 기능"
+      groups:
+        onboarding: "온보딩 %{step}/%{total}"
+      bar:
+        region: "공지"
+        more: "자세히 ›"
+        close: "닫기"
+        dismiss: "닫기"
+        later: "나중에"
+        ok: "확인"
+        completed: "완료!"
+        done_tag: "완료"
+        next: "다음: %{title}"
+        all_done: "이제 Collavre를 자유롭게 써보세요"
+        mission_done_toast: "✅ 미션 완료! 다음 온보딩이 준비됐어요"
+        group_done_toast: "🎉 온보딩을 모두 마쳤어요"
+        mission_hint: "× 는 스누즈 — 완료할 때까지 다시 나타나요"
+        snoozed: "미션은 내일 다시 알려드릴게요"
+        undo: "되돌리기"
+        target_missing: "이 단계의 화면을 먼저 열어주세요"
+      items:
+        onboarding_first_creative:
+          title: "첫 Creative를 만들어 보세요"
+          summary: "아이디어 하나를 Creative로 남기는 것부터 시작해요"
+          body: "Creative는 할 일이면서 동시에 문서예요. 하위 항목의 진행률이 자동으로 합쳐집니다."
+          cta: "지금 만들기"
+          tip: "여기를 눌러 Creative를 만들어요"
+          done: "첫 Creative를 만들었어요!"
+        onboarding_sub_creative:
+          title: "하위 항목을 추가해 보세요"
+          summary: "큰 목표를 작은 단계로 쪼개면 진행률이 자동 집계돼요"
+          body: "하위 항목을 완료할 때마다 상위 Creative의 진행률이 올라갑니다."
+          cta: "하위 추가하기"
+          tip: "여기서 하위 항목을 추가해요"
+          done: "구조가 생겼어요!"
+        onboarding_call_agent:
+          title: "코멘트로 AI를 불러보세요"
+          summary: "@ 멘션으로 에이전트에게 바로 일을 맡길 수 있어요"
+          body: "토픽 코멘트에서 AI 에이전트를 멘션하면 에이전트가 컨텍스트를 읽고 작업을 이어받아요."
+          cta: "AI 호출해보기"
+          tip: "@ 로 에이전트를 멘션하고 전송하세요"
+          done: "온보딩 완료! 🎉"

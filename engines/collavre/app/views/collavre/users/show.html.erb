@@ -135,6 +135,11 @@
           <br>
           <%= link_to t('admin.title'), collavre.admin_settings_path %>
         <% end %>
+        <% if @user == Current.user %>
+          <br>
+          <%= link_to t('collavre.notices.replay.link'), collavre.onboarding_replay_path,
+                      data: { turbo_method: :post } %>
+        <% end %>
       </div>
 
 

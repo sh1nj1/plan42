@@ -170,7 +170,7 @@ module Collavre
     include Broadcastable
     include Notifiable
     include Approvable
-    include ClaudeChannelPermission
+    include ClaudeChannelPermission, CreationEvents
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false

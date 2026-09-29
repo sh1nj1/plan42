@@ -164,21 +164,6 @@ main {
     }
 }
 
-.notice {
-    color: var(--color-success);
-    background: color-mix(in srgb, var(--color-success) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
-    border-radius: var(--radius-2);
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-2);
-    font-size: var(--text-1);
-    font-weight: var(--weight-5);
-}
-
-.notice:empty {
-    display: none;
-}
-
 .flash-alert {
     color: var(--color-danger);
     background: color-mix(in srgb, var(--color-danger) 10%, transparent);

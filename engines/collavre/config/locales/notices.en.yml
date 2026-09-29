@@ -1,0 +1,52 @@
+en:
+  collavre:
+    notices:
+      replay:
+        link: "Replay onboarding"
+        restarted: "Onboarding restarted. Try the first mission again."
+      kinds:
+        urgent: "Urgent"
+        mission: "Mission"
+        announcement: "Notice"
+        feature: "New"
+      groups:
+        onboarding: "Getting started %{step}/%{total}"
+      bar:
+        region: "Notices"
+        more: "Details ›"
+        close: "Close"
+        dismiss: "Dismiss"
+        later: "Later"
+        ok: "Got it"
+        completed: "Done!"
+        done_tag: "Done"
+        next: "Next: %{title}"
+        all_done: "You're all set — enjoy Collavre"
+        mission_done_toast: "✅ Mission complete! Your next step is ready"
+        group_done_toast: "🎉 You finished getting started"
+        mission_hint: "× snoozes it — it comes back until you finish"
+        snoozed: "We'll remind you about this mission tomorrow"
+        undo: "Undo"
+        target_missing: "Open the page for this step first"
+      items:
+        onboarding_first_creative:
+          title: "Create your first Creative"
+          summary: "Start by capturing one idea as a Creative"
+          body: "A Creative is a task and a document at the same time. Progress from its sub-items rolls up automatically."
+          cta: "Create one now"
+          tip: "Click here to create a Creative"
+          done: "You created your first Creative!"
+        onboarding_sub_creative:
+          title: "Add a sub-item"
+          summary: "Break a big goal into small steps and progress adds itself up"
+          body: "Each sub-item you finish raises the progress of the Creative above it."
+          cta: "Add a sub-item"
+          tip: "Add a sub-item here"
+          done: "Your Creative has structure now!"
+        onboarding_call_agent:
+          title: "Call an AI agent from chat"
+          summary: "Mention an agent with @ to hand it work right away"
+          body: "Mention an AI agent in a topic comment and it reads the context and picks up the work."
+          cta: "Try calling an agent"
+          tip: "Type @ to mention an agent, then send"
+          done: "Onboarding complete! 🎉"
