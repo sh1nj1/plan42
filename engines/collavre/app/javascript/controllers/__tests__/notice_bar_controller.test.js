@@ -383,6 +383,46 @@ describe('NoticeBarController', () => {
       expect(window.Turbo.visit).toHaveBeenCalledWith('/news')
     })
 
+    test.each([true, false])('waits for completion before navigating (Turbo: %s)', async (turbo) => {
+      let finishCompletion
+      csrfFetch.mockImplementationOnce(() => new Promise((resolve) => { finishCompletion = resolve }))
+      if (!turbo) delete window.Turbo
+      await mount({ items: [notice('n1', { cta_url: '#news' }), notice('n2')], top: 'n1' })
+      await openSheet()
+      sheetEl().querySelector('.notice-sheet__cta').click()
+      await jest.advanceTimersByTimeAsync(1000)
+      expect(postedUrls()).toEqual(['/user_notices/n1/complete'])
+      expect(strip().dataset.key).toBe('n1')
+      expect(controller.removed.has('n1')).toBe(false)
+      if (turbo) expect(window.Turbo.visit).not.toHaveBeenCalled()
+      else expect(window.location.hash).toBe('')
+
+      finishCompletion({ ok: true })
+      await flush()
+      expect(strip().dataset.key).toBe('n2')
+      if (turbo) expect(window.Turbo.visit).toHaveBeenCalledWith('#news')
+      else expect(window.location.hash).toBe('#news')
+      window.location.hash = ''
+    })
+
+    test.each(['refused', 'offline'])('keeps the notice available when completion is %s', async (failure) => {
+      if (failure === 'refused') csrfFetch.mockResolvedValueOnce({ ok: false })
+      else csrfFetch.mockRejectedValueOnce(new Error('offline'))
+      await mount({ items: [notice('n1'), notice('n2')], top: 'n1' })
+      await openSheet()
+      sheetEl().querySelector('.notice-sheet__cta').click()
+      await flush()
+      expect(strip().dataset.key).toBe('n1')
+      expect(controller.removed.has('n1')).toBe(false)
+      expect(window.Turbo.visit).not.toHaveBeenCalled()
+
+      await openSheet()
+      sheetEl().querySelector('.notice-sheet__cta').click()
+      await flush()
+      expect(strip().dataset.key).toBe('n2')
+      expect(window.Turbo.visit).toHaveBeenCalledWith('/news')
+    })
+
     test('on a non-mission without a URL only completes it', async () => {
       await mount({ items: [notice('n1', { cta_url: null })], top: 'n1' })
       await openSheet()

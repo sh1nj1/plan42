@@ -229,8 +229,8 @@ export default class extends Controller {
   async followCta(item) {
     if (item.kind === 'mission') return this.startMission(item)
 
+    if (!(await this.post(item.key, 'complete'))) return
     this.removed.add(item.key)
-    this.post(item.key, 'complete')
     this.queue = this.queue.filter((queued) => queued.key !== item.key)
     await animate(this.strip, ...EXIT_UP)
     await this.renderStack('rise')
