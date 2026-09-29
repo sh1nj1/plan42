@@ -18,6 +18,7 @@ module Collavre
 
     def shared_ai_profile?
       ids = @user.creative_shares_caches.where(permission: [ :feedback, :write, :admin ]).pluck(:creative_id)
+      ids |= Collavre::Creative.where(user_id: @user.id).pluck(:id)
       Creatives::PermissionFilter.new(user: Current.user).readable_ids(ids).any?
     end
   end

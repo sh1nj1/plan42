@@ -79,6 +79,49 @@ class UsersControllerAiProfileTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "readable agent-owned creative allows only read-only profile access" do
+    @agent.update!(searchable: false)
+    creative = Collavre::Creative.create!(user: @agent, description: "Agent-owned workspace")
+    # Ownership grants access even before the asynchronous owner cache is populated.
+    Collavre::CreativeSharesCache.where(creative: creative, user: @agent).delete_all
+    Collavre::CreativeSharesCache.create!(creative: creative, user: @viewer, permission: :read)
+    assert_not Collavre::CreativeSharesCache.exists?(creative: creative, user: @agent)
+
+    get user_url(@agent)
+    assert_redirected_to edit_ai_user_url(@agent)
+    follow_redirect!
+    assert_response :success
+    assert_select "button[type='submit'][disabled]"
+    %w[llm_vendor llm_model llm_api_key gateway_url agent_gateway_id agent_conf].each do |field|
+      assert_select "[name='user[#{field}]']", count: 0
+    end
+    [ "profile-secret-key", "private-gateway.example", "private-value" ].each do |secret|
+      assert_not_includes response.body, secret
+    end
+
+    original = @agent.attributes
+    patch update_ai_user_url(@agent), params: { user: { name: "Changed" } }
+    assert_response :redirect
+    assert_equal original, @agent.reload.attributes
+  end
+
+  test "agent-owned creative requires viewer read permission even when publicly shared" do
+    @agent.update!(searchable: false)
+    creative = Collavre::Creative.create!(user: @agent, description: "Agent-owned workspace")
+    # Ownership grants access even before the asynchronous owner cache is populated.
+    Collavre::CreativeSharesCache.where(creative: creative, user: @agent).delete_all
+    get edit_ai_user_url(@agent)
+    assert_response :not_found
+
+    Collavre::CreativeSharesCache.create!(creative: creative, user: nil, permission: :read)
+    get edit_ai_user_url(@agent)
+    assert_response :success
+
+    Collavre::CreativeSharesCache.create!(creative: creative, user: @viewer, permission: :no_access)
+    get edit_ai_user_url(@agent)
+    assert_response :not_found
+  end
+
   test "sharing an agent on another user's private creative does not expose its profile" do
     @agent.update!(searchable: false)
     creative = Collavre::Creative.create!(user: users(:one), description: "Private workspace")
