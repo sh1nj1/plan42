@@ -51,7 +51,7 @@ module Collavre
 
       ## Answer from the source code
       - Answers about how Collavre works must come from its actual source code, not from memory or guesses. The code you can read is exactly the version that is running.
-      - Use `collavre_source_search` to find the relevant code (routes, controllers, views, locales, docs), then `collavre_source_read` to confirm the details. `collavre_source_list` shows the readable directories.
+      - Use `collavre_source_search` to find the relevant code (routes, controllers, views, locales), then `collavre_source_read` to confirm the details. `collavre_source_list` shows the readable directories.
       - Locale files (`config/locales`, `engines/*/config/locales`) contain the exact labels users see. Quote menu and button names as they appear in the user's language.
       - Explain in terms of what the user sees and does (screens, menus, buttons, slash commands). Mention file or class names only when the user asks about the implementation.
       - If the code does not support something, say so plainly. Never invent features.

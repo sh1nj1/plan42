@@ -9,7 +9,7 @@ module Collavre
   # version (the Docker image ships it), so no download is needed.
   #
   # Everything goes through an allowlist: only application code, locales,
-  # routes and docs are visible. Paths are resolved with realpath before the
+  # routes are visible. Operational documentation is not exposed. Paths are resolved with realpath before the
   # check, so `..` segments and symlinks cannot escape the allowlist, and a
   # denylist is applied on top so secrets are never readable even if a future
   # allowlist entry happens to contain them.
@@ -20,7 +20,6 @@ module Collavre
       app
       config/locales
       config/routes.rb
-      docs
       engines/*/app
       engines/*/lib
       engines/*/config/locales
@@ -59,7 +58,7 @@ module Collavre
       dir = resolve!(path)
       raise AccessDenied, "Not a directory: #{path}" unless dir.directory?
 
-      children = dir.children.sort.reject { |child| denied?(child) || !child.exist? }
+      children = dir.children.sort.reject { |child| !child.exist? || !allowed?(child.realpath) }
       entries = children.first(MAX_LIST_ENTRIES).map { |child| entry_for(child) }
       { path: relative(dir), entries: entries, truncated: children.size > MAX_LIST_ENTRIES }
     end
@@ -110,7 +109,7 @@ module Collavre
     def allowed_roots
       @allowed_roots ||= ALLOWED_PATTERNS.flat_map { |pattern| Dir.glob(root.join(pattern).to_s) }
                                          .map { |p| Pathname.new(File.realpath(p)) }
-                                         .select { |p| within_root?(p) }
+                                         .select { |p| within_root?(p) && !denied?(p) }
                                          .uniq.sort
     end
 
@@ -139,7 +138,7 @@ module Collavre
     def denied?(path)
       rel = path.to_s.delete_prefix("#{root}/")
       segments = rel.split("/")
-      return true if rel == "docs/test.md" || segments.intersect?(DENIED_SEGMENTS)
+      return true if (rel == "docs" || rel.start_with?("docs/")) || segments.intersect?(DENIED_SEGMENTS)
 
       base = segments.last.to_s
       DENIED_BASENAME_PATTERNS.any? { |pattern| base.match?(pattern) }

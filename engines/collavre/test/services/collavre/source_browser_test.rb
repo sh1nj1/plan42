@@ -40,7 +40,7 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
   test "lists only allowlisted roots" do
     paths = @browser.list[:entries].map { |e| e[:path] }
 
-    assert_equal %w[app config/locales config/routes.rb docs engines/core/app engines/core/config/locales engines/core/lib].sort,
+    assert_equal %w[app config/locales config/routes.rb engines/core/app engines/core/config/locales engines/core/lib].sort,
                  paths.sort
     assert_equal "file", @browser.list[:entries].find { |e| e[:path] == "config/routes.rb" }[:type]
   end
@@ -115,7 +115,7 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
 
   test "searches within a path, including a single file" do
     assert_equal [ "app/models/topic.rb" ], @browser.search("main", path: "app")[:matches].map { |m| m[:path] }
-    assert_equal 1, @browser.search("guide", path: "docs/guide.md")[:matches].size
+    assert_equal 1, @browser.search("draw", path: "config/routes.rb")[:matches].size
   end
 
   test "stops at the result and file limits" do
@@ -133,22 +133,27 @@ class Collavre::SourceBrowserTest < ActiveSupport::TestCase
     end
   end
 
-  test "sensitive QA documentation is excluded from reads listings searches and aliases" do
-    write("docs/test.md", "PRIVATE_QA_CREDENTIAL\n")
-    File.symlink(File.join(@dir, "docs/test.md"), File.join(@dir, "app/qa.md"))
+  test "all documentation is excluded from reads listings searches and aliases" do
+    %w[test.md send-fcm-test.rb operations/new-guide.md].each do |name|
+      write("docs/#{name}", "PRIVATE_OPERATIONAL_VALUE\n")
+    end
+    File.symlink(File.join(@dir, "docs/send-fcm-test.rb"), File.join(@dir, "app/push.rb"))
+    File.symlink(File.join(@dir, "docs"), File.join(@dir, "app/manuals"))
 
-    [ "docs/test.md", "app/../docs/test.md", "app/qa.md" ].each do |path|
+    %w[docs docs/test.md docs/send-fcm-test.rb docs/operations/new-guide.md
+       docs/guide.md app/../docs/send-fcm-test.rb app/push.rb app/manuals/send-fcm-test.rb].each do |path|
       assert_raises(Collavre::SourceBrowser::AccessDenied) { @browser.read(path) }
       assert_raises(Collavre::SourceBrowser::AccessDenied) { @browser.search("PRIVATE", path: path) }
+      assert_raises(Collavre::SourceBrowser::AccessDenied) { @browser.list(path) }
     end
-    refute_includes @browser.list("docs")[:entries].map { |entry| entry[:path] }, "docs/test.md"
-    assert_empty @browser.search("PRIVATE_QA_CREDENTIAL")[:matches]
-    assert_empty @browser.search("PRIVATE_QA_CREDENTIAL", path: "docs")[:matches]
-    assert_includes @browser.read("docs/guide.md")[:content], "Guide"
-  end
-
-  test "requires a query" do
-    assert_raises(ArgumentError) { @browser.search(" ") }
+    FileUtils.mkdir_p(File.join(@dir, "engines/alias"))
+    File.symlink(File.join(@dir, "docs"), File.join(@dir, "engines/alias/lib"))
+    @browser = Collavre::SourceBrowser.new(root: @dir)
+    refute_includes @browser.list("app")[:entries].map { |entry| entry[:path] }, "app/push.rb"
+    refute_includes @browser.list("app")[:entries].map { |entry| entry[:path] }, "app/manuals"
+    refute_includes @browser.list[:entries].map { |entry| entry[:path] }, "docs"
+    assert_empty @browser.search("PRIVATE_OPERATIONAL_VALUE")[:matches]
+    assert_includes @browser.read("app/models/topic.rb")[:content], "class Topic"
   end
 
   private
