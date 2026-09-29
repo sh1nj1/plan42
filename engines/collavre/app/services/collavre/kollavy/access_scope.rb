@@ -18,11 +18,22 @@ module Collavre
         return [] unless root
 
         tree = CreativeHierarchy.where(ancestor_id: root.id).select(:descendant_id)
+        origins = Creative.where(id: tree).pluck(:id, :origin_id).to_h
         candidates = Creative.where(id: ids).where(id: tree).pluck(:id)
-        effective = Creatives::EffectiveCreativeResolution.effective_creative_ids(candidates)
-        allowed_origins = Creative.where(id: effective.values).where(id: tree).pluck(:id).to_set
-        candidates.select { |id| allowed_origins.include?(effective[id]) }
+        candidates.select { |id| contained_chain?(id, origins) }
       end
+
+      # Reject missing targets, cycles, and any hop outside the conversation.
+      def self.contained_chain?(id, origins)
+        visited = Set.new
+        while id
+          return false unless origins.key?(id) && visited.add?(id)
+
+          id = origins[id]
+        end
+        true
+      end
+      private_class_method :contained_chain?
 
       def self.allowed?(creative, user)
         !restricted?(user) || filter([ creative.id ], user).include?(creative.id)

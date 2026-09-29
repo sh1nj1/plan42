@@ -38,6 +38,51 @@ class Collavre::KollavyAccessScopeTest < ActiveSupport::TestCase
     refute_includes @alice_inbox.linked_children.map(&:id), link.id
   end
 
+  test "multi-hop links cannot read or mutate an external origin" do
+    inner = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: @bob_child)
+    outer = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: inner)
+    Collavre::CreativeSharesCache.find_by!(creative: inner, user: @agent).update!(permission: :admin)
+    assert_equal @bob_child, outer.effective_origin
+    assert_empty Collavre::Kollavy::AccessScope.filter([ inner.id, outer.id ])
+    assert_empty @retrieval.call(id: outer.id, format: "json")
+    assert Collavre::Tools::CreativeUpdateService.new.call(id: outer.id, description: "changed")[:error]
+    assert_equal "shared-word Bob secret", @bob_child.reload.description
+  end
+
+  test "multi-hop links entirely within the tree remain in scope" do
+    inner = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: @alice_child)
+    outer = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: inner)
+    assert_equal [ outer.id ], Collavre::Kollavy::AccessScope.filter([ outer.id ])
+  end
+
+  test "scope rejects an external intermediate hop even when the final origin is internal" do
+    inner = Collavre::Creative.create!(user: @bob, parent: @bob_inbox, origin: @alice_child)
+    outer = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: inner)
+    assert_empty Collavre::Kollavy::AccessScope.filter([ outer.id ])
+  end
+
+  test "scope rejects cyclic origin chains" do
+    link = Collavre::Creative.create!(user: @alice, parent: @alice_inbox, origin: @alice_child)
+    # Simulate corrupt legacy rows without model callbacks traversing the cycle.
+    Collavre::Creative.where(id: link.id).update_all(origin_id: link.id)
+    assert_empty Collavre::Kollavy::AccessScope.filter([ link.id ])
+  end
+
+  %w[reference configured].each do |source|
+    test "#{source} prompt context respects an explicit no_access in the active tree" do
+      Collavre::CreativeShare.create!(creative: @alice_child, user: @agent, permission: :no_access)
+      refute @alice_child.has_permission?(@agent, :read)
+      if source == "configured"
+        @alice_inbox.update!(data: @alice_inbox.data.merge("context_ids" => [ @alice_child.id ]))
+      end
+      content = source == "reference" ? "Read [linked](/creatives/#{@alice_child.id})" : "hello"
+      context = { "creative" => { "id" => @alice_inbox.id }, "comment" => { "content" => content } }
+      messages = Collavre::AiAgent::MessageBuilder.new(agent: @agent, context: context, task: @task).build[:messages]
+      refute_includes messages.to_s, "shared-word Alice"
+      assert_empty messages.select { |message| [ :referenced_creative, :context_creative ].include?(message[:kind]) }
+    end
+  end
+
   test "attachments topics and schedules cannot read another inbox by id" do
     assert Collavre::Tools::CreativeListAttachmentsService.new.call(creative_id: @bob_inbox.id)[:error]
     topic_id = @bob_inbox.main_topic.id

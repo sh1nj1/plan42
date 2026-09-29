@@ -122,7 +122,10 @@ module Collavre
         ids = active_ids.reject { |id| @injected_creative_ids.include?(id) }
         creatives = Creative.where(id: Kollavy::AccessScope.filter(ids, @agent)).to_a
         Creatives::OriginChainPreloader.preload(creatives)
-        creatives.reject { |creative| workflow_context?(creative) }.index_by(&:id)
+        creatives.reject do |creative|
+          workflow_context?(creative) ||
+            (Kollavy::AccessScope.restricted?(@agent) && !creative.has_permission?(@agent, :read))
+        end.index_by(&:id)
       end
 
       def workflow_context?(creative)
