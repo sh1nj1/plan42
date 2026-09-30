@@ -3,14 +3,14 @@ require_relative "../test_helper"
 class NotionCreativeExporterTest < ActiveSupport::TestCase
   setup do
     @user = create_user
-    @creative = create_creative(@user)
+    @creative = Collavre::Creative.create!(user: @user, description: "Own page text")
   end
 
   test "exports own text without descendant content" do
     Collavre::Creative.create!(user: @user, parent: @creative, description: "Child page")
     blocks = export
     assert_equal [ "paragraph" ], blocks.pluck(:type)
-    assert_equal "Notion test creative", text(blocks.first)
+    assert_equal "Own page text", text(blocks.first)
   end
 
   test "cleans HTML comments and entities" do
