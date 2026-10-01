@@ -9,13 +9,15 @@ module CollavreTranslation
         "안녕하세요 COLLAVRE_TOKEN_0"
       end
       factory = ->(**options) do
+        assert_equal "google", options[:vendor]
+        assert_equal "snapshot-model", options[:model]
         assert_equal false, options[:log_interactions]
         assert_equal 60, options[:request_timeout_seconds].call
         assert_includes options[:system_prompt], "Korean"
         client
       end
       Collavre::AiClient.stub :new, factory do
-        assert_equal "안녕하세요 `code`", Translator.call("Hello `code`", "ko")
+        assert_equal "안녕하세요 `code`", Translator.call("Hello `code`", "ko", vendor: "google", model: "snapshot-model")
       end
     end
 

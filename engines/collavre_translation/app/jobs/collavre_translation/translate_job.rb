@@ -31,12 +31,14 @@ module CollavreTranslation
       record.update!(source_lang: source_lang)
       return record.update!(status: "skipped") if source_lang.nil? || source_lang == record.target_locale
 
-      content = Translator.call(comment.content, record.target_locale)
+      vendor = CollavreTranslation.vendor
+      model = CollavreTranslation.model
+      content = Translator.call(comment.content, record.target_locale, vendor: vendor, model: model)
       # Never publish a result for a source edited while the provider was running.
       return record.update!(status: "skipped") unless current_source?(record, comment.reload)
 
       record.update!(content: content, status: "completed",
-        llm_vendor: CollavreTranslation.vendor, llm_model: CollavreTranslation.model)
+        llm_vendor: vendor, llm_model: model)
     end
 
     def current_source?(record, comment)

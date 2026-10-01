@@ -196,3 +196,25 @@ test('adds working table download controls to translated content and preserves t
   expect(controller.contentTarget.querySelectorAll('.table-download-toolbar')).toHaveLength(1)
   expect(controller.contentTarget.querySelectorAll('.table-download-btn')[0]).toBe(buttons[0])
 })
+
+test('Mermaid decoration during an in-flight request does not invalidate translation', async () => {
+  controller.original.innerHTML = '<div class="mermaid-chart"><span>graph TD; A--&gt;B</span></div>'
+  let resolveRequest
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { resolveRequest = resolve }))
+  const loading = controller.load()
+  const chart = controller.original.querySelector('.mermaid-chart')
+  chart.firstChild.firstChild.textContent = 'decorating'
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(false)
+  chart.innerHTML = '<svg><g></g></svg>'
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(false)
+  resolveRequest(result('completed', 'Translated diagram'))
+  await loading
+  expect(controller.original.hidden).toBe(true)
+  expect(controller.toggleTarget.hidden).toBe(false)
+  controller.original.append('Edited source')
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(true)
+  expect(controller.original.hidden).toBe(false)
+})

@@ -47,10 +47,25 @@ module CollavreTranslation
       assert_equal source, @comment.reload.content
     end
 
+    test "persists the provider snapshot even when settings change during translation" do
+      Translator.stub :call, ->(_content, _locale, vendor:, model:) {
+        assert_equal "google", vendor
+        assert_equal "test-model", model
+        CollavreTranslation.vendor = "anthropic"
+        CollavreTranslation.model = "changed-model"
+        "번역 결과"
+      } do
+        TranslateJob.perform_now(@record.id)
+      end
+      assert_equal "completed", @record.reload.status
+      assert_equal "google", @record.llm_vendor
+      assert_equal "test-model", @record.llm_model
+    end
+
     test "short Korean comments translate to English" do
       @comment.update!(content: "안녕")
       record = Translation.request!(@comment, "en")
-      Translator.stub :call, ->(content, locale) {
+      Translator.stub :call, ->(content, locale, **_options) {
         assert_equal "안녕", content
         assert_equal "en", locale
         "Hello"

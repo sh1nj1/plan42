@@ -32,7 +32,11 @@ export default class extends Controller {
   async load() {
     try {
       if (!this.mutations) {
-        this.mutations = new MutationObserver(() => {
+        this.mutations = new MutationObserver(records => {
+          if (records.every(record => {
+            const target = record.target.nodeType === Node.ELEMENT_NODE ? record.target : record.target.parentElement
+            return target?.closest('.mermaid-chart')
+          })) return
           this.abort.abort()
           clearTimeout(this.timer)
           this.restoreOriginal()
