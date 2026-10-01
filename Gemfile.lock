@@ -1,12 +1,4 @@
 PATH
-  remote: engines/collavre_translation
-  specs:
-    collavre_translation (0.1.0)
-      cld3 (~> 3.6)
-      collavre
-      rails (>= 8.0)
-
-PATH
   remote: engines/collavre_completion_api
   specs:
     collavre_completion_api (0.2.4)
@@ -60,6 +52,14 @@ PATH
       collavre
       faraday
       faraday-retry
+      rails (>= 8.0)
+
+PATH
+  remote: engines/collavre_translation
+  specs:
+    collavre_translation (0.1.0)
+      cld3 (~> 3.6)
+      collavre
       rails (>= 8.0)
 
 PATH
@@ -236,7 +236,7 @@ GEM
       reline (>= 0.3.8)
     declarative (0.0.20)
     diff-lcs (2.0.0)
-    doorkeeper (5.9.7)
+    doorkeeper (5.9.9)
       railties (>= 5)
     dotenv (3.2.0)
     drb (2.2.3)
@@ -569,7 +569,7 @@ GEM
       logger
       prism (>= 1.6.0)
       tsort
-    rdoc (8.0.0)
+    rdoc (8.1.0)
       erb
       prism (>= 1.6.0)
       rbs (>= 4.0.0)
