@@ -342,8 +342,15 @@ body.chat-fullscreen {
 }
 
 .comment-user-popup {
+    width: 240px;
     min-width: 240px;
     padding: var(--space-2);
+}
+
+.comment-user-popup .popup-menu-item {
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .comment-user-popup-header {
@@ -2433,13 +2440,15 @@ li:hover .topic-create-option {
 }
 
 .comment-agent-model-editor label,
-.comment-agent-model-editor input[type="text"] {
+.comment-agent-model-editor input[type="text"],
+.comment-agent-model-editor select {
     display: block;
     width: 100%;
     box-sizing: border-box;
 }
 
 .comment-agent-model-editor p {
+    overflow-wrap: anywhere;
     margin: var(--space-1) 0;
     color: var(--color-text-muted);
     font-size: var(--text-0);
