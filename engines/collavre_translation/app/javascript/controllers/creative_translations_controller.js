@@ -1,8 +1,8 @@
 import { Controller } from "@hotwired/stimulus"
 import { sanitizeDescriptionHtml } from "collavre/lib/utils/sanitize_description"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
+import { PROTECTED, translationSource, translationContent, treeTranslation } from "./workspace_translation"
 
-const PROTECTED = 'pre, code, script, style, textarea, .mention, [data-mention], [data-lexical-mention], [contenteditable], [data-ppt-slide]'
 
 export default class extends Controller {
   static values = { base: String, original: String, translated: String }
@@ -24,12 +24,12 @@ export default class extends Controller {
   scan() {
     this.mountMenu()
     this.rows.forEach((state, row) => {
-      if (!row.isConnected || row.descriptionHtml !== state.source ||
-          (state.content && state.content !== row.querySelector(".creative-content, .creative-title-content"))) this.cleanup(row, state)
+      if (!row.isConnected || translationSource(row) !== state.source ||
+          (state.content && state.content !== translationContent(row))) this.cleanup(row, state)
     })
-    document.querySelectorAll('creative-tree-row[creative-id]').forEach(row => {
-      if (this.rows.has(row) || !row.descriptionHtml) return
-      this.rows.set(row, { source: row.descriptionHtml, abort: new AbortController() })
+    document.querySelectorAll('creative-tree-row[creative-id], .creative-workspace-tree-link[data-creative-id]').forEach(row => {
+      if (this.rows.has(row) || !translationSource(row)) return
+      this.rows.set(row, { source: translationSource(row), abort: new AbortController() })
       this.visibility.observe(row)
     })
   }
@@ -38,7 +38,7 @@ export default class extends Controller {
     const state = this.rows.get(row)
     if (!state) return
     try {
-      const url = this.baseValue.replace('__ID__', row.getAttribute('creative-id'))
+      const url = this.baseValue.replace('__ID__', row.getAttribute('creative-id') || row.dataset.creativeId)
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })
@@ -47,8 +47,11 @@ export default class extends Controller {
       }
       let result = await request('GET')
       if (['missing', 'pending'].includes(result.status)) result = await request('POST')
-      if (state.abort.signal.aborted || row.descriptionHtml !== state.source) return
-      if (sanitizeDescriptionHtml(result.original_html) !== state.source) return
+      if (state.abort.signal.aborted || translationSource(row) !== state.source) return
+      if (row.matches('.creative-workspace-tree-link')) {
+        result = treeTranslation(result, state.source)
+        if (!result) return
+      } else if (sanitizeDescriptionHtml(result.original_html) !== state.source) return
       if (state.digest && state.digest !== result.source_digest) return
       state.digest = result.source_digest
       if (result.status === 'completed') this.show(row, state, JSON.parse(result.content))
@@ -60,7 +63,7 @@ export default class extends Controller {
   }
 
   show(row, state, replacements) {
-    const content = row.querySelector('.creative-content, .creative-title-content')
+    const content = translationContent(row)
     if (!content || state.nodes) return
     state.content = content
     const translations = new Map(replacements.map(pair => [pair.original, pair.translated]))

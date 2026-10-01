@@ -261,3 +261,73 @@ test('menu replacement preserves list mode without duplicate controls', () => {
   expect(menu.children).toHaveLength(1)
   expect(menu.textContent).toBe('Show translation')
 })
+
+function addTreeLink(label = 'English title') {
+  const link = document.createElement('a')
+  link.className = 'creative-workspace-tree-link'
+  link.dataset.creativeId = '1'
+  link.dataset.originalLabel = label
+  link.dataset.creativeSnippet = 'Original snippet'
+  link.href = '/creatives?id=1'
+  link.textContent = label
+  document.body.append(link)
+  controller.scan()
+  return link
+}
+
+test('workspace titles translate independently, preserve navigation and follow the list toggle', async () => {
+  const link = addTreeLink()
+  const clicked = jest.fn(event => event.preventDefault())
+  link.addEventListener('click', clicked)
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  intersection([{ target: link, isIntersecting: true }])
+  await tick()
+  expect(link.textContent).toBe('번역 제목')
+  expect(link.dataset.originalLabel).toBe('English title')
+  expect(link.dataset.creativeSnippet).toBe('Original snippet')
+  expect(link.getAttribute('href')).toBe('/creatives?id=1')
+  link.click()
+  expect(clicked).toHaveBeenCalledTimes(1)
+  controller.menuButton.click()
+  expect(link.textContent).toBe('English title')
+  const child = addTreeLink()
+  await controller.load(child)
+  expect(child.textContent).toBe('English title')
+  controller.menuButton.click()
+  expect(child.textContent).toBe('번역 제목')
+  const state = controller.rows.get(link)
+  link.remove()
+  controller.scan()
+  expect(state.abort.signal.aborted).toBe(true)
+  controller.disconnect()
+  expect(child.textContent).toBe('English title')
+})
+
+test('workspace polling and stale labels keep the original until a matching result completes', async () => {
+  const link = addTreeLink()
+  fetchMock.mockResolvedValueOnce(response('processing'))
+  await controller.load(link)
+  const state = controller.rows.get(link)
+  expect(state.delay).toBe(1000)
+  clearTimeout(state.timer)
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(link)
+  expect(link.textContent).toBe('번역 제목')
+  const stale = addTreeLink('Edited title')
+  await controller.load(stale)
+  expect(stale.textContent).toBe('Edited title')
+})
+
+test('workspace labels combine inline text, decode entities and preserve protected content safely', async () => {
+  const link = addTreeLink('English title Code @Astra:')
+  fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: 'completed', content: pairs,
+    original_html: '<h1>English&nbsp;title</h1> <code>Code</code> <span class="mention">@Astra:</span>', source_digest: 'digest' }) })
+  await controller.load(link)
+  expect(link.textContent).toBe('English title Code @Astra:')
+  const rich = addTreeLink('English titleLink label Code @Astra:')
+  fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: 'completed', content: pairs,
+    original_html: '<h1>English title<a href="/">Link label</a></h1> <code>Code</code> <span class="mention">@Astra:</span>', source_digest: 'digest' }) })
+  await controller.load(rich)
+  expect(rich.textContent).toBe('번역 제목<script>safe text</script> Code @Astra:')
+  expect(rich.querySelector('script')).toBeNull()
+})
