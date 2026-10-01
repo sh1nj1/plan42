@@ -13,6 +13,10 @@ module CollavreTranslation
       @model || Collavre::IntegrationSettings.fetch(:translation_llm_model)
     end
 
+    def enabled_for?(user)
+      user&.auto_translation_enabled? && enabled?
+    end
+
     def enabled?
       model.present? && %w[google gemini openai anthropic].include?(vendor)
     end

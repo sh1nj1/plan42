@@ -90,6 +90,33 @@ module CollavreTranslation
       end
     end
 
+    test "persisted reader preference gates creative cache requests and controller independently" do
+      Translation.request!(@creative, "ko").update!(status: "completed", content: "[]")
+      Collavre::CreativeSharesCache.create!(creative: @creative, user: users(:two), permission: :read)
+      @user.update!(auto_translation_enabled: false)
+      assert_no_enqueued_jobs only: TranslateJob do
+        get @url
+        assert_response :forbidden
+        post @url
+        assert_response :forbidden
+      end
+      get "/creatives", params: { id: @creative.id }
+      assert_response :success
+      assert_select '[data-controller="creative-translations"]', count: 0
+
+      delete "/session"
+      users(:two).update!(locale: "ko", auto_translation_enabled: true)
+      sign_in_as users(:two), password: "password"
+      get @url
+      assert_response :success
+      assert_equal "[]", response.parsed_body["content"]
+      reader_creative = Collavre::Creative.create!(user: users(:two), description: "Reader original")
+      get "/creatives", params: { id: reader_creative.id }
+      assert_response :success
+      assert_select '[data-controller="creative-translations"]', count: 1
+      refute @user.reload.auto_translation_enabled?
+    end
+
     test "unsupported locale rejects requests and blank locale uses default" do
       @user.update_column(:locale, "fr")
       post @url
@@ -100,11 +127,11 @@ module CollavreTranslation
     end
 
     test "creative page mounts engine extension only when user gate is enabled" do
-      get creatives_path(id: @creative.id)
+      get collavre.creatives_path(id: @creative.id)
       assert_response :success
       assert_select '[data-controller="creative-translations"]', count: 1
       CreativeTranslationPolicy.stub :enabled?, false do
-        get creatives_path(id: @creative.id)
+        get collavre.creatives_path(id: @creative.id)
         assert_select '[data-controller="creative-translations"]', count: 0
       end
     end

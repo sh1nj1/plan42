@@ -71,6 +71,7 @@
           <%= f.check_box :notifications_enabled %>
           <%= f.label :notifications_enabled, t('collavre.users.notifications_enabled') %>
         </div>
+        <%= render_extension_slot(:profile_preferences, form: f) %>
         <% creative_workspace_hint = t('collavre.users.creative_workspace.description') %>
         <div class="checkbox-field">
           <%= f.check_box :creative_workspace_enabled, title: creative_workspace_hint %>

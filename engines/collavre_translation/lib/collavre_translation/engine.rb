@@ -20,12 +20,17 @@ module CollavreTranslation
 
     initializer "collavre_translation.extensions", after: "collavre.navigation_reset" do
       config.to_prepare do
+        Collavre::ProfilePreferences.register(:translation, :auto_translation_enabled)
+        Collavre::ViewExtensions.register(:profile_preferences,
+          partial: "collavre_translation/preferences/settings")
         Collavre::ViewExtensions.register(:comment_content_extensions,
           partial: "collavre_translation/comments/translation")
         Collavre::ViewExtensions.register(:creative_modals,
           partial: "collavre_translation/creatives/translation")
         Collavre::Creative.has_many :translations, class_name: "CollavreTranslation::Translation",
           as: :translatable, dependent: :destroy
+        Collavre::ViewExtensions.register(:navigation_panels,
+          partial: "collavre_translation/comments/reader")
         Collavre::Comment.has_many :translations, class_name: "CollavreTranslation::Translation",
           as: :translatable, dependent: :destroy
       end

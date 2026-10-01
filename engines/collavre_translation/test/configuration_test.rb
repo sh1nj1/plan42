@@ -13,6 +13,19 @@ module CollavreTranslation
       assert_equal ActiveRecord::Migration[8.0], CreateCollavreTranslationTranslations.superclass
     end
 
+    test "shared user gate requires reader preference and configured model" do
+      user = users(:one)
+      CollavreTranslation.model = "test-model"
+      assert CollavreTranslation.enabled_for?(user)
+      refute CollavreTranslation.enabled_for?(nil)
+      user.auto_translation_enabled = false
+      refute CollavreTranslation.enabled_for?(user)
+      user.auto_translation_enabled = true
+      CollavreTranslation.model = ""
+      refute CollavreTranslation.enabled_for?(user)
+      assert Collavre::User.new.auto_translation_enabled?
+    end
+
     test "model is opt in and stateful vendors are rejected" do
       CollavreTranslation.model = ""
       refute CollavreTranslation.enabled?

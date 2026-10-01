@@ -3,6 +3,7 @@ require_relative "test_helper"
 module CollavreTranslation
   class TranslationsControllerTest < ActionDispatch::IntegrationTest
     include TranslationQueueTestHelper
+    include ActionCable::TestHelper
 
     setup do
       use_translation_test_queue
@@ -22,7 +23,7 @@ module CollavreTranslation
     test "comment UI uses mounted translation URL and keeps original content" do
       get creative_comments_path(@comment.creative)
       assert_response :success
-      assert_select '[data-controller="comment-translation"]' do
+      assert_select 'template[data-comment-translation-template]' do
         assert_select '[data-comment-translation-url-value=?]', @url
       end
       assert_select '[data-comment-target="content"]', text: @comment.content
@@ -36,6 +37,45 @@ module CollavreTranslation
       html = Collavre::CommentsController.render(partial: "collavre/comments/comment",
         locals: { comment: @comment, streaming: true })
       refute_includes html, 'data-controller="comment-translation"'
+    end
+
+    test "reader hydration gate follows the viewer preference and shared markup is neutral" do
+      [ true, false ].each do |enabled|
+        @user.update!(auto_translation_enabled: enabled)
+        get creatives_path
+        assert_response :success
+        assert_select '[data-controller="comment-translation-reader"]', count: enabled ? 1 : 0
+      end
+      Collavre::Current.set(user: nil) do
+        [ "Original broadcast", "Edited broadcast" ].each do |content|
+          @comment.update!(content: content)
+          html = Collavre::CommentsController.render(partial: "collavre/comments/comment",
+            locals: { comment: @comment })
+          assert_includes html, "data-comment-translation-template"
+          refute_includes html, 'data-controller="comment-translation"'
+          assert_includes html, Translation.digest(content)
+        end
+      end
+    end
+
+    test "real shared append and replacement broadcasts retain inert translation templates" do
+      @user.update!(auto_translation_enabled: false)
+      stream = Turbo::StreamsChannel.send(:stream_name_from, [ @comment.creative, :comments ])
+      clear_enqueued_jobs
+      Collavre::Current.set(user: nil) do
+        %w[create update].each do |event|
+          messages = capture_broadcasts(stream) do
+            perform_enqueued_jobs(only: Turbo::Streams::ActionBroadcastJob) do
+              @comment.send("broadcast_#{event}")
+            end
+          end
+          assert_equal 1, messages.size
+          html = messages.first
+          assert_includes html, "action=\"#{event == 'create' ? 'append' : 'replace'}\""
+          assert_includes html, "data-comment-translation-template"
+          refute_includes html, 'data-controller="comment-translation"'
+        end
+      end
     end
 
     test "GET is read only and POST enqueues once for reader locale" do
@@ -56,6 +96,45 @@ module CollavreTranslation
       @comment.update!(content: "A new original")
       get @url
       assert_equal "missing", response.parsed_body["status"]
+    end
+
+    test "preference defaults on and OFF preserves original without controller or jobs" do
+      assert @user.auto_translation_enabled?
+      @user.update!(auto_translation_enabled: false)
+      get creative_comments_path(@comment.creative)
+      assert_select '[data-controller="comment-translation"]', count: 0
+      assert_select '[data-comment-target="content"]', text: @comment.content
+      Translation.request!(@comment, "ko").update!(status: "completed", content: "Cached")
+      assert_no_enqueued_jobs only: TranslateJob do
+        get @url
+        assert_response :forbidden
+        post @url
+        assert_response :forbidden
+      end
+      @user.update!(auto_translation_enabled: true)
+      get @url
+      assert_response :success
+      assert_equal "Cached", response.parsed_body["content"]
+    end
+
+    test "each reader uses their own preference for the same comment" do
+      @user.update!(auto_translation_enabled: false)
+      reader = users(:two)
+      reader.update!(locale: "ko")
+      Collavre::CreativeSharesCache.create!(creative: @comment.creative, user: reader, permission: :feedback)
+      get creative_comments_path(@comment.creative)
+      assert_select '[data-controller="comment-translation"]', count: 0
+      sign_out
+      sign_in_as reader, password: "password"
+      get creative_comments_path(@comment.creative)
+      assert_response :success
+      assert_select 'template[data-comment-translation-template]', count: 1
+      assert_enqueued_jobs 1, only: TranslateJob do
+        post @url
+        assert_response :success
+      end
+      refute @user.reload.auto_translation_enabled?
+      assert reader.reload.auto_translation_enabled?
     end
 
     test "disabled model does not enqueue" do
