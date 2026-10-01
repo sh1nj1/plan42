@@ -50,6 +50,36 @@ module CollavreTranslation
       assert_equal "안녕", JSON.parse(record.content).first["translated"]
     end
 
+    test "protected-only creatives skip the provider and preserve their source" do
+      sources = [
+        '<p>https://example.com</p>', '<p>[Example Domain](https://example.com)</p>',
+        '<p>`code` @Astra:</p>', '<pre>code</pre>', '<p>123 !</p>',
+        '<p><span class="mention">@Astra:</span></p>'
+      ]
+      HtmlTranslator.stub :call, ->(*) { flunk "protected-only input must not reach provider" } do
+        sources.each do |source|
+          @creative.update!(description: source)
+          record = Translation.request!(@creative, "ko")
+          TranslateJob.perform_now(record.id)
+          assert_equal "skipped", record.reload.status
+          assert_nil record.content
+          assert_equal source, @creative.reload.description
+        end
+      end
+    end
+
+    test "HTML translation restores boundary whitespace and tolerates separator whitespace changes" do
+      html = "<p> 안녕 <strong>멋진</strong> 세계\t</p><p>\nLast sentence\n</p>"
+      Translator.stub :call, ->(source, *) {
+        assert_equal "안녕\nCOLLAVRE_TOKEN_999999_END\n멋진\nCOLLAVRE_TOKEN_999999_END\n세계\nCOLLAVRE_TOKEN_999999_END\nLast sentence", source
+        "Hello COLLAVRE_TOKEN_999999_ENDwonderful\r\n COLLAVRE_TOKEN_999999_END worldCOLLAVRE_TOKEN_999999_ENDLast translated"
+      } do
+        result = JSON.parse(HtmlTranslator.call(html, "en"))
+        assert_equal HtmlTranslator.texts(html), result.pluck("original")
+        assert_equal [ " Hello ", "wonderful", " world\t", "\nLast translated\n" ], result.pluck("translated")
+      end
+    end
+
     test "creative source changed before or during translation is discarded" do
       record = Translation.request!(@creative, "ko")
       HtmlTranslator.stub :call, ->(*) { @creative.update!(description: "Changed source"); "[]" } do

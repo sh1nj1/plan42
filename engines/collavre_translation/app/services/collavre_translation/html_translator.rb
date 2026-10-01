@@ -14,11 +14,19 @@ module CollavreTranslation
       return "[]" if texts.empty?
 
       separator = segment_separator(texts)
-      result = Translator.call(texts.join(separator), locale, **options).split(separator, -1)
+      result = Translator.call(texts.map(&:strip).join(separator), locale, **options)
+        .split(/\s*#{Regexp.escape(separator.strip)}\s*/, -1)
       raise ArgumentError, "Translation changed text segments" unless result.length == texts.length
 
-      texts.zip(result).map { |original, translated| { original: original, translated: translated } }.to_json
+      texts.zip(result).map do |original, translated|
+        { original: original, translated: preserve_whitespace(original, translated) }
+      end.to_json
     end
+
+    def self.preserve_whitespace(original, translated)
+      "#{original[/\A\s*/]}#{translated.strip}#{original[/\s*\z/]}"
+    end
+    private_class_method :preserve_whitespace
 
     # Restored source literals must never be mistaken for inserted boundaries.
     def self.segment_separator(texts)

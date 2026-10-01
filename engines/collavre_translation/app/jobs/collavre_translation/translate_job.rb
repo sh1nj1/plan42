@@ -42,6 +42,8 @@ module CollavreTranslation
 
       source = Translation.source(comment)
       prose = comment.is_a?(Collavre::Creative) ? HtmlTranslator.texts(source).join(" ") : source
+      return update_claim(record, status: "skipped") unless LanguageDetector.translatable?(prose)
+
       source_lang = LanguageDetector.detect(prose)
       update_claim(record, source_lang: source_lang)
       return update_claim(record, status: "skipped") if (source_lang.nil? && !comment.is_a?(Collavre::Creative)) || source_lang == record.target_locale
