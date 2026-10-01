@@ -55,6 +55,12 @@ User preferences are stored in core as `Collavre::User#auto_translation_enabled?
 update. `CollavreTranslation.enabled_for?(user)` is the shared availability gate
 for comments and future creative translation. Use it before mounting frontend
 controllers, and check the preference after source authorization in endpoints.
+Shared live comment broadcasts contain inert templates, independent of the author
+or background renderer. The request-rendered `comment-translation-reader`
+controller is mounted only when `enabled_for?(Current.user)` passes and hydrates
+initial, appended, and replaced comment templates. OFF readers never mount a
+translation controller, make requests, or poll. Reuse a per-reader gate for
+creative broadcasts as well; do not gate shared HTML using `Current.user`.
 Disabled readers cannot fetch cached results or enqueue jobs. Original content
 and AI context remain unchanged.
 

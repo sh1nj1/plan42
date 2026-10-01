@@ -26,6 +26,8 @@ module CollavreTranslation
           partial: "collavre_translation/creatives/translation")
         Collavre::Creative.has_many :translations, class_name: "CollavreTranslation::Translation",
           as: :translatable, dependent: :destroy
+        Collavre::ViewExtensions.register(:navigation_panels,
+          partial: "collavre_translation/comments/reader")
         Collavre::Comment.has_many :translations, class_name: "CollavreTranslation::Translation",
           as: :translatable, dependent: :destroy
       end
