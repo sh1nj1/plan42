@@ -30,8 +30,8 @@ module Collavre
       end
 
       test "description-only update on markdown creative demotes to html" do
-        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# old")
-        creative = Creative.last
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# old")
+        creative = Creative.find(creative.id)
         assert_equal "markdown", creative.data["content_type"]
         assert_equal "# old", creative.data["markdown_source"]
 
@@ -44,8 +44,8 @@ module Collavre
       end
 
       test "non-description update on markdown creative preserves markdown metadata" do
-        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# keep")
-        creative = Creative.last
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: "# keep")
+        creative = Creative.find(creative.id)
         assert_equal "markdown", creative.data["content_type"]
 
         creative.update!(progress: 1.0)
@@ -58,8 +58,8 @@ module Collavre
       test "GFM task list checkboxes survive sanitization" do
         source = "- [ ] todo\n- [x] done\n"
 
-        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
-        creative = Creative.last
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative.reload
 
         assert_match %r{<input[^>]*type="checkbox"[^>]*disabled}, creative.description
         assert_match %r{<input[^>]*checked[^>]*}, creative.description
@@ -96,8 +96,8 @@ module Collavre
       test "color span survives sanitization in markdown mode" do
         source = '<span style="color: rgb(255, 0, 0)">red</span> and ' \
                  '<span style="background-color: #ffff00">hl</span>'
-        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
-        creative = Creative.last
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative.reload
 
         # Canonical markdown_source is preserved verbatim (sanitizer only touches
         # the rendered description).
@@ -110,19 +110,19 @@ module Collavre
       end
 
       test "color span survives sanitization in html mode" do
-        Creative.create!(user: @user, description: '<p><span style="color: #ff0000">hi</span></p>')
-        creative = Creative.last
+        creative = Creative.create!(user: @user, description: '<p><span style="color: #ff0000">hi</span></p>')
+        creative.reload
 
         assert_match(/color:\s*#ff0000/, creative.description)
         assert_includes creative.description, "hi"
       end
 
       test "non-color style declarations are scrubbed from spans" do
-        Creative.create!(
+        creative = Creative.create!(
           user: @user,
           description: '<p><span style="color: red; position: fixed; font-size: 99px">x</span></p>'
         )
-        creative = Creative.last
+        creative.reload
 
         assert_match(/color:\s*red/, creative.description)
         refute_includes creative.description, "position"
@@ -130,11 +130,11 @@ module Collavre
       end
 
       test "dangerous style values are dropped, leaving no style attribute" do
-        Creative.create!(
+        creative = Creative.create!(
           user: @user,
           description: '<p><span style="background: url(javascript:alert(1))">x</span></p>'
         )
-        creative = Creative.last
+        creative.reload
 
         refute_includes creative.description, "javascript"
         refute_includes creative.description, "url("
@@ -142,11 +142,11 @@ module Collavre
       end
 
       test "non-checkbox input tags are stripped from description" do
-        Creative.create!(
+        creative = Creative.create!(
           user: @user,
           description: %(<p>hi <input type="text" value="x"> <input type="submit"></p>)
         )
-        creative = Creative.last
+        creative.reload
 
         refute_match %r{<input}, creative.description
         assert_includes creative.description, "hi"
@@ -158,8 +158,8 @@ module Collavre
 
         source = "before ![pixel](#{data_uri}) after"
 
-        Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
-        creative = Creative.last
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative.reload
 
         stored = creative.data["markdown_source"]
         refute_includes stored, "data:image/png;base64,", "data URI should be rewritten out of stored markdown_source"
