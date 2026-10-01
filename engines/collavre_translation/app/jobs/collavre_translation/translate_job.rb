@@ -1,6 +1,6 @@
 module CollavreTranslation
   class TranslateJob < ::ApplicationJob
-    queue_as :default
+    queue_as :translations
 
     def perform(id)
       record = Translation.find_by(id: id)

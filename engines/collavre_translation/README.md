@@ -34,3 +34,7 @@ retained until the comment is deleted.
 
 Phase one covers comments. Creative HTML translation, user preferences,
 per-user quotas and dedicated usage reporting are separate follow-ups.
+
+The host runs the `translations` queue with a dedicated two-thread, one-process
+worker in every environment. Slow provider calls do not occupy default or AI
+agent worker threads. Other hosts must configure a worker for this queue.

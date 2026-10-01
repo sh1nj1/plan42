@@ -18,6 +18,21 @@ module CollavreTranslation
       CollavreTranslation.vendor = nil
     end
 
+    test "translation requests use a dedicated worker in every environment" do
+      assert_enqueued_with(job: TranslateJob, args: [ @record.id ], queue: "translations")
+      config = YAML.safe_load(ERB.new(Rails.root.join("config/queue.yml").read).result, aliases: true)
+
+      %w[development test production desktop].each do |environment|
+        workers = config.fetch(environment).fetch("workers")
+        translation_workers = workers.select { |worker| worker.fetch("queues").include?("translations") }
+        assert_equal 1, translation_workers.size
+        worker = translation_workers.first
+        assert_equal [ "translations" ], worker.fetch("queues")
+        assert_equal 2, worker.fetch("threads")
+        assert_equal 1, worker.fetch("processes")
+      end
+    end
+
     test "completes once and leaves the original comment unchanged" do
       source = @comment.content
       calls = 0
