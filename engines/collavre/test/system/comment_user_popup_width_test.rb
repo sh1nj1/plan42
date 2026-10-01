@@ -23,19 +23,39 @@ class CommentUserPopupWidthTest < ApplicationSystemTestCase
       llm_model: "paperclip/codex_local/a-very-long-model-name-for-layout", reasoning_effort: "high")
     comment = @creative.comments.create!(user: agent, topic_id: @creative.main_topic.id, content: "Hello", skip_dispatch: true)
 
-    [ 1200, 480 ].each do |width|
+    [ [ 1200, 0 ], [ 480, 0 ], [ 1200, 400 ], [ 480, 400 ] ].each do |width, editor_delay|
       resize_window_to(width, 900)
       visit collavre.creative_path(@creative, open_comments: true)
+      # The first WebDriver click focuses the browser. handleWindowFocus reloads
+      # comments, replacing avatar menus, so focus chat before opening a menu.
+      find('#comments-popup [data-comments--popup-target="title"]').click
       assert_docked_comments_loaded
       selector = "#comment_#{comment.id} .comment-user-popup"
-      assert_selector "#comment_#{comment.id} .comment-user-menu-trigger" do |trigger|
-        trigger.click unless page.has_css?("#{selector} input[name=\"user[llm_model]\"]", wait: 0)
-        page.has_css?("#{selector} input[name=\"user[llm_model]\"]", wait: 0)
-      end
+      page.execute_script(<<~JS, editor_delay, comment.id)
+        const delay = arguments[0];
+        const trigger = document.querySelector(`#comment_${arguments[1]} .comment-user-menu-trigger`);
+        const container = trigger.closest('[data-comment-agent-model-url-value]');
+        const editorUrl = new URL(container.dataset.commentAgentModelUrlValue, location.href).href;
+        const originalFetch = window.fetch;
+        window.avatarPopupClicks = 0;
+        window.avatarEditorRequests = 0;
+        trigger.addEventListener('click', () => window.avatarPopupClicks++);
+        window.fetch = async function(input, options) {
+          const url = new URL(typeof input === 'string' ? input : input.url, location.href).href;
+          if (url === editorUrl) {
+            window.avatarEditorRequests++;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+          return originalFetch.call(this, input, options);
+        };
+      JS
+      find("#comment_#{comment.id} .comment-user-menu-trigger").click
       within(selector) do
         assert_selector "input[name='user[llm_model]']"
         assert_selector "select[name='user[reasoning_effort]']"
       end
+      assert_equal 1, page.evaluate_script("window.avatarPopupClicks")
+      assert_equal 1, page.evaluate_script("window.avatarEditorRequests")
       dimensions = page.evaluate_script(<<~JS, selector)
         ((selector) => {
           const menu = document.querySelector(selector);
