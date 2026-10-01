@@ -20,8 +20,8 @@ model disables translation (the default). Removing the engine and its host JS
 registration disables the feature without changing core models or columns.
 
 Targets English and Korean from the reader's `User#locale`. CLD3 detects source
-language locally on first read; short or unreliable text stays in its original
-language. Code, URLs, mentions, HTML tags and Markdown links are masked and
+language locally on first read. Hangul-only prose is recognized even in short
+comments; other short or unreliable text stays in its original language. Code, URLs, mentions, HTML tags and Markdown links are masked and
 restored locally. Missing or duplicate placeholders fail closed.
 
 Translations are shared by comment, target locale and SHA-256 of the source.

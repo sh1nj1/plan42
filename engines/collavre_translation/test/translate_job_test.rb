@@ -47,6 +47,22 @@ module CollavreTranslation
       assert_equal source, @comment.reload.content
     end
 
+    test "short Korean comments translate to English" do
+      @comment.update!(content: "안녕")
+      record = Translation.request!(@comment, "en")
+      Translator.stub :call, ->(content, locale) {
+        assert_equal "안녕", content
+        assert_equal "en", locale
+        "Hello"
+      } do
+        TranslateJob.perform_now(record.id)
+      end
+      assert_equal "completed", record.reload.status
+      assert_equal "ko", record.source_lang
+      assert_equal "Hello", record.content
+      assert_equal "안녕", @comment.reload.content
+    end
+
     test "disabled engine and missing records do not call provider" do
       CollavreTranslation.model = ""
       TranslateJob.perform_now(@record.id)
