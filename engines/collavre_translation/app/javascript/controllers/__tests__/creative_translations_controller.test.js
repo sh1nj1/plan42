@@ -202,3 +202,30 @@ test('CSV and Excel export the original table while translated display returns',
     expect(content.querySelector('th').textContent).toBe('English title')
   } finally { click.mockRestore() }
 })
+
+test('shared live append and replace use the existing reader controller', async () => {
+  const originalRow = row
+  const sharedRow = originalRow.cloneNode(true)
+  sharedRow.setAttribute('creative-id', '2')
+  sharedRow.descriptionHtml = originalRow.descriptionHtml
+  document.body.append(sharedRow)
+  await tick()
+  expect(controller.rows.has(sharedRow)).toBe(true)
+  row = sharedRow
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  intersection([{ target: sharedRow, isIntersecting: true }])
+  await tick()
+  expect(sharedRow.querySelector('h1').textContent).toBe('번역 제목')
+  expect(fetchMock.mock.calls[0][0]).toBe('/translation/creatives/2/translation')
+  const replacement = originalRow.cloneNode(true)
+  replacement.descriptionHtml = originalRow.descriptionHtml
+  sharedRow.replaceWith(replacement)
+  row = replacement
+  await tick()
+  expect(controller.rows.has(sharedRow)).toBe(false)
+  expect(controller.rows.has(replacement)).toBe(true)
+  intersection([{ target: replacement, isIntersecting: true }])
+  await tick()
+  expect(replacement.querySelector('h1').textContent).toBe('번역 제목')
+  expect(document.querySelectorAll('[data-controller="creative-translations"]')).toHaveLength(1)
+})

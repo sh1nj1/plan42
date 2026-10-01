@@ -60,11 +60,33 @@ module CollavreTranslation
         CreativeTranslationPolicy.stub :enabled?, false do
           assert_no_enqueued_jobs only: TranslateJob do
             get @url
-            assert_response :service_unavailable
+            assert_response(disabled_model ? :service_unavailable : :forbidden)
             post @url
-            assert_response :service_unavailable
+            assert_response(disabled_model ? :service_unavailable : :forbidden)
           end
         end
+      end
+    end
+
+    test "reader OFF blocks existing cache and requests after permission checks" do
+      Translation.request!(@creative, "ko").update!(status: "completed", content: "[]")
+      CreativeTranslationPolicy.stub :enabled?, ->(user) { assert_equal @user, user; false } do
+        Translation.stub :for_creative, ->(*) { flunk "must not read cache" } do
+          Translation.stub :request!, ->(*) { flunk "must not request job" } do
+            get @url
+            assert_response :forbidden
+            post @url
+            assert_response :forbidden
+          end
+        end
+      end
+      sign_out
+      sign_in_as users(:three), password: "password"
+      CreativeTranslationPolicy.stub :enabled?, ->(*) { flunk "permission must be checked first" } do
+        get @url
+        assert_response :forbidden
+        post @url
+        assert_response :forbidden
       end
     end
 

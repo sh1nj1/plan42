@@ -19,7 +19,8 @@ module CollavreTranslation
       return head :forbidden unless @creative.has_permission?(Current.user, :read)
       return head :forbidden unless @creative.effective_origin.has_permission?(Current.user, :read)
 
-      return head :service_unavailable unless CreativeTranslationPolicy.enabled?(Current.user)
+      return head :service_unavailable unless CollavreTranslation.enabled?
+      return head :forbidden unless CreativeTranslationPolicy.enabled?(Current.user)
 
       head :unprocessable_entity unless %w[en ko].include?(target_locale)
     end

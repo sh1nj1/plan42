@@ -42,9 +42,14 @@ permissions are checked. Requests and polling stop when rows disappear or their
 source changes. Provider failures preserve the original display.
 
 The creative UI and API call the shared `CollavreTranslation.enabled_for?(user)`
-user preference gate when available, falling back to `enabled?` until the separate
+user preference gate for the reader when available, falling back to `enabled?` until the separate
 user preference feature is installed. User preference storage and settings UI,
 per-user quotas and dedicated usage reporting remain separate follow-ups.
+The creative controller mounts once on the reader index page, never in shared
+row broadcasts. Its observer translates live appended/replaced rows using the
+reader session; background renderer and sender preferences cannot suppress it.
+After source permission checks, API requests return 403 for a disabled reader
+and 503 for a disabled engine, before cache reads or job requests.
 
 The host runs the `translations` queue with a dedicated two-thread, one-process
 worker in every environment. Slow provider calls do not occupy default or AI
