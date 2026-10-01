@@ -113,11 +113,35 @@ test('editing or browsing versions invalidates translation even while request is
   expect(controller.original.hidden).toBe(false)
 })
 
-test('polling stops after two minutes', () => {
-  controller.startedAt = Date.now() - 121000
-  controller.handleResponse({ status: 'translating', source_digest: 'source' })
-  expect(controller.toggleTarget.hidden).toBe(true)
-  expect(controller.timer).toBeUndefined()
+test('queued translations keep polling beyond two minutes with capped backoff until completion', async () => {
+  jest.useFakeTimers()
+  const initialTime = Date.now()
+  fetchMock.mockResolvedValueOnce(result('processing'))
+  await controller.load()
+  expect(controller.pollDelay).toBe(2000)
+  fetchMock.mockResolvedValueOnce(result('processing'))
+  await jest.advanceTimersByTimeAsync(2000)
+  expect(controller.pollDelay).toBe(4000)
+  fetchMock.mockResolvedValueOnce(result('translating'))
+  await jest.advanceTimersByTimeAsync(4000)
+  expect(controller.pollDelay).toBe(8000)
+  fetchMock.mockResolvedValueOnce(result('processing'))
+  await jest.advanceTimersByTimeAsync(8000)
+  expect(controller.pollDelay).toBe(10000)
+  jest.setSystemTime(initialTime + 600000)
+  fetchMock.mockResolvedValueOnce(result('translating'))
+  await jest.advanceTimersByTimeAsync(10000)
+  expect(controller.toggleTarget.hidden).toBe(false)
+  expect(controller.toggleTarget.disabled).toBe(true)
+  expect(controller.pollDelay).toBe(10000)
+  fetchMock.mockResolvedValueOnce(result('completed', 'Delayed translation'))
+  await jest.advanceTimersByTimeAsync(10000)
+  expect(controller.contentTarget.textContent).toBe('Delayed translation')
+  expect(controller.original.hidden).toBe(true)
+  expect(controller.toggleTarget.disabled).toBe(false)
+  const requestCount = fetchMock.mock.calls.length
+  await jest.advanceTimersByTimeAsync(20000)
+  expect(fetchMock).toHaveBeenCalledTimes(requestCount)
 })
 
 test('disconnect restores original and aborts pending work', async () => {

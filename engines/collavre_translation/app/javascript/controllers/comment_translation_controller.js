@@ -62,12 +62,11 @@ export default class extends Controller {
     if (this.abort.signal.aborted || response.source_digest !== this.digestValue) return this.restoreOriginal()
     if (response.status === 'completed') return this.show(response.content)
     if (['pending', 'processing', 'translating'].includes(response.status)) {
-      this.startedAt ||= Date.now()
-      if (Date.now() - this.startedAt > 120000) return this.restoreOriginal()
       this.toggleTarget.hidden = false
       this.toggleTarget.disabled = true
       this.toggleTarget.textContent = this.loadingValue
-      this.timer = setTimeout(() => this.load(), 2000)
+      this.pollDelay = Math.min((this.pollDelay || 1000) * 2, 10000)
+      this.timer = setTimeout(() => this.load(), this.pollDelay)
     } else {
       this.restoreOriginal()
     }
