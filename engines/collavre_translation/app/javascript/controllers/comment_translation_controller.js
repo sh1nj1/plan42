@@ -30,6 +30,7 @@ export default class extends Controller {
   }
 
   async load(retry = false) {
+    let response
     try {
       if (!this.mutations) {
         this.mutations = new MutationObserver(records => {
@@ -43,18 +44,32 @@ export default class extends Controller {
         })
         this.mutations.observe(this.original, { childList: true, subtree: true, characterData: true })
       }
-      let response = await this.request(retry ? 'POST' : 'GET')
+      response = await this.request(retry ? 'POST' : 'GET')
       if (['missing', 'pending'].includes(response.status)) response = await this.request('POST')
+    } catch (error) {
+      return error.retryable ? this.showRetry() : this.restoreOriginal()
+    }
+    try {
       this.handleResponse(response)
     } catch {
-      this.showRetry()
+      this.restoreOriginal()
     }
   }
 
   async request(method) {
-    const response = await csrfFetch(this.urlValue, { method, signal: this.abort.signal,
-      headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error('Translation unavailable')
+    let response
+    try {
+      response = await csrfFetch(this.urlValue, { method, signal: this.abort.signal,
+        headers: { Accept: 'application/json' } })
+    } catch (error) {
+      error.retryable = error.name !== 'AbortError'
+      throw error
+    }
+    if (!response.ok) {
+      const error = new Error('Translation unavailable')
+      error.retryable = response.status >= 500 && response.status !== 503
+      throw error
+    }
     return response.json()
   }
 
@@ -90,6 +105,7 @@ export default class extends Controller {
   toggle() {
     if (this.retryAvailable) {
       this.retryAvailable = false
+      this.pollDelay = 0
       this.toggleTarget.disabled = true
       this.toggleTarget.textContent = this.loadingValue
       return this.load(true)

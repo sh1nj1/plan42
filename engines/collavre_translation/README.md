@@ -31,7 +31,7 @@ Concurrent requests claim one job atomically. Source edits select a new cache
 entry; jobs discard results if the source changes during translation. Deleting
 a comment deletes its cached translations. Failed translations retain the
 original. Failed comments show a Translate button for an explicit retry. Failed
-creatives retry when their row is loaded again; polling does not repeatedly retry
+creatives retry when their row is loaded again after a one-minute server cooldown; polling does not repeatedly retry
 provider failures. An interrupted worker leaves a processing
 row; operators can reset it to pending to retry. Old source revisions are
 retained until the comment is deleted.

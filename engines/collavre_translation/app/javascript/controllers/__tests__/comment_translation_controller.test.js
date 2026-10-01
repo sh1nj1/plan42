@@ -262,3 +262,34 @@ test('failed translation waits for a click and retries with POST, then can toggl
   expect(controller.toggleTarget.textContent).toBe('Show translation')
   expect(controller.original.hidden).toBe(false)
 })
+
+
+test.each([401, 403, 404, 409, 422, 503])('HTTP %s hides retry', async status => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status })
+  await controller.load()
+  expect(controller.original.hidden).toBe(false)
+  expect(controller.toggleTarget.hidden).toBe(true)
+})
+
+test.each([500, 502, 504])('HTTP %s allows retry', async status => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status })
+  await controller.load()
+  expect(controller.toggleTarget.textContent).toBe('Translate')
+  expect(controller.toggleTarget.hidden).toBe(false)
+})
+
+test('rendering errors do not offer another provider request', async () => {
+  fetchMock.mockResolvedValueOnce(result('completed', 'Cached'))
+  renderMock.mockImplementationOnce(() => { throw new Error('render failed') })
+  await controller.load()
+  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.original.hidden).toBe(false)
+})
+
+test('explicit retry resets the polling backoff', async () => {
+  fetchMock.mockResolvedValueOnce(result('failed')).mockResolvedValueOnce(result('processing'))
+  await controller.load()
+  controller.pollDelay = 10000
+  await controller.toggle()
+  expect(controller.pollDelay).toBe(2000)
+})
