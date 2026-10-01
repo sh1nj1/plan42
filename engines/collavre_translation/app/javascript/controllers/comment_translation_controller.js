@@ -132,7 +132,7 @@ export default class extends Controller {
 
   showRetry() {
     if (this.abort.signal.aborted) return this.restoreOriginal()
-    this.restoreOriginal()
+    this.restoreOriginal(true)
     this.retryAvailable = true
     this.toggleTarget.hidden = false
     this.toggleTarget.disabled = false
@@ -146,10 +146,12 @@ export default class extends Controller {
     this.toggleTarget.setAttribute('aria-label', label)
   }
 
-  restoreOriginal() {
+  restoreOriginal(keepSourceObserver = false) {
     this.retryAvailable = false
-    this.mutations?.disconnect()
-    this.mutations = null
+    if (!keepSourceObserver) {
+      this.mutations?.disconnect()
+      this.mutations = null
+    }
     if (this.original) this.original.hidden = false
     this.contentTarget.hidden = true
     this.contentTarget.replaceChildren()

@@ -318,6 +318,41 @@ test('explicit retry resets the polling backoff', async () => {
   expect(controller.pollDelay).toBe(2000)
 })
 
+test.each(['failed', 'network', 'http'])('source changes invalidate the %s retry control', async failure => {
+  if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('offline'))
+  else if (failure === 'http') fetchMock.mockResolvedValueOnce({ ok: false, status: 502 })
+  else fetchMock.mockResolvedValueOnce(result('failed'))
+  await controller.load()
+  expect(controller.retryAvailable).toBe(true)
+  controller.original.textContent = 'Different comment version'
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(true)
+  expect(controller.retryAvailable).toBe(false)
+  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.original.hidden).toBe(false)
+  expect(controller.mutations).toBeNull()
+  controller.handleResponse({ status: 'completed', source_digest: 'source', content: 'Stale translation' })
+  expect(controller.contentTarget.hidden).toBe(true)
+  expect(controller.contentTarget.textContent).toBe('')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
+test('source changes during explicit retry discard its late response', async () => {
+  fetchMock.mockResolvedValueOnce(result('failed'))
+  await controller.load()
+  let resolveRequest
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { resolveRequest = resolve }))
+  const retry = controller.toggle()
+  controller.original.textContent = 'Different comment version'
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(true)
+  resolveRequest(result('completed', 'Stale translation'))
+  await retry
+  expect(controller.original.hidden).toBe(false)
+  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.contentTarget.textContent).toBe('')
+})
+
 test('reserves action width without adding flow space and disconnects resize observer', () => {
   const actions = document.createElement('div')
   actions.className = 'comment-action-container'
