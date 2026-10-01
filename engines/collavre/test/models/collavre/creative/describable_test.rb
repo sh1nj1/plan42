@@ -60,7 +60,7 @@ module Collavre
       test "GFM task list checkboxes survive sanitization" do
         source = "- [ ] todo\n- [x] done\n"
 
-        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source).reload
 
         assert_match %r{<input[^>]*type="checkbox"[^>]*disabled}, creative.description
         assert_match %r{<input[^>]*checked[^>]*}, creative.description
@@ -97,7 +97,7 @@ module Collavre
       test "color span survives sanitization in markdown mode" do
         source = '<span style="color: rgb(255, 0, 0)">red</span> and ' \
                  '<span style="background-color: #ffff00">hl</span>'
-        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source).reload
 
         # Canonical markdown_source is preserved verbatim (sanitizer only touches
         # the rendered description).
@@ -110,7 +110,7 @@ module Collavre
       end
 
       test "color span survives sanitization in html mode" do
-        creative = Creative.create!(user: @user, description: '<p><span style="color: #ff0000">hi</span></p>')
+        creative = Creative.create!(user: @user, description: '<p><span style="color: #ff0000">hi</span></p>').reload
 
         assert_match(/color:\s*#ff0000/, creative.description)
         assert_includes creative.description, "hi"
@@ -120,7 +120,7 @@ module Collavre
         creative = Creative.create!(
           user: @user,
           description: '<p><span style="color: red; position: fixed; font-size: 99px">x</span></p>'
-        )
+        ).reload
 
         assert_match(/color:\s*red/, creative.description)
         refute_includes creative.description, "position"
@@ -131,7 +131,7 @@ module Collavre
         creative = Creative.create!(
           user: @user,
           description: '<p><span style="background: url(javascript:alert(1))">x</span></p>'
-        )
+        ).reload
 
         refute_includes creative.description, "javascript"
         refute_includes creative.description, "url("
@@ -142,7 +142,7 @@ module Collavre
         creative = Creative.create!(
           user: @user,
           description: %(<p>hi <input type="text" value="x"> <input type="submit"></p>)
-        )
+        ).reload
 
         refute_match %r{<input}, creative.description
         assert_includes creative.description, "hi"
@@ -154,7 +154,7 @@ module Collavre
 
         source = "before ![pixel](#{data_uri}) after"
 
-        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source)
+        creative = Creative.create!(user: @user, content_type_input: "markdown", markdown_source: source).reload
 
         stored = creative.data["markdown_source"]
         refute_includes stored, "data:image/png;base64,", "data URI should be rewritten out of stored markdown_source"
