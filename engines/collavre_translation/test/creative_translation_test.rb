@@ -26,6 +26,54 @@ module CollavreTranslation
       assert Translation.exists?(record.id)
     end
 
+    test "failed creative retries are rate limited across reloads and viewers" do
+      record = Translation.request!(@creative, "ko")
+      record.update!(status: "failed")
+      assert_no_enqueued_jobs only: TranslateJob do
+        2.times { assert_equal "failed", Translation.request!(@creative, "ko").status }
+      end
+      travel Translation::RETRY_COOLDOWN + 1.second do
+        assert_enqueued_jobs 1, only: TranslateJob do
+          2.times { Translation.request!(@creative, "ko") }
+        end
+      end
+      assert_equal "processing", record.reload.status
+    end
+
+    test "slow provider failures start the full cooldown when they fail" do
+      travel_to Time.current.change(usec: 0) do
+        record = Translation.request!(@creative, "ko")
+        HtmlTranslator.stub :call, ->(*) {
+          travel Translation::RETRY_COOLDOWN + 30.seconds
+          raise "slow provider failure"
+        } do
+          TranslateJob.perform_now(record.id)
+        end
+
+        assert_equal "failed", record.reload.status
+        assert_equal Time.current, record.updated_at
+        assert_nil record.content
+        assert_no_enqueued_jobs only: TranslateJob do
+          assert_equal "failed", Translation.request!(@creative, "ko").status
+          travel Translation::RETRY_COOLDOWN - 1.second
+          assert_equal "failed", Translation.request!(@creative, "ko").status
+        end
+        travel 1.second
+        assert_enqueued_jobs 1, only: TranslateJob do
+          2.times { assert_equal "processing", Translation.request!(@creative, "ko").status }
+        end
+      end
+    end
+
+    test "source edits bypass the failed creative cooldown" do
+      record = Translation.request!(@creative, "ko")
+      record.update!(status: "failed")
+      @creative.update!(description: "A changed creative")
+      assert_enqueued_jobs 1, only: TranslateJob do
+        Translation.request!(@creative, "ko")
+      end
+    end
+
     test "job translates creative prose without changing source or AI context" do
       record = Translation.request!(@creative, "ko")
       source = @creative.description

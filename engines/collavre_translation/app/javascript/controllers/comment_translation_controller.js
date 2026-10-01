@@ -6,7 +6,7 @@ import { renderCommentMarkdown, renderMermaidDiagrams } from "collavre/lib/utils
 export default class extends Controller {
   static targets = ["toggle", "content"]
   static values = { url: String, digest: String, loading: String,
-    original: String, showTranslation: String }
+    original: String, showTranslation: String, translate: String }
 
   connect() {
     this.abort = new AbortController()
@@ -38,7 +38,8 @@ export default class extends Controller {
     if (this.original) this.original.hidden = false
   }
 
-  async load() {
+  async load(retry = false) {
+    let response
     try {
       if (!this.mutations) {
         this.mutations = new MutationObserver(records => {
@@ -52,8 +53,12 @@ export default class extends Controller {
         })
         this.mutations.observe(this.original, { childList: true, subtree: true, characterData: true })
       }
-      let response = await this.request('GET')
+      response = await this.request(retry ? 'POST' : 'GET')
       if (['missing', 'pending'].includes(response.status)) response = await this.request('POST')
+    } catch (error) {
+      return error.retryable ? this.showRetry() : this.restoreOriginal()
+    }
+    try {
       this.handleResponse(response)
     } catch {
       this.restoreOriginal()
@@ -61,14 +66,26 @@ export default class extends Controller {
   }
 
   async request(method) {
-    const response = await csrfFetch(this.urlValue, { method, signal: this.abort.signal,
-      headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error('Translation unavailable')
+    let response
+    try {
+      response = await csrfFetch(this.urlValue, { method, signal: this.abort.signal,
+        headers: { Accept: 'application/json' } })
+    } catch (error) {
+      error.retryable = error.name !== 'AbortError'
+      throw error
+    }
+    if (!response.ok) {
+      const error = new Error('Translation unavailable')
+      error.retryable = response.status >= 500 && response.status !== 503
+      throw error
+    }
     return response.json()
   }
 
   handleResponse(response) {
     if (this.abort.signal.aborted || response.source_digest !== this.digestValue) return this.restoreOriginal()
+    this.retryAvailable = false
+    if (response.status === 'failed') return this.showRetry()
     if (response.status === 'completed') return this.show(response.content)
     if (['pending', 'processing', 'translating'].includes(response.status)) {
       this.toggleTarget.hidden = false
@@ -95,6 +112,13 @@ export default class extends Controller {
   }
 
   toggle() {
+    if (this.retryAvailable) {
+      this.retryAvailable = false
+      this.pollDelay = 0
+      this.toggleTarget.disabled = true
+      this.setToggleLabel(this.loadingValue)
+      return this.load(true)
+    }
     this.showingTranslation = !this.showingTranslation
     this.updateVisibility()
   }
@@ -106,14 +130,28 @@ export default class extends Controller {
     this.toggleTarget.setAttribute('aria-pressed', String(this.showingTranslation))
   }
 
+  showRetry() {
+    if (this.abort.signal.aborted) return this.restoreOriginal()
+    this.restoreOriginal(true)
+    this.retryAvailable = true
+    this.toggleTarget.hidden = false
+    this.toggleTarget.disabled = false
+    this.setToggleLabel(this.translateValue)
+    this.toggleTarget.setAttribute('aria-pressed', 'false')
+  }
+
   setToggleLabel(label) {
     this.toggleTarget.textContent = label
     this.toggleTarget.title = label
     this.toggleTarget.setAttribute('aria-label', label)
   }
 
-  restoreOriginal() {
-    this.mutations?.disconnect()
+  restoreOriginal(keepSourceObserver = false) {
+    this.retryAvailable = false
+    if (!keepSourceObserver) {
+      this.mutations?.disconnect()
+      this.mutations = null
+    }
     if (this.original) this.original.hidden = false
     this.contentTarget.hidden = true
     this.contentTarget.replaceChildren()

@@ -1,5 +1,6 @@
 en:
   collavre_translation:
+    translate: "Translate"
     loading: "Translating…"
     original: "Show original"
     show_translation: "Show translation"

@@ -1,6 +1,7 @@
 module CollavreTranslation
   class Translation < Collavre::ApplicationRecord
     CLAIM_TIMEOUT = 5.minutes
+    RETRY_COOLDOWN = 1.minute
 
     belongs_to :translatable, polymorphic: true
     validates :target_locale, inclusion: { in: %w[en ko] }
@@ -28,11 +29,16 @@ module CollavreTranslation
       record&.stale_claim? ? request!(comment, locale) : record
     end
 
+    def self.retryable_failures(record, source)
+      failures = where(id: record.id, status: "failed")
+      source.is_a?(Collavre::Creative) ? failures.where("updated_at <= ?", RETRY_COOLDOWN.ago) : failures
+    end
+
     def self.request!(comment, locale)
       record = create_or_find_by!(translatable: comment, target_locale: locale,
         source_digest: digest(source(comment)))
       # A compare-and-swap also recovers an enqueue failure without duplicate jobs.
-      claimed = where(id: record.id, status: "pending").or(where(id: record.id, status: "translating")
+      claimed = where(id: record.id, status: "pending").or(retryable_failures(record, comment)).or(where(id: record.id, status: "translating")
         .where("updated_at < ?", CLAIM_TIMEOUT.ago)).update_all(status: "processing", updated_at: Time.current)
       if claimed == 1
         begin

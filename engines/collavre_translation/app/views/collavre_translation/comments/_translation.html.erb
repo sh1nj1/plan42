@@ -2,6 +2,7 @@
   <template data-comment-translation-template>
     <div data-comment-translation-url-value="<%= collavre_translation.comment_translation_path(comment_id: comment.id) %>"
        data-comment-translation-digest-value="<%= CollavreTranslation::Translation.digest(comment.content) %>"
+       data-comment-translation-translate-value="<%= t('collavre_translation.translate') %>"
        data-comment-translation-loading-value="<%= t('collavre_translation.loading') %>"
        data-comment-translation-original-value="<%= t('collavre_translation.original') %>"
        data-comment-translation-show-translation-value="<%= t('collavre_translation.show_translation') %>">

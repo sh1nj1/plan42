@@ -25,8 +25,8 @@ beforeEach(async () => {
     <div data-controller="comment-translation" data-comment-translation-url-value="/translation/comments/1/translation"
       data-comment-translation-digest-value="source" data-comment-translation-loading-value="Translating"
       data-comment-translation-original-value="Show original"
-      data-comment-translation-show-translation-value="Show translation">
-      <button data-comment-translation-target="toggle" data-action="comment-translation#toggle" hidden></button>
+      data-comment-translation-translate-value="Translate" data-comment-translation-show-translation-value="Show translation">
+      <div class="comment-content-action-controls"><button data-comment-translation-target="toggle" data-action="comment-translation#toggle" hidden></button></div>
       <div data-comment-translation-target="content" hidden></div>
     </div></div>`
   app = Application.start()
@@ -85,7 +85,7 @@ test('cached translation does not issue POST', async () => {
   expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Show original')
 })
 
-test.each(['failed', 'skipped'])('%s preserves original', async status => {
+test.each(['skipped'])('%s preserves original', async status => {
   fetchMock.mockResolvedValue(result(status))
   await controller.load()
   expect(controller.original.hidden).toBe(false)
@@ -98,7 +98,10 @@ test('HTTP failure and thrown network errors preserve original', async () => {
   expect(controller.original.hidden).toBe(false)
   fetchMock.mockRejectedValueOnce(new Error('offline'))
   await controller.load()
-  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.toggleTarget.closest('.comment-content-action-controls')).not.toBeNull()
+  expect(controller.toggleTarget.textContent).toBe('Translate')
+  expect(controller.toggleTarget.title).toBe('Translate')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Translate')
 })
 
 test('stale digest, empty content and aborted requests do not display a translation', async () => {
@@ -176,7 +179,10 @@ test('pending states poll again and stop cleanly on failure', async () => {
   expect(controller.toggleTarget.disabled).toBe(true)
   await jest.advanceTimersByTimeAsync(2000)
   expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST', 'GET'])
-  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.toggleTarget.closest('.comment-content-action-controls')).not.toBeNull()
+  expect(controller.toggleTarget.textContent).toBe('Translate')
+  expect(controller.toggleTarget.title).toBe('Translate')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Translate')
 })
 
 test('disconnect is safe before content is connected', () => {
@@ -251,6 +257,100 @@ test('Mermaid decoration during an in-flight request does not invalidate transla
   await tick()
   expect(controller.abort.signal.aborted).toBe(true)
   expect(controller.original.hidden).toBe(false)
+})
+
+test('failed translation waits for a click and retries with POST, then can toggle translation', async () => {
+  fetchMock.mockResolvedValueOnce(result('failed'))
+  await controller.load()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(controller.toggleTarget.hidden).toBe(false)
+  expect(controller.toggleTarget.disabled).toBe(false)
+  expect(controller.toggleTarget.closest('.comment-content-action-controls')).not.toBeNull()
+  expect(controller.toggleTarget.textContent).toBe('Translate')
+  expect(controller.toggleTarget.title).toBe('Translate')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Translate')
+  expect(controller.original.hidden).toBe(false)
+  fetchMock.mockResolvedValueOnce(result('processing'))
+  await controller.toggle()
+  expect(fetchMock.mock.calls[1][1].method).toBe('POST')
+  expect(controller.toggleTarget.disabled).toBe(true)
+  expect(controller.toggleTarget.title).toBe('Translating')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Translating')
+  clearTimeout(controller.timer)
+  fetchMock.mockResolvedValueOnce(result('completed', 'Recovered'))
+  await controller.load()
+  controller.toggle()
+  expect(controller.toggleTarget.textContent).toBe('Show translation')
+  expect(controller.original.hidden).toBe(false)
+})
+
+
+test.each([401, 403, 404, 409, 422, 503])('HTTP %s hides retry', async status => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status })
+  await controller.load()
+  expect(controller.original.hidden).toBe(false)
+  expect(controller.toggleTarget.hidden).toBe(true)
+})
+
+test.each([500, 502, 504])('HTTP %s allows retry', async status => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status })
+  await controller.load()
+  expect(controller.toggleTarget.closest('.comment-content-action-controls')).not.toBeNull()
+  expect(controller.toggleTarget.textContent).toBe('Translate')
+  expect(controller.toggleTarget.title).toBe('Translate')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Translate')
+  expect(controller.toggleTarget.hidden).toBe(false)
+})
+
+test('rendering errors do not offer another provider request', async () => {
+  fetchMock.mockResolvedValueOnce(result('completed', 'Cached'))
+  renderMock.mockImplementationOnce(() => { throw new Error('render failed') })
+  await controller.load()
+  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.original.hidden).toBe(false)
+})
+
+test('explicit retry resets the polling backoff', async () => {
+  fetchMock.mockResolvedValueOnce(result('failed')).mockResolvedValueOnce(result('processing'))
+  await controller.load()
+  controller.pollDelay = 10000
+  await controller.toggle()
+  expect(controller.pollDelay).toBe(2000)
+})
+
+test.each(['failed', 'network', 'http'])('source changes invalidate the %s retry control', async failure => {
+  if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('offline'))
+  else if (failure === 'http') fetchMock.mockResolvedValueOnce({ ok: false, status: 502 })
+  else fetchMock.mockResolvedValueOnce(result('failed'))
+  await controller.load()
+  expect(controller.retryAvailable).toBe(true)
+  controller.original.textContent = 'Different comment version'
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(true)
+  expect(controller.retryAvailable).toBe(false)
+  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.original.hidden).toBe(false)
+  expect(controller.mutations).toBeNull()
+  controller.handleResponse({ status: 'completed', source_digest: 'source', content: 'Stale translation' })
+  expect(controller.contentTarget.hidden).toBe(true)
+  expect(controller.contentTarget.textContent).toBe('')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+})
+
+test('source changes during explicit retry discard its late response', async () => {
+  fetchMock.mockResolvedValueOnce(result('failed'))
+  await controller.load()
+  let resolveRequest
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { resolveRequest = resolve }))
+  const retry = controller.toggle()
+  controller.original.textContent = 'Different comment version'
+  await tick()
+  expect(controller.abort.signal.aborted).toBe(true)
+  resolveRequest(result('completed', 'Stale translation'))
+  await retry
+  expect(controller.original.hidden).toBe(false)
+  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.contentTarget.textContent).toBe('')
 })
 
 test('reserves action width without adding flow space and disconnects resize observer', () => {
