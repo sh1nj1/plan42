@@ -81,12 +81,13 @@ module CollavreTranslation
       @user.update!(auto_translation_enabled: false)
       reader = users(:two)
       reader.update!(locale: "ko")
-      @comment.creative.creative_shares.create!(user: reader, permission: :read)
+      Collavre::CreativeSharesCache.create!(creative: @comment.creative, user: reader, permission: :feedback)
       get creative_comments_path(@comment.creative)
       assert_select '[data-controller="comment-translation"]', count: 0
       sign_out
       sign_in_as reader, password: "password"
       get creative_comments_path(@comment.creative)
+      assert_response :success
       assert_select '[data-controller="comment-translation"]', count: 1
       assert_enqueued_jobs 1, only: TranslateJob do
         post @url
