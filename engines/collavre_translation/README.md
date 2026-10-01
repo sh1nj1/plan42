@@ -5,18 +5,19 @@ original text. Only authenticated, authorized readers trigger translation, when 
 comment enters the viewport. Responses are fetched per viewer, never broadcast
 on the shared comment stream.
 
-Configure the shared model in **Admin → Integrations → Comment translation**
+Translation uses `COLLAVRE_DEFAULT_LLM_VENDOR` and `COLLAVRE_DEFAULT_LLM_MODEL`
+by default (Gemini / `gemini-3.1-flash-lite` when unset). Override the model in **Admin → Integrations → Comment translation**
 (`translation_llm_vendor`, `translation_llm_model`). The corresponding deployment
 variables are `TRANSLATION_LLM_VENDOR` and `TRANSLATION_LLM_MODEL`. Alternatively,
-enable with a host initializer:
+override with a host initializer:
 
 ```ruby
 CollavreTranslation.vendor = "google" # google, gemini, openai, anthropic
 CollavreTranslation.model = "YOUR_CONFIGURED_MODEL"
 ```
 
-Uses the existing provider API keys from Collavre integration settings. A blank
-model disables translation (the default). Removing the engine and its host JS
+Uses the existing provider API keys from Collavre integration settings. Blank integration settings fall back to the application defaults. Setting
+`CollavreTranslation.model = ""` in a host initializer disables translation. Removing the engine and its host JS
 registration disables the feature. This engine owns its tables and the user
 preference column; core registers no translation-specific settings.
 

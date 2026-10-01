@@ -6,11 +6,13 @@ module CollavreTranslation
     attr_writer :vendor, :model
 
     def vendor
-      @vendor || Collavre::IntegrationSettings.fetch(:translation_llm_vendor, default: "google")
+      @vendor || Collavre::IntegrationSettings.fetch(:translation_llm_vendor).presence ||
+        ENV["COLLAVRE_DEFAULT_LLM_VENDOR"].presence || "gemini"
     end
 
     def model
-      @model || Collavre::IntegrationSettings.fetch(:translation_llm_model)
+      @model || Collavre::IntegrationSettings.fetch(:translation_llm_model).presence ||
+        ENV["COLLAVRE_DEFAULT_LLM_MODEL"].presence || "gemini-3.1-flash-lite"
     end
 
     def enabled_for?(user)

@@ -4,7 +4,7 @@ module CollavreTranslation
 
     initializer "collavre_translation.settings" do
       registry = Collavre::IntegrationSettings::Registry.instance
-      registry.register(:translation_llm_vendor, category: "translation", sensitive: false, default: "google")
+      registry.register(:translation_llm_vendor, category: "translation", sensitive: false)
       registry.register(:translation_llm_model, category: "translation", sensitive: false)
     end
 

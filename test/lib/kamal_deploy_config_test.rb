@@ -40,6 +40,20 @@ class KamalDeployConfigTest < ActiveSupport::TestCase
     assert_equal "false", clear_environment["SOLID_QUEUE_IN_PUMA"]
   end
 
+  test "forwards shared model defaults through deployment secrets" do
+    template = ERB.new(Rails.root.join("config/deploy.yml").read).result
+    secret_environment = YAML.safe_load(template).dig("env", "secret")
+    secrets = Rails.root.join(".kamal/secrets").read
+
+    %w[COLLAVRE_DEFAULT_LLM_VENDOR COLLAVRE_DEFAULT_LLM_MODEL].each do |key|
+      assert_includes secret_environment, key
+      assert_includes secrets.lines.map(&:chomp), "#{key}=${#{key}}"
+      %w[env.template .env.test].each do |file|
+        assert_match(/^#{key}=.+$/, Rails.root.join(file).read)
+      end
+    end
+  end
+
   private
     def rendered_clear_environment
       template = ERB.new(Rails.root.join("config/deploy.yml").read).result
