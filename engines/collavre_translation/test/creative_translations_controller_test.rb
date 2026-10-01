@@ -37,6 +37,20 @@ module CollavreTranslation
       assert_equal "missing", response.parsed_body["status"]
     end
 
+    test "embed=0 returns the stored source so tree labels keep YouTube link text" do
+      link = '<a href="https://youtu.be/dQw4w9WgXcQ">my video</a>'
+      @creative.update!(description: "<p>Watch #{link}</p>")
+      get @url
+      assert_includes response.parsed_body["original_html"], "youtube.com/embed/dQw4w9WgXcQ"
+      assert_not_includes response.parsed_body["original_html"], "my video"
+      digest = response.parsed_body["source_digest"]
+      get @url, params: { embed: "0" }
+      assert_equal "<p>Watch #{link}</p>", response.parsed_body["original_html"]
+      assert_equal digest, response.parsed_body["source_digest"]
+      assert_equal Collavre::HtmlText.label(@creative.effective_description),
+        Collavre::HtmlText.label(response.parsed_body["original_html"])
+    end
+
     test "anonymous readers cannot access translations" do
       sign_out
       get @url, headers: { "X-Requested-With" => "XMLHttpRequest" }

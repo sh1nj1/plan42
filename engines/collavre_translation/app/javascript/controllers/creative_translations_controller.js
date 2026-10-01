@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { sanitizeDescriptionHtml } from "collavre/lib/utils/sanitize_description"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
-import { PROTECTED, translationSource, translationContent, treeTranslation } from "./workspace_translation"
+import { PROTECTED, translationSource, translationContent, translationUrl, treeTranslation } from "./workspace_translation"
 
 
 export default class extends Controller {
@@ -38,7 +38,7 @@ export default class extends Controller {
     const state = this.rows.get(row)
     if (!state) return
     try {
-      const url = this.baseValue.replace('__ID__', row.getAttribute('creative-id') || row.dataset.creativeId)
+      const url = translationUrl(this.baseValue, row)
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })

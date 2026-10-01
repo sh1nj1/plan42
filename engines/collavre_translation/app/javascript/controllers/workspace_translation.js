@@ -11,6 +11,12 @@ export function translationContent(row) {
   return row.matches(TREE) ? row : row.querySelector('.creative-content, .creative-title-content')
 }
 
+// Tree labels come from the stored description, so ask for it unembedded.
+export function translationUrl(base, row) {
+  const url = base.replace('__ID__', row.getAttribute('creative-id') || row.dataset.creativeId)
+  return row.matches(TREE) ? `${url}?embed=0` : url
+}
+
 function label(content) {
   return content.textContent.replace(/\s+/gu, ' ').trim()
 }

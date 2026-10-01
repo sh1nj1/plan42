@@ -331,3 +331,14 @@ test('workspace labels combine inline text, decode entities and preserve protect
   expect(rich.textContent).toBe('번역 제목<script>safe text</script> Code @Astra:')
   expect(rich.querySelector('script')).toBeNull()
 })
+
+test('workspace labels request the unembedded source so YouTube link text still matches', async () => {
+  const link = addTreeLink('English title Link label')
+  fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: 'completed', content: pairs,
+    original_html: '<h1>English title</h1> <a href="https://youtu.be/dQw4w9WgXcQ">Link label</a>', source_digest: 'digest' }) })
+  await controller.load(link)
+  expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/1/translation?embed=0', expect.anything())
+  expect(link.textContent).toBe('번역 제목 <script>safe text</script>')
+  await controller.load(row)
+  expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/1/translation', expect.anything())
+})
