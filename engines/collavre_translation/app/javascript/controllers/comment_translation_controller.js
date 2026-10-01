@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { addTableDownloadButtons } from "collavre/lib/utils/table_download"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
 import { renderCommentMarkdown, renderMermaidDiagrams } from "collavre/lib/utils/markdown"
 
@@ -76,6 +77,7 @@ export default class extends Controller {
     this.toggleTarget.hidden = false
     this.toggleTarget.disabled = false
     this.updateVisibility()
+    addTableDownloadButtons(this.contentTarget)
     renderMermaidDiagrams(this.contentTarget)
   }
 
