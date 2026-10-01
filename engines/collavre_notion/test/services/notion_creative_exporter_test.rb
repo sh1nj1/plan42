@@ -71,7 +71,21 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
   test "splits large tables into API sized blocks" do
     html = "<table>#{'<tr><td>row</td></tr>' * 201}</table>"
     @creative.stub(:effective_description, html) do
-      assert_equal [ 100, 100, 1 ], export.map { |block| block[:table][:children].size }
+      blocks = export
+      assert_equal [ 100, 100, 1 ], blocks.map { |block| block[:table][:children].size }
+      assert_equal [ true, false, false ], blocks.map { |block| block[:table][:has_column_header] }
+    end
+  end
+
+
+  test "large markdown tables only mark the original header" do
+    html = "| Header |\n| --- |\n" + (1..200).map { |index| "| Row #{index} |" }.join("\n")
+    @creative.stub(:effective_description, html) do
+      blocks = export
+      assert_equal [ true, false, false ], blocks.map { |block| block[:table][:has_column_header] }
+      rows = blocks.flat_map { |block| block[:table][:children] }
+      assert_equal [ "Header" ] + (1..200).map { |index| "Row #{index}" },
+                   rows.map { |row| row.dig(:table_row, :cells, 0, 0, :text, :content) }
     end
   end
 
@@ -80,6 +94,7 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
       table = export.first[:table]
       assert_equal 2, table[:table_width]
       assert_equal 2, table[:children].size
+      assert table[:has_column_header]
     end
   end
 

@@ -38,6 +38,7 @@ class NotionBlockBatchesTest < ActiveSupport::TestCase
     assert_equal blocks.last, result.last.sole
     tables = result.flatten.select { |block| block[:type] == "table" }
     assert_operator tables.size, :>, 2
+    assert_equal [ true ] + [ false ] * (tables.size - 1), tables.map { |table| table.dig(:table, :has_column_header) }
     assert tables.all? { |table| table.dig(:table, :table_width) == 3 }
     rows = tables.flat_map { |table| table.dig(:table, :children) }
     assert rows.all? { |row| row.dig(:table_row, :cells).size == 3 }
@@ -54,8 +55,19 @@ class NotionBlockBatchesTest < ActiveSupport::TestCase
     blocks = exported(html)
     result = batches(blocks)
     assert_operator result.size, :>, 1
+    assert_equal [ true ] + [ false ] * (result.size - 1), result.map { |batch| batch.sole.dig(:table, :has_column_header) }
     assert_valid_requests(result)
     assert_equal blocks.sole.dig(:table, :children), result.flat_map { |batch| batch.sole.dig(:table, :children) }
+  end
+
+
+  test "headerless tables remain headerless after byte partitioning" do
+    table = exported("<table>#{('<tr><td>' + '😀' * 2_000 + '</td></tr>') * 100}</table>").sole
+    table[:table][:has_column_header] = false
+    result = batches([ table ])
+    assert_operator result.size, :>, 1
+    assert result.all? { |batch| batch.sole.dig(:table, :has_column_header) == false }
+    assert_valid_requests(result)
   end
 
   test "an indivisible oversized table row fails without recursive looping" do

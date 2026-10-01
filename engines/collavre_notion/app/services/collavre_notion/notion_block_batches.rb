@@ -28,15 +28,17 @@ module CollavreNotion
 
     # Keep tables in separate requests to also bound the nested block count.
     def each_table(table, &callback)
-      rows = table.dig(:table, :children).flat_map { |row| split_row(table, row) }
-      rows.each_slice(100) { |part| each_table_rows(table, part, &callback) }
+      continuation = table.merge(table: table[:table].merge(has_column_header: false))
+      rows = table.dig(:table, :children).flat_map { |row| split_row(continuation, row) }
+      rows.each_slice(100) { |part| each_table_rows(table, part, rows.first, &callback) }
     end
 
-    def each_table_rows(table, rows, &callback)
+    def each_table_rows(table, rows, header_row, &callback)
       block = table_with_rows(table, rows)
+      block[:table][:has_column_header] &&= rows.first.equal?(header_row)
       return callback.call([ block ]) if fits?([ block ])
 
-      rows.each_slice((rows.size / 2.0).ceil) { |part| each_table_rows(table, part, &callback) }
+      rows.each_slice((rows.size / 2.0).ceil) { |part| each_table_rows(table, part, header_row, &callback) }
     end
 
     def table_with_rows(table, rows)

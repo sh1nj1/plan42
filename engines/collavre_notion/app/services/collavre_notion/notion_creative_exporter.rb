@@ -43,7 +43,7 @@ module CollavreNotion
         table_html = table_match[1]
         table_data = parse_html_table(table_html)
         if table_data.any?
-          blocks.concat(table_data.flat_map { |row| split_table_row(row) }.each_slice(100).map { |rows| create_table_block(rows) })
+          blocks.concat(table_data.flat_map { |row| split_table_row(row) }.each_slice(100).with_index.map { |rows, index| create_table_block(rows, has_column_header: index.zero?) })
         end
       else
         # Try markdown table format
@@ -51,7 +51,7 @@ module CollavreNotion
         if markdown_table
           table_data = parse_markdown_table(markdown_table)
           if table_data.any?
-            blocks.concat(table_data.flat_map { |row| split_table_row(row) }.each_slice(100).map { |rows| create_table_block(rows) })
+            blocks.concat(table_data.flat_map { |row| split_table_row(row) }.each_slice(100).with_index.map { |rows, index| create_table_block(rows, has_column_header: index.zero?) })
           end
         end
       end
@@ -140,7 +140,7 @@ module CollavreNotion
       }
     end
 
-    def create_table_block(table_data)
+    def create_table_block(table_data, has_column_header: true)
       return nil if table_data.empty?
 
       # Notion tables need consistent column count
@@ -154,7 +154,7 @@ module CollavreNotion
         type: "table",
         table: {
           table_width: max_columns,
-          has_column_header: true,
+          has_column_header: has_column_header,
           has_row_header: false,
           children: normalized_rows.map do |row_data|
             {
