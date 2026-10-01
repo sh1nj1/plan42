@@ -77,6 +77,25 @@ module CollavreTranslation
       assert_equal "Cached", response.parsed_body["content"]
     end
 
+    test "each reader uses their own preference for the same comment" do
+      @user.update!(auto_translation_enabled: false)
+      reader = users(:two)
+      reader.update!(locale: "ko")
+      @comment.creative.creative_shares.create!(user: reader, permission: :read)
+      get creative_comments_path(@comment.creative)
+      assert_select '[data-controller="comment-translation"]', count: 0
+      sign_out
+      sign_in_as reader, password: "password"
+      get creative_comments_path(@comment.creative)
+      assert_select '[data-controller="comment-translation"]', count: 1
+      assert_enqueued_jobs 1, only: TranslateJob do
+        post @url
+        assert_response :success
+      end
+      refute @user.reload.auto_translation_enabled?
+      assert reader.reload.auto_translation_enabled?
+    end
+
     test "disabled model does not enqueue" do
       CollavreTranslation.model = ""
       assert_no_enqueued_jobs only: TranslateJob do
