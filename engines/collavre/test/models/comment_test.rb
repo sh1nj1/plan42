@@ -154,12 +154,12 @@ class CommentTest < ActiveSupport::TestCase
     owner = users(:one)
     ai_agent = users(:ai_bot)
 
+    creative = nil
     perform_enqueued_jobs do
       creative = Creative.create!(user: owner, description: "Test inbox skip")
       CreativeShare.create!(creative: creative, user: ai_agent, permission: :feedback, shared_by: owner)
     end
 
-    creative = Creative.last
     inbox = Creative.inbox_for(owner)
     initial_inbox_comment_count = inbox.comments.count
 
