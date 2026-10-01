@@ -24,7 +24,7 @@ beforeEach(async () => {
   document.body.innerHTML = `<div class="comment-item"><div data-comment-target="content">Original</div>
     <div data-controller="comment-translation" data-comment-translation-url-value="/translation/comments/1/translation"
       data-comment-translation-digest-value="source" data-comment-translation-loading-value="Translating"
-      data-comment-translation-translated-value="Translated" data-comment-translation-original-value="Show original"
+      data-comment-translation-original-value="Show original"
       data-comment-translation-show-translation-value="Show translation">
       <button data-comment-translation-target="toggle" data-action="comment-translation#toggle" hidden></button>
       <div data-comment-translation-target="content" hidden></div>
@@ -54,15 +54,22 @@ test('waits for viewport then requests missing translation and polls to completi
   await tick()
   expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST'])
   expect(controller.toggleTarget.textContent).toBe('Translating')
+  expect(controller.toggleTarget.title).toBe('Translating')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Translating')
+  expect(controller.toggleTarget.disabled).toBe(true)
+  expect(controller.toggleTarget.hasAttribute('role')).toBe(false)
   expect(controller.original.hidden).toBe(false)
   clearTimeout(controller.timer)
   fetchMock.mockResolvedValueOnce(result('completed', '번역 결과'))
   await controller.load()
   expect(controller.original.hidden).toBe(true)
+  expect(controller.toggleTarget.hasAttribute('role')).toBe(false)
   expect(controller.contentTarget.innerHTML).toBe('<p>번역 결과</p>')
   controller.toggle()
   expect(controller.original.hidden).toBe(false)
   expect(controller.toggleTarget.textContent).toBe('Show translation')
+  expect(controller.toggleTarget.title).toBe('Show translation')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Show translation')
   controller.toggle()
   expect(controller.contentTarget.hidden).toBe(false)
 })
@@ -73,6 +80,9 @@ test('cached translation does not issue POST', async () => {
   expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(fetchMock.mock.calls[0][1].method).toBe('GET')
   expect(controller.toggleTarget.getAttribute('aria-pressed')).toBe('true')
+  expect(controller.toggleTarget.textContent).toBe('Show original')
+  expect(controller.toggleTarget.title).toBe('Show original')
+  expect(controller.toggleTarget.getAttribute('aria-label')).toBe('Show original')
 })
 
 test.each(['failed', 'skipped'])('%s preserves original', async status => {
@@ -241,4 +251,27 @@ test('Mermaid decoration during an in-flight request does not invalidate transla
   await tick()
   expect(controller.abort.signal.aborted).toBe(true)
   expect(controller.original.hidden).toBe(false)
+})
+
+test('reserves action width without adding flow space and disconnects resize observer', () => {
+  const actions = document.createElement('div')
+  actions.className = 'comment-action-container'
+  actions.getBoundingClientRect = () => ({ width: 100 })
+  controller.element.closest('.comment-item').append(actions)
+  let resize
+  const observe = jest.fn()
+  const disconnect = jest.fn()
+  global.ResizeObserver = class {
+    constructor(callback) { resize = callback }
+    observe = observe
+    disconnect = disconnect
+  }
+  controller.disconnect()
+  controller.connect()
+  resize()
+  expect(observe).toHaveBeenCalledWith(actions)
+  expect(controller.toggleTarget.parentElement.style.right).toBe('108px')
+  controller.disconnect()
+  expect(disconnect).toHaveBeenCalled()
+  delete global.ResizeObserver
 })

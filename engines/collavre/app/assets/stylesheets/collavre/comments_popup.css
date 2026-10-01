@@ -2444,3 +2444,23 @@ li:hover .topic-create-option {
     color: var(--color-text-muted);
     font-size: var(--text-0);
 }
+
+/* Content extension controls share the existing action strip without adding a row. */
+.comment-content-action-controls {
+    position: absolute;
+    bottom: 0.2em;
+    left: 0.5em;
+    right: 0.2em;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+
+.comment-content-action-controls button {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

@@ -5,13 +5,21 @@ import { renderCommentMarkdown, renderMermaidDiagrams } from "collavre/lib/utils
 
 export default class extends Controller {
   static targets = ["toggle", "content"]
-  static values = { url: String, digest: String, loading: String, translated: String,
+  static values = { url: String, digest: String, loading: String,
     original: String, showTranslation: String }
 
   connect() {
     this.abort = new AbortController()
     this.original = this.element.closest('.comment-item')?.querySelector('[data-comment-target="content"]')
     if (!this.original) return
+    const actions = this.element.closest('.comment-item').querySelector('.comment-action-container')
+    const controls = this.toggleTarget.parentElement
+    if (actions && typeof ResizeObserver !== 'undefined') {
+      this.actionResize = new ResizeObserver(() => {
+        controls.style.right = `${actions.getBoundingClientRect().width + 8}px`
+      })
+      this.actionResize.observe(actions)
+    }
     this.observer = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) {
         this.observer.disconnect()
@@ -25,6 +33,7 @@ export default class extends Controller {
     this.abort?.abort()
     this.observer?.disconnect()
     this.mutations?.disconnect()
+    this.actionResize?.disconnect()
     clearTimeout(this.timer)
     if (this.original) this.original.hidden = false
   }
@@ -64,7 +73,7 @@ export default class extends Controller {
     if (['pending', 'processing', 'translating'].includes(response.status)) {
       this.toggleTarget.hidden = false
       this.toggleTarget.disabled = true
-      this.toggleTarget.textContent = this.loadingValue
+      this.setToggleLabel(this.loadingValue)
       this.pollDelay = Math.min((this.pollDelay || 1000) * 2, 10000)
       this.timer = setTimeout(() => this.load(), this.pollDelay)
     } else {
@@ -93,9 +102,14 @@ export default class extends Controller {
   updateVisibility() {
     this.original.hidden = this.showingTranslation
     this.contentTarget.hidden = !this.showingTranslation
-    this.toggleTarget.textContent = this.showingTranslation
-      ? `${this.translatedValue} · ${this.originalValue}` : this.showTranslationValue
+    this.setToggleLabel(this.showingTranslation ? this.originalValue : this.showTranslationValue)
     this.toggleTarget.setAttribute('aria-pressed', String(this.showingTranslation))
+  }
+
+  setToggleLabel(label) {
+    this.toggleTarget.textContent = label
+    this.toggleTarget.title = label
+    this.toggleTarget.setAttribute('aria-label', label)
   }
 
   restoreOriginal() {
@@ -104,5 +118,7 @@ export default class extends Controller {
     this.contentTarget.hidden = true
     this.contentTarget.replaceChildren()
     this.toggleTarget.hidden = true
+    this.toggleTarget.disabled = false
+    this.toggleTarget.removeAttribute('aria-pressed')
   }
 }
