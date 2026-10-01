@@ -26,6 +26,12 @@ default: &default
       threads: <%= ENV.fetch("AI_AGENT_THREADS", 12) %>
       processes: 1
       polling_interval: 0.1
+    # Translation provider calls can block for up to a minute. Keep their
+    # capacity separate from default jobs and AI agent turns.
+    - queues: [translations]
+      threads: 2
+      processes: 1
+      polling_interval: 0.1
     # Sequential worker for inbound Linear webhooks. A single thread + single
     # process makes this queue a strict FIFO consumer so events apply in receipt
     # order (a comment can arrive before its issue's create). Do NOT raise

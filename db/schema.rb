@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -143,6 +143,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.index ["topic_id"], name: "index_channels_on_topic_id"
     t.index ["type", "topic_id", "repo_full_name", "pr_number"], name: "index_channels_on_type_topic_repo_pr", unique: true
     t.index ["type"], name: "index_channels_on_type"
+  end
+
+  create_table "collavre_translation_translations", force: :cascade do |t|
+    t.string "translatable_type", null: false
+    t.integer "translatable_id", null: false
+    t.string "target_locale", null: false
+    t.string "source_digest", null: false
+    t.string "source_lang"
+    t.string "status", default: "pending", null: false
+    t.text "content"
+    t.string "llm_vendor"
+    t.string "llm_model"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["translatable_type", "translatable_id", "target_locale", "source_digest"], name: "index_translations_on_source_and_locale", unique: true
   end
 
   create_table "comment_notification_deliveries", force: :cascade do |t|

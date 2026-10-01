@@ -36,6 +36,7 @@ module Collavre
         assert_equal "markdown", creative.data["content_type"]
         assert_equal "# old", creative.data["markdown_source"]
 
+        creative = Creative.find(creative.id)
         creative.update!(description: "<h1>new from tool</h1>")
         creative.reload
 

@@ -467,3 +467,15 @@ Missions normally complete only at the head of their group. Set
 shown. Early completion updates progress without displaying a completion toast
 for a future step. Onboarding's agent-call mission uses this option so a new
 call during replay is retained; replay still resets earlier completion records.
+
+## Comment content extensions
+
+The core comment partial exposes `:comment_content_extensions` immediately after
+the original content. Register engine partials with `Collavre::ViewExtensions`
+and accept `comment` and `streaming` locals. Keep viewer-specific presentation
+out of the shared Turbo broadcast: fetch it from a separately authorized
+endpoint in the viewer's browser. Core editing, version navigation and agent
+context continue to use original comment content.
+
+See [Collavre Translation](../engines/collavre_translation/README.md) for the
+optional automatic translation engine and shared model configuration.
