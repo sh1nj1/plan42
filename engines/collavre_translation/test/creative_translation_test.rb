@@ -40,6 +40,31 @@ module CollavreTranslation
       assert_equal "processing", record.reload.status
     end
 
+    test "slow provider failures start the full cooldown when they fail" do
+      travel_to Time.current.change(usec: 0) do
+        record = Translation.request!(@creative, "ko")
+        HtmlTranslator.stub :call, ->(*) {
+          travel Translation::RETRY_COOLDOWN + 30.seconds
+          raise "slow provider failure"
+        } do
+          TranslateJob.perform_now(record.id)
+        end
+
+        assert_equal "failed", record.reload.status
+        assert_equal Time.current, record.updated_at
+        assert_nil record.content
+        assert_no_enqueued_jobs only: TranslateJob do
+          assert_equal "failed", Translation.request!(@creative, "ko").status
+          travel Translation::RETRY_COOLDOWN - 1.second
+          assert_equal "failed", Translation.request!(@creative, "ko").status
+        end
+        travel 1.second
+        assert_enqueued_jobs 1, only: TranslateJob do
+          2.times { assert_equal "processing", Translation.request!(@creative, "ko").status }
+        end
+      end
+    end
+
     test "source edits bypass the failed creative cooldown" do
       record = Translation.request!(@creative, "ko")
       record.update!(status: "failed")

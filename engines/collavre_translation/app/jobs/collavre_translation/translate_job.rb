@@ -12,7 +12,7 @@ module CollavreTranslation
       owned_claim(record).destroy_all if record && @claimed_at
     rescue StandardError => error
       Rails.logger.warn("Comment translation failed: #{error.class}")
-      update_claim(record, status: "failed", content: nil) if record && @claimed_at
+      update_claim(record, status: "failed", content: nil, updated_at: Time.current) if record && @claimed_at
     end
 
     private
