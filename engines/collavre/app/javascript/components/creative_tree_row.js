@@ -9,6 +9,8 @@ import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 
 const BULLET_STARTING_LEVEL = 3;
+const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"]';
+const OPEN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg>';
 
 class CreativeTreeRow extends LitElement {
   static properties = {
@@ -237,7 +239,10 @@ class CreativeTreeRow extends LitElement {
       return this._renderTitle();
     }
 
-    const dragEnabled = !this.selectMode || this.canWrite;
+    // Document view reads like a page: dragging over the body selects text, so
+    // the row is never a drag source there.
+    const documentView = this._isDocumentView();
+    const dragEnabled = !documentView && (!this.selectMode || this.canWrite);
     const draggableAttr = dragEnabled ? "true" : nothing;
 
     return html`
@@ -258,6 +263,7 @@ class CreativeTreeRow extends LitElement {
             ${this._renderContent()}
           </div>
             ${this._renderEditingAvatars()}
+            ${documentView ? this._renderDocumentOpenLink() : nothing}
             <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
         </div>
       </div>
@@ -277,7 +283,7 @@ class CreativeTreeRow extends LitElement {
             ${this._renderActionButton()}
             <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
             <h1 class="page-title" style="margin-left: 0; margin-bottom: 0; display:flex; align-items:center; gap:1em;">
-              <div class="creative-title-content">
+              <div class="creative-title-content" @click=${this._handleTitleClick}>
                 ${unsafeHTML(this.descriptionHtml || "")}
               </div>
               ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
@@ -290,6 +296,27 @@ class CreativeTreeRow extends LitElement {
           </div>
         </div>
       </div>
+    `;
+  }
+
+  _isDocumentView() {
+    return this.closest(DOCUMENT_VIEW_SELECTOR) !== null;
+  }
+
+  // Body clicks edit in document view, so entering a creative needs its own
+  // affordance. The label is localized on the tree container.
+  _renderDocumentOpenLink() {
+    if (!this.linkUrl || this.linkUrl === "#") return nothing;
+    const label = this.closest("[data-document-open-label]")?.dataset.documentOpenLabel || "";
+    return html`
+      <a
+        class="creative-document-open creative-action-btn unstyled-link"
+        href=${this.linkUrl}
+        title=${label}
+        aria-label=${label}
+        draggable="false"
+        @click=${this._handleDocumentOpenClick}
+      >${unsafeHTML(OPEN_ICON)}</a>
     `;
   }
 
@@ -525,11 +552,15 @@ class CreativeTreeRow extends LitElement {
   _handleEditClick(event) {
     event.preventDefault();
     event.stopPropagation();
+    this._dispatchEditClick(event.currentTarget);
+  }
+
+  _dispatchEditClick(button) {
     this.dispatchEvent(new CustomEvent("creative-edit-click", {
       detail: {
         creativeId: this.creativeId ?? this.getAttribute("creative-id"),
         component: this,
-        button: event.currentTarget,
+        button,
         treeElement: this.querySelector(".creative-tree")
       },
       bubbles: true,
@@ -671,18 +702,48 @@ class CreativeTreeRow extends LitElement {
       return;
     }
 
-    // If not interactive, navigate to the linkUrl
-    if (this.linkUrl && this.linkUrl !== "#") {
-      if (window.Turbo) {
-        const workspaceFrame = this.closest("turbo-frame#creative-workspace-content");
-        const options = workspaceFrame
-          ? { action: "advance", frame: workspaceFrame.id }
-          : undefined;
-        window.Turbo.visit(this.linkUrl, options);
-      } else {
-        window.location.href = this.linkUrl;
-      }
+    if (this._isDocumentView()) {
+      this._handleDocumentBodyClick();
+      return;
     }
+
+    // If not interactive, navigate to the linkUrl
+    this._visitLink();
+  }
+
+  _visitLink() {
+    if (!this.linkUrl || this.linkUrl === "#") return;
+    if (window.Turbo) {
+      const workspaceFrame = this.closest("turbo-frame#creative-workspace-content");
+      const options = workspaceFrame
+        ? { action: "advance", frame: workspaceFrame.id }
+        : undefined;
+      window.Turbo.visit(this.linkUrl, options);
+    } else {
+      window.location.href = this.linkUrl;
+    }
+  }
+
+  _handleTitleClick(event) {
+    if (!this._isDocumentView() || this.selectMode) return;
+    if (event.target.closest("a, button, input, img")) return;
+    this._handleDocumentBodyClick();
+  }
+
+  // A click that ends a selection drag must keep the selection and stay out of
+  // the editor; only a plain click on an editable row opens it.
+  _handleDocumentBodyClick() {
+    const selection = window.getSelection?.();
+    if (selection && !selection.isCollapsed) return;
+    if (!this.canWrite) return;
+    this._dispatchEditClick(this.querySelector(".edit-inline-btn"));
+  }
+
+  _handleDocumentOpenClick(event) {
+    // Modified clicks keep the browser behavior (new tab / window).
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this._visitLink();
   }
 }
 

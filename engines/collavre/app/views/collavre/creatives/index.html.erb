@@ -36,7 +36,10 @@
       ) %>
 <% end %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal creative-image-lightbox"
+<% document_view = params[:view] == "document" %>
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--document-view share-modal creative-image-lightbox"
+     class="<%= 'creative-document-view' if document_view %>"
+     data-creatives--document-view-active-value="<%= document_view %>"
      data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
      data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
      data-creative-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
@@ -83,6 +86,11 @@
       <% end %>
       <%# Add button (always visible) %>
       <%= render 'add_button' if can_add %>
+
+      <%# Document view toggle — readers get it too, so it is not tied to can_add %>
+      <button type="button" id="document-view-btn" class="creative-header-outline-btn" title="<%= t('.document_view') %>" aria-label="<%= t('.document_view') %>" aria-pressed="<%= document_view %>" data-action="click->creatives--document-view#toggle" data-creatives--document-view-target="toggle">
+        <span aria-hidden="true"><%= svg_tag 'document-view.svg', width: 14, height: 14 %></span>
+      </button>
 
       <%# Expand/collapse toggle (always visible) %>
       <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">
@@ -320,6 +328,10 @@
         'creatives--tree-loading-text-value': t('.loading_creatives'),
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
+        'creatives--document-view-target': 'tree',
+        view_mode: (document_view ? 'document' : nil),
+        dnd_disabled: (document_view ? '' : nil),
+        document_open_label: t('.document_view_open'),
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),
         edit_off_icon_html: svg_tag("edit-off.svg", className: "icon-edit")
       }

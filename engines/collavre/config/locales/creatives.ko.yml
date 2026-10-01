@@ -48,6 +48,8 @@ ko:
         breadcrumb: 계보
         root_breadcrumb: 최상위
         slide_view: 슬라이드 뷰
+        document_view: 문서 뷰
+        document_view_open: 열기
         recalculate_progress: 진행률 다시 계산
         recalculate_all_parent_progress: 모든 상위 진행률을 다시 계산하시겠습니까?
         no_creatives: 크리에이티브가 없습니다.
