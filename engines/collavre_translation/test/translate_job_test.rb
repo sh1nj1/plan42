@@ -93,6 +93,42 @@ module CollavreTranslation
       assert_nil TranslateJob.perform_now(-1)
     end
 
+    test "manual retry recovers an expired claim but leaves a live claim alone" do
+      @record.update!(status: "translating")
+      Translator.stub :call, ->(*) { flunk "live claim must not be stolen" } do
+        TranslateJob.perform_now(@record.id)
+      end
+      @record.update_columns(updated_at: 6.minutes.ago)
+      Translator.stub :call, "Recovered translation" do
+        TranslateJob.perform_now(@record.id)
+      end
+      assert_equal "completed", @record.reload.status
+      assert_equal "Recovered translation", @record.content
+    end
+
+    test "an expired worker cannot overwrite its replacement result or failure state" do
+      [ false, true ].each do |fail_old_worker|
+        @record.update!(status: "processing", content: nil)
+        replacement = false
+        Translator.stub :call, ->(*) {
+          next "Replacement result" if replacement
+
+          travel 6.minutes do
+            Translation.for_comment(@comment, "ko")
+            replacement = true
+            TranslateJob.perform_now(@record.id)
+          end
+          raise "old provider failed" if fail_old_worker
+
+          "Old result"
+        } do
+          TranslateJob.perform_now(@record.id)
+        end
+        assert_equal "completed", @record.reload.status
+        assert_equal "Replacement result", @record.content
+      end
+    end
+
     test "source edited before job is skipped" do
       @comment.update!(content: "Edited source")
       TranslateJob.perform_now(@record.id)

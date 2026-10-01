@@ -39,6 +39,18 @@ module CollavreTranslation
       end
     end
 
+    test "polling recovers expired claims once without stealing live work" do
+      record = Translation.request!(@comment, "ko")
+      record.update!(status: "translating")
+      assert_no_enqueued_jobs only: TranslateJob do
+        assert_equal "translating", Translation.for_comment(@comment, "ko").status
+      end
+      record.update_columns(updated_at: 6.minutes.ago)
+      assert_enqueued_jobs 1, only: TranslateJob do
+        2.times { assert_equal "processing", Translation.for_comment(@comment, "ko").status }
+      end
+    end
+
     test "invalid locale and status are rejected" do
       record = Translation.new(translatable: @comment, source_digest: "digest", target_locale: "fr", status: "unknown")
       refute record.valid?
