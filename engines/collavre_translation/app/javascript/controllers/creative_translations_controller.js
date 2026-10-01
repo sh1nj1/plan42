@@ -81,9 +81,9 @@ export default class extends Controller {
     state.exportHandler = event => {
       if (!state.translated || !event.target.closest('.table-download-btn')) return
       this.toggle(state)
-      queueMicrotask(() => {
+      setTimeout(() => {
         if (!state.abort.signal.aborted && !state.translated) this.toggle(state)
-      })
+      }, 0)
     }
     row.addEventListener('click', state.exportHandler, true)
     content.after(state.button)

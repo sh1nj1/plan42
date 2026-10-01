@@ -183,7 +183,7 @@ test('CSV and Excel export the original table while translated display returns',
     for (const button of row.querySelectorAll('.table-download-btn')) {
       button.click()
       expect(content.querySelector('th').textContent).toBe('English title')
-      await Promise.resolve()
+      await tick()
       expect(content.querySelector('th').textContent).toBe('번역 제목')
     }
     for (const blob of exported) {
@@ -198,7 +198,7 @@ test('CSV and Excel export the original table while translated display returns',
     controller.toggle(controller.rows.get(row))
     row.querySelector('.table-download-btn').click()
     controller.cleanup(row, controller.rows.get(row))
-    await Promise.resolve()
+    await tick()
     expect(content.querySelector('th').textContent).toBe('English title')
   } finally { click.mockRestore() }
 })
