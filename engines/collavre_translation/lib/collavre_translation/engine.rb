@@ -20,6 +20,9 @@ module CollavreTranslation
 
     initializer "collavre_translation.extensions", after: "collavre.navigation_reset" do
       config.to_prepare do
+        Collavre::ProfilePreferences.register(:translation, :auto_translation_enabled)
+        Collavre::ViewExtensions.register(:profile_preferences,
+          partial: "collavre_translation/preferences/settings")
         Collavre::ViewExtensions.register(:comment_content_extensions,
           partial: "collavre_translation/comments/translation")
         Collavre::ViewExtensions.register(:creative_modals,

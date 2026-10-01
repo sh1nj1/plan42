@@ -35,7 +35,7 @@ class UserTranslationPreferenceTest < ActionDispatch::IntegrationTest
     { "en" => "Automatically translate content", "ko" => "콘텐츠 자동 번역" }.each do |locale, label|
       @user.update!(locale: locale)
       get user_path(@user)
-      assert_select 'form[data-controller="profile-settings"][data-action="turbo:submit-start->profile-settings#clearCache"]', count: 1
+      assert_select 'form .checkbox-field[data-controller="translation-preference"]', count: 1
       assert_select 'label[for=user_auto_translation_enabled]', text: label
       assert_select 'input[type=checkbox][name="user[auto_translation_enabled]"][checked]', count: 1
     end
@@ -45,5 +45,27 @@ class UserTranslationPreferenceTest < ActionDispatch::IntegrationTest
     assert Collavre::User.new.auto_translation_enabled?
     assert users(:two).reload.auto_translation_enabled?
     assert_equal true, Collavre::User.column_defaults["auto_translation_enabled"]
+  end
+  test "core profile ignores unregistered settings and renders without engine UI" do
+    Collavre::ProfilePreferences.stub(:attributes, []) do
+      patch user_path(@user), params: { user: { auto_translation_enabled: "0", name: "Core profile" } }
+      assert_response :redirect
+      assert @user.reload.auto_translation_enabled?
+      assert_equal "Core profile", @user.name
+    end
+    partial = "collavre_translation/preferences/settings"
+    Collavre::ViewExtensions.unregister(:profile_preferences, partial: partial)
+    get user_path(@user)
+    assert_response :success
+    assert_select '[data-controller="translation-preference"]', count: 0
+    assert_select '[name="user[auto_translation_enabled]"]', count: 0
+  ensure
+    Collavre::ViewExtensions.register(:profile_preferences, partial: partial)
+  end
+
+  test "preference migration belongs exclusively to the translation engine" do
+    migration = "20261001001000_add_auto_translation_enabled_to_users.rb"
+    assert CollavreTranslation::Engine.root.join("db/migrate", migration).exist?
+    refute Collavre::Engine.root.join("db/migrate", migration).exist?
   end
 end

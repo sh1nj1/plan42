@@ -131,7 +131,6 @@ ko:
       completion_mark: 완료 표시 문자
       theme: 테마
       calendar_id: 캘린더 ID
-      auto_translation_enabled: "콘텐츠 자동 번역"
       notifications_enabled: 알림 사용
       creative_workspace:
         enabled: 3단 크리에이티브 작업 공간 사용

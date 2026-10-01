@@ -479,3 +479,20 @@ context continue to use original comment content.
 
 See [Collavre Translation](../engines/collavre_translation/README.md) for the
 optional automatic translation engine and shared model configuration.
+
+## Profile Preference Extensions
+
+Core provides an optional `profile_preferences` view slot inside the authorized
+profile form. Engines own their preference migrations, locales, JavaScript, and
+tests. Register the partial and permitted attributes from a `to_prepare` block:
+
+```ruby
+Collavre::ProfilePreferences.register(:my_engine, :my_preference)
+Collavre::ViewExtensions.register(:profile_preferences,
+  partial: "my_engine/preferences/settings")
+```
+
+The partial receives `form`, the existing form builder. Registration replaces
+attributes for the same engine key, so reloads do not accumulate permissions.
+Without registrations, core permits no extension attributes and renders no
+extension UI. Existing profile ownership checks apply to all registered fields.

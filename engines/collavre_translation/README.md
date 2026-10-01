@@ -17,7 +17,8 @@ CollavreTranslation.model = "YOUR_CONFIGURED_MODEL"
 
 Uses the existing provider API keys from Collavre integration settings. A blank
 model disables translation (the default). Removing the engine and its host JS
-registration disables the feature without changing core models or columns.
+registration disables the feature. This engine owns its tables and the user
+preference column; core registers no translation-specific settings.
 
 Targets English and Korean from the reader's `User#locale`. CLD3 detects source
 language locally on first read. Hangul-only prose is recognized even in short
@@ -42,18 +43,19 @@ permissions are checked. Requests and polling stop when rows disappear or their
 source changes. Provider failures preserve the original display.
 
 The creative UI and API call the shared `CollavreTranslation.enabled_for?(user)`
-user preference gate for the reader when available, falling back to `enabled?` until the separate
-user preference feature is installed. User preference storage and settings UI,
-per-user quotas and dedicated usage reporting remain separate follow-ups.
+user preference gate for the reader.
 The creative controller mounts once on the reader index page, never in shared
 row broadcasts. Its observer translates live appended/replaced rows using the
 reader session; background renderer and sender preferences cannot suppress it.
 After source permission checks, API requests return 403 for a disabled reader
 and 503 for a disabled engine, before cache reads or job requests.
-User preferences are stored in core as `Collavre::User#auto_translation_enabled?`
+User preferences are owned and migrated by this engine on the shared user table as `Collavre::User#auto_translation_enabled?`
 (default true, including existing users), saved through the authorized profile
-update. `CollavreTranslation.enabled_for?(user)` is the shared availability gate
-for comments and future creative translation. Use it before mounting frontend
+update through the generic `Collavre::ProfilePreferences` parameter registry
+and `profile_preferences` view slot. Its preference controller clears Turbo
+snapshots when that form submits, so Back re-renders the saved reader gate.
+`CollavreTranslation.enabled_for?(user)` is the shared availability gate
+for comments and creative translation. Use it before mounting frontend
 controllers, and check the preference after source authorization in endpoints.
 Shared live comment broadcasts contain inert templates, independent of the author
 or background renderer. The request-rendered `comment-translation-reader`
@@ -64,8 +66,7 @@ creative broadcasts as well; do not gate shared HTML using `Current.user`.
 Disabled readers cannot fetch cached results or enqueue jobs. Original content
 and AI context remain unchanged.
 
-Phase one covers comments. Creative HTML translation,
-per-user quotas and dedicated usage reporting are separate follow-ups.
+Per-user quotas and dedicated usage reporting are separate follow-ups.
 
 The host runs the `translations` queue with a dedicated two-thread, one-process
 worker in every environment. Slow provider calls do not occupy default or AI

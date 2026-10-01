@@ -1,4 +1,4 @@
-require_relative "../application_system_test_case"
+require_relative "../../../collavre/test/application_system_test_case"
 
 class UserTranslationPreferenceSystemTest < ApplicationSystemTestCase
   test "reader can save automatic translation off and on in each locale" do
@@ -9,7 +9,7 @@ class UserTranslationPreferenceSystemTest < ApplicationSystemTestCase
     %w[en ko].each do |locale|
       user.update!(locale: locale)
       visit collavre.user_path(user)
-      label = I18n.t("collavre.users.auto_translation_enabled", locale: locale)
+      label = I18n.t("collavre_translation.preferences.auto_translation_enabled", locale: locale)
       save = I18n.t("collavre.users.update_profile", locale: locale)
       assert_checked_field label
       assert_no_selector "html[aria-busy=true]"
