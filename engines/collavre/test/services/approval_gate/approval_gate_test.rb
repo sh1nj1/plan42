@@ -158,7 +158,7 @@ class ApprovalGateTest < ActiveSupport::TestCase
       ai_user: [ "Proceed?", :ai_bot, "invalid_approver" ],
       inaccessible_user: [ "Proceed?", :two, "invalid_approver" ] }.each do |label, (question, user, error_key)|
       test "#{tool_name} chat returns #{label} as a tool error and accepts a corrected call" do
-        @agent.update!(tools: %w[approval_request meta_tool])
+        @agent.update!(tools: [ tool_name, "approval_request" ].uniq)
         approver_id = user.is_a?(Symbol) ? users(user).id : user
         @client.instance_variable_set(:@llm_api_key, "test")
         chat = @client.send(:build_conversation, [ tool_name ])
