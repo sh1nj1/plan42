@@ -11,6 +11,7 @@ module CollavreNotion
       @link = page_link || find_or_create_root(creative, parent_page_id)
       raise NotionError, "Invalid export link" unless @link.creative_id == creative.id && @link.notion_account_id == @account.id
 
+      @root = creative
       visited = sync_tree(creative)
       archive_removed_pages(visited)
       remove_legacy_blocks
@@ -89,9 +90,20 @@ module CollavreNotion
       nodes = @link.notion_page_nodes.where.not(creative_id: visited).to_a
       by_page = nodes.index_by(&:page_id)
       nodes.sort_by { |node| -page_depth(node, by_page) }.each do |node|
+        next if active_in_tree?(node.creative_id)
+
         @service.archive_page(node.page_id)
         node.destroy!
       end
+    end
+
+    # Recheck live ancestry before destructive cleanup: source moves can race traversal.
+    def active_in_tree?(creative_id)
+      creative = Collavre::Creative.active.find_by(id: creative_id)
+      return false unless creative
+
+      ancestors = creative.self_and_ancestors.to_a
+      ancestors.any? { |ancestor| ancestor.id == @root.id } && ancestors.all? { |ancestor| ancestor.archived_at.nil? }
     end
 
     def page_depth(node, by_page)

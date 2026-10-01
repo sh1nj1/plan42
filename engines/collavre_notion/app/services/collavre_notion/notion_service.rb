@@ -41,6 +41,7 @@ module CollavreNotion
 
     def sync_creative(creative, parent_page_id: nil, page_link: nil)
       NotionExportLock.synchronize(@account.id) do
+        page_link&.reload
         I18n.with_locale(@user.locale.presence || I18n.default_locale) do
           NotionTreeSync.new(self, @account).call(creative, parent_page_id: parent_page_id, page_link: page_link)
         end

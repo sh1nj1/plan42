@@ -69,6 +69,26 @@ class NotionTreeSyncTest < ActiveSupport::TestCase
     def @service.sleep(*) = nil
   end
 
+  test "cleanup preserves active pages moved behind the traversal cursor" do
+    first = child(@root, "first")
+    second = child(@root, "second")
+    moving = child(second, "moving")
+    link = sync
+    page_id = node(link, moving).page_id
+    client = @client
+    original = client.method(:get_page)
+    client.define_singleton_method(:get_page) do |id|
+      moving.update!(parent: first) if id == node_page_id
+      original.call(id)
+    end
+    client.define_singleton_method(:node_page_id) { link.notion_page_nodes.find_by!(creative_id: second.id).page_id }
+    sync
+    assert_not_includes @client.archived, page_id
+    assert_equal page_id, node(link, moving).page_id
+    sync
+    assert_equal node(link, first).page_id, node(link, moving).parent_page_id
+  end
+
   test "every creative including deep and empty leaves gets a page in sibling order" do
     first = child(@root, "first")
     second = child(@root, "second")

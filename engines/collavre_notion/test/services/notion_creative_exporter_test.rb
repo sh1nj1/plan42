@@ -53,6 +53,16 @@ class NotionCreativeExporterTest < ActiveSupport::TestCase
     assert_equal "(75%)", text(CollavreNotion::NotionCreativeExporter.new(@creative, with_progress: true).export_blocks.last)
   end
 
+  test "Markdown tables preserve surrounding and intervening paragraphs" do
+    markdown = "Before\n| A |\n| --- |\n| B |\nMiddle\n| C |\n| --- |\n| D |\nAfter"
+    @creative.stub(:effective_description, markdown) do
+      blocks = export
+      assert_equal %w[paragraph table paragraph table paragraph], blocks.pluck(:type)
+      assert_equal %w[Before Middle After], blocks.select { |block| block[:type] == "paragraph" }.map { |block| text(block) }
+      assert_equal [ "A", "B", "C", "D" ], blocks.select { |block| block[:type] == "table" }.flat_map { |block| block[:table][:children].map { |row| row[:table_row][:cells].first.first[:text][:content] } }
+    end
+  end
+
   test "HTML tables retain surrounding text and long cells" do
     html = "<p>Before</p><table><tr><th>Title</th><th>Other</th></tr><tr><td>#{'x' * 4001}</td></tr></table><p>After</p>"
     @creative.stub(:effective_description, html) do

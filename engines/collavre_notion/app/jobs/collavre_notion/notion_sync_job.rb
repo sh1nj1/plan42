@@ -3,7 +3,7 @@ module CollavreNotion
     queue_as :default
     retry_on NotionRateLimitError, wait: :polynomially_longer, attempts: 8
 
-    def perform(creative, notion_account, page_id)
+    def perform(creative, notion_account, page_id = nil, page_link_id: nil)
       service = CollavreNotion::NotionService.new(user: notion_account.user)
 
       begin
@@ -11,7 +11,7 @@ module CollavreNotion
         link = CollavreNotion::NotionPageLink.find_by(
           creative: creative,
           notion_account: notion_account,
-          page_id: page_id
+          **(page_link_id ? { id: page_link_id } : { page_id: page_id })
         )
 
         unless link

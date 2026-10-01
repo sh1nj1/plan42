@@ -10,7 +10,7 @@ module CollavreNotion
     # Descendant Creatives are exported by NotionTreeSync as child pages.
     def export_blocks
       html = export_html
-      blocks = html.split(/(<table\b[^>]*>.*?<\/table>)/mi).flat_map do |part|
+      blocks = html.split(/(<table\b[^>]*>.*?<\/table>|^[ \t]*\|[^\n]*\|[ \t]*\n[ \t]*\|[ :|\-]+\|[ \t]*(?:\n[ \t]*\|[^\n]*\|[ \t]*)*)/mi).flat_map do |part|
         contains_table?(part) ? convert_table_to_blocks(part) : paragraph_blocks(extract_text_content(part))
       end
       blocks.concat(paragraph_blocks("(#{(@creative.progress.to_f * 100).round}%)")) if @with_progress

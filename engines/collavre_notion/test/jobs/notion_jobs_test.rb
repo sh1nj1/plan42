@@ -32,6 +32,25 @@ class NotionJobsTest < ActiveJob::TestCase
     assert service.verify
   end
 
+  test "stable link identity survives root replacement and rate limited retry" do
+    link = @link
+    calls = []
+    service = Object.new
+    service.define_singleton_method(:sync_creative) do |creative, page_link:|
+      calls << page_link.page_id
+      if calls.one?
+        page_link.update!(page_id: "replacement")
+        raise CollavreNotion::NotionRateLimitError
+      end
+    end
+    CollavreNotion::NotionService.stub(:new, service) do
+      perform_enqueued_jobs do
+        CollavreNotion::NotionSyncJob.perform_later(@creative, @account, page_link_id: link.id)
+      end
+    end
+    assert_equal [ "page", "replacement" ], calls
+  end
+
   test "sync skips disconnected pages" do
     service = Minitest::Mock.new
     CollavreNotion::NotionService.stub(:new, service) do

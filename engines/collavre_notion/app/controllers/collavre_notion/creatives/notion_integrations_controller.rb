@@ -63,7 +63,7 @@ module CollavreNotion
             # Sync all exports displayed by the integration wizard.
             links = linked_page_links(account)
             if links.exists?
-              links.each { |link| CollavreNotion::NotionSyncJob.perform_later(@creative, account, link.page_id) }
+              links.each { |link| CollavreNotion::NotionSyncJob.perform_later(@creative, account, page_link_id: link.id) }
               render json: { success: true, message: "Sync started" }
             else
               render json: { error: "no_linked_page" }, status: :unprocessable_entity

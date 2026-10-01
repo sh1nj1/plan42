@@ -138,7 +138,7 @@ module CollavreNotion
         end
 
         assert_response :success
-        assert_equal %w[first-export second-export], queued.map(&:last).sort
+        assert_equal NotionPageLink.where(creative: @creative, notion_account: @account).order(:id).pluck(:id), queued.map { |args| args.last.fetch(:page_link_id) }.sort
         assert queued.all? { |creative, account, _| creative == @creative && account == @account }
       end
 
