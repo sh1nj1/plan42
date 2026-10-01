@@ -147,14 +147,14 @@ module CollavreTranslation
     test "policy defaults to existing engine behavior and honors shared user gate" do
       refute CreativeTranslationPolicy.enabled?(nil)
       assert CreativeTranslationPolicy.enabled?(users(:one))
+      original_gate = CollavreTranslation.method(:enabled_for?)
       allowed_user = users(:two)
-      CollavreTranslation.stub :respond_to?, true do
-        CollavreTranslation.define_singleton_method(:enabled_for?) { |user| user == allowed_user }
+      CollavreTranslation.stub :enabled_for?, ->(user) { user == allowed_user } do
         refute CreativeTranslationPolicy.enabled?(users(:one))
         assert CreativeTranslationPolicy.enabled?(users(:two))
-      ensure
-        CollavreTranslation.singleton_class.remove_method(:enabled_for?)
       end
+      assert_respond_to CollavreTranslation, :enabled_for?
+      assert_equal original_gate, CollavreTranslation.method(:enabled_for?)
     end
   end
 end
