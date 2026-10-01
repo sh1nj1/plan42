@@ -16,3 +16,6 @@ application.register("llm-model", LlmModelController)
 
 import WebauthnController from "./webauthn_controller"
 application.register("webauthn", WebauthnController)
+
+import { registerControllers as registerTranslationControllers } from "collavre_translation/controllers"
+registerTranslationControllers(application)

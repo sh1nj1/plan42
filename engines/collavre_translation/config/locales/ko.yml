@@ -1,0 +1,11 @@
+ko:
+  collavre_translation:
+    loading: "번역 중…"
+    translated: "번역됨"
+    original: "원문 보기"
+    show_translation: "번역문 보기"
+  collavre:
+    admin:
+      integrations:
+        category:
+          translation: "코멘트 번역"
