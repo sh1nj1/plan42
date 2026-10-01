@@ -86,6 +86,25 @@ module CollavreTranslation
       end
     end
 
+    test "HTML segment boundaries do not collide with restored source literals" do
+      client = Object.new
+      client.define_singleton_method(:chat) { |messages| messages.first[:text] }
+      sources = [
+        "COLLAVRE_TOKEN_999999_END",
+        "First\nCOLLAVRE_TOKEN_999999_END\nlast",
+        "COLLAVRE_TOKEN_999999_END and COLLAVRE_TOKEN_1000000_END"
+      ]
+      Collavre::AiClient.stub :new, client do
+        sources.each do |source|
+          [ "<p>#{source}</p>", "<p>#{source}</p><p>Second segment</p>" ].each do |html|
+            result = JSON.parse(HtmlTranslator.call(html, "ko"))
+            assert_equal HtmlTranslator.texts(html), result.pluck("original")
+            assert_equal result.pluck("original"), result.pluck("translated")
+          end
+        end
+      end
+    end
+
     test "empty prose skips provider and changed segment boundaries fail safely" do
       Translator.stub :call, ->(*) { flunk "no prose" } do
         assert_equal "[]", HtmlTranslator.call("<pre>code</pre>", "ko")

@@ -13,11 +13,19 @@ module CollavreTranslation
       texts = texts(html)
       return "[]" if texts.empty?
 
-      separator = "\nCOLLAVRE_TOKEN_999999_END\n"
+      separator = segment_separator(texts)
       result = Translator.call(texts.join(separator), locale, **options).split(separator, -1)
       raise ArgumentError, "Translation changed text segments" unless result.length == texts.length
 
       texts.zip(result).map { |original, translated| { original: original, translated: translated } }.to_json
     end
+
+    # Restored source literals must never be mistaken for inserted boundaries.
+    def self.segment_separator(texts)
+      index = 999999
+      index += 1 while texts.any? { |text| text.include?("COLLAVRE_TOKEN_#{index}_END") }
+      "\nCOLLAVRE_TOKEN_#{index}_END\n"
+    end
+    private_class_method :segment_separator
   end
 end
