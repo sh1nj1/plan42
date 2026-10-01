@@ -9,6 +9,8 @@ module CollavreNotion
     validates :page_id, :page_title, presence: true
     validates :page_id, uniqueness: true
 
+    has_many :notion_page_nodes, class_name: "CollavreNotion::NotionPageNode", dependent: :destroy
+
     scope :recent, -> { order(last_synced_at: :desc) }
     scope :synced, -> { where.not(last_synced_at: nil) }
 

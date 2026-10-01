@@ -1,8 +1,9 @@
 module CollavreNotion
   class NotionSyncJob < ApplicationJob
     queue_as :default
+    retry_on NotionRateLimitError, wait: :polynomially_longer, attempts: 8
 
-    def perform(creative, notion_account, page_id)
+    def perform(creative, notion_account, page_id = nil, page_link_id: nil)
       service = CollavreNotion::NotionService.new(user: notion_account.user)
 
       begin
@@ -10,7 +11,7 @@ module CollavreNotion
         link = CollavreNotion::NotionPageLink.find_by(
           creative: creative,
           notion_account: notion_account,
-          page_id: page_id
+          **(page_link_id ? { id: page_link_id } : { page_id: page_id })
         )
 
         unless link
@@ -18,21 +19,7 @@ module CollavreNotion
           return
         end
 
-        # Update the existing Notion page with children as blocks
-        title = Collavre::HtmlText.label(creative.description).presence || "Untitled Creative"
-        children = creative.children.to_a
-        Rails.logger.info("NotionSyncJob: Syncing creative #{creative.id} as page title with #{children.count} children as blocks")
-        blocks = children.any? ? NotionCreativeExporter.new(creative).export_tree_blocks(children, 1, 0) : []
-
-        properties = {
-          title: {
-            title: [ { text: { content: title } } ]
-          }
-        }
-
-        service.update_page(page_id, properties: properties, blocks: blocks)
-        link.update!(page_title: title)
-        link.mark_synced!
+        service.sync_creative(creative, page_link: link)
 
         Rails.logger.info("Successfully synced creative #{creative.id} to Notion page #{page_id}")
       rescue NotionError => e
