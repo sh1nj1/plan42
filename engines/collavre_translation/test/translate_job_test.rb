@@ -50,7 +50,15 @@ module CollavreTranslation
     test "disabled engine and missing records do not call provider" do
       CollavreTranslation.model = ""
       TranslateJob.perform_now(@record.id)
-      assert_equal "skipped", @record.reload.status
+      assert_equal "pending", @record.reload.status
+      CollavreTranslation.model = "test-model"
+      assert_enqueued_with(job: TranslateJob, args: [ @record.id ]) do
+        Translation.request!(@comment, "ko")
+      end
+      Translator.stub :call, "번역 결과" do
+        TranslateJob.perform_now(@record.id)
+      end
+      assert_equal "completed", @record.reload.status
       assert_nil TranslateJob.perform_now(-1)
     end
 

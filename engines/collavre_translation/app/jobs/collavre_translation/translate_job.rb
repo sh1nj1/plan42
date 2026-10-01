@@ -5,7 +5,7 @@ module CollavreTranslation
     def perform(id)
       record = Translation.find_by(id: id)
       return unless record && claim(record)
-      return record.update!(status: "skipped") unless CollavreTranslation.enabled?
+      return record.update!(status: "pending") unless CollavreTranslation.enabled?
 
       translate(record)
     rescue ActiveRecord::RecordNotFound

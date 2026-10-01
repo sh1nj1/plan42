@@ -39,7 +39,7 @@ export default class extends Controller {
         this.mutations.observe(this.original, { childList: true, subtree: true, characterData: true })
       }
       let response = await this.request('GET')
-      if (response.status === 'missing') response = await this.request('POST')
+      if (['missing', 'pending'].includes(response.status)) response = await this.request('POST')
       this.handleResponse(response)
     } catch {
       this.restoreOriginal()

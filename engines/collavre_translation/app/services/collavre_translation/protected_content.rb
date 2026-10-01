@@ -1,7 +1,9 @@
 module CollavreTranslation
   # Structural tokens are restored locally instead of trusting the model to copy them.
   class ProtectedContent
-    PATTERN = /COLLAVRE_TOKEN_\d+|```[^\n]*\n.*?```|~~~[^\n]*\n.*?~~~|`+[^`\n]*`+|https?:\/\/[^\s<>)]*|@[^@:\n]{1,255}:|@\[[^\]]+\]|@[\p{L}\p{N}_.-]+:?|!?\[[^\]]*\]\([^)]*\)|<[^>]+>/m
+    FENCES = /^ {0,3}(?<ticks>`{3,})[^`\n]*\n.*?(?:^ {0,3}\k<ticks>`*[ \t]*\r?$|\z)|^ {0,3}(?<tildes>~{3,})[^\n]*\n.*?(?:^ {0,3}\k<tildes>~*[ \t]*\r?$|\z)/m
+    TOKENS = /COLLAVRE_TOKEN_\d+|`+[^`\n]*`+|https?:\/\/[^\s<>)]*|@[^@:\n]{1,255}:|@\[[^\]]+\]|@[\p{L}\p{N}_.-]+:?|!?\[[^\]]*\]\([^)]*\)|<[^>]+>/
+    PATTERN = Regexp.union(FENCES, TOKENS)
     attr_reader :masked
 
     def initialize(content)

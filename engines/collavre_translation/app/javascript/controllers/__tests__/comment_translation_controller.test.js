@@ -135,11 +135,11 @@ test('missing original content does not observe or request', () => {
 
 test('pending states poll again and stop cleanly on failure', async () => {
   jest.useFakeTimers()
-  fetchMock.mockResolvedValueOnce(result('pending')).mockResolvedValueOnce(result('failed'))
+  fetchMock.mockResolvedValueOnce(result('pending')).mockResolvedValueOnce(result('processing')).mockResolvedValueOnce(result('failed'))
   await controller.load()
   expect(controller.toggleTarget.disabled).toBe(true)
   await jest.advanceTimersByTimeAsync(2000)
-  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST', 'GET'])
   expect(controller.toggleTarget.hidden).toBe(true)
 })
 

@@ -10,6 +10,22 @@ module CollavreTranslation
       assert_equal source.sub("Please review", "검토해 주세요"), protected.restore(protected.masked.sub("Please review", "검토해 주세요"))
     end
 
+    test "fences protect embedded delimiters mismatched closers and unclosed blocks" do
+      blocks = [
+        "```js\nconst marker = \"```\";\nconst secret = 1;\n```",
+        "````js\n```\nconst secret = 1;\n`````",
+        "~~~js\n```\nconst marker = \"~~~\";\nconst secret = 1;\n~~~~",
+        "   ```js\nconst secret = 1;\n   ```",
+        "```js\nconst secret = 1;"
+      ]
+      blocks.each do |block|
+        source = "Translate this\n#{block}"
+        protected = ProtectedContent.new(source)
+        assert_equal "Translate this\nCOLLAVRE_TOKEN_0", protected.masked
+        assert_equal source, protected.restore(protected.masked)
+      end
+    end
+
     test "rejects missing duplicated and invented placeholders" do
       protected = ProtectedContent.new("Hello `code`")
       [ "Hello", "COLLAVRE_TOKEN_0 COLLAVRE_TOKEN_0", "COLLAVRE_TOKEN_99" ].each do |text|
