@@ -57,9 +57,13 @@ class UserTranslationPreferenceSystemTest < ApplicationSystemTestCase
       assert_no_selector "body[data-stale-translation-snapshot]"
       if enabled
         assert_selector "[data-controller=comment-translation-reader]", visible: :all
+        assert_selector "[data-controller=creative-translations]", visible: :all
+        assert_selector "#creative-overflow-menu .creative-translation-toggle", visible: :all
       else
         assert_no_selector "[data-controller=comment-translation-reader]", visible: :all
         assert_no_selector "[data-controller=comment-translation]", visible: :all
+        assert_no_selector "[data-controller=creative-translations]", visible: :all
+        assert_no_selector ".creative-translation-toggle", visible: :all
       end
     end
   ensure
