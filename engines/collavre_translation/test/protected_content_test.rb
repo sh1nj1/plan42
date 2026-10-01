@@ -56,6 +56,15 @@ module CollavreTranslation
       assert_raises(ArgumentError) { ProtectedContent.new("Hello `code`").restore("COLLAVRE_TOKEN_0 COLLAVRE_TOKEN_") }
     end
 
+    test "protects literal placeholder prefixes and nonnumeric suffixes" do
+      source = "Hello COLLAVRE_TOKEN_N COLLAVRE_TOKEN_ COLLAVRE_TOKEN_12suffix COLLAVRE_TOKEN_name_2"
+      protected = ProtectedContent.new(source)
+      assert_equal "Hello COLLAVRE_TOKEN_0 COLLAVRE_TOKEN_1 COLLAVRE_TOKEN_2 COLLAVRE_TOKEN_3", protected.masked
+      assert_equal source.sub("Hello", "안녕하세요"), protected.restore(protected.masked.sub("Hello", "안녕하세요"))
+      assert_raises(ArgumentError) { protected.restore("COLLAVRE_TOKEN_N COLLAVRE_TOKEN_1 COLLAVRE_TOKEN_2 COLLAVRE_TOKEN_3") }
+      assert_raises(ArgumentError) { protected.restore("#{protected.masked} COLLAVRE_TOKEN_extra2") }
+    end
+
     test "reports whether the source has protected tokens" do
       assert ProtectedContent.new("Hello `code`").tokens?
       assert_not ProtectedContent.new("Hello").tokens?

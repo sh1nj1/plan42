@@ -2,7 +2,7 @@ module CollavreTranslation
   # Structural tokens are restored locally instead of trusting the model to copy them.
   class ProtectedContent
     FENCES = /^ {0,3}(?<ticks>`{3,})[^`\n]*\n.*?(?:^ {0,3}\k<ticks>`*[ \t]*\r?$|\z)|^ {0,3}(?<tildes>~{3,})[^\n]*\n.*?(?:^ {0,3}\k<tildes>~*[ \t]*\r?$|\z)/m
-    TOKENS = /COLLAVRE_TOKEN_\d+|https?:\/\/[^\s<>)]*|@[^@:\n]{1,255}:|@\[[^\]]+\]|@[\p{L}\p{N}_.-]+:?|!?\[[^\]]*\]\([^)]*\)|<[^>]+>/
+    TOKENS = /COLLAVRE_TOKEN_[A-Za-z0-9_]*|https?:\/\/[^\s<>)]*|@[^@:\n]{1,255}:|@\[[^\]]+\]|@[\p{L}\p{N}_.-]+:?|!?\[[^\]]*\]\([^)]*\)|<[^>]+>/
     CODE_SPANS = /(?<!`)(?<delimiter>`+)(?!`).*?(?<!`)\k<delimiter>(?!`)/m
     PATTERN = Regexp.union(FENCES, CODE_SPANS, TOKENS)
     attr_reader :masked
