@@ -1,0 +1,37 @@
+module CollavreTranslation
+  class CreativeTranslationsController < Collavre::ApplicationController
+    before_action :load_creative
+
+    def show
+      render_translation(Translation.for_creative(@creative, target_locale))
+    end
+
+    def create
+      render_translation(Translation.request!(@creative.effective_origin, target_locale))
+    end
+
+    private
+
+    def load_creative
+      return head :unauthorized unless Current.user
+
+      @creative = Collavre::Creative.find(params[:creative_id])
+      return head :forbidden unless @creative.has_permission?(Current.user, :read)
+      return head :forbidden unless @creative.effective_origin.has_permission?(Current.user, :read)
+
+      return head :service_unavailable unless CreativeTranslationPolicy.enabled?(Current.user)
+
+      head :unprocessable_entity unless %w[en ko].include?(target_locale)
+    end
+
+    def target_locale
+      Current.user.locale.to_s.split(/[-_]/).first.presence || I18n.default_locale.to_s
+    end
+
+    def render_translation(record)
+      response.headers["Cache-Control"] = "no-store"
+      render json: { status: record&.status || "missing", content: record&.content,
+        source_digest: Translation.digest(Translation.source(@creative)) }
+    end
+  end
+end

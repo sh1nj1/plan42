@@ -40,13 +40,16 @@ module CollavreTranslation
       return owned_claim(record).destroy_all unless comment
       return update_claim(record, status: "skipped") unless current_source?(record, comment)
 
-      source_lang = LanguageDetector.detect(comment.content)
+      source = Translation.source(comment)
+      prose = comment.is_a?(Collavre::Creative) ? HtmlTranslator.texts(source).join(" ") : source
+      source_lang = LanguageDetector.detect(prose)
       update_claim(record, source_lang: source_lang)
-      return update_claim(record, status: "skipped") if source_lang.nil? || source_lang == record.target_locale
+      return update_claim(record, status: "skipped") if (source_lang.nil? && !comment.is_a?(Collavre::Creative)) || source_lang == record.target_locale
 
       vendor = CollavreTranslation.vendor
       model = CollavreTranslation.model
-      content = Translator.call(comment.content, record.target_locale, vendor: vendor, model: model)
+      translator = comment.is_a?(Collavre::Creative) ? HtmlTranslator : Translator
+      content = translator.call(source, record.target_locale, vendor: vendor, model: model)
       # Never publish a result for a source edited while the provider was running.
       return update_claim(record, status: "skipped") unless current_source?(record, comment.reload)
 
@@ -55,7 +58,7 @@ module CollavreTranslation
     end
 
     def current_source?(record, comment)
-      Translation.digest(comment.content) == record.source_digest
+      Translation.digest(Translation.source(comment)) == record.source_digest
     end
   end
 end

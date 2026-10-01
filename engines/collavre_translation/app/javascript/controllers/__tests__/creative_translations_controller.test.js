@@ -1,0 +1,160 @@
+/** @jest-environment jsdom */
+import { jest } from '@jest/globals'
+import { Application } from '@hotwired/stimulus'
+
+const fetchMock = jest.fn()
+jest.unstable_mockModule('collavre/lib/api/csrf_fetch', () => ({ default: fetchMock }))
+const { default: Controller } = await import('../creative_translations_controller')
+const tick = () => new Promise(resolve => setTimeout(resolve, 0))
+const response = (status, content = null, digest = 'digest') => ({ ok: true,
+  json: async () => ({ status, content, source_digest: digest }) })
+const pairs = JSON.stringify([{ original: 'English title', translated: '번역 제목' },
+  { original: 'Link label', translated: '<script>safe text</script>' },
+  { original: 'Code', translated: 'must not change' },
+  { original: '@Astra:', translated: 'must not change' }])
+let app, controller, row, intersection
+beforeEach(async () => {
+  global.IntersectionObserver = class {
+    constructor(callback) { intersection = callback }
+    observe = jest.fn()
+    unobserve = jest.fn()
+    disconnect = jest.fn()
+  }
+  document.body.innerHTML = `<creative-tree-row creative-id="1"><div class="creative-content"><h1>English title</h1><a href="/path">Link label</a><pre><code>Code</code></pre><span class="mention">@Astra:</span></div></creative-tree-row>
+    <div data-controller="creative-translations" data-creative-translations-base-value="/translation/creatives/__ID__/translation"
+      data-creative-translations-original-value="Show original" data-creative-translations-translated-value="Show translation"></div>`
+  row = document.querySelector('creative-tree-row')
+  row.descriptionHtml = '<h1>English title</h1>'
+  app = Application.start()
+  app.register('creative-translations', Controller)
+  await tick()
+  controller = app.getControllerForElementAndIdentifier(document.querySelector('[data-controller]'), 'creative-translations')
+  fetchMock.mockReset()
+})
+afterEach(async () => {
+  controller.disconnect()
+  app.stop()
+  document.body.innerHTML = ''
+  await tick()
+})
+
+test('loads visible creatives, preserves live structure and toggles original text', async () => {
+  const link = row.querySelector('a')
+  const handler = jest.fn(event => event.preventDefault())
+  link.addEventListener('click', handler)
+  expect(fetchMock).not.toHaveBeenCalled()
+  intersection([{ target: row, isIntersecting: false }])
+  expect(fetchMock).not.toHaveBeenCalled()
+  fetchMock.mockResolvedValueOnce(response('missing')).mockResolvedValueOnce(response('completed', pairs))
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST'])
+  expect(fetchMock.mock.calls[0][0]).toBe('/translation/creatives/1/translation')
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(row.querySelector('a')).toBe(link)
+  expect(link.getAttribute('href')).toBe('/path')
+  expect(link.textContent).toBe('<script>safe text</script>')
+  expect(row.querySelector('script')).toBeNull()
+  link.click()
+  expect(handler).toHaveBeenCalledTimes(1)
+  expect(row.querySelector('code').textContent).toBe('Code')
+  expect(row.querySelector('.mention').textContent).toBe('@Astra:')
+  expect(row.descriptionHtml).toBe('<h1>English title</h1>')
+  const button = row.querySelector('button')
+  button.click()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  expect(button.getAttribute('aria-pressed')).toBe('false')
+  button.click()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  controller.show(row, controller.rows.get(row), JSON.parse(pairs))
+  expect(row.querySelectorAll('button')).toHaveLength(1)
+})
+
+test('polls pending cache and stops when source digest changes', async () => {
+  fetchMock.mockResolvedValueOnce(response('pending')).mockResolvedValueOnce(response('processing'))
+  await controller.load(row)
+  const state = controller.rows.get(row)
+  expect(state.delay).toBe(1000)
+  clearTimeout(state.timer)
+  fetchMock.mockResolvedValueOnce(response("processing"))
+  await new Promise(resolve => { state.timer = setTimeout(async () => { await controller.load(row); resolve() }, 0) })
+  clearTimeout(state.timer)
+  fetchMock.mockResolvedValueOnce(response('completed', pairs, 'changed'))
+  await controller.load(row)
+  expect(row.querySelector('h1').textContent).toBe('English title')
+})
+
+test.each(['failed', 'skipped'])('%s keeps original without polling', async status => {
+  fetchMock.mockResolvedValue(response(status))
+  await controller.load(row)
+  expect(controller.rows.get(row).timer).toBeUndefined()
+  expect(row.querySelector('button')).toBeNull()
+})
+
+test('HTTP, network and malformed payload failures preserve original', async () => {
+  fetchMock.mockResolvedValueOnce({ ok: false }).mockRejectedValueOnce(new Error('network'))
+    .mockResolvedValueOnce(response('completed', 'invalid JSON'))
+  for (let i = 0; i < 3; i++) await controller.load(row)
+  expect(row.querySelector('h1').textContent).toBe('English title')
+})
+
+test('source changes abort old requests and register fresh rows', async () => {
+  let resolve
+  fetchMock.mockImplementation(() => new Promise(done => { resolve = done }))
+  const loading = controller.load(row)
+  const old = controller.rows.get(row)
+  row.descriptionHtml = 'Changed source'
+  controller.scan()
+  expect(old.abort.signal.aborted).toBe(true)
+  resolve(response('completed', pairs))
+  await loading
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  expect(controller.rows.get(row)).not.toBe(old)
+})
+
+test('rerendered and removed rows clean up and restore originals', async () => {
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(row)
+  const old = controller.rows.get(row)
+  row.querySelector('.creative-content').outerHTML = '<div class="creative-content"><h1>English title</h1></div>'
+  controller.scan()
+  expect(old.abort.signal.aborted).toBe(true)
+  await controller.load(row)
+  const state = controller.rows.get(row)
+  row.remove()
+  controller.scan()
+  expect(state.abort.signal.aborted).toBe(true)
+  expect(controller.rows.size).toBe(0)
+  await controller.load(row)
+})
+
+test('empty, unmatched and missing content never create a toggle', () => {
+  const state = controller.rows.get(row)
+  controller.show(row, state, [])
+  expect(row.querySelector('button')).toBeNull()
+  row.querySelector('.creative-content').remove()
+  controller.show(row, state, JSON.parse(pairs))
+  expect(row.querySelector('button')).toBeNull()
+})
+
+test('title content translates and disconnect restores live original nodes', async () => {
+  row.querySelector('.creative-content').className = 'creative-title-content'
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(row)
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  controller.disconnect()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  expect(row.querySelector('button')).toBeNull()
+})
+
+test('scheduled poll executes the actual callback and stops at completion', async () => {
+  jest.useFakeTimers()
+  try {
+    fetchMock.mockResolvedValueOnce(response('processing')).mockResolvedValueOnce(response('completed', pairs))
+    await controller.load(row)
+    await jest.advanceTimersByTimeAsync(1000)
+    expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  } finally {
+    jest.useRealTimers()
+  }
+})
