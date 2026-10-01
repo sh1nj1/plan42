@@ -118,6 +118,7 @@ class ToolUsageTest < ActiveSupport::TestCase
   end
 
   test "the FastMcp tool entry point digests the arguments of a workspace call" do
+    @agent.update!(tools: %w[cron_list])
     Collavre::Current.set(user: @requester, mcp_agent_workspace: Struct.new(:id, :agent).new(42, @agent)) do
       Mcp::CronList.new.call_with_schema_validation!(creative_id: 0)
     end
