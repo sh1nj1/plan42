@@ -34,7 +34,7 @@
           </div>
         </div>
 
-      <%= form_with model: @user, url: collavre.user_path(@user), method: :patch, local: true, html: { multipart: true, class: 'profile-form' } do |f| %>
+      <%= form_with model: @user, url: collavre.user_path(@user), method: :patch, local: true, data: { controller: "profile-settings", action: "turbo:submit-start->profile-settings#clearCache" }, html: { multipart: true, class: 'profile-form' } do |f| %>
         <div>
           <%= f.label :avatar, t('collavre.users.avatar') %>
           <%= f.file_field :avatar, data: { avatar_preview_target: 'input', action: 'change->avatar-preview#update' } %>

@@ -35,6 +35,7 @@ class UserTranslationPreferenceTest < ActionDispatch::IntegrationTest
     { "en" => "Automatically translate content", "ko" => "콘텐츠 자동 번역" }.each do |locale, label|
       @user.update!(locale: locale)
       get user_path(@user)
+      assert_select 'form[data-controller="profile-settings"][data-action="turbo:submit-start->profile-settings#clearCache"]', count: 1
       assert_select 'label[for=user_auto_translation_enabled]', text: label
       assert_select 'input[type=checkbox][name="user[auto_translation_enabled]"][checked]', count: 1
     end

@@ -59,6 +59,7 @@ import DesktopProxySetupController from "./desktop_proxy_setup_controller"
 import CreativeHistoryDetailController from "./creative_history_detail_controller"
 import CreativeHistoryController from "./creative_history_controller"
 import CreativeHistoryUndoController from "./creative_history_undo_controller"
+import ProfileSettingsController from "./profile_settings_controller"
 import CronBadgeController from "./cron_badge_controller"
 
 // Export all controllers
@@ -195,5 +196,6 @@ export function registerControllers(application) {
   application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)
   application.register("creative-history-undo", CreativeHistoryUndoController)
+  application.register("profile-settings", ProfileSettingsController)
   application.register("cron-badge", CronBadgeController)
 }
