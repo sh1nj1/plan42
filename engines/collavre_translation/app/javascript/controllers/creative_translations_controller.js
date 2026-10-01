@@ -9,6 +9,7 @@ export default class extends Controller {
 
   connect() {
     this.rows = new Map()
+    this.showTranslated = true
     this.observer = new MutationObserver(() => this.scan())
     this.observer.observe(document.body, { childList: true, subtree: true })
     this.visibility = new IntersectionObserver(entries => {
@@ -21,6 +22,7 @@ export default class extends Controller {
   }
 
   scan() {
+    this.mountMenu()
     this.rows.forEach((state, row) => {
       if (!row.isConnected || row.descriptionHtml !== state.source ||
           (state.content && state.content !== row.querySelector(".creative-content, .creative-title-content"))) this.cleanup(row, state)
@@ -59,7 +61,7 @@ export default class extends Controller {
 
   show(row, state, replacements) {
     const content = row.querySelector('.creative-content, .creative-title-content')
-    if (!content || state.button) return
+    if (!content || state.nodes) return
     state.content = content
     const translations = new Map(replacements.map(pair => [pair.original, pair.translated]))
     state.nodes = []
@@ -71,13 +73,6 @@ export default class extends Controller {
       }
     }
     if (!state.nodes.length) return
-    state.button = document.createElement('button')
-    state.button.type = 'button'
-    state.button.className = 'creative-action-btn creative-translation-toggle'
-    state.button.addEventListener('click', event => {
-      event.stopPropagation()
-      this.toggle(state)
-    })
     state.exportHandler = event => {
       if (!state.translated || !event.target.closest('.table-download-btn')) return
       this.toggle(state)
@@ -86,15 +81,34 @@ export default class extends Controller {
       }, 0)
     }
     row.addEventListener('click', state.exportHandler, true)
-    content.after(state.button)
-    this.toggle(state)
+    this.toggle(state, this.showTranslated)
   }
 
-  toggle(state) {
-    state.translated = !state.translated
+  toggle(state, translated = !state.translated) {
+    state.translated = translated
     state.nodes.forEach(({ node, original, translated }) => { node.textContent = state.translated ? translated : original })
-    state.button.textContent = state.translated ? this.originalValue : this.translatedValue
-    state.button.setAttribute('aria-pressed', String(state.translated))
+
+  }
+
+  mountMenu() {
+    const menu = document.getElementById('creative-overflow-menu')
+    if (!menu || this.menuButton?.parentElement === menu) return
+    this.menuButton?.remove()
+    this.menuButton = document.createElement('button')
+    this.menuButton.type = 'button'
+    this.menuButton.className = 'popup-menu-item creative-translation-toggle'
+    this.menuButton.addEventListener('click', () => {
+      this.showTranslated = !this.showTranslated
+      this.rows.forEach(state => { if (state.nodes) this.toggle(state, this.showTranslated) })
+      this.updateMenu()
+    })
+    this.updateMenu()
+    menu.append(this.menuButton)
+  }
+
+  updateMenu() {
+    this.menuButton.textContent = this.showTranslated ? this.originalValue : this.translatedValue
+    this.menuButton.setAttribute('aria-pressed', String(this.showTranslated))
   }
 
   cleanup(row, state) {
@@ -103,11 +117,11 @@ export default class extends Controller {
     this.visibility.unobserve(row)
     state.nodes?.forEach(({ node, original }) => { if (node.isConnected) node.textContent = original })
     if (state.exportHandler) row.removeEventListener("click", state.exportHandler, true)
-    state.button?.remove()
     this.rows.delete(row)
   }
 
   disconnect() {
+    this.menuButton?.remove()
     this.observer.disconnect()
     this.visibility.disconnect()
     this.rows.forEach((state, row) => this.cleanup(row, state))

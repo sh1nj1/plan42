@@ -21,7 +21,7 @@ beforeEach(async () => {
     unobserve = jest.fn()
     disconnect = jest.fn()
   }
-  document.body.innerHTML = `<creative-tree-row creative-id="1"><div class="creative-content"><h1>English title</h1><a href="/path">Link label</a><pre><code>Code</code></pre><span class="mention">@Astra:</span></div></creative-tree-row>
+  document.body.innerHTML = `<div id="creative-overflow-menu"></div><creative-tree-row creative-id="1"><div class="creative-content"><h1>English title</h1><a href="/path">Link label</a><pre><code>Code</code></pre><span class="mention">@Astra:</span></div></creative-tree-row>
     <div data-controller="creative-translations" data-creative-translations-base-value="/translation/creatives/__ID__/translation"
       data-creative-translations-original-value="Show original" data-creative-translations-translated-value="Show translation"></div>`
   row = document.querySelector('creative-tree-row')
@@ -61,14 +61,15 @@ test('loads visible creatives, preserves live structure and toggles original tex
   expect(row.querySelector('code').textContent).toBe('Code')
   expect(row.querySelector('.mention').textContent).toBe('@Astra:')
   expect(row.descriptionHtml).toBe('<h1>English title</h1>')
-  const button = row.querySelector('button')
+  const button = document.querySelector('.creative-translation-toggle')
   button.click()
   expect(row.querySelector('h1').textContent).toBe('English title')
   expect(button.getAttribute('aria-pressed')).toBe('false')
   button.click()
   expect(row.querySelector('h1').textContent).toBe('번역 제목')
   controller.show(row, controller.rows.get(row), JSON.parse(pairs))
-  expect(row.querySelectorAll('button')).toHaveLength(1)
+  expect(row.querySelectorAll('.creative-translation-toggle')).toHaveLength(0)
+  expect(document.querySelectorAll('.creative-translation-toggle')).toHaveLength(1)
 })
 
 test('polls pending cache and stops when source digest changes', async () => {
@@ -228,4 +229,35 @@ test('shared live append and replace use the existing reader controller', async 
   await tick()
   expect(replacement.querySelector('h1').textContent).toBe('번역 제목')
   expect(document.querySelectorAll('[data-controller="creative-translations"]')).toHaveLength(1)
+})
+
+test('list menu applies original mode to later descendants and completed requests', async () => {
+  document.querySelector('.creative-translation-toggle').click()
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(row)
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  const child = document.createElement('creative-tree-row')
+  child.setAttribute('creative-id', '2')
+  child.descriptionHtml = row.descriptionHtml
+  child.innerHTML = '<div class="creative-content"><h1>English title</h1></div>'
+  document.body.append(child)
+  controller.scan()
+  await controller.load(child)
+  expect(child.querySelector('h1').textContent).toBe('English title')
+  document.querySelector('.creative-translation-toggle').click()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(child.querySelector('h1').textContent).toBe('번역 제목')
+})
+
+test('menu replacement preserves list mode without duplicate controls', () => {
+  controller.menuButton.click()
+  document.getElementById('creative-overflow-menu').remove()
+  controller.scan()
+  const menu = document.createElement('div')
+  menu.id = 'creative-overflow-menu'
+  document.body.append(menu)
+  controller.scan()
+  controller.scan()
+  expect(menu.children).toHaveLength(1)
+  expect(menu.textContent).toBe('Show translation')
 })
