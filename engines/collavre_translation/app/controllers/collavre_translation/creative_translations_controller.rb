@@ -33,7 +33,14 @@ module CollavreTranslation
       response.headers["Cache-Control"] = "no-store"
       render json: { status: record&.status || "missing", content: record&.content,
         source_digest: Translation.digest(Translation.source(@creative)),
-        original_html: helpers.embed_youtube_iframe(Translation.source(@creative)) }
+        original_html: original_html }
+    end
+
+    # Workspace tree labels are built from the stored description, so they need
+    # the source before YouTube anchors (and their text) become empty iframes.
+    def original_html
+      source = Translation.source(@creative)
+      params[:embed] == "0" ? source : helpers.embed_youtube_iframe(source)
     end
   end
 end
