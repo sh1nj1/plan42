@@ -25,6 +25,7 @@ module CollavreTranslation
       assert_response :success
       assert_select 'template[data-comment-translation-template]' do
         assert_select '[data-comment-translation-url-value=?]', @url
+        assert_select '[data-comment-translation-target="content"] + [data-comment-translation-target="toggle"]', count: 1
       end
       assert_select '[data-comment-target="content"]', text: @comment.content
     end
