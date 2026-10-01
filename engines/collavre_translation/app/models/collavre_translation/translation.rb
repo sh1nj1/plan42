@@ -32,7 +32,7 @@ module CollavreTranslation
       record = create_or_find_by!(translatable: comment, target_locale: locale,
         source_digest: digest(source(comment)))
       # A compare-and-swap also recovers an enqueue failure without duplicate jobs.
-      claimed = where(id: record.id, status: "pending").or(where(id: record.id, status: "translating")
+      claimed = where(id: record.id, status: %w[pending failed]).or(where(id: record.id, status: "translating")
         .where("updated_at < ?", CLAIM_TIMEOUT.ago)).update_all(status: "processing", updated_at: Time.current)
       if claimed == 1
         begin

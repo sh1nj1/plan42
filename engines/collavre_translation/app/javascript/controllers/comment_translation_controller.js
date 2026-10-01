@@ -6,7 +6,7 @@ import { renderCommentMarkdown, renderMermaidDiagrams } from "collavre/lib/utils
 export default class extends Controller {
   static targets = ["toggle", "content"]
   static values = { url: String, digest: String, loading: String, translated: String,
-    original: String, showTranslation: String }
+    original: String, showTranslation: String, translate: String }
 
   connect() {
     this.abort = new AbortController()
@@ -29,7 +29,7 @@ export default class extends Controller {
     if (this.original) this.original.hidden = false
   }
 
-  async load() {
+  async load(retry = false) {
     try {
       if (!this.mutations) {
         this.mutations = new MutationObserver(records => {
@@ -43,11 +43,11 @@ export default class extends Controller {
         })
         this.mutations.observe(this.original, { childList: true, subtree: true, characterData: true })
       }
-      let response = await this.request('GET')
+      let response = await this.request(retry ? 'POST' : 'GET')
       if (['missing', 'pending'].includes(response.status)) response = await this.request('POST')
       this.handleResponse(response)
     } catch {
-      this.restoreOriginal()
+      this.showRetry()
     }
   }
 
@@ -60,6 +60,8 @@ export default class extends Controller {
 
   handleResponse(response) {
     if (this.abort.signal.aborted || response.source_digest !== this.digestValue) return this.restoreOriginal()
+    this.retryAvailable = false
+    if (response.status === 'failed') return this.showRetry()
     if (response.status === 'completed') return this.show(response.content)
     if (['pending', 'processing', 'translating'].includes(response.status)) {
       this.toggleTarget.hidden = false
@@ -86,6 +88,12 @@ export default class extends Controller {
   }
 
   toggle() {
+    if (this.retryAvailable) {
+      this.retryAvailable = false
+      this.toggleTarget.disabled = true
+      this.toggleTarget.textContent = this.loadingValue
+      return this.load(true)
+    }
     this.showingTranslation = !this.showingTranslation
     this.updateVisibility()
   }
@@ -98,8 +106,20 @@ export default class extends Controller {
     this.toggleTarget.setAttribute('aria-pressed', String(this.showingTranslation))
   }
 
+  showRetry() {
+    if (this.abort.signal.aborted) return this.restoreOriginal()
+    this.restoreOriginal()
+    this.retryAvailable = true
+    this.toggleTarget.hidden = false
+    this.toggleTarget.disabled = false
+    this.toggleTarget.textContent = this.translateValue
+    this.toggleTarget.setAttribute('aria-pressed', 'false')
+  }
+
   restoreOriginal() {
+    this.retryAvailable = false
     this.mutations?.disconnect()
+    this.mutations = null
     if (this.original) this.original.hidden = false
     this.contentTarget.hidden = true
     this.contentTarget.replaceChildren()

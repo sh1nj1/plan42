@@ -34,7 +34,7 @@ export default class extends Controller {
     })
   }
 
-  async load(row) {
+  async load(row, retryFailed = true) {
     const state = this.rows.get(row)
     if (!state) return
     try {
@@ -46,7 +46,7 @@ export default class extends Controller {
         return response.json()
       }
       let result = await request('GET')
-      if (['missing', 'pending'].includes(result.status)) result = await request('POST')
+      if (['missing', 'pending'].includes(result.status) || (retryFailed && result.status === 'failed')) result = await request('POST')
       if (state.abort.signal.aborted || translationSource(row) !== state.source) return
       if (row.matches('.creative-workspace-tree-link')) {
         result = treeTranslation(result, state.source)
@@ -57,7 +57,7 @@ export default class extends Controller {
       if (result.status === 'completed') this.show(row, state, JSON.parse(result.content))
       else if (['pending', 'processing', 'translating'].includes(result.status)) {
         state.delay = Math.min((state.delay || 500) * 2, 10000)
-        state.timer = setTimeout(() => this.load(row), state.delay)
+        state.timer = setTimeout(() => this.load(row, false), state.delay)
       }
     } catch { /* Leave the original visible when translation is unavailable. */ }
   }

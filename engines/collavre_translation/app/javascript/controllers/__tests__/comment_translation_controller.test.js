@@ -25,7 +25,7 @@ beforeEach(async () => {
     <div data-controller="comment-translation" data-comment-translation-url-value="/translation/comments/1/translation"
       data-comment-translation-digest-value="source" data-comment-translation-loading-value="Translating"
       data-comment-translation-translated-value="Translated" data-comment-translation-original-value="Show original"
-      data-comment-translation-show-translation-value="Show translation">
+      data-comment-translation-translate-value="Translate" data-comment-translation-show-translation-value="Show translation">
       <button data-comment-translation-target="toggle" data-action="comment-translation#toggle" hidden></button>
       <div data-comment-translation-target="content" hidden></div>
     </div></div>`
@@ -75,7 +75,7 @@ test('cached translation does not issue POST', async () => {
   expect(controller.toggleTarget.getAttribute('aria-pressed')).toBe('true')
 })
 
-test.each(['failed', 'skipped'])('%s preserves original', async status => {
+test.each(['skipped'])('%s preserves original', async status => {
   fetchMock.mockResolvedValue(result(status))
   await controller.load()
   expect(controller.original.hidden).toBe(false)
@@ -88,7 +88,7 @@ test('HTTP failure and thrown network errors preserve original', async () => {
   expect(controller.original.hidden).toBe(false)
   fetchMock.mockRejectedValueOnce(new Error('offline'))
   await controller.load()
-  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.toggleTarget.textContent).toBe('Translate')
 })
 
 test('stale digest, empty content and aborted requests do not display a translation', async () => {
@@ -166,7 +166,7 @@ test('pending states poll again and stop cleanly on failure', async () => {
   expect(controller.toggleTarget.disabled).toBe(true)
   await jest.advanceTimersByTimeAsync(2000)
   expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST', 'GET'])
-  expect(controller.toggleTarget.hidden).toBe(true)
+  expect(controller.toggleTarget.textContent).toBe('Translate')
 })
 
 test('disconnect is safe before content is connected', () => {
@@ -240,5 +240,25 @@ test('Mermaid decoration during an in-flight request does not invalidate transla
   controller.original.append('Edited source')
   await tick()
   expect(controller.abort.signal.aborted).toBe(true)
+  expect(controller.original.hidden).toBe(false)
+})
+
+test('failed translation waits for a click and retries with POST, then can toggle translation', async () => {
+  fetchMock.mockResolvedValueOnce(result('failed'))
+  await controller.load()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(controller.toggleTarget.hidden).toBe(false)
+  expect(controller.toggleTarget.disabled).toBe(false)
+  expect(controller.toggleTarget.textContent).toBe('Translate')
+  expect(controller.original.hidden).toBe(false)
+  fetchMock.mockResolvedValueOnce(result('processing'))
+  await controller.toggle()
+  expect(fetchMock.mock.calls[1][1].method).toBe('POST')
+  expect(controller.toggleTarget.disabled).toBe(true)
+  clearTimeout(controller.timer)
+  fetchMock.mockResolvedValueOnce(result('completed', 'Recovered'))
+  await controller.load()
+  controller.toggle()
+  expect(controller.toggleTarget.textContent).toBe('Show translation')
   expect(controller.original.hidden).toBe(false)
 })

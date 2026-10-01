@@ -51,6 +51,23 @@ module CollavreTranslation
       end
     end
 
+    test "failed records stay cached until requested and retry once for comments and creatives" do
+      [ @comment, creatives(:tshirt) ].each do |source|
+        record = Translation.request!(source, "ko")
+        record.update!(status: "failed", content: nil)
+        assert_no_enqueued_jobs only: TranslateJob do
+          assert_equal "failed", Translation.for_comment(source, "ko").status
+        end
+        assert_enqueued_jobs 1, only: TranslateJob do
+          2.times do
+            retried = Translation.request!(source, "ko")
+            assert_equal record.id, retried.id
+            assert_equal "processing", retried.status
+          end
+        end
+      end
+    end
+
     test "invalid locale and status are rejected" do
       record = Translation.new(translatable: @comment, source_digest: "digest", target_locale: "fr", status: "unknown")
       refute record.valid?
