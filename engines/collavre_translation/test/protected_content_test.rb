@@ -51,6 +51,16 @@ module CollavreTranslation
       end
     end
 
+    test "rejects placeholder literals the model invented" do
+      assert_raises(ArgumentError) { ProtectedContent.new("Hello").restore("안녕하세요 COLLAVRE_TOKEN_N") }
+      assert_raises(ArgumentError) { ProtectedContent.new("Hello `code`").restore("COLLAVRE_TOKEN_0 COLLAVRE_TOKEN_") }
+    end
+
+    test "reports whether the source has protected tokens" do
+      assert ProtectedContent.new("Hello `code`").tokens?
+      assert_not ProtectedContent.new("Hello").tokens?
+    end
+
     test "text without protected tokens passes through" do
       assert_equal "안녕하세요", ProtectedContent.new("Hello").restore("안녕하세요")
     end

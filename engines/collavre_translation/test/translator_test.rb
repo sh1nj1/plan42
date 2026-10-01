@@ -14,6 +14,7 @@ module CollavreTranslation
         assert_equal false, options[:log_interactions]
         assert_equal 60, options[:request_timeout_seconds].call
         assert_includes options[:system_prompt], "Korean"
+        assert_includes options[:system_prompt], "COLLAVRE_TOKEN_<number>"
         client
       end
       Collavre::AiClient.stub :new, factory do
@@ -26,6 +27,7 @@ module CollavreTranslation
       client.define_singleton_method(:chat) { |_| nil }
       factory = ->(**options) do
         assert_includes options[:system_prompt], "English"
+        assert_not_includes options[:system_prompt], "COLLAVRE_TOKEN"
         client
       end
       Collavre::AiClient.stub :new, factory do

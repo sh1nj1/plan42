@@ -15,9 +15,14 @@ module CollavreTranslation
       end
     end
 
+    def tokens?
+      @tokens.any?
+    end
+
     def restore(result)
       expected = @tokens.each_index.map { |i| "COLLAVRE_TOKEN_#{i}" }
-      actual = result.scan(/COLLAVRE_TOKEN_\d+/)
+      # Non-numeric suffixes are matched so a literal the model invents ("COLLAVRE_TOKEN_N") is rejected too.
+      actual = result.scan(/COLLAVRE_TOKEN_(?:\d+|[A-Za-z_]*)/)
       raise ArgumentError, "Translation changed protected tokens" unless actual.sort == expected.sort
 
       result.gsub(/COLLAVRE_TOKEN_(\d+)/) { @tokens[Regexp.last_match(1).to_i] }
