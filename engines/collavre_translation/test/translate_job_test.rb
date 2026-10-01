@@ -162,7 +162,10 @@ module CollavreTranslation
       assert_equal "failed", @record.reload.status
       assert_nil @record.content
       assert_no_enqueued_jobs only: TranslateJob do
-        Translation.request!(@comment, "ko")
+        assert_equal "failed", Translation.for_comment(@comment, "ko").status
+      end
+      assert_enqueued_jobs 1, only: TranslateJob do
+        assert_equal "processing", Translation.request!(@comment, "ko").status
       end
     end
 
