@@ -88,6 +88,7 @@ module Collavre
         :theme,
         :name,
         :notifications_enabled,
+        :auto_translation_enabled,
         :calendar_id,
         :timezone,
         :locale,

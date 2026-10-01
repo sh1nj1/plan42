@@ -50,6 +50,16 @@ row broadcasts. Its observer translates live appended/replaced rows using the
 reader session; background renderer and sender preferences cannot suppress it.
 After source permission checks, API requests return 403 for a disabled reader
 and 503 for a disabled engine, before cache reads or job requests.
+User preferences are stored in core as `Collavre::User#auto_translation_enabled?`
+(default true, including existing users), saved through the authorized profile
+update. `CollavreTranslation.enabled_for?(user)` is the shared availability gate
+for comments and future creative translation. Use it before mounting frontend
+controllers, and check the preference after source authorization in endpoints.
+Disabled readers cannot fetch cached results or enqueue jobs. Original content
+and AI context remain unchanged.
+
+Phase one covers comments. Creative HTML translation,
+per-user quotas and dedicated usage reporting are separate follow-ups.
 
 The host runs the `translations` queue with a dedicated two-thread, one-process
 worker in every environment. Slow provider calls do not occupy default or AI

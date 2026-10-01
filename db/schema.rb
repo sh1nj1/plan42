@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_01_001000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1213,6 +1213,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_000000) do
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.boolean "system_agent", default: false, null: false
+    t.boolean "auto_translation_enabled", default: true, null: false
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
     t.index ["created_at", "id"], name: "index_users_on_created_at_and_id"
     t.index ["desktop_preset_adapter"], name: "index_users_on_desktop_preset_adapter", unique: true, where: "desktop_preset_adapter IS NOT NULL"

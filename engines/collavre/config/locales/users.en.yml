@@ -137,6 +137,7 @@ en:
       completion_mark: Completion Mark
       theme: Theme
       calendar_id: Calendar ID
+      auto_translation_enabled: "Automatically translate content"
       notifications_enabled: Enable notifications
       creative_workspace:
         enabled: Enable three-column creative workspace

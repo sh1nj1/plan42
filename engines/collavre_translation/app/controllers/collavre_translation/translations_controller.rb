@@ -3,6 +3,7 @@ module CollavreTranslation
     include Collavre::Comments::CommentScoping
     before_action :require_translation_user
     before_action :load_comment
+    before_action :require_auto_translation
     before_action :validate_locale
 
     def show
@@ -20,6 +21,10 @@ module CollavreTranslation
 
     def require_translation_user
       head :unauthorized unless Current.user
+    end
+
+    def require_auto_translation
+      head :forbidden unless Current.user.auto_translation_enabled?
     end
 
     def load_comment

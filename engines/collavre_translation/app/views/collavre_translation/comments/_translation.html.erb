@@ -1,4 +1,4 @@
-<% unless !CollavreTranslation.enabled? || local_assigns[:streaming] || comment.content.blank? %>
+<% unless !CollavreTranslation.enabled_for?(Current.user) || local_assigns[:streaming] || comment.content.blank? %>
   <div data-controller="comment-translation"
        data-comment-translation-url-value="<%= collavre_translation.comment_translation_path(comment_id: comment.id) %>"
        data-comment-translation-digest-value="<%= CollavreTranslation::Translation.digest(comment.content) %>"

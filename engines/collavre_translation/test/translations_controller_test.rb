@@ -58,6 +58,25 @@ module CollavreTranslation
       assert_equal "missing", response.parsed_body["status"]
     end
 
+    test "preference defaults on and OFF preserves original without controller or jobs" do
+      assert @user.auto_translation_enabled?
+      @user.update!(auto_translation_enabled: false)
+      get creative_comments_path(@comment.creative)
+      assert_select '[data-controller="comment-translation"]', count: 0
+      assert_select '[data-comment-target="content"]', text: @comment.content
+      Translation.request!(@comment, "ko").update!(status: "completed", content: "Cached")
+      assert_no_enqueued_jobs only: TranslateJob do
+        get @url
+        assert_response :forbidden
+        post @url
+        assert_response :forbidden
+      end
+      @user.update!(auto_translation_enabled: true)
+      get @url
+      assert_response :success
+      assert_equal "Cached", response.parsed_body["content"]
+    end
+
     test "disabled model does not enqueue" do
       CollavreTranslation.model = ""
       assert_no_enqueued_jobs only: TranslateJob do
