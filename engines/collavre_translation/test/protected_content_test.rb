@@ -26,6 +26,24 @@ module CollavreTranslation
       end
     end
 
+    test "protects complete code spans with matching backtick runs" do
+      spans = [ "``foo ` bar``", "`foo\nbar`", "``foo\n`bar`\nbaz``", "```foo `` bar```", "`foo `` bar`" ]
+      spans.each do |span|
+        source = "Translate this #{span} please"
+        protected = ProtectedContent.new(source)
+        assert_equal "Translate this COLLAVRE_TOKEN_0 please", protected.masked
+        assert_equal source, protected.restore(protected.masked)
+      end
+    end
+
+    test "unmatched backticks remain prose without preventing later code spans" do
+      source = "Translate ` unmatched ``code`` please"
+      protected = ProtectedContent.new(source)
+      assert_equal "Translate ` unmatched COLLAVRE_TOKEN_0 please", protected.masked
+      assert_equal source, protected.restore(protected.masked)
+      assert_equal "Translate ``unclosed` please", ProtectedContent.new("Translate ``unclosed` please").masked
+    end
+
     test "rejects missing duplicated and invented placeholders" do
       protected = ProtectedContent.new("Hello `code`")
       [ "Hello", "COLLAVRE_TOKEN_0 COLLAVRE_TOKEN_0", "COLLAVRE_TOKEN_99" ].each do |text|
