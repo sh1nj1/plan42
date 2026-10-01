@@ -1,4 +1,4 @@
-class CreateCollavreTranslationTranslations < ActiveRecord::Migration[8.1]
+class CreateCollavreTranslationTranslations < ActiveRecord::Migration[8.0]
   def change
     create_table :collavre_translation_translations do |t|
       t.references :translatable, polymorphic: true, null: false, index: false

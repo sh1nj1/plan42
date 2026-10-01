@@ -7,6 +7,12 @@ module CollavreTranslation
       CollavreTranslation.vendor = nil
     end
 
+    test "translation migration supports the minimum advertised Rails version" do
+      require_relative "../db/migrate/20261001000000_create_collavre_translation_translations"
+
+      assert_equal ActiveRecord::Migration[8.0], CreateCollavreTranslationTranslations.superclass
+    end
+
     test "model is opt in and stateful vendors are rejected" do
       CollavreTranslation.model = ""
       refute CollavreTranslation.enabled?
