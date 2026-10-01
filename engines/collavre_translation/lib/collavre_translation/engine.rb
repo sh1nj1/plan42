@@ -22,6 +22,10 @@ module CollavreTranslation
       config.to_prepare do
         Collavre::ViewExtensions.register(:comment_content_extensions,
           partial: "collavre_translation/comments/translation")
+        Collavre::ViewExtensions.register(:creative_modals,
+          partial: "collavre_translation/creatives/translation")
+        Collavre::Creative.has_many :translations, class_name: "CollavreTranslation::Translation",
+          as: :translatable, dependent: :destroy
         Collavre::Comment.has_many :translations, class_name: "CollavreTranslation::Translation",
           as: :translatable, dependent: :destroy
       end
