@@ -1,6 +1,6 @@
 import { Controller } from "@hotwired/stimulus"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
-import { renderCommentMarkdown } from "collavre/lib/utils/markdown"
+import { renderCommentMarkdown, renderMermaidDiagrams } from "collavre/lib/utils/markdown"
 
 export default class extends Controller {
   static targets = ["toggle", "content"]
@@ -76,7 +76,7 @@ export default class extends Controller {
     this.toggleTarget.hidden = false
     this.toggleTarget.disabled = false
     this.updateVisibility()
-
+    renderMermaidDiagrams(this.contentTarget)
   }
 
   toggle() {

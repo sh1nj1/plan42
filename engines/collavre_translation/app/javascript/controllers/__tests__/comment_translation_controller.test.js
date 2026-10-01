@@ -3,9 +3,10 @@ import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
 
 const fetchMock = jest.fn()
+const mermaidMock = jest.fn()
 const renderMock = jest.fn(text => `<p>${text}</p>`)
 jest.unstable_mockModule('collavre/lib/api/csrf_fetch', () => ({ default: fetchMock }))
-jest.unstable_mockModule('collavre/lib/utils/markdown', () => ({ renderCommentMarkdown: renderMock }))
+jest.unstable_mockModule('collavre/lib/utils/markdown', () => ({ renderCommentMarkdown: renderMock, renderMermaidDiagrams: mermaidMock }))
 const { default: Controller } = await import('../comment_translation_controller')
 const { registerControllers } = await import('../index')
 await import('../../collavre_translation')
@@ -33,6 +34,7 @@ beforeEach(async () => {
   await tick()
   controller = app.getControllerForElementAndIdentifier(document.querySelector('[data-controller]'), 'comment-translation')
   fetchMock.mockReset()
+  mermaidMock.mockReset()
 })
 afterEach(async () => {
   controller.disconnect()
@@ -150,4 +152,24 @@ test('disconnect is safe before content is connected', () => {
   controller.observer = null
   controller.mutations = null
   expect(() => controller.disconnect()).not.toThrow()
+})
+
+test('renders Mermaid after translated content becomes visible and preserves it across toggles', async () => {
+  const content = 'Diagram\n```mermaid\ngraph TD; A-->B\n```'
+  renderMock.mockReturnValueOnce('<div class="mermaid-chart">graph TD; A--&gt;B</div>')
+  mermaidMock.mockImplementationOnce(container => {
+    expect(container.hidden).toBe(false)
+    expect(controller.original.hidden).toBe(true)
+    expect(container.querySelector('.mermaid-chart').textContent).toBe('graph TD; A-->B')
+    container.querySelector('.mermaid-chart').innerHTML = '<svg></svg>'
+  })
+  fetchMock.mockResolvedValueOnce(result('completed', content))
+  await controller.load()
+  expect(renderMock).toHaveBeenLastCalledWith(content)
+  expect(mermaidMock).toHaveBeenCalledTimes(1)
+  expect(mermaidMock).toHaveBeenCalledWith(controller.contentTarget)
+  controller.toggle()
+  controller.toggle()
+  expect(controller.contentTarget.querySelector('svg')).not.toBeNull()
+  expect(mermaidMock).toHaveBeenCalledTimes(1)
 })
