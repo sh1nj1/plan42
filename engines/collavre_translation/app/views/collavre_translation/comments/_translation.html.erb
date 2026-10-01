@@ -4,11 +4,13 @@
        data-comment-translation-digest-value="<%= CollavreTranslation::Translation.digest(comment.content) %>"
        data-comment-translation-translate-value="<%= t('collavre_translation.translate') %>"
        data-comment-translation-loading-value="<%= t('collavre_translation.loading') %>"
-       data-comment-translation-translated-value="<%= t('collavre_translation.translated') %>"
        data-comment-translation-original-value="<%= t('collavre_translation.original') %>"
        data-comment-translation-show-translation-value="<%= t('collavre_translation.show_translation') %>">
       <div data-comment-translation-target="content" hidden></div>
-      <button type="button" data-comment-translation-target="toggle" data-action="comment-translation#toggle" hidden></button>
+      <div class="comment-content-action-controls" aria-live="polite" aria-atomic="true">
+        <button type="button" data-comment-translation-target="toggle" data-action="comment-translation#toggle"
+                hidden></button>
+      </div>
     </div>
   </template>
 <% end %>

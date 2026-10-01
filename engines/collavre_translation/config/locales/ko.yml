@@ -2,7 +2,6 @@ ko:
   collavre_translation:
     translate: "번역"
     loading: "번역 중…"
-    translated: "번역됨"
     original: "원문 보기"
     show_translation: "번역문 보기"
   collavre:
