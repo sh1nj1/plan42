@@ -226,8 +226,7 @@ export default class extends Controller {
     const link = document.createElement('a')
     link.href = node.url
     link.draggable = false
-    link.textContent = node.label
-    link.dataset.originalLabel = node.label
+    link.textContent = link.dataset.originalLabel = node.label
     link.className = 'creative-workspace-tree-link'
     link.dataset.turboFrame = 'creative-workspace-content'
     link.dataset.turboAction = 'advance'
