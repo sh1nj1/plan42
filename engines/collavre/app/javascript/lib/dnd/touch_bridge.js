@@ -50,12 +50,9 @@ function attachTouchBridge({ root, registry }) {
     preserveNativeGestures: true,
     canStart(touch) {
       if (!registry.getDragSource(touch.target)) return false
-      // A subtree that opted out of dragging (e.g. the creative document view)
-      // keeps the native long press so text can be selected on touch devices.
-      if (touch.target.closest('[data-dnd-disabled]')) return false
-      // Editing keeps native focus and selection. Other sources retain native
-      // taps and swipes until the long press commits; no synthetic click replay.
-      if (touch.target.closest('input, textarea, select, [role="menuitem"], [contenteditable]:not([contenteditable="false"])')) return false
+      // Editing, and subtrees that opted out (document view), keep native focus and
+      // selection. Others keep native taps and swipes until the long press commits.
+      if (touch.target.closest('[data-dnd-disabled], input, textarea, select, [role="menuitem"], [contenteditable]:not([contenteditable="false"])')) return false
       return true
     },
     getDropTargets: () => registry.getDropTargets(),
