@@ -13,7 +13,7 @@ module CollavreTranslation
       texts = texts(html)
       return "[]" if texts.empty?
 
-      separator = "\nCOLLAVRE_TOKEN_999999\n"
+      separator = "\nCOLLAVRE_TOKEN_999999_END\n"
       result = Translator.call(texts.join(separator), locale, **options).split(separator, -1)
       raise ArgumentError, "Translation changed text segments" unless result.length == texts.length
 

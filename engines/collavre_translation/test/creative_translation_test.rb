@@ -77,8 +77,8 @@ module CollavreTranslation
       Translator.stub :call, ->(source, locale, **options) {
         assert_equal "ko", locale
         assert_equal "test", options[:model]
-        assert_equal "English title\nCOLLAVRE_TOKEN_999999\nLink label", source
-        "제목\nCOLLAVRE_TOKEN_999999\n링크 이름"
+        assert_equal "English title\nCOLLAVRE_TOKEN_999999_END\nLink label", source
+        "제목\nCOLLAVRE_TOKEN_999999_END\n링크 이름"
       } do
         result = JSON.parse(HtmlTranslator.call(html, "ko", model: "test"))
         assert_equal [ "English title", "Link label" ], result.pluck("original")

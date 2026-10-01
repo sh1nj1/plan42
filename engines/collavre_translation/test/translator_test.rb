@@ -5,8 +5,8 @@ module CollavreTranslation
     test "uses tool-free AiClient with protected source and no interaction logging" do
       client = Object.new
       client.define_singleton_method(:chat) do |messages|
-        raise "unmasked input" unless messages.first[:text] == "Hello COLLAVRE_TOKEN_0"
-        "안녕하세요 COLLAVRE_TOKEN_0"
+        raise "unmasked input" unless messages.first[:text] == "Hello COLLAVRE_TOKEN_0_END"
+        "안녕하세요 COLLAVRE_TOKEN_0_END"
       end
       factory = ->(**options) do
         assert_equal "google", options[:vendor]
@@ -14,7 +14,7 @@ module CollavreTranslation
         assert_equal false, options[:log_interactions]
         assert_equal 60, options[:request_timeout_seconds].call
         assert_includes options[:system_prompt], "Korean"
-        assert_includes options[:system_prompt], "COLLAVRE_TOKEN_<number>"
+        assert_includes options[:system_prompt], "COLLAVRE_TOKEN_<number>_END"
         client
       end
       Collavre::AiClient.stub :new, factory do

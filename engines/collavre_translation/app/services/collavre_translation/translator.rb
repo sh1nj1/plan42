@@ -18,7 +18,7 @@ module CollavreTranslation
         "Keep Markdown structure."
       return prompt unless placeholders
 
-      "#{prompt} Copy every COLLAVRE_TOKEN_<number> placeholder exactly once and unchanged; never add new ones."
+      "#{prompt} Copy every COLLAVRE_TOKEN_<number>_END placeholder exactly once and unchanged; never add new ones."
     end
     private_class_method :system_prompt
   end

@@ -11,7 +11,7 @@ module CollavreTranslation
       @tokens = []
       @masked = content.to_s.gsub(PATTERN) do |token|
         @tokens << token
-        "COLLAVRE_TOKEN_#{@tokens.length - 1}"
+        "COLLAVRE_TOKEN_#{@tokens.length - 1}_END"
       end
     end
 
@@ -20,12 +20,12 @@ module CollavreTranslation
     end
 
     def restore(result)
-      expected = @tokens.each_index.map { |i| "COLLAVRE_TOKEN_#{i}" }
+      expected = @tokens.each_index.map { |i| "COLLAVRE_TOKEN_#{i}_END" }
       # Non-numeric suffixes are matched so a literal the model invents ("COLLAVRE_TOKEN_N") is rejected too.
-      actual = result.scan(/COLLAVRE_TOKEN_(?:\d+|[A-Za-z_]*)/)
+      actual = result.scan(/COLLAVRE_TOKEN_(?:\d+_END|[A-Za-z0-9_]*)/)
       raise ArgumentError, "Translation changed protected tokens" unless actual.sort == expected.sort
 
-      result.gsub(/COLLAVRE_TOKEN_(\d+)/) { @tokens[Regexp.last_match(1).to_i] }
+      result.gsub(/COLLAVRE_TOKEN_(\d+)_END/) { @tokens[Regexp.last_match(1).to_i] }
     end
   end
 end

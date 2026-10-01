@@ -3,7 +3,7 @@ require "cld3"
 module CollavreTranslation
   class LanguageDetector
     def self.detect(content)
-      prose = ProtectedContent.new(content).masked.gsub(/COLLAVRE_TOKEN_\d+/, "")
+      prose = ProtectedContent.new(content).masked.gsub(/COLLAVRE_TOKEN_\d+_END/, "")
       letters = prose.scan(/\p{L}/).join
       return "ko" if letters.match?(/\A\p{Hangul}+\z/)
       return if letters.length < 20
