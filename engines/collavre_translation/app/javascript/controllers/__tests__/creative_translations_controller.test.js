@@ -4,10 +4,11 @@ import { Application } from '@hotwired/stimulus'
 
 const fetchMock = jest.fn()
 jest.unstable_mockModule('collavre/lib/api/csrf_fetch', () => ({ default: fetchMock }))
+const { addTableDownloadButtons } = await import("collavre/lib/utils/table_download")
 const { default: Controller } = await import('../creative_translations_controller')
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 const response = (status, content = null, digest = 'digest') => ({ ok: true,
-  json: async () => ({ status, content, source_digest: digest }) })
+  json: async () => ({ status, content, source_digest: digest, original_html: row.descriptionHtml }) })
 const pairs = JSON.stringify([{ original: 'English title', translated: '번역 제목' },
   { original: 'Link label', translated: '<script>safe text</script>' },
   { original: 'Code', translated: 'must not change' },
@@ -157,4 +158,47 @@ test('scheduled poll executes the actual callback and stops at completion', asyn
   } finally {
     jest.useRealTimers()
   }
+})
+
+test('server source mismatch leaves the stale view untranslated', async () => {
+  const stale = response('completed', pairs)
+  stale.json = async () => ({ status: 'completed', content: pairs, source_digest: 'new', original_html: 'New original' })
+  fetchMock.mockResolvedValue(stale)
+  await controller.load(row)
+  expect(row.querySelector('button')).toBeNull()
+})
+
+test('CSV and Excel export the original table while translated display returns', async () => {
+  row.querySelector('.creative-content').innerHTML = '<table><tr><th>English title</th></tr><tr><td>Link label</td></tr></table>'
+  const content = row.querySelector('.creative-content')
+  addTableDownloadButtons(content)
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(row)
+  const exported = []
+  URL.createObjectURL = jest.fn(blob => { exported.push(blob); return 'blob:test' })
+  URL.revokeObjectURL = jest.fn()
+  const click = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  const read = blob => new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsText(blob) })
+  try {
+    for (const button of row.querySelectorAll('.table-download-btn')) {
+      button.click()
+      expect(content.querySelector('th').textContent).toBe('English title')
+      await Promise.resolve()
+      expect(content.querySelector('th').textContent).toBe('번역 제목')
+    }
+    for (const blob of exported) {
+      const text = await read(blob)
+      expect(text).toContain('English title')
+      expect(text).toContain('Link label')
+      expect(text).not.toContain('번역 제목')
+    }
+    controller.toggle(controller.rows.get(row))
+    row.querySelector('.table-download-btn').click()
+    expect(content.querySelector('th').textContent).toBe('English title')
+    controller.toggle(controller.rows.get(row))
+    row.querySelector('.table-download-btn').click()
+    controller.cleanup(row, controller.rows.get(row))
+    await Promise.resolve()
+    expect(content.querySelector('th').textContent).toBe('English title')
+  } finally { click.mockRestore() }
 })

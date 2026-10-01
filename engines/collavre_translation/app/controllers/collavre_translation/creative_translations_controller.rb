@@ -31,7 +31,8 @@ module CollavreTranslation
     def render_translation(record)
       response.headers["Cache-Control"] = "no-store"
       render json: { status: record&.status || "missing", content: record&.content,
-        source_digest: Translation.digest(Translation.source(@creative)) }
+        source_digest: Translation.digest(Translation.source(@creative)),
+        original_html: helpers.embed_youtube_iframe(Translation.source(@creative)) }
     end
   end
 end

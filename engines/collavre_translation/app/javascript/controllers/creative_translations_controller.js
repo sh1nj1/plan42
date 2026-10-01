@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { sanitizeDescriptionHtml } from "collavre/lib/utils/sanitize_description"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
 
 const PROTECTED = 'pre, code, script, style, textarea, .mention, [data-mention], [data-lexical-mention], [contenteditable], [data-ppt-slide]'
@@ -45,6 +46,7 @@ export default class extends Controller {
       let result = await request('GET')
       if (['missing', 'pending'].includes(result.status)) result = await request('POST')
       if (state.abort.signal.aborted || row.descriptionHtml !== state.source) return
+      if (sanitizeDescriptionHtml(result.original_html) !== state.source) return
       if (state.digest && state.digest !== result.source_digest) return
       state.digest = result.source_digest
       if (result.status === 'completed') this.show(row, state, JSON.parse(result.content))
@@ -76,6 +78,14 @@ export default class extends Controller {
       event.stopPropagation()
       this.toggle(state)
     })
+    state.exportHandler = event => {
+      if (!state.translated || !event.target.closest('.table-download-btn')) return
+      this.toggle(state)
+      queueMicrotask(() => {
+        if (!state.abort.signal.aborted && !state.translated) this.toggle(state)
+      })
+    }
+    row.addEventListener('click', state.exportHandler, true)
     content.after(state.button)
     this.toggle(state)
   }
@@ -92,6 +102,7 @@ export default class extends Controller {
     clearTimeout(state.timer)
     this.visibility.unobserve(row)
     state.nodes?.forEach(({ node, original }) => { if (node.isConnected) node.textContent = original })
+    if (state.exportHandler) row.removeEventListener("click", state.exportHandler, true)
     state.button?.remove()
     this.rows.delete(row)
   }
