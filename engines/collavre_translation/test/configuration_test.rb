@@ -54,6 +54,23 @@ module CollavreTranslation
       %w[COLLAVRE_DEFAULT_LLM_VENDOR COLLAVRE_DEFAULT_LLM_MODEL].each { |key| ENV[key] = original[key] }
     end
 
+    test "blank application defaults fall back without disabling translation" do
+      original = ENV.to_h.slice("COLLAVRE_DEFAULT_LLM_VENDOR", "COLLAVRE_DEFAULT_LLM_MODEL")
+      Collavre::IntegrationSettings.stub :fetch, ->(*) { nil } do
+        [ "", " \t\n" ].each do |blank|
+          ENV["COLLAVRE_DEFAULT_LLM_VENDOR"] = blank
+          ENV["COLLAVRE_DEFAULT_LLM_MODEL"] = blank
+          assert_equal "gemini", CollavreTranslation.vendor
+          assert_equal "gemini-3.1-flash-lite", CollavreTranslation.model
+          assert CollavreTranslation.enabled?
+        end
+        CollavreTranslation.model = ""
+        refute CollavreTranslation.enabled?
+      end
+    ensure
+      %w[COLLAVRE_DEFAULT_LLM_VENDOR COLLAVRE_DEFAULT_LLM_MODEL].each { |key| ENV[key] = original[key] }
+    end
+
     test "configuration uses registered shared integration settings" do
       Collavre::IntegrationSettings.stub :fetch, ->(key, **_) { key == :translation_llm_model ? "shared-model" : "google" } do
         assert_equal "shared-model", CollavreTranslation.model

@@ -7,12 +7,12 @@ module CollavreTranslation
 
     def vendor
       @vendor || Collavre::IntegrationSettings.fetch(:translation_llm_vendor).presence ||
-        ENV.fetch("COLLAVRE_DEFAULT_LLM_VENDOR", "gemini")
+        ENV["COLLAVRE_DEFAULT_LLM_VENDOR"].presence || "gemini"
     end
 
     def model
       @model || Collavre::IntegrationSettings.fetch(:translation_llm_model).presence ||
-        ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite")
+        ENV["COLLAVRE_DEFAULT_LLM_MODEL"].presence || "gemini-3.1-flash-lite"
     end
 
     def enabled_for?(user)
