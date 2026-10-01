@@ -262,7 +262,7 @@ class PermissionReadCharacterizationTest < ActiveSupport::TestCase
 
   test "accessible_creative_ids returns own + user-specific non-deny shares, IGNORING public" do
     result = accessible_ids_for(@user)
-    assert_equal ids([ @owned_by_user, @user_read, @user_write ]),
+    assert_equal ids([ @owned_by_user, Collavre::Creative.inbox_for(@user), @user_read, @user_write ]),
       result.sort,
       "site 5 posture: own creatives + user-specific shares (no_access excluded); @public_read and @deny_over_public NOT included"
   end

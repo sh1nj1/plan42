@@ -114,8 +114,12 @@ module Collavre
       sign_in_as(@user, password: "password")
       [ users(:one), users(:ai_bot) ].each do |other|
         get collavre.user_path(other)
-        assert_response :success
-        assert_select "a[href=?]", collavre.onboarding_replay_path, count: 0
+        if other.ai_user?
+          assert_redirected_to collavre.edit_ai_user_path(other)
+        else
+          assert_response :success
+          assert_select "a[href=?]", collavre.onboarding_replay_path, count: 0
+        end
       end
     end
   end

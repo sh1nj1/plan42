@@ -76,6 +76,7 @@ export default class extends Controller {
   show(content) {
     if (!content) return this.restoreOriginal()
     this.contentTarget.innerHTML = renderCommentMarkdown(content)
+    this.contentTarget.dataset.rendered = 'true'
     this.contentTarget.classList.add('comment-content', 'comment-translation-content')
     this.showingTranslation = true
     this.toggleTarget.hidden = false

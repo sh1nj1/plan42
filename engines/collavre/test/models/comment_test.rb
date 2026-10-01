@@ -155,11 +155,11 @@ class CommentTest < ActiveSupport::TestCase
     ai_agent = users(:ai_bot)
 
     perform_enqueued_jobs do
-      creative = Creative.create!(user: owner, description: "Test inbox skip")
-      CreativeShare.create!(creative: creative, user: ai_agent, permission: :feedback, shared_by: owner)
+      @streaming_creative = Creative.create!(user: owner, description: "Test inbox skip")
+      CreativeShare.create!(creative: @streaming_creative, user: ai_agent, permission: :feedback, shared_by: owner)
     end
 
-    creative = Creative.last
+    creative = @streaming_creative
     inbox = Creative.inbox_for(owner)
     initial_inbox_comment_count = inbox.comments.count
 
