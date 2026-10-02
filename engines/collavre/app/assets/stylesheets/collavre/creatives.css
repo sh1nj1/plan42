@@ -1987,19 +1987,24 @@ creative-tree-row.is-being-edited .creative-tree {
     content: none;
 }
 
+/* Clicking the body edits, so the menu's switch that reveals the edit buttons
+   on a small screen has nothing to show. */
+.creative-document-view #toggle-edit-btn,
+.creative-document-view .popup-menu .creative-overflow-divider.mobile-only {
+    display: none !important;
+}
+
 /* Clicking the body edits, so the edit button (hover, or swipe on touch) goes.
    It stays focusable, as the body is no keyboard target, and shows on keyboard
-   focus only. The title keeps the slot so it stays aligned with the rows below. */
+   focus only. It takes no room, on the title either: the title starts where the
+   rows below it start, whether or not they have a drag handle. */
 .creative-document-view .creative-tree .edit-inline-btn {
+    position: absolute;
     visibility: visible;
     max-width: none;
     opacity: 0;
     pointer-events: none;
     transform: none;
-}
-
-.creative-document-view .creative-tree:not(.creative-tree-title) .edit-inline-btn {
-    position: absolute;
 }
 
 .creative-document-view .creative-tree .edit-inline-btn:focus-visible {
@@ -2027,6 +2032,11 @@ creative-tree-row.is-being-edited .creative-tree {
 @media (hover: hover) and (pointer: fine) {
     .creative-document-view .creative-drag-handle {
         display: inline-flex;
+    }
+
+    /* The title has no handle; it leaves the same room so it lines up. */
+    .creative-document-view .creative-tree-title .creative-row-start {
+        padding-left: 20px;
     }
 
     .creative-document-view .creative-row:hover .creative-drag-handle {

@@ -473,4 +473,52 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".creative-drag-handle[draggable]", visible: :all
     assert_no_selector ".creative-drag-handle", visible: true
   end
+  test "the title starts where the rows below it start" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+    assert_selector "html.creative-alignment-ready"
+
+    lefts = page.evaluate_script(<<~JS, content_selector(@first))
+      [document.querySelector('.creative-title-content').getBoundingClientRect().left,
+       document.querySelector(arguments[0]).getBoundingClientRect().left]
+    JS
+    assert_in_delta lefts[1], lefts[0], 1
+  end
+
+  test "the title starts where the rows start on a touch device, which has no drag handle" do
+    # Its own browser: touch emulation would otherwise outlive the test.
+    using_session(:touch) do
+      browser = page.driver.browser
+      browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 420, height: 800, deviceScaleFactor: 1, mobile: true)
+      browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: true)
+      sign_in_via_ui(@user)
+      visit collavre.creative_path(@root, view: "document")
+      assert_selector content_selector(@first)
+      assert_selector "html.creative-alignment-ready"
+      assert page.evaluate_script("matchMedia('(pointer: coarse)').matches")
+      assert_no_selector ".creative-drag-handle", visible: true
+
+      lefts = page.evaluate_script(<<~JS, content_selector(@first))
+        [document.querySelector('.creative-title-content').getBoundingClientRect().left,
+         document.querySelector(arguments[0]).getBoundingClientRect().left]
+      JS
+      assert_in_delta lefts[1], lefts[0], 1
+    end
+  end
+
+  test "the overflow menu drops its edit toggle on a narrow screen, and the tree brings it back" do
+    resize_window_to(600, 800)
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+
+    find('[aria-controls="creative-overflow-menu"]').click
+    assert_selector "#export-markdown-btn"
+    assert_no_selector "#toggle-edit-btn", visible: true
+    assert_no_selector "#creative-overflow-menu .creative-overflow-divider.mobile-only", visible: true
+
+    find('[aria-controls="creative-overflow-menu"]').click
+    find("#document-view-btn").click
+    find('[aria-controls="creative-overflow-menu"]').click
+    assert_selector "#toggle-edit-btn"
+  end
 end
