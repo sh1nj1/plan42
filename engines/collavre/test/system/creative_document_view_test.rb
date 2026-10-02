@@ -169,7 +169,9 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     url = page.current_url
 
     find(content_selector(line)).click
+    find(".creative-title-content").click
 
+    assert_no_selector "#creative-markdown-block[can-write]"
     assert_no_selector "#inline-edit-form-element", visible: true
     assert_equal url, page.current_url
 

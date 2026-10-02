@@ -245,7 +245,7 @@
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
-        "can-write": title_can_write ? "true" : "false",
+        "can-write": (title_can_write ? "" : nil),
         "is-title": "",
         "data-description-raw-html": @parent_creative.description,
         "data-progress-value": @parent_creative.progress,

@@ -3,7 +3,7 @@
 // (see creatives/document_view_controller.js) so lazily added rows pick it up.
 const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"]';
 const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
-const INTERACTIVE_SELECTOR = "a, button, input, img";
+const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
 
 export function isDocumentView(row) {
   return row.closest(DOCUMENT_VIEW_SELECTOR) !== null;
@@ -30,8 +30,9 @@ function selectModeActive(row) {
 
 // A click that ends a selection drag must keep the selection and stay out of
 // the editor; only a plain click on an editable row opens it.
-export function handleDocumentBodyClick(row) {
+export function handleDocumentBodyClick(row, event) {
   if (selectModeActive(row)) return;
+  if (event.target.closest(INTERACTIVE_SELECTOR)) return;
   const selection = window.getSelection?.();
   if (selection && !selection.isCollapsed) return;
   if (!row.canWrite) return;
@@ -40,6 +41,5 @@ export function handleDocumentBodyClick(row) {
 
 export function handleDocumentTitleClick(row, event) {
   if (!isDocumentView(row)) return;
-  if (event.target.closest(INTERACTIVE_SELECTOR)) return;
-  handleDocumentBodyClick(row);
+  handleDocumentBodyClick(row, event);
 }

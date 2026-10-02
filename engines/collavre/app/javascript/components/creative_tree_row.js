@@ -681,7 +681,7 @@ class CreativeTreeRow extends LitElement {
     }
 
     // If not interactive: edit in document view, otherwise navigate to the linkUrl
-    if (isDocumentView(this)) handleDocumentBodyClick(this);
+    if (isDocumentView(this)) handleDocumentBodyClick(this, event);
     else visitRowLink(this);
   }
 }

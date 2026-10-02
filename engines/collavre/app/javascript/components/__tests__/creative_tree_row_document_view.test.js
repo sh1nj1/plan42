@@ -112,6 +112,19 @@ describe("creative-tree-row in document view", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  test("media controls inside the body keep their default behavior", async () => {
+    stubSelection(true);
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, container());
+    el.descriptionHtml = '<video controls src="/clip.mp4"></video><audio controls src="/clip.mp3"></audio>';
+    await el.updateComplete;
+    const handler = editClicks(el);
+
+    el.querySelector(".creative-content video").click();
+    el.querySelector(".creative-content audio").click();
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   test("edits without a selection API", async () => {
     jest.spyOn(window, "getSelection").mockReturnValue(null);
     const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, container());
