@@ -36,7 +36,7 @@
       ) %>
 <% end %>
 
-<% document_view = params[:view] == "document" %>
+<% document_view = (params[:view].presence || cookies[:creative_view]) == "document" %>
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--document-view share-modal creative-image-lightbox"
      class="<%= 'creative-document-view' if document_view %>"
      data-creatives--document-view-active-value="<%= document_view %>"

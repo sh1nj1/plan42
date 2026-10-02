@@ -27,6 +27,30 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     assert_select "#creatives[data-view-mode='document'][data-dnd-disabled]"
   end
 
+  test "the remembered view follows the user into any creative" do
+    creative = Creative.create!(description: "Parent doc", user: @user)
+    child = Creative.create!(description: "Child doc", user: @user, parent: creative)
+    cookies[:creative_view] = "document"
+
+    [ creatives_path, creatives_path(id: creative.id), creatives_path(id: child.id) ].each do |path|
+      get path
+
+      assert_response :success
+      assert_select ".creative-document-view #creatives[data-view-mode='document'][data-dnd-disabled]"
+      assert_select "#document-view-btn[aria-pressed='true']"
+    end
+  end
+
+  test "an explicit view wins over the remembered one" do
+    cookies[:creative_view] = "document"
+
+    get creatives_path(view: "tree")
+
+    assert_response :success
+    assert_select ".creative-document-view", count: 0
+    assert_select "#document-view-btn[aria-pressed='false']"
+  end
+
   test "an unknown view falls back to the tree" do
     get creatives_path(view: "kanban")
 

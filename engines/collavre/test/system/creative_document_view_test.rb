@@ -46,15 +46,45 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_selector ".creative-document-view #creatives[data-view-mode='document']"
     assert_selector "#document-view-btn[aria-pressed='true']"
     assert_no_selector "#creatives .creative-tree[draggable='true']"
-    assert_includes page.current_url, "view=document"
     assert_equal order, row_order
 
     find("#document-view-btn").click
 
     assert_no_selector ".creative-document-view"
     assert_selector "#creatives .creative-tree[draggable='true']", count: 2
-    assert_not_includes page.current_url, "view=document"
     assert_equal order, row_order
+  end
+
+  test "the document view stays on while moving through the tree and after a reload" do
+    visit collavre.creative_path(@root)
+    find("#document-view-btn").click
+    assert_selector ".creative-document-view #creatives[data-view-mode='document']"
+
+    visit collavre.creative_path(@first)
+    assert_selector ".creative-document-view #document-view-btn[aria-pressed='true']"
+    assert_not_includes page.current_url, "view="
+
+    visit collavre.creatives_path
+    assert_selector ".creative-document-view #creatives[data-view-mode='document']"
+
+    page.go_back
+    assert_selector ".creative-document-view #document-view-btn[aria-pressed='true']"
+
+    find("#document-view-btn").click
+    assert_no_selector ".creative-document-view"
+
+    visit collavre.creative_path(@root)
+    assert_selector "#document-view-btn[aria-pressed='false']"
+    assert_no_selector ".creative-document-view"
+  end
+
+  test "a document view link opens the view and keeps it for later pages" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector ".creative-document-view #creatives[data-view-mode='document']"
+    assert_not_includes page.current_url, "view="
+
+    visit collavre.creative_path(@first)
+    assert_selector ".creative-document-view #document-view-btn[aria-pressed='true']"
   end
 
   test "dragging across rows selects text without moving, entering or editing" do
