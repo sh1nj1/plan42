@@ -1980,14 +1980,23 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 /* Clicking the body edits, so the edit button (hover, or swipe on touch) goes.
-   The title keeps the empty slot so it stays aligned with the rows below. */
-.creative-document-view .creative-tree:not(.creative-tree-title) .edit-inline-btn {
-    display: none;
+   It stays focusable, as the body is no keyboard target, and shows on keyboard
+   focus only. The title keeps the slot so it stays aligned with the rows below. */
+.creative-document-view .creative-tree .edit-inline-btn {
+    visibility: visible;
+    max-width: none;
+    opacity: 0;
+    pointer-events: none;
+    transform: none;
 }
 
-.creative-document-view .creative-tree-title .edit-inline-btn {
-    visibility: hidden !important;
-    pointer-events: none;
+.creative-document-view .creative-tree:not(.creative-tree-title) .edit-inline-btn {
+    position: absolute;
+}
+
+.creative-document-view .creative-tree .edit-inline-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 /* The handle is the row's only drag source and appears on hover. Touch has no

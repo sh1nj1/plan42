@@ -192,6 +192,18 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
+  test "the keyboard reaches the hidden edit button and opens the editor" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+    button = "creative-tree-row[creative-id='#{@first.id}'] .edit-inline-btn"
+
+    page.execute_script("document.querySelector(arguments[0]).focus()", button)
+    assert page.evaluate_script("document.activeElement.matches(arguments[0])", button)
+    page.driver.browser.action.send_keys(:enter).perform
+
+    assert_selector "#inline-edit-form-element", visible: true
+  end
+
   test "a click on the title edits it in place" do
     visit collavre.creative_path(@root, view: "document")
     assert_selector content_selector(@first)
