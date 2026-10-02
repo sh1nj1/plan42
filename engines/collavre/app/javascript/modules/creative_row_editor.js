@@ -2094,10 +2094,9 @@ function setupEditorSession() {
       });
     }
 
-    // Expose for testing
+    // Exposed for tests and for the document view (creative_tree_row_document_view.js)
     window.creativeRowEditor = {
       setUploadsPending: (pending) => {
-        uploadsPending = pending;
         if (pending) {
           uploadCompletionPromise = new Promise((resolve) => {
             resolveUploadCompletion = resolve;
@@ -2118,7 +2117,9 @@ function setupEditorSession() {
           handleUploadStateChange(false);
         }
       },
-      isUploadPending: () => uploadsPending
+      isUploadPending: () => uploadsPending,
+      // Closes the editor once its draft is on the server; false when the save failed.
+      flush: () => hideCurrent(undefined, { switching: true, waitForServer: true }).then((result) => result !== SAVE_FAILED)
     };
 
     if (linkBtn) {

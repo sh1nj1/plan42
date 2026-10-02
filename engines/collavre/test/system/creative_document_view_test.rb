@@ -262,9 +262,32 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     find("#{content_selector(linked)} a").click
 
     assert_current_path "/robots.txt", wait: 10
-    saved = lambda { ActionController::Base.helpers.strip_tags(@first.reload.description).strip }
-    10.times { break if saved.call == "First paragraph edited"; sleep 0.5 }
-    assert_equal "First paragraph edited", saved.call
+    # The link waits for the save, so it is stored by the time the page is left.
+    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+  end
+
+  test "a link that leaves the page waits for a pending upload before the draft is saved" do
+    linked = Creative.create!(
+      description: %(See <a href="/robots.txt">the robots file</a>),
+      user: @user, parent: @root
+    )
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+    # A pending upload disables the close button, so clicking it saves nothing.
+    page.execute_script("window.creativeRowEditor.setUploadsPending(true)")
+    find("#{content_selector(linked)} a").click
+
+    sleep 1
+    assert_no_current_path "/robots.txt"
+    assert_equal "First paragraph", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+
+    page.execute_script("window.creativeRowEditor.resolveUploadCompletion()")
+    assert_current_path "/robots.txt", wait: 10
+    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
   test "a click edits in place and the change shows in the tree view" do

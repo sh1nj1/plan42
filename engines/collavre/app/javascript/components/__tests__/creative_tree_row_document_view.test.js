@@ -146,7 +146,7 @@ describe("creative-tree-row in document view", () => {
     expect(closed).toHaveBeenCalledTimes(3);
   });
 
-  test("a link that leaves the page closes the open editor first, so the draft is saved", async () => {
+  test("a link that leaves the page waits for the open editor's save before it is followed", async () => {
     const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
     const root = document.createElement("div");
     root.className = "creative-document-view";
@@ -156,13 +156,19 @@ describe("creative-tree-row in document view", () => {
       <a class="download" href="/files/1" download>file</a>
       <a class="anchor" href="#section">jump</a>
       <a class="bare">no href</a>
-      <div id="inline-edit-form"><button id="inline-close"></button><a class="in-editor" href="/x">x</a></div>`;
+      <div id="inline-edit-form"><button id="inline-close" disabled></button><a class="in-editor" href="/x">x</a></div>`;
     document.body.appendChild(root);
-    const closed = jest.fn();
-    root.querySelector("#inline-close").addEventListener("click", closed);
+    const editor = root.querySelector("#inline-edit-form");
+    let settle;
+    const flush = jest.fn(() => new Promise((resolve) => { settle = resolve; }));
+    window.creativeRowEditor = { flush };
+    const followed = jest.fn((event) => event.preventDefault());
+    root.querySelector(".leaves").addEventListener("click", followed);
+    const capture = (event) => handleDocumentOutsideClick(root, event);
+    document.addEventListener("click", capture, true);
     const clickOn = (selector, keys = {}) => {
-      const event = { target: root.querySelector(selector), ...keys };
-      handleDocumentOutsideClick(root, event);
+      const event = new window.MouseEvent("click", { bubbles: true, cancelable: true, ...keys });
+      root.querySelector(selector).dispatchEvent(event);
       return event;
     };
     stubSelection(true);
@@ -176,11 +182,38 @@ describe("creative-tree-row in document view", () => {
     clickOn(".leaves", { metaKey: true });
     clickOn(".leaves", { ctrlKey: true });
     clickOn(".leaves", { shiftKey: true });
-    expect(closed).not.toHaveBeenCalled();
+    expect(flush).not.toHaveBeenCalled();
+    followed.mockClear();
 
+    // The click is held back until the save lands, even while the close
+    // button is disabled by a pending upload.
+    const held = clickOn(".inner");
+    expect(held.defaultPrevented).toBe(true);
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(followed).not.toHaveBeenCalled();
+    editor.style.display = "none";
+    settle(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(followed).toHaveBeenCalledTimes(1);
+
+    // A failed save keeps the draft in the editor and the user on the page.
+    editor.style.display = "";
     clickOn(".leaves");
-    clickOn(".inner");
-    expect(closed).toHaveBeenCalledTimes(2);
+    settle(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(followed).toHaveBeenCalledTimes(1);
+
+    // With no editor open the link is left alone.
+    editor.style.display = "none";
+    expect(clickOn(".leaves").defaultPrevented).toBe(true);
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(followed).toHaveBeenCalledTimes(2);
+
+    document.removeEventListener("click", capture, true);
+    delete window.creativeRowEditor;
   });
 
   test("a click that closed the editor does not open the row under it", async () => {

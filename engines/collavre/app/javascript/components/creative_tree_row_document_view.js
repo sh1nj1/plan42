@@ -109,9 +109,13 @@ function selectModeActive(row) {
 
 // The shared form stays in the page hidden once closed; only a visible one is
 // an editor the user is still in.
-function closeOpenEditor() {
+function editorOpen() {
   const editor = document.getElementById("inline-edit-form");
-  if (!editor || editor.style.display === "none") return false;
+  return Boolean(editor) && editor.style.display !== "none";
+}
+
+function closeOpenEditor() {
+  if (!editorOpen()) return false;
   document.getElementById("inline-close")?.click();
   return true;
 }
@@ -122,22 +126,33 @@ function hasTextSelection() {
 }
 
 // A plain click on a link that loads another page in this tab.
-function leavesPage(event) {
-  if (event.metaKey || event.ctrlKey || event.shiftKey) return false;
-  return Boolean(event.target.closest?.(LEAVING_LINK_SELECTOR));
+function leavingLink(event) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey) return null;
+  return event.target.closest?.(LEAVING_LINK_SELECTOR) ?? null;
+}
+
+// Unloading the page would cancel a save still on its way, and the close
+// button is disabled while an upload is pending. So the click is held back
+// until the editor has flushed to the server, then repeated; a failed save
+// keeps the draft in the editor and the user on the page.
+async function followAfterSave(link, event) {
+  if (!editorOpen()) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (await window.creativeRowEditor.flush()) link.click();
 }
 
 // While an editor is open in document view, a plain click outside it closes
 // it, as its close button does: on a row, the title or the empty page around
 // them. Controls, the editor's own popups and other panels keep it open. A
-// link that leaves the page closes it too: the draft would otherwise go with
-// the page, ahead of its debounced save. Runs in the capture phase (see
+// link that leaves the page waits for the draft to be saved first. Runs in the capture phase (see
 // creatives/document_view_controller.js), ahead of the row's own click handling.
 export function handleDocumentOutsideClick(root, event) {
   const target = event.target;
   if (!root.contains(target) && !target.contains(root)) return;
   if (root.matches(SELECT_MODE_SELECTOR) || target.closest?.(EDITOR_UI_SELECTOR)) return;
-  if (leavesPage(event)) return void closeOpenEditor();
+  const link = leavingLink(event);
+  if (link) return void followAfterSave(link, event);
   if (target.closest?.(INTERACTIVE_SELECTOR) || hasTextSelection()) return;
   if (closeOpenEditor()) editorClosingClicks.add(event);
 }
