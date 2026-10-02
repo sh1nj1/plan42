@@ -58,6 +58,40 @@ afterEach(() => {
 });
 
 describe("creative-tree-row in document view", () => {
+  test("a click on another row closes the open editor instead of moving it", async () => {
+    const parent = container();
+    const edited = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const other = await mountRow({ creativeId: "9", canWrite: true, linkUrl: "/creatives/9" }, parent);
+    const reader = await mountRow({ creativeId: "10", canWrite: false, linkUrl: "/creatives/10" }, parent);
+    const editor = document.createElement("div");
+    editor.id = "inline-edit-form";
+    const close = document.createElement("button");
+    close.id = "inline-close";
+    editor.appendChild(close);
+    edited.querySelector(".creative-tree").appendChild(editor);
+    const closed = jest.fn();
+    close.addEventListener("click", closed);
+    const handler = editClicks(other);
+    stubSelection(true);
+
+    other.querySelector(".creative-content").click();
+    reader.querySelector(".creative-content").click();
+    expect(closed).toHaveBeenCalledTimes(2);
+    expect(handler).not.toHaveBeenCalled();
+
+    // Once closed, the hidden form is no open editor and the click edits again.
+    editor.style.display = "none";
+    other.querySelector(".creative-content").click();
+    expect(closed).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    // A form that lost its close button still blocks the switch.
+    editor.style.display = "";
+    close.remove();
+    other.querySelector(".creative-content").click();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   test("rows are not drag sources, and become draggable again in tree view", async () => {
     const parent = container();
     const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);

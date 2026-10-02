@@ -200,6 +200,25 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_selector "#creatives .creative-tree[draggable='true']", count: 2
   end
 
+  test "a click on another row closes the open editor and saves, without moving it" do
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+    find(content_selector(@second)).click
+
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 10
+    assert_selector content_selector(@first), text: "First paragraph edited"
+    assert_selector content_selector(@second), text: "Second paragraph"
+    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+
+    # The next click opens the editor on the row it lands on.
+    find(content_selector(@second)).click
+    assert_selector "#{tree_selector(@second)} > #inline-edit-form", visible: true, wait: 5
+  end
+
   test "a click edits in place and the change shows in the tree view" do
     visit collavre.creative_path(@root, view: "document")
 

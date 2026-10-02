@@ -92,13 +92,25 @@ function selectModeActive(row) {
   return row.selectMode || row.closest(SELECT_MODE_SELECTOR) !== null;
 }
 
+// The shared form stays in the page hidden once closed; only a visible one is
+// an editor the user is still in.
+function closeOpenEditor() {
+  const editor = document.getElementById("inline-edit-form");
+  if (!editor || editor.style.display === "none") return false;
+  document.getElementById("inline-close")?.click();
+  return true;
+}
+
 // A click that ends a selection drag must keep the selection and stay out of
-// the editor; only a plain click on an editable row opens it.
+// the editor; only a plain click on an editable row opens it. While an editor
+// is open, a click on another row closes it, as its close button does, and
+// opens nothing.
 export function handleDocumentBodyClick(row, event) {
   if (selectModeActive(row)) return;
   if (event.target.closest(INTERACTIVE_SELECTOR)) return;
   const selection = window.getSelection?.();
   if (selection && !selection.isCollapsed) return;
+  if (closeOpenEditor()) return;
   if (!row.canWrite) return;
   row.dispatchEditClick(row.querySelector(".edit-inline-btn"));
 }
