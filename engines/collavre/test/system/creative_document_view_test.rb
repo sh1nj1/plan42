@@ -21,6 +21,16 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     "creative-tree-row[creative-id='#{creative.id}'] .creative-content"
   end
 
+  # The refresh that follows a save re-renders the row some time after the
+  # editor closed; this does the same render without the wait.
+  def rerender_row(creative)
+    page.evaluate_async_script(<<~JS, "creative-tree-row[creative-id='#{creative.id}']")
+      const row = document.querySelector(arguments[0]);
+      row.requestUpdate();
+      row.updateComplete.then(arguments[1]);
+    JS
+  end
+
   def tree_selector(creative)
     "creative-tree-row[creative-id='#{creative.id}'] .creative-tree"
   end
@@ -172,6 +182,24 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_selector "#{tree_selector(@first)}[draggable='true']", wait: 10
   end
 
+  test "closing the editor without a change leaves the row free in both views" do
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    find("#inline-close", wait: 5).click
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 10
+
+    # The hidden form stays in the row it last edited; a later render must not
+    # read it as an open editor and lock the row.
+    assert_selector "#{tree_selector(@first)} > #inline-edit-form", visible: :hidden
+    rerender_row(@first)
+    assert_no_selector "#{tree_selector(@first)}[draggable]"
+
+    find("#document-view-btn").click
+    assert_selector "#creatives .creative-tree[draggable='true']", count: 2
+  end
+
   test "a click edits in place and the change shows in the tree view" do
     visit collavre.creative_path(@root, view: "document")
 
@@ -184,8 +212,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
 
     assert_selector content_selector(@first), text: "First paragraph edited"
-    # Closing the editor must not turn the row back into a drag source.
-    assert_no_selector "#{tree_selector(@first)}[draggable='true']"
+    # Closing the editor must not turn the row back into a drag source, and the
+    # hidden form it leaves in the row must not keep the row locked either.
+    rerender_row(@first)
+    assert_no_selector "#{tree_selector(@first)}[draggable]"
     find("#document-view-btn").click
     assert_selector "#{tree_selector(@first)}[draggable='true']"
     assert_selector content_selector(@first), text: "First paragraph edited"

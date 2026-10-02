@@ -120,6 +120,28 @@ describe("creative-tree-row in document view", () => {
     expect(tree.getAttribute("draggable")).toBe("true");
   });
 
+  test("the hidden editor shell left behind after closing does not lock the row", async () => {
+    const { isDragLocked, restoreRowDraggable } = await import("../creative_tree_row_document_view.js");
+    const parent = container({ documentView: false });
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const tree = el.querySelector(".creative-tree");
+    const editor = document.createElement("div");
+    editor.id = "inline-edit-form";
+    editor.style.display = "none"; // closed, but still attached to its last row
+    tree.appendChild(editor);
+    restoreRowDraggable(tree);
+
+    el.requestUpdate(); // what the refresh after a save does
+    await el.updateComplete;
+    expect(tree.getAttribute("draggable")).toBe("true");
+
+    parent.dataset.viewMode = "document";
+    el.requestUpdate();
+    await el.updateComplete;
+    expect(tree.hasAttribute("draggable")).toBe(false);
+    expect(isDragLocked(tree)).toBe(false);
+  });
+
   test("a drag handle replaces the row as the drag source, only in document view", async () => {
     const parent = container();
     const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);

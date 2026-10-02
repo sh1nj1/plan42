@@ -17,9 +17,11 @@ export function isDocumentView(row) {
 
 // Document view selects text over the body, so the row is no drag source.
 // The inline editor sits inside the row it edits and locks dragging until it
-// closes; a re-render, such as a view switch, must not undo that lock.
+// closes; a re-render, such as a view switch, must not undo that lock. Once
+// closed, the hidden form stays in its last row and no longer counts.
 export function rowDraggableAttr(row) {
-  if (row.querySelector(OPEN_EDITOR_SELECTOR)) return "false";
+  const editor = row.querySelector(OPEN_EDITOR_SELECTOR);
+  if (editor && editor.style.display !== "none") return "false";
   if (isDocumentView(row)) return nothing;
   return !row.selectMode || row.canWrite ? "true" : nothing;
 }
