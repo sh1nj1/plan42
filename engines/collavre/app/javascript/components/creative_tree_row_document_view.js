@@ -4,7 +4,8 @@
 // The title row sits beside the tree, so it only has the controller's class.
 import { html, nothing } from "lit";
 
-const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"], .creative-document-view';
+const DOCUMENT_TREE_SELECTOR = '[data-view-mode="document"]';
+const DOCUMENT_VIEW_SELECTOR = `${DOCUMENT_TREE_SELECTOR}, .creative-document-view`;
 const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
 const DRAG_HANDLE_SELECTOR = ".creative-drag-handle";
@@ -39,9 +40,17 @@ export function renderDragHandle(row) {
 }
 
 // Document view rows are never draggable themselves, yet they still take drops.
-// Elsewhere a non-draggable row is one that is being edited.
+// The title beside the tree never does, nor does a row whose editor holds the
+// explicit lock; elsewhere a non-draggable row is one that is being edited.
 export function isDragLocked(tree) {
-  return tree.draggable === false && !isDocumentView(tree);
+  if (tree.draggable !== false) return false;
+  return tree.hasAttribute("draggable") || tree.closest(DOCUMENT_TREE_SELECTOR) === null;
+}
+
+// The touch opt-out sits on the tree, which the title is not part of. Without
+// it a long press on the title would hold back native text selection.
+export function titleDndDisabledAttr(row) {
+  return isDocumentView(row) ? "" : nothing;
 }
 
 export function startsRowDrag(tree, event) {

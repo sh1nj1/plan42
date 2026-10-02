@@ -1991,7 +1991,8 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 /* The handle is the row's only drag source and appears on hover. Touch has no
-   hover and drags nothing here, so it gives the width to the text. */
+   hover and drags nothing here, so it gives the width to the text. A laptop
+   with a touchscreen still has a fine primary pointer and keeps the handle. */
 .creative-drag-handle {
     display: none;
     width: 20px;
@@ -2006,7 +2007,7 @@ creative-tree-row.is-being-edited .creative-tree {
     cursor: grabbing;
 }
 
-@media (hover: hover) and (not (any-pointer: coarse)) {
+@media (hover: hover) and (pointer: fine) {
     .creative-document-view .creative-drag-handle {
         display: inline-flex;
     }

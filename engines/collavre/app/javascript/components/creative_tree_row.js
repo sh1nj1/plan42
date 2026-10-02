@@ -8,7 +8,7 @@ import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 import {
-  isDocumentView, renderDragHandle, rowDraggableAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
+  isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
 } from "./creative_tree_row_document_view";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -272,6 +272,7 @@ class CreativeTreeRow extends LitElement {
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? ""}
+        data-dnd-disabled=${titleDndDisabledAttr(this)}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">

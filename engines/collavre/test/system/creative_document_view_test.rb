@@ -126,6 +126,26 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".creative-drag-handle"
   end
 
+  test "the title is no drop target and keeps touch dragging off" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@second)
+    order = row_order
+    ids = @root.children.order(:sequence).pluck(:id)
+
+    assert_selector ".creative-tree-title[data-dnd-disabled]"
+    find(content_selector(@second)).hover
+    handle = "creative-tree-row[creative-id='#{@second.id}'] .creative-drag-handle"
+    drag_and_drop_with_offset(find(handle), find(".creative-tree-title"), 0, 4)
+
+    assert_no_selector ".drag-over"
+    assert_equal order, row_order
+    assert_equal ids, @root.reload.children.order(:sequence).pluck(:id)
+    assert_equal @root.id, @second.reload.parent_id
+
+    find("#document-view-btn").click
+    assert_no_selector ".creative-tree-title[data-dnd-disabled]"
+  end
+
   test "the document fills the width its container gives it" do
     resize_window_to(2600, 900)
     visit collavre.creative_path(@root, view: "document")

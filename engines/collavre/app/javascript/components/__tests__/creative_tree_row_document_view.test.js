@@ -153,21 +153,47 @@ describe("creative-tree-row in document view", () => {
     expect(startsRowDrag(tree, { target: handle, dataTransfer: {} })).toBe(true);
   });
 
-  test("rows still take drops, while an edited tree view row does not", async () => {
+  test("rows still take drops, while an edited row does not in either view", async () => {
     const { isDragLocked, startsRowDrag } = await import("../creative_tree_row_document_view.js");
     const parent = container();
     const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
     const tree = el.querySelector(".creative-tree");
 
+    expect(tree.draggable).toBe(false);
+    expect(isDragLocked(tree)).toBe(false);
+    // The inline editor locks the row it edits.
     tree.draggable = false;
+    expect(isDragLocked(tree)).toBe(true);
+    tree.removeAttribute("draggable");
     expect(isDragLocked(tree)).toBe(false);
 
+    tree.draggable = false;
     delete parent.dataset.viewMode;
     expect(isDragLocked(tree)).toBe(true);
     expect(startsRowDrag(tree, { target: tree })).toBe(false);
     tree.draggable = true;
     expect(isDragLocked(tree)).toBe(false);
     expect(startsRowDrag(tree, { target: tree })).toBe(true);
+  });
+
+  test("the title takes no drops and opts out of touch dragging", async () => {
+    const { isDragLocked } = await import("../creative_tree_row_document_view.js");
+    const { root, tree } = page();
+    const title = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, root);
+    const row = await mountRow({ creativeId: "8", canWrite: true }, tree);
+    const titleTree = title.querySelector(".creative-tree");
+
+    expect(isDragLocked(titleTree)).toBe(true);
+    expect(titleTree.hasAttribute("data-dnd-disabled")).toBe(true);
+    expect(isDragLocked(row.querySelector(".creative-tree"))).toBe(false);
+
+    root.classList.remove("creative-document-view");
+    delete tree.dataset.viewMode;
+    title.requestUpdate();
+    await title.updateComplete;
+
+    expect(isDragLocked(titleTree)).toBe(true);
+    expect(titleTree.hasAttribute("data-dnd-disabled")).toBe(false);
   });
 
   test("a plain body click opens the editor instead of navigating", async () => {
