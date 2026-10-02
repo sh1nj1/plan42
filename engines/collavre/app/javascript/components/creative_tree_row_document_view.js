@@ -10,6 +10,16 @@ export function isDocumentView(row) {
   return row.closest(DOCUMENT_VIEW_SELECTOR) !== null;
 }
 
+// The inline editor turns dragging off while it is open. Closing it hands the
+// row back as a drag source only in tree view; render() does not re-run here.
+export function restoreRowDraggable(tree) {
+  if (isDocumentView(tree)) {
+    tree.removeAttribute("draggable");
+  } else {
+    tree.draggable = true;
+  }
+}
+
 export function visitRowLink(row) {
   if (!row.linkUrl || row.linkUrl === "#") return;
   if (window.Turbo) {

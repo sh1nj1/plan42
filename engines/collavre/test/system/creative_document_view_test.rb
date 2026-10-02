@@ -21,6 +21,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     "creative-tree-row[creative-id='#{creative.id}'] .creative-content"
   end
 
+  def tree_selector(creative)
+    "creative-tree-row[creative-id='#{creative.id}'] .creative-tree"
+  end
+
   def row_order
     page.evaluate_script(<<~JS)
       Array.from(document.querySelectorAll('#creatives creative-tree-row')).map(row => row.getAttribute('creative-id'))
@@ -115,7 +119,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
 
     assert_selector content_selector(@first), text: "First paragraph edited"
+    # Closing the editor must not turn the row back into a drag source.
+    assert_no_selector "#{tree_selector(@first)}[draggable='true']"
     find("#document-view-btn").click
+    assert_selector "#{tree_selector(@first)}[draggable='true']"
     assert_selector content_selector(@first), text: "First paragraph edited"
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end

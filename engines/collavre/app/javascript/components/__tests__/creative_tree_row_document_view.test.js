@@ -71,6 +71,22 @@ describe("creative-tree-row in document view", () => {
     expect(el.querySelector(".creative-tree").getAttribute("draggable")).toBe("true");
   });
 
+  test("closing the editor leaves the row a drag source only in tree view", async () => {
+    const { restoreRowDraggable } = await import("../creative_tree_row_document_view.js");
+    const parent = container();
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const tree = el.querySelector(".creative-tree");
+
+    tree.draggable = false; // what the editor does while it is open
+    restoreRowDraggable(tree);
+    expect(tree.hasAttribute("draggable")).toBe(false);
+
+    delete parent.dataset.viewMode;
+    tree.draggable = false;
+    restoreRowDraggable(tree);
+    expect(tree.getAttribute("draggable")).toBe("true");
+  });
+
   test("a plain body click opens the editor instead of navigating", async () => {
     window.Turbo = { visit: jest.fn() };
     stubSelection(true);
