@@ -2,12 +2,44 @@
 // the body is for reading, selecting and editing. The mode lives on an ancestor
 // (see creatives/document_view_controller.js) so lazily added rows pick it up.
 // The title row sits beside the tree, so it only has the controller's class.
+import { html, nothing } from "lit";
+
 const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"], .creative-document-view';
 const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
+const DRAG_HANDLE_SELECTOR = ".creative-drag-handle";
 
 export function isDocumentView(row) {
   return row.closest(DOCUMENT_VIEW_SELECTOR) !== null;
+}
+
+// The body selects text, so a hover handle is the only drag source of a
+// document view row. It takes the slot of the edit button, which is hidden.
+export function renderDragHandle(row) {
+  if (!isDocumentView(row)) return nothing;
+  return html`
+    <span class="creative-action-btn creative-drag-handle" draggable="true" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <circle cx="5.5" cy="3.5" r="1.3"/><circle cx="10.5" cy="3.5" r="1.3"/>
+        <circle cx="5.5" cy="8" r="1.3"/><circle cx="10.5" cy="8" r="1.3"/>
+        <circle cx="5.5" cy="12.5" r="1.3"/><circle cx="10.5" cy="12.5" r="1.3"/>
+      </svg>
+    </span>
+  `;
+}
+
+// Document view rows are never draggable themselves, yet they still take drops.
+// Elsewhere a non-draggable row is one that is being edited.
+export function isDragLocked(tree) {
+  return tree.draggable === false && !isDocumentView(tree);
+}
+
+export function startsRowDrag(tree, event) {
+  if (!isDocumentView(tree)) return tree.draggable !== false;
+  if (!event.target.closest?.(DRAG_HANDLE_SELECTOR)) return false;
+  // The browser would otherwise show only the handle as the drag image.
+  event.dataTransfer.setDragImage?.(tree, 0, 0);
+  return true;
 }
 
 // The inline editor turns dragging off while it is open. Closing it hands the

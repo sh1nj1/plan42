@@ -87,6 +87,56 @@ describe("creative-tree-row in document view", () => {
     expect(tree.getAttribute("draggable")).toBe("true");
   });
 
+  test("a drag handle replaces the row as the drag source, only in document view", async () => {
+    const parent = container();
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+
+    const handle = el.querySelector(".creative-row-start > .creative-drag-handle");
+    expect(handle.getAttribute("draggable")).toBe("true");
+
+    delete parent.dataset.viewMode;
+    el.requestUpdate();
+    await el.updateComplete;
+
+    expect(el.querySelector(".creative-drag-handle")).toBeNull();
+  });
+
+  test("only the handle starts a row drag, with the row as the drag image", async () => {
+    const { startsRowDrag } = await import("../creative_tree_row_document_view.js");
+    const parent = container();
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const tree = el.querySelector(".creative-tree");
+    const handle = el.querySelector(".creative-drag-handle");
+    const dataTransfer = { setDragImage: jest.fn() };
+
+    expect(startsRowDrag(tree, { target: el.querySelector(".creative-content"), dataTransfer })).toBe(false);
+    // Dragging selected text starts on a text node, which has no closest().
+    expect(startsRowDrag(tree, { target: document.createTextNode("text"), dataTransfer })).toBe(false);
+    expect(dataTransfer.setDragImage).not.toHaveBeenCalled();
+
+    expect(startsRowDrag(tree, { target: handle.querySelector("svg"), dataTransfer })).toBe(true);
+    expect(dataTransfer.setDragImage).toHaveBeenCalledWith(tree, 0, 0);
+    // The touch bridge and older engines may not offer a drag image.
+    expect(startsRowDrag(tree, { target: handle, dataTransfer: {} })).toBe(true);
+  });
+
+  test("rows still take drops, while an edited tree view row does not", async () => {
+    const { isDragLocked, startsRowDrag } = await import("../creative_tree_row_document_view.js");
+    const parent = container();
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const tree = el.querySelector(".creative-tree");
+
+    tree.draggable = false;
+    expect(isDragLocked(tree)).toBe(false);
+
+    delete parent.dataset.viewMode;
+    expect(isDragLocked(tree)).toBe(true);
+    expect(startsRowDrag(tree, { target: tree })).toBe(false);
+    tree.draggable = true;
+    expect(isDragLocked(tree)).toBe(false);
+    expect(startsRowDrag(tree, { target: tree })).toBe(true);
+  });
+
   test("a plain body click opens the editor instead of navigating", async () => {
     window.Turbo = { visit: jest.fn() };
     stubSelection(true);

@@ -28,6 +28,7 @@ import * as moveOperations from './operations';
 import { reportPartialMove } from './move_feedback';
 import { expandBranchWithChildren } from '../branch_expansion';
 import { sendTopicMove } from '../../lib/api/drag_drop';
+import { isDragLocked, startsRowDrag } from '../../components/creative_tree_row_document_view';
 import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
@@ -370,7 +371,7 @@ function getCreativeText(id) {
 
 export function handleDragStart(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
-  if (!tree || tree.draggable === false) return;
+  if (!tree || !startsRowDrag(tree, event)) return;
   const row = asTreeRow(tree);
   if (!row) return;
   const windowId = ensureDragWindowId();
@@ -418,7 +419,7 @@ export function handleDragOver(event, intent = null, kind = null) {
     setLastDragOverRow(null);
     clearHoverExpand();
   }
-  if (!tree || tree.draggable === false) return;
+  if (!tree || isDragLocked(tree)) return;
 
   const dragKind = kind || getDragKind(event.dataTransfer);
 
@@ -540,7 +541,7 @@ export function handleDrop(event, intent = null, { partialFailureMessage = '', d
 
   const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(event, dragData);
 
-  if (!targetTree || targetTree.draggable === false) {
+  if (!targetTree || isDragLocked(targetTree)) {
     resetDrag();
     return;
   }
@@ -700,16 +701,14 @@ function hasKnownCreativeTreeCycle(ids, targetRow, direction) {
 
 export function handleDragLeave(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
-  if (!tree || tree.draggable === false) return;
+  if (!tree || isDragLocked(tree)) return;
   clearDragHighlight(tree);
   if (getLastDragOverRow() === tree) setLastDragOverRow(null);
   if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) clearHoverExpand();
   hideLinkHover();
 }
 
-function handleDragEnd() {
-  resetDrag();
-}
+const handleDragEnd = () => resetDrag();
 
 export function addGlobalListeners() {
   document.addEventListener('dragend', handleDragEnd);
@@ -760,7 +759,7 @@ export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) 
     selector: DRAGGABLE_SELECTOR,
     accepts: ['creative', 'topic'],
     hitTest: ({ el, event, kind, previousHit }) => {
-      if (el.draggable === false) return null;
+      if (isDragLocked(el)) return null;
       if (kind === 'topic') return 'child';
       return getVerticalDropPosition({
         clientY: event.clientY,

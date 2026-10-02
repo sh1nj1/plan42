@@ -1902,19 +1902,11 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-document-view {
-    --creative-document-width: 760px;
     --creative-document-heading-font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Noto Serif KR", serif;
     --creative-h1-size: 1.6em;
     --creative-h2-size: 1.3em;
     --creative-h3-size: 1.12em;
     --creative-body-lh: 1.7;
-}
-
-.creative-document-view creative-tree-row[is-title],
-.creative-document-view #creatives {
-    display: block;
-    max-width: var(--creative-document-width);
-    margin-inline: auto;
 }
 
 .creative-document-view .tree-line {
@@ -1985,4 +1977,41 @@ creative-tree-row.is-being-edited .creative-tree {
 
 .creative-document-view .tree-line::before {
     content: none;
+}
+
+/* Clicking the body edits, so the edit button (hover, or swipe on touch) goes.
+   The title keeps the empty slot so it stays aligned with the rows below. */
+.creative-document-view .creative-tree:not(.creative-tree-title) .edit-inline-btn {
+    display: none;
+}
+
+.creative-document-view .creative-tree-title .edit-inline-btn {
+    visibility: hidden !important;
+    pointer-events: none;
+}
+
+/* The handle is the row's only drag source and appears on hover. Touch has no
+   hover and drags nothing here, so it gives the width to the text. */
+.creative-drag-handle {
+    display: none;
+    width: 20px;
+    color: var(--text-muted);
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    user-select: none;
+}
+
+.creative-drag-handle:active {
+    cursor: grabbing;
+}
+
+@media (hover: hover) and (not (any-pointer: coarse)) {
+    .creative-document-view .creative-drag-handle {
+        display: inline-flex;
+    }
+
+    .creative-document-view .creative-row:hover .creative-drag-handle {
+        opacity: 1;
+    }
 }

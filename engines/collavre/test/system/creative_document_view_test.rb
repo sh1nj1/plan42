@@ -107,6 +107,38 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal order, row_order
   end
 
+  test "the hover handle drags a row, and the edit button stays hidden" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@second)
+    handle = "creative-tree-row[creative-id='#{@first.id}'] .creative-drag-handle"
+
+    assert_no_selector "#creatives .edit-inline-btn", visible: true
+    find(content_selector(@first)).hover
+    assert_no_selector "#creatives .edit-inline-btn", visible: true
+
+    drag_and_drop_with_offset(find(handle), find(tree_selector(@second)), 0, 60)
+
+    assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-content", text: "Second paragraph"
+    assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-content", text: "First paragraph"
+    assert_equal [ @second.id, @first.id ], @root.reload.children.order(:sequence).pluck(:id)
+
+    find("#document-view-btn").click
+    assert_no_selector ".creative-drag-handle"
+  end
+
+  test "the document fills the width its container gives it" do
+    resize_window_to(2600, 900)
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+
+    widths = page.evaluate_script(<<~JS)
+      [document.getElementById('creatives').getBoundingClientRect().width,
+       document.getElementById('creatives').parentElement.getBoundingClientRect().width]
+    JS
+    assert_operator widths[0], :>, 760
+    assert_in_delta widths[1], widths[0], 1
+  end
+
   test "a click edits in place and the change shows in the tree view" do
     visit collavre.creative_path(@root, view: "document")
 
