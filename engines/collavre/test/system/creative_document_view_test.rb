@@ -243,6 +243,24 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_selector ".lexical-content-editable", wait: 5
   end
 
+  test "switching views in select mode keeps the checkboxes and the selection" do
+    visit collavre.creative_path(@root)
+    assert_selector content_selector(@first)
+    find('[aria-controls="creative-overflow-menu"]').click
+    find("#select-creative-btn").click
+    find("creative-tree-row[creative-id='#{@first.id}'] .select-creative-checkbox").click
+
+    find("#document-view-btn").click
+
+    assert_selector "#creatives[data-view-mode='document'] .select-creative-checkbox", visible: true, count: 2
+    assert_selector "#creatives .select-creative-checkbox:checked", visible: true, count: 1
+
+    find("#document-view-btn").click
+
+    assert_selector "#creatives .select-creative-checkbox", visible: true, count: 2
+    assert_selector "#creatives .select-creative-checkbox:checked", visible: true, count: 1
+  end
+
   test "progress and the way into a creative are left out, and return with the tree" do
     visit collavre.creative_path(@root, view: "document")
     assert_selector content_selector(@first)
