@@ -321,21 +321,16 @@ class CreativeTreeRow extends LitElement {
   }
 
   _renderActionButton() {
-    if (this.canWrite) {
-      return html`
-        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
-          ${unsafeHTML(this.editIconHtml || "")}
-        </button>
-      `;
-    }
+    const label = this.canWrite ? this.closest("[data-edit-label]")?.dataset.editLabel : null;
     return html`
       <button
         type="button"
         class="creative-action-btn edit-inline-btn"
         data-creative-id=${this.creativeId}
-        style="visibility: hidden"
+        aria-label=${label || nothing}
+        style=${this.canWrite ? nothing : "visibility: hidden"}
       >
-        ${unsafeHTML(this.editOffIconHtml || "")}
+        ${unsafeHTML((this.canWrite ? this.editIconHtml : this.editOffIconHtml) || "")}
       </button>
     `;
   }

@@ -40,6 +40,7 @@
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--document-view share-modal creative-image-lightbox"
      class="<%= 'creative-document-view' if document_view %>"
      data-creatives--document-view-active-value="<%= document_view %>"
+     data-edit-label="<%= t('collavre.creatives.edit_title') %>"
      data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
      data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
      data-creative-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"

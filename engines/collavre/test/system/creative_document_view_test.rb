@@ -199,6 +199,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
 
     page.execute_script("document.querySelector(arguments[0]).focus()", button)
     assert page.evaluate_script("document.activeElement.matches(arguments[0])", button)
+    # The icon-only button needs a name for screen readers, on rows and the title.
+    label = I18n.t("collavre.creatives.edit_title")
+    assert_selector "#{button}[aria-label='#{label}']", visible: :all
+    assert_selector "creative-tree-row[is-title] .edit-inline-btn[aria-label='#{label}']", visible: :all
     page.driver.browser.action.send_keys(:enter).perform
 
     assert_selector "#inline-edit-form-element", visible: true

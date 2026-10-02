@@ -369,4 +369,22 @@ describe("creative-tree-row in tree view", () => {
 
     expect(handler.mock.calls[0][0].detail.button).toBe(el.querySelector(".edit-inline-btn"));
   });
+
+  test("the edit button takes its accessible name from the page, in either view", async () => {
+    const { root, tree } = page();
+    root.dataset.editLabel = "Edit creative";
+    const row = await mountRow({ creativeId: "9", canWrite: true }, tree);
+    const title = await mountRow({ creativeId: "1", canWrite: true, isTitle: true }, root);
+    const unlabeled = await mountRow({ creativeId: "8", canWrite: true }, container({ documentView: false }));
+
+    expect(row.querySelector(".edit-inline-btn").getAttribute("aria-label")).toBe("Edit creative");
+    expect(title.querySelector(".edit-inline-btn").getAttribute("aria-label")).toBe("Edit creative");
+    expect(unlabeled.querySelector(".edit-inline-btn").hasAttribute("aria-label")).toBe(false);
+    expect(row.querySelector(".edit-inline-btn").hasAttribute("style")).toBe(false);
+
+    const reader = await mountRow({ creativeId: "7", canWrite: false }, tree);
+    const hidden = reader.querySelector(".edit-inline-btn");
+    expect(hidden.style.visibility).toBe("hidden");
+    expect(hidden.hasAttribute("aria-label")).toBe(false);
+  });
 });
