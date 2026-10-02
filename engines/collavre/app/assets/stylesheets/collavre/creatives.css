@@ -1891,3 +1891,155 @@ creative-tree-row.is-being-edited .creative-tree {
     position: relative;
 }
 
+
+/* === Document view ===
+   Same rows and data as the tree; only the presentation changes. The body is
+   for reading, selecting and editing, so tree chrome steps back. */
+.creative-actions-row .creative-header-actions .creative-header-outline-btn[aria-pressed="true"] {
+    background: var(--surface-hover);
+    color: var(--color-active, var(--text-primary));
+    border-color: var(--color-active, var(--text-muted));
+}
+
+.creative-document-view {
+    --creative-document-heading-font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Noto Serif KR", serif;
+    --creative-h1-size: 1.6em;
+    --creative-h2-size: 1.3em;
+    --creative-h3-size: 1.12em;
+    --creative-body-lh: 1.7;
+}
+
+.creative-document-view .tree-line {
+    display: none;
+}
+
+.creative-document-view .creative-row,
+.creative-document-view .creative-row:hover {
+    background-color: transparent;
+}
+
+.creative-document-view .creative-row {
+    padding: 3px 0;
+}
+
+.creative-document-view .creative-row-start :is(h1, h2, h3),
+.creative-document-view .creative-tree-title .page-title {
+    font-family: var(--creative-document-heading-font);
+}
+
+.creative-document-view .creative-row.level-1 {
+    margin-top: 1.4em;
+}
+
+.creative-document-view .creative-row.level-2 {
+    margin-top: 0.8em;
+}
+
+/* The text takes the whole row: the tree's cap leaves room for the row end,
+   which holds little here (and nothing for a reader who cannot comment). */
+.creative-document-view .creative-row-start,
+.creative-document-view .creative-row-start > :is(h1, h2, h3, .creative-childless, .creative-tree-li) {
+    min-width: 0;
+}
+
+.creative-document-view .creative-content,
+.creative-document-view .creative-title-content {
+    min-width: 0;
+    max-width: none;
+    line-height: var(--creative-body-lh);
+    user-select: text;
+}
+
+.creative-document-view .creative-row-start :is(h1, h2, h3) .creative-content {
+    line-height: 1.3;
+}
+
+.creative-document-view .creative-row:hover .creative-content,
+.creative-document-view .creative-title-content {
+    cursor: text;
+}
+
+.creative-document-view .creative-row-end {
+    opacity: 0.55;
+    transition: opacity 0.15s var(--ease-out-2);
+}
+
+.creative-document-view .creative-row:hover .creative-row-end,
+.creative-document-view .creative-row:focus-within .creative-row-end {
+    opacity: 1;
+}
+
+/* Progress is tree chrome: the document gives that width to the text. Comments
+   and tags stay. */
+.creative-document-view .creative-row-end :is(.progress-toggle-wrap, .creative-progress-complete, .creative-progress-incomplete) {
+    display: none;
+}
+
+/* Bullet levels keep their nesting: the lines for the heading levels stay
+   hidden, deeper ones remain as blank indentation. */
+.creative-document-view .tree-line:nth-child(n + 6) {
+    display: flex;
+    width: 18px;
+    min-width: 18px;
+}
+
+.creative-document-view .tree-line::before {
+    content: none;
+}
+
+/* Clicking the body edits, so the menu's switch that reveals the edit buttons
+   on a small screen has nothing to show. */
+.creative-document-view #toggle-edit-btn,
+.creative-document-view .popup-menu .creative-overflow-divider.mobile-only {
+    display: none !important;
+}
+
+/* Clicking the body edits, so the edit button (hover, or swipe on touch) goes.
+   It stays focusable, as the body is no keyboard target, and shows on keyboard
+   focus only. It takes no room, on the title either: the title starts where the
+   rows below it start, whether or not they have a drag handle. */
+.creative-document-view .creative-tree .edit-inline-btn {
+    position: absolute;
+    visibility: visible;
+    max-width: none;
+    opacity: 0;
+    pointer-events: none;
+    transform: none;
+}
+
+.creative-document-view .creative-tree .edit-inline-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* The handle is the row's only drag source and appears on hover. Touch has no
+   hover and drags nothing here, so it gives the width to the text. A laptop
+   with a touchscreen still has a fine primary pointer and keeps the handle. */
+.creative-drag-handle {
+    display: none;
+    width: 20px;
+    color: var(--text-muted);
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    user-select: none;
+}
+
+.creative-drag-handle:active {
+    cursor: grabbing;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .creative-document-view .creative-drag-handle {
+        display: inline-flex;
+    }
+
+    /* The title has no handle; it leaves the same room so it lines up. */
+    .creative-document-view .creative-tree-title .creative-row-start {
+        padding-left: 20px;
+    }
+
+    .creative-document-view .creative-row:hover .creative-drag-handle {
+        opacity: 1;
+    }
+}

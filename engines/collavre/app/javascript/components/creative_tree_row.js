@@ -7,6 +7,9 @@ import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
+import {
+  isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
+} from "./creative_tree_row_document_view";
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -237,9 +240,6 @@ class CreativeTreeRow extends LitElement {
       return this._renderTitle();
     }
 
-    const dragEnabled = !this.selectMode || this.canWrite;
-    const draggableAttr = dragEnabled ? "true" : nothing;
-
     return html`
       <div
         class="creative-tree"
@@ -247,12 +247,13 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
-        draggable=${draggableAttr}
+        draggable=${rowDraggableAttr(this)}
       >
         <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
             ${this._renderCheckbox()}
             ${this._renderActionButton()}
+            ${renderDragHandle(this)}
             ${this._renderTreeLines()}
             ${this._renderToggle()}
             ${this._renderContent()}
@@ -271,13 +272,14 @@ class CreativeTreeRow extends LitElement {
         id=${this.domId ?? nothing}
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? ""}
+        data-dnd-disabled=${titleDndDisabledAttr(this)}
       >
         <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">
             ${this._renderActionButton()}
             <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
             <h1 class="page-title" style="margin-left: 0; margin-bottom: 0; display:flex; align-items:center; gap:1em;">
-              <div class="creative-title-content">
+              <div class="creative-title-content" @click=${(event) => handleDocumentTitleClick(this, event)}>
                 ${unsafeHTML(this.descriptionHtml || "")}
               </div>
               ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
@@ -319,21 +321,16 @@ class CreativeTreeRow extends LitElement {
   }
 
   _renderActionButton() {
-    if (this.canWrite) {
-      return html`
-        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
-          ${unsafeHTML(this.editIconHtml || "")}
-        </button>
-      `;
-    }
+    const label = this.canWrite ? this.closest("[data-edit-label]")?.dataset.editLabel : null;
     return html`
       <button
         type="button"
         class="creative-action-btn edit-inline-btn"
         data-creative-id=${this.creativeId}
-        style="visibility: hidden"
+        aria-label=${label || nothing}
+        style=${this.canWrite ? nothing : "visibility: hidden"}
       >
-        ${unsafeHTML(this.editOffIconHtml || "")}
+        ${unsafeHTML((this.canWrite ? this.editIconHtml : this.editOffIconHtml) || "")}
       </button>
     `;
   }
@@ -525,11 +522,15 @@ class CreativeTreeRow extends LitElement {
   _handleEditClick(event) {
     event.preventDefault();
     event.stopPropagation();
+    this.dispatchEditClick(event.currentTarget);
+  }
+
+  dispatchEditClick(button) {
     this.dispatchEvent(new CustomEvent("creative-edit-click", {
       detail: {
         creativeId: this.creativeId ?? this.getAttribute("creative-id"),
         component: this,
-        button: event.currentTarget,
+        button,
         treeElement: this.querySelector(".creative-tree")
       },
       bubbles: true,
@@ -671,18 +672,9 @@ class CreativeTreeRow extends LitElement {
       return;
     }
 
-    // If not interactive, navigate to the linkUrl
-    if (this.linkUrl && this.linkUrl !== "#") {
-      if (window.Turbo) {
-        const workspaceFrame = this.closest("turbo-frame#creative-workspace-content");
-        const options = workspaceFrame
-          ? { action: "advance", frame: workspaceFrame.id }
-          : undefined;
-        window.Turbo.visit(this.linkUrl, options);
-      } else {
-        window.location.href = this.linkUrl;
-      }
-    }
+    // If not interactive: edit in document view, otherwise navigate to the linkUrl
+    if (isDocumentView(this)) handleDocumentBodyClick(this, event);
+    else visitRowLink(this);
   }
 }
 

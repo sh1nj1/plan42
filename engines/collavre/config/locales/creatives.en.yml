@@ -54,6 +54,7 @@ en:
         breadcrumb: Breadcrumb
         root_breadcrumb: Top
         slide_view: Slide View
+        document_view: Document view
         recalculate_progress: Recalculate Progress
         recalculate_all_parent_progress: Recalculate all parent progress?
         no_creatives: No creatives found.

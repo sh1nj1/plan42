@@ -168,6 +168,7 @@ test('before caching clears selections and restores the inactive UI, then permit
   await flush()
   const controller = controllerFor(application)
   controller.toggle(new Event('click'))
+  expect(element.hasAttribute('data-select-mode-active')).toBe(true)
   controller.selectAllTarget.checked = true
   controller.toggleSelectAll({ currentTarget: controller.selectAllTarget })
   controller.dragging = true
@@ -176,6 +177,7 @@ test('before caching clears selections and restores the inactive UI, then permit
 
   expect(controller.active).toBe(false)
   expect(controller.dragging).toBe(false)
+  expect(element.hasAttribute('data-select-mode-active')).toBe(false)
   expect(element.querySelectorAll('input:checked')).toHaveLength(0)
   expect(element.querySelectorAll('.selected')).toHaveLength(0)
   expect(controller.toggleTarget.textContent).toBe('Select')
@@ -189,4 +191,60 @@ test('before caching clears selections and restores the inactive UI, then permit
   expect(controller.active).toBe(true)
   expect(controller.checkboxTargets[0].checked).toBe(true)
   expect(controller.toggleTarget.textContent).toBe('Cancel')
+})
+
+// A selected row keeps its selection on mousedown so it can be dragged. A
+// document view body is no drag source, so pressing it must still deselect.
+describe('pressing an already selected row', () => {
+  async function selectedRow({ documentView }) {
+    application = await mount(['7'])
+    if (documentView) container().dataset.viewMode = 'document'
+    const row = container().querySelector('.creative-row')
+    row.insertAdjacentHTML('beforeend', `
+      <span class="creative-drag-handle" draggable="true"><svg></svg></span>
+      <div class="creative-content">Body</div>
+    `)
+    const controller = controllerFor(application)
+    controller.toggle(new Event('click'))
+    controller.applySelection(row, 'add')
+    return row
+  }
+
+  function press(target) {
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    target.dispatchEvent(event)
+    return event
+  }
+
+  test('deselects it from the body in document view', async () => {
+    const row = await selectedRow({ documentView: true })
+
+    const event = press(row.querySelector('.creative-content'))
+
+    expect(row.classList.contains('selected')).toBe(false)
+    expect(row.querySelector('input').checked).toBe(false)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  test('leaves it selected from the document view drag handle', async () => {
+    const row = await selectedRow({ documentView: true })
+
+    const event = press(row.querySelector('.creative-drag-handle svg'))
+
+    expect(row.classList.contains('selected')).toBe(true)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  test('leaves it selected in tree view unless the editor locked the row', async () => {
+    const row = await selectedRow({ documentView: false })
+    const tree = row.closest('.creative-tree')
+    tree.setAttribute('draggable', 'true')
+
+    expect(press(row.querySelector('.creative-content')).defaultPrevented).toBe(false)
+    expect(row.classList.contains('selected')).toBe(true)
+
+    tree.setAttribute('draggable', 'false')
+    press(row.querySelector('.creative-content'))
+    expect(row.classList.contains('selected')).toBe(false)
+  })
 })

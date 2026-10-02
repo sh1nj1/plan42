@@ -13,6 +13,7 @@ import { markdownCreativeCommandRange, openCreativeLinkPicker } from './creative
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
+import { restoreRowDraggable } from '../components/creative_tree_row_document_view'
 import { CreativeSaveQueue } from './creative_save_queue'
 import { isHtmlEmpty } from './html_content_empty'
 import {
@@ -25,10 +26,7 @@ import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
 import {
-  treeRowElement,
-  hasDatasetValue,
-  readRowLevel,
-  editorPaddingForLevel,
+  treeRowElement, hasDatasetValue, readRowLevel, editorPaddingForLevel,
 } from './creative_row_editor_helpers'
 import {
   creativeTreeElement,
@@ -972,7 +970,7 @@ function setupEditorSession() {
 
       currentTree = null;
       currentRowElement = null;
-      tree.draggable = true;
+      restoreRowDraggable(tree);
       updateActionButtonStates();
 
       // A failed save leaves the editor hidden and currentTree cleared, so the
@@ -2096,10 +2094,9 @@ function setupEditorSession() {
       });
     }
 
-    // Expose for testing
+    // Exposed for tests and for the document view (creative_tree_row_document_view.js)
     window.creativeRowEditor = {
       setUploadsPending: (pending) => {
-        uploadsPending = pending;
         if (pending) {
           uploadCompletionPromise = new Promise((resolve) => {
             resolveUploadCompletion = resolve;
@@ -2120,7 +2117,9 @@ function setupEditorSession() {
           handleUploadStateChange(false);
         }
       },
-      isUploadPending: () => uploadsPending
+      isUploadPending: () => uploadsPending,
+      // Closes the editor once its draft is on the server; false when the save failed.
+      flush: () => hideCurrent(undefined, { switching: true, waitForServer: true }).then((result) => result !== SAVE_FAILED)
     };
 
     if (linkBtn) {
