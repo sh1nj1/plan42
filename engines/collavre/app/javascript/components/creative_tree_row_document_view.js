@@ -63,6 +63,13 @@ export function startsRowDrag(tree, event) {
   return true;
 }
 
+// Select mode keeps a selected row selected on mousedown so it can be dragged.
+// A document view body is no drag source, so only its handle counts there.
+export function isRowDragSource(tree, target) {
+  if (isDocumentView(tree)) return Boolean(target.closest?.(DRAG_HANDLE_SELECTOR));
+  return tree.getAttribute("draggable") !== "false";
+}
+
 // The inline editor turns dragging off while it is open. Closing it hands the
 // row back as a drag source only in tree view; render() does not re-run here.
 export function restoreRowDraggable(tree) {

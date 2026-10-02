@@ -285,6 +285,11 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_selector "#creatives .select-creative-checkbox:checked", count: 2
     assert_no_selector "#inline-edit-form-element", visible: true
 
+    # The body is no drag source here, so a second click deselects the row.
+    find(content_selector(@first)).click
+    assert_selector "#creatives .select-creative-checkbox:checked", count: 1
+    assert_no_selector "creative-tree-row[creative-id='#{@first.id}'] .creative-row.selected"
+
     find('[aria-controls="creative-overflow-menu"]').click
     find("#select-creative-btn").click
     find(content_selector(@first)).click
