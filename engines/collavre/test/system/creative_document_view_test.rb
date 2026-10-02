@@ -246,6 +246,27 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
+  test "a link that leaves the page saves the open editor's draft first" do
+    # Turbo leaves a non-HTML path alone, so this unloads the page for real.
+    linked = Creative.create!(
+      description: %(See <a href="/robots.txt">the robots file</a>),
+      user: @user, parent: @root
+    )
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+    # Well inside the autosave debounce, so only the click can have saved it.
+    find("#{content_selector(linked)} a").click
+
+    assert_current_path "/robots.txt", wait: 10
+    saved = lambda { ActionController::Base.helpers.strip_tags(@first.reload.description).strip }
+    10.times { break if saved.call == "First paragraph edited"; sleep 0.5 }
+    assert_equal "First paragraph edited", saved.call
+  end
+
   test "a click edits in place and the change shows in the tree view" do
     visit collavre.creative_path(@root, view: "document")
 

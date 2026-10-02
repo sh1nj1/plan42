@@ -146,6 +146,43 @@ describe("creative-tree-row in document view", () => {
     expect(closed).toHaveBeenCalledTimes(3);
   });
 
+  test("a link that leaves the page closes the open editor first, so the draft is saved", async () => {
+    const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
+    const root = document.createElement("div");
+    root.className = "creative-document-view";
+    root.innerHTML = `
+      <a class="leaves" href="/creatives/9"><b class="inner">go</b></a>
+      <a class="new-tab" href="https://example.com" target="_blank">out</a>
+      <a class="download" href="/files/1" download>file</a>
+      <a class="anchor" href="#section">jump</a>
+      <a class="bare">no href</a>
+      <div id="inline-edit-form"><button id="inline-close"></button><a class="in-editor" href="/x">x</a></div>`;
+    document.body.appendChild(root);
+    const closed = jest.fn();
+    root.querySelector("#inline-close").addEventListener("click", closed);
+    const clickOn = (selector, keys = {}) => {
+      const event = { target: root.querySelector(selector), ...keys };
+      handleDocumentOutsideClick(root, event);
+      return event;
+    };
+    stubSelection(true);
+
+    // These stay on the page, so the editor and its draft stay too.
+    clickOn(".new-tab");
+    clickOn(".download");
+    clickOn(".anchor");
+    clickOn(".bare");
+    clickOn(".in-editor");
+    clickOn(".leaves", { metaKey: true });
+    clickOn(".leaves", { ctrlKey: true });
+    clickOn(".leaves", { shiftKey: true });
+    expect(closed).not.toHaveBeenCalled();
+
+    clickOn(".leaves");
+    clickOn(".inner");
+    expect(closed).toHaveBeenCalledTimes(2);
+  });
+
   test("a click that closed the editor does not open the row under it", async () => {
     const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
     const root = container();

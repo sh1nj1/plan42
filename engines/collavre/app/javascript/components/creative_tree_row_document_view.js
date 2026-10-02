@@ -11,7 +11,8 @@ const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
 const DRAG_HANDLE_SELECTOR = ".creative-drag-handle";
 const OPEN_EDITOR_SELECTOR = ":scope > .creative-tree > #inline-edit-form";
 const OVERLAY_SELECTOR = '.popup-menu, .popup-box, dialog, [role="dialog"], [class*="modal"]';
-const KEEPS_EDITOR_SELECTOR = `#inline-edit-form, ${INTERACTIVE_SELECTOR}, ${OVERLAY_SELECTOR}`;
+const EDITOR_UI_SELECTOR = `#inline-edit-form, ${OVERLAY_SELECTOR}`;
+const LEAVING_LINK_SELECTOR = 'a[href]:not([href^="#"]):not([target="_blank"]):not([download])';
 
 // Clicks that already closed the editor, so the row under them opens nothing.
 const editorClosingClicks = new WeakSet();
@@ -118,16 +119,24 @@ function hasTextSelection() {
   return Boolean(selection) && !selection.isCollapsed;
 }
 
+// A plain click on a link that loads another page in this tab.
+function leavesPage(event) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey) return false;
+  return Boolean(event.target.closest?.(LEAVING_LINK_SELECTOR));
+}
+
 // While an editor is open in document view, a plain click outside it closes
 // it, as its close button does: on a row, the title or the empty page around
-// them. Controls, the editor's own popups and other panels keep it open. Runs
-// in the capture phase (see creatives/document_view_controller.js), ahead of
-// the row's own click handling.
+// them. Controls, the editor's own popups and other panels keep it open. A
+// link that leaves the page closes it too: the draft would otherwise go with
+// the page, ahead of its debounced save. Runs in the capture phase (see
+// creatives/document_view_controller.js), ahead of the row's own click handling.
 export function handleDocumentOutsideClick(root, event) {
   const target = event.target;
   if (!root.contains(target) && !target.contains(root)) return;
-  if (root.matches(SELECT_MODE_SELECTOR) || target.closest?.(KEEPS_EDITOR_SELECTOR)) return;
-  if (hasTextSelection()) return;
+  if (root.matches(SELECT_MODE_SELECTOR) || target.closest?.(EDITOR_UI_SELECTOR)) return;
+  if (leavesPage(event)) return void closeOpenEditor();
+  if (target.closest?.(INTERACTIVE_SELECTOR) || hasTextSelection()) return;
   if (closeOpenEditor()) editorClosingClicks.add(event);
 }
 
