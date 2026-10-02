@@ -8,7 +8,7 @@ import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 import {
-  isDocumentView, renderDocumentOpenLink, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
+  isDocumentView, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
 } from "./creative_tree_row_document_view";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -263,7 +263,6 @@ class CreativeTreeRow extends LitElement {
             ${this._renderContent()}
           </div>
             ${this._renderEditingAvatars()}
-            ${documentView ? renderDocumentOpenLink(this) : nothing}
             <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
         </div>
       </div>

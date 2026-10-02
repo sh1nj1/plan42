@@ -1,12 +1,8 @@
-import { html, nothing } from "lit";
-import { unsafeHTML } from "lit/directives/unsafe-html.js";
-
 // Document view renders the same <creative-tree-row> elements as the tree, but
 // the body is for reading, selecting and editing. The mode lives on an ancestor
 // (see creatives/document_view_controller.js) so lazily added rows pick it up.
 const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"]';
 const INTERACTIVE_SELECTOR = "a, button, input, img";
-const OPEN_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg>';
 
 export function isDocumentView(row) {
   return row.closest(DOCUMENT_VIEW_SELECTOR) !== null;
@@ -23,30 +19,6 @@ export function visitRowLink(row) {
   } else {
     window.location.href = row.linkUrl;
   }
-}
-
-function handleOpenClick(row, event) {
-  // Modified clicks keep the browser behavior (new tab / window).
-  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-  visitRowLink(row);
-}
-
-// Body clicks edit in document view, so entering a creative needs its own
-// affordance. The label is localized on the tree container.
-export function renderDocumentOpenLink(row) {
-  if (!row.linkUrl || row.linkUrl === "#") return nothing;
-  const label = row.closest("[data-document-open-label]")?.dataset.documentOpenLabel || "";
-  return html`
-    <a
-      class="creative-document-open creative-action-btn unstyled-link"
-      href=${row.linkUrl}
-      title=${label}
-      aria-label=${label}
-      draggable="false"
-      @click=${(event) => handleOpenClick(row, event)}
-    >${unsafeHTML(OPEN_ICON)}</a>
-  `;
 }
 
 // A click that ends a selection drag must keep the selection and stay out of

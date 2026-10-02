@@ -90,13 +90,18 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
-  test "the open link enters the creative" do
+  test "progress and the way into a creative are left out, and return with the tree" do
     visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+    progress = ":is(#creatives, .creative-tree-title) :is(.progress-toggle-wrap, .creative-progress-complete, .creative-progress-incomplete)"
 
-    find(content_selector(@first)).hover
-    find("creative-tree-row[creative-id='#{@first.id}'] .creative-document-open").click
+    assert_no_selector progress, visible: true
+    assert_no_selector ".creative-document-open"
+    assert_selector "creative-tree-row[creative-id='#{@first.id}'] .comments-btn", visible: :all
 
-    assert_selector "creative-tree-row[is-title][creative-id='#{@first.id}']"
+    find("#document-view-btn").click
+
+    assert_selector progress, visible: true, count: 3
   end
 
   test "a reader can select but not edit" do

@@ -43,16 +43,15 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
   end
 
   {
-    en: [ "Document view", "Open" ],
-    ko: [ "문서 뷰", "열기" ]
-  }.each do |locale, (toggle, open)|
+    en: "Document view",
+    ko: "문서 뷰"
+  }.each do |locale, toggle|
     test "document view labels are localized in #{locale}" do
       @user.update!(locale: locale)
 
       get creatives_path
 
       assert_select "#document-view-btn[title=?][aria-label=?]", toggle, toggle
-      assert_select "#creatives[data-document-open-label=?]", open
     end
   end
 

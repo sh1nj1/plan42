@@ -16,7 +16,6 @@ beforeAll(() => {
 function container({ documentView = true } = {}) {
   const el = document.createElement("div");
   el.id = "creatives";
-  el.dataset.documentOpenLabel = "Open";
   if (documentView) el.dataset.viewMode = "document";
   document.body.appendChild(el);
   return el;
@@ -59,7 +58,6 @@ describe("creative-tree-row in document view", () => {
     await el.updateComplete;
 
     expect(el.querySelector(".creative-tree").getAttribute("draggable")).toBe("true");
-    expect(el.querySelector(".creative-document-open")).toBeNull();
   });
 
   test("a plain body click opens the editor instead of navigating", async () => {
@@ -124,71 +122,6 @@ describe("creative-tree-row in document view", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  test("the open link is labelled and enters the creative", async () => {
-    window.Turbo = { visit: jest.fn() };
-    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, container());
-    const link = el.querySelector(".creative-document-open");
-
-    expect(link.getAttribute("href")).toBe("/creatives/8");
-    expect(link.getAttribute("aria-label")).toBe("Open");
-    expect(link.getAttribute("title")).toBe("Open");
-
-    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
-    link.dispatchEvent(event);
-
-    expect(event.defaultPrevented).toBe(true);
-    expect(window.Turbo.visit).toHaveBeenCalledWith("/creatives/8", undefined);
-  });
-
-  test("the open link advances the workspace frame when inside it", async () => {
-    window.Turbo = { visit: jest.fn() };
-    const frame = document.createElement("turbo-frame");
-    frame.id = "creative-workspace-content";
-    document.body.appendChild(frame);
-    const parent = container();
-    frame.appendChild(parent);
-    const el = await mountRow({ creativeId: "8", linkUrl: "/creatives/8" }, parent);
-
-    el.querySelector(".creative-document-open").click();
-
-    expect(window.Turbo.visit).toHaveBeenCalledWith("/creatives/8", {
-      action: "advance",
-      frame: "creative-workspace-content",
-    });
-  });
-
-  test.each([
-    ["meta", { metaKey: true }],
-    ["ctrl", { ctrlKey: true }],
-    ["shift", { shiftKey: true }],
-    ["alt", { altKey: true }],
-    ["middle button", { button: 1 }],
-  ])("a %s click on the open link is left to the browser", async (_name, init) => {
-    window.Turbo = { visit: jest.fn() };
-    const el = await mountRow({ creativeId: "8", linkUrl: "/creatives/8" }, container());
-    const link = el.querySelector(".creative-document-open");
-    // jsdom would try to navigate on an un-prevented anchor click.
-    link.addEventListener("click", (e) => e.preventDefault());
-    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true, ...init });
-
-    link.dispatchEvent(event);
-
-    expect(window.Turbo.visit).not.toHaveBeenCalled();
-  });
-
-  test("no open link without a destination, and an empty label when none is provided", async () => {
-    const parent = container();
-    const none = await mountRow({ creativeId: "8" }, parent);
-    expect(none.querySelector(".creative-document-open")).toBeNull();
-
-    const empty = await mountRow({ creativeId: "7", linkUrl: "" }, parent);
-    expect(empty.querySelector(".creative-document-open")).toBeNull();
-
-    delete parent.dataset.documentOpenLabel;
-    const unlabelled = await mountRow({ creativeId: "9", linkUrl: "/creatives/9" }, parent);
-    expect(unlabelled.querySelector(".creative-document-open").getAttribute("aria-label")).toBe("");
-  });
-
   test("the title edits on a plain click, but not on its links or in select mode", async () => {
     stubSelection(true);
     const el = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, container());
@@ -233,6 +166,23 @@ describe("creative-tree-row in tree view", () => {
     await el.updateComplete;
     el.querySelector(".creative-content").click();
     expect(window.Turbo.visit).toHaveBeenCalledTimes(1);
+  });
+
+  test("a body click advances the workspace frame when inside it", async () => {
+    window.Turbo = { visit: jest.fn() };
+    const frame = document.createElement("turbo-frame");
+    frame.id = "creative-workspace-content";
+    document.body.appendChild(frame);
+    const parent = container({ documentView: false });
+    frame.appendChild(parent);
+    const el = await mountRow({ creativeId: "8", linkUrl: "/creatives/8" }, parent);
+
+    el.querySelector(".creative-content").click();
+
+    expect(window.Turbo.visit).toHaveBeenCalledWith("/creatives/8", {
+      action: "advance",
+      frame: "creative-workspace-content",
+    });
   });
 
   test("falls back to a plain location change without Turbo", async () => {
