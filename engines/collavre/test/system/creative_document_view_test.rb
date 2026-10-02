@@ -280,6 +280,8 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     # A pending upload disables the close button, so clicking it saves nothing.
     page.execute_script("window.creativeRowEditor.setUploadsPending(true)")
     find("#{content_selector(linked)} a").click
+    # An impatient second click must wait for the same save, not skip it.
+    find("#{content_selector(linked)} a").click
 
     sleep 1
     assert_no_current_path "/robots.txt"

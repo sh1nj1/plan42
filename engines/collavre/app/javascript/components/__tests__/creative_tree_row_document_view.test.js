@@ -216,6 +216,64 @@ describe("creative-tree-row in document view", () => {
     delete window.creativeRowEditor;
   });
 
+  test("link clicks repeated while the save is on its way are dropped until it settles", async () => {
+    const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
+    const root = document.createElement("div");
+    root.className = "creative-document-view";
+    root.innerHTML = `
+      <a class="leaves" href="/creatives/9">go</a>
+      <a class="other" href="/creatives/10">elsewhere</a>
+      <div id="inline-edit-form"></div>`;
+    document.body.appendChild(root);
+    const editor = root.querySelector("#inline-edit-form");
+    let settle;
+    const flush = jest.fn(() => new Promise((resolve) => { settle = resolve; }));
+    window.creativeRowEditor = { flush };
+    const followed = jest.fn((event) => event.preventDefault());
+    root.addEventListener("click", followed);
+    const capture = (event) => handleDocumentOutsideClick(root, event);
+    document.addEventListener("click", capture, true);
+    const clickOn = (selector) => {
+      const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+      root.querySelector(selector).dispatchEvent(event);
+      return event;
+    };
+    stubSelection(true);
+
+    clickOn(".leaves");
+    // An upload keeps the editor on screen; a plain save hides it at once.
+    // Either way the page must not be left before the first flush settles.
+    expect(clickOn(".leaves").defaultPrevented).toBe(true);
+    editor.style.display = "none";
+    expect(clickOn(".leaves").defaultPrevented).toBe(true);
+    expect(clickOn(".other").defaultPrevented).toBe(true);
+    await Promise.resolve();
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(followed).not.toHaveBeenCalled();
+
+    // Only the link that was held is followed, once.
+    settle(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(followed).toHaveBeenCalledTimes(1);
+    expect(followed.mock.calls[0][0].target).toBe(root.querySelector(".leaves"));
+
+    // A flush that throws releases the hold as well.
+    editor.style.display = "";
+    flush.mockImplementationOnce(() => Promise.reject(new Error("offline")));
+    clickOn(".leaves");
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(followed).toHaveBeenCalledTimes(1);
+    editor.style.display = "none";
+    clickOn(".other");
+    expect(followed).toHaveBeenCalledTimes(2);
+
+    document.removeEventListener("click", capture, true);
+    delete window.creativeRowEditor;
+  });
+
   test("a click that closed the editor does not open the row under it", async () => {
     const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
     const root = container();

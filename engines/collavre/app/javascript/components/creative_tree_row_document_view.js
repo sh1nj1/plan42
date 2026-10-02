@@ -134,12 +134,20 @@ function leavingLink(event) {
 // Unloading the page would cancel a save still on its way, and the close
 // button is disabled while an upload is pending. So the click is held back
 // until the editor has flushed to the server, then repeated; a failed save
-// keeps the draft in the editor and the user on the page.
+// keeps the draft in the editor and the user on the page. The flush hides the
+// editor before its save lands, so until it settles every further link click
+// is dropped rather than read as "no editor open" and followed.
+let savingBeforeLeave = false;
+
 async function followAfterSave(link, event) {
-  if (!editorOpen()) return;
+  if (!savingBeforeLeave && !editorOpen()) return;
   event.preventDefault();
   event.stopPropagation();
-  if (await window.creativeRowEditor.flush()) link.click();
+  if (savingBeforeLeave) return;
+  savingBeforeLeave = true;
+  const saved = await window.creativeRowEditor.flush().catch(() => false);
+  savingBeforeLeave = false;
+  if (saved) link.click();
 }
 
 // While an editor is open in document view, a plain click outside it closes
