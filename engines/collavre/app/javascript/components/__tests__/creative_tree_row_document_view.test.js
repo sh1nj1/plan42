@@ -87,6 +87,39 @@ describe("creative-tree-row in document view", () => {
     expect(tree.getAttribute("draggable")).toBe("true");
   });
 
+  test("a read-only row in select mode is no drag source in tree view", async () => {
+    const parent = container({ documentView: false });
+    const el = await mountRow({ creativeId: "8", canWrite: false, selectMode: true, linkUrl: "/creatives/8" }, parent);
+
+    expect(el.querySelector(".creative-tree").hasAttribute("draggable")).toBe(false);
+  });
+
+  test("a row being edited stays non-draggable when the view switches", async () => {
+    const parent = container();
+    const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const tree = el.querySelector(".creative-tree");
+    const editor = document.createElement("div");
+    editor.id = "inline-edit-form";
+    tree.appendChild(editor); // what the editor does while it is open
+    tree.draggable = false;
+
+    delete parent.dataset.viewMode;
+    el.requestUpdate();
+    await el.updateComplete;
+    expect(tree.getAttribute("draggable")).toBe("false");
+
+    parent.dataset.viewMode = "document";
+    el.requestUpdate();
+    await el.updateComplete;
+    expect(tree.getAttribute("draggable")).toBe("false");
+
+    editor.remove();
+    delete parent.dataset.viewMode;
+    el.requestUpdate();
+    await el.updateComplete;
+    expect(tree.getAttribute("draggable")).toBe("true");
+  });
+
   test("a drag handle replaces the row as the drag source, only in document view", async () => {
     const parent = container();
     const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);

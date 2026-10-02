@@ -139,6 +139,19 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_in_delta widths[1], widths[0], 1
   end
 
+  test "switching to the tree view while editing keeps the edited row locked" do
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    find("#document-view-btn").click
+
+    assert_selector "#{tree_selector(@second)}[draggable='true']"
+    assert_selector "#{tree_selector(@first)}[draggable='false']"
+    find("#inline-close", wait: 5).click
+    assert_selector "#{tree_selector(@first)}[draggable='true']", wait: 10
+  end
+
   test "a click edits in place and the change shows in the tree view" do
     visit collavre.creative_path(@root, view: "document")
 

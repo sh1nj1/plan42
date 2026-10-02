@@ -8,7 +8,7 @@ import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 import {
-  isDocumentView, renderDragHandle, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
+  isDocumentView, renderDragHandle, rowDraggableAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
 } from "./creative_tree_row_document_view";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -240,11 +240,6 @@ class CreativeTreeRow extends LitElement {
       return this._renderTitle();
     }
 
-    // Document view selects text over the body, so the row is no drag source.
-    const documentView = isDocumentView(this);
-    const dragEnabled = !documentView && (!this.selectMode || this.canWrite);
-    const draggableAttr = dragEnabled ? "true" : nothing;
-
     return html`
       <div
         class="creative-tree"
@@ -252,7 +247,7 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
-        draggable=${draggableAttr}
+        draggable=${rowDraggableAttr(this)}
       >
         <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">

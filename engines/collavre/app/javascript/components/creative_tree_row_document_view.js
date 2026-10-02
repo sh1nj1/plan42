@@ -8,9 +8,19 @@ const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"], .creative-document-
 const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
 const DRAG_HANDLE_SELECTOR = ".creative-drag-handle";
+const OPEN_EDITOR_SELECTOR = ":scope > .creative-tree > #inline-edit-form";
 
 export function isDocumentView(row) {
   return row.closest(DOCUMENT_VIEW_SELECTOR) !== null;
+}
+
+// Document view selects text over the body, so the row is no drag source.
+// The inline editor sits inside the row it edits and locks dragging until it
+// closes; a re-render, such as a view switch, must not undo that lock.
+export function rowDraggableAttr(row) {
+  if (row.querySelector(OPEN_EDITOR_SELECTOR)) return "false";
+  if (isDocumentView(row)) return nothing;
+  return !row.selectMode || row.canWrite ? "true" : nothing;
 }
 
 // The body selects text, so a hover handle is the only drag source of a
