@@ -9,10 +9,11 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 let application
 
-function mount({ active = false, withTargets = true } = {}) {
+function mount({ active = false, withTargets = true, locked = false } = {}) {
   const root = document.createElement('div')
   root.dataset.controller = 'creatives--document-view'
   root.setAttribute('data-creatives--document-view-active-value', String(active))
+  if (locked) root.setAttribute('data-creatives--document-view-locked-value', 'true')
   if (withTargets) {
     root.innerHTML = `
       <button data-creatives--document-view-target="toggle" data-action="click->creatives--document-view#toggle"></button>
@@ -158,4 +159,15 @@ test('a click outside the open editor closes it only in document view, until dis
   await flush()
   blank.click()
   expect(closed).toHaveBeenCalledTimes(1)
+})
+
+test('a locked view stays as rendered, whatever the cookie or the link says', async () => {
+  window.history.replaceState({ turbo: 1 }, '', '/creatives?id=3&view=tree')
+  const root = mount({ active: true, locked: true })
+  await flush()
+
+  expect(root.classList.contains('creative-document-view')).toBe(true)
+  expect(root.querySelector('#creatives').dataset.viewMode).toBe('document')
+  expect(viewCookie()).toBeNull()
+  expect(window.location.search).toBe('?id=3&view=tree')
 })

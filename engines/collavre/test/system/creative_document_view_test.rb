@@ -402,4 +402,50 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     find(content_selector(line)).double_click
     assert_includes page.evaluate_script("window.getSelection().toString()"), "only"
   end
+
+  test "a signed-out reader of a public share only gets the document, at full width" do
+    CreativeShare.create!(creative: @root, user: nil, permission: :read)
+    Capybara.reset_sessions!
+    resize_window_to
+
+    visit collavre.creative_path(@root, view: "tree")
+    assert_selector content_selector(@first)
+
+    assert_selector ".creative-document-view #creatives[data-view-mode='document']"
+    assert_no_selector "#document-view-btn"
+    assert_no_selector ".creative-drag-handle[draggable]", visible: :all
+    assert_no_selector "#creatives .creative-row-end *", visible: true
+
+    find(content_selector(@first)).hover
+    assert_no_selector ".creative-drag-handle", visible: true
+
+    @first.update!(description: "word " * 400)
+    visit collavre.creative_path(@root)
+    assert_selector content_selector(@first)
+    edges = page.evaluate_script(<<~JS, content_selector(@first))
+      [document.querySelector(arguments[0]).getBoundingClientRect().right,
+       document.getElementById('creatives').getBoundingClientRect().right]
+    JS
+    assert_in_delta edges[1], edges[0], 12
+  end
+
+  test "a reader's rows have no drag handle" do
+    owner = User.create!(
+      email: "doc-owner2@example.com",
+      password: SystemHelpers::PASSWORD,
+      name: "Owner",
+      email_verified_at: Time.current,
+      notifications_enabled: false
+    )
+    shared = Creative.create!(description: "Shared spec", user: owner)
+    line = Creative.create!(description: "Read only line", user: owner, parent: shared)
+    CreativeShare.create!(creative: shared, user: @user, permission: :read)
+
+    visit collavre.creative_path(shared, view: "document")
+    find(content_selector(line)).hover
+
+    assert_selector "#document-view-btn"
+    assert_no_selector ".creative-drag-handle[draggable]", visible: :all
+    assert_no_selector ".creative-drag-handle", visible: true
+  end
 end

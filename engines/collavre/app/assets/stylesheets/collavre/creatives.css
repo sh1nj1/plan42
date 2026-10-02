@@ -1935,9 +1935,17 @@ creative-tree-row.is-being-edited .creative-tree {
     margin-top: 0.8em;
 }
 
+/* The text takes the whole row: the tree's cap leaves room for the row end,
+   which holds little here (and nothing for a reader who cannot comment). */
+.creative-document-view .creative-row-start,
+.creative-document-view .creative-row-start > :is(h1, h2, h3, .creative-childless, .creative-tree-li) {
+    min-width: 0;
+}
+
 .creative-document-view .creative-content,
 .creative-document-view .creative-title-content {
     min-width: 0;
+    max-width: none;
     line-height: var(--creative-body-lh);
     user-select: text;
 }

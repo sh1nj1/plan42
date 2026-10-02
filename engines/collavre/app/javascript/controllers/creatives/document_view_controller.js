@@ -23,9 +23,11 @@ function storeView(active) {
 // The view is a cookie, so it follows the user through the tree whichever way
 // they navigate and the server renders it up front. A `?view=` link only picks
 // the starting view: it is adopted into the cookie and dropped from the URL.
+// A signed-out reader of a public share only gets the document: the view is
+// locked to what the server rendered, and neither cookie nor link changes it.
 export default class extends Controller {
   static targets = ['toggle', 'tree']
-  static values = { active: Boolean }
+  static values = { active: Boolean, locked: Boolean }
 
   connect() {
     // Capture phase: the click must close the editor before a row reacts to it.
@@ -33,6 +35,8 @@ export default class extends Controller {
       if (this.activeValue) handleDocumentOutsideClick(this.element, event)
     }
     document.addEventListener('click', this.closeEditorOnOutsideClick, true)
+
+    if (this.lockedValue) return
 
     const url = new URL(window.location.href)
     const requested = url.searchParams.get(VIEW_PARAM)

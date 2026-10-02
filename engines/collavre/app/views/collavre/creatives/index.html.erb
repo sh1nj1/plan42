@@ -36,10 +36,13 @@
       ) %>
 <% end %>
 
-<% document_view = (params[:view].presence || cookies[:creative_view]) == "document" %>
+<%# A signed-out reader of a public share only gets the document view. %>
+<% document_view_locked = !authenticated? %>
+<% document_view = document_view_locked || (params[:view].presence || cookies[:creative_view]) == "document" %>
 <div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--document-view share-modal creative-image-lightbox"
      class="<%= 'creative-document-view' if document_view %>"
      data-creatives--document-view-active-value="<%= document_view %>"
+     data-creatives--document-view-locked-value="<%= document_view_locked %>"
      data-edit-label="<%= t('collavre.creatives.edit_title') %>"
      data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
      data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
@@ -89,9 +92,11 @@
       <%= render 'add_button' if can_add %>
 
       <%# Document view toggle — readers get it too, so it is not tied to can_add %>
-      <button type="button" id="document-view-btn" class="creative-header-outline-btn" title="<%= t('.document_view') %>" aria-label="<%= t('.document_view') %>" aria-pressed="<%= document_view %>" data-action="click->creatives--document-view#toggle" data-creatives--document-view-target="toggle">
-        <span aria-hidden="true"><%= svg_tag 'document-view.svg', width: 14, height: 14 %></span>
-      </button>
+      <% unless document_view_locked %>
+        <button type="button" id="document-view-btn" class="creative-header-outline-btn" title="<%= t('.document_view') %>" aria-label="<%= t('.document_view') %>" aria-pressed="<%= document_view %>" data-action="click->creatives--document-view#toggle" data-creatives--document-view-target="toggle">
+          <span aria-hidden="true"><%= svg_tag 'document-view.svg', width: 14, height: 14 %></span>
+        </button>
+      <% end %>
 
       <%# Expand/collapse toggle (always visible) %>
       <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">

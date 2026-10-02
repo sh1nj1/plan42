@@ -309,6 +309,19 @@ describe("creative-tree-row in document view", () => {
     expect(el.querySelector(".creative-drag-handle")).toBeNull();
   });
 
+  test("a row the user cannot write keeps the handle's slot empty and drags nothing", async () => {
+    const { startsRowDrag, isRowDragSource } = await import("../creative_tree_row_document_view.js");
+    const el = await mountRow({ creativeId: "8", canWrite: false, linkUrl: "/creatives/8" }, container());
+    const tree = el.querySelector(".creative-tree");
+    const slot = el.querySelector(".creative-row-start > .creative-drag-handle");
+
+    expect(slot.hasAttribute("draggable")).toBe(false);
+    expect(slot.style.visibility).toBe("hidden");
+    expect(slot.children).toHaveLength(0);
+    expect(startsRowDrag(tree, { target: slot, dataTransfer: {} })).toBe(false);
+    expect(isRowDragSource(tree, slot)).toBe(false);
+  });
+
   test("only the handle starts a row drag, with the row as the drag image", async () => {
     const { startsRowDrag } = await import("../creative_tree_row_document_view.js");
     const parent = container();

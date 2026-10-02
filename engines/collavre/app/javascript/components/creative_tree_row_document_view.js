@@ -8,7 +8,7 @@ const DOCUMENT_TREE_SELECTOR = '[data-view-mode="document"]';
 const DOCUMENT_VIEW_SELECTOR = `${DOCUMENT_TREE_SELECTOR}, .creative-document-view`;
 const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
-const DRAG_HANDLE_SELECTOR = ".creative-drag-handle";
+const DRAG_HANDLE_SELECTOR = '.creative-drag-handle[draggable="true"]';
 const OPEN_EDITOR_SELECTOR = ":scope > .creative-tree > #inline-edit-form";
 const OVERLAY_SELECTOR = '.popup-menu, .popup-box, dialog, [role="dialog"], [class*="modal"]';
 const EDITOR_UI_SELECTOR = `#inline-edit-form, ${OVERLAY_SELECTOR}`;
@@ -34,8 +34,10 @@ export function rowDraggableAttr(row) {
 
 // The body selects text, so a hover handle is the only drag source of a
 // document view row. It takes the slot of the edit button, which is hidden.
+// A row the user cannot write keeps the slot empty, so rows stay aligned.
 export function renderDragHandle(row) {
   if (!isDocumentView(row)) return nothing;
+  if (!row.canWrite) return html`<span class="creative-action-btn creative-drag-handle" style="visibility: hidden" aria-hidden="true"></span>`;
   return html`
     <span class="creative-action-btn creative-drag-handle" draggable="true" aria-hidden="true">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
