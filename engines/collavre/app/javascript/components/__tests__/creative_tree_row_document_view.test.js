@@ -216,6 +216,60 @@ describe("creative-tree-row in document view", () => {
     delete window.creativeRowEditor;
   });
 
+  test("a link that unloads the page waits for the save wherever it sits", async () => {
+    const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
+    const root = document.createElement("div");
+    root.className = "creative-document-view";
+    root.innerHTML = `
+      <div class="popup-box"><a class="popup-external" href="https://example.com/a">a</a><a class="popup-app" href="/creatives/9">b</a></div>
+      <div id="inline-edit-form"><a class="in-editor" href="https://example.com/e">e</a></div>`;
+    const outside = document.createElement("div");
+    outside.innerHTML = `
+      <a class="external" href="https://example.com/b">b</a>
+      <a class="file" href="/robots.txt">robots</a>
+      <a class="page" href="/help.html">help</a>
+      <span data-turbo="false"><a class="no-turbo" href="/session">out</a></span>
+      <a class="app" href="/creatives/10">in app</a>`;
+    document.body.append(root, outside);
+    const editor = root.querySelector("#inline-edit-form");
+    // As the real flush does, this closes the editor it saves.
+    const flush = jest.fn(() => {
+      editor.style.display = "none";
+      return Promise.resolve(true);
+    });
+    window.creativeRowEditor = { flush };
+    const followed = jest.fn((event) => event.preventDefault());
+    document.body.addEventListener("click", followed);
+    const capture = (event) => handleDocumentOutsideClick(root, event);
+    document.addEventListener("click", capture, true);
+    const clickOn = async (selector) => {
+      editor.style.display = "";
+      document.querySelector(selector).dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    stubSelection(true);
+
+    // Turbo keeps the document for these, so the scheduled save still lands.
+    await clickOn(".app");
+    await clickOn(".page");
+    await clickOn(".popup-app");
+    // A link in the editor itself is the editor's to handle.
+    await clickOn(".in-editor");
+    expect(flush).not.toHaveBeenCalled();
+    expect(followed).toHaveBeenCalledTimes(4);
+
+    // Each of these unloads the page: saved first, then followed once.
+    for (const [index, selector] of [".external", ".file", ".no-turbo", ".popup-external"].entries()) {
+      await clickOn(selector);
+      expect(flush).toHaveBeenCalledTimes(index + 1);
+      expect(followed).toHaveBeenCalledTimes(index + 5);
+    }
+
+    document.removeEventListener("click", capture, true);
+    delete window.creativeRowEditor;
+  });
+
   test("link clicks repeated while the save is on its way are dropped until it settles", async () => {
     const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
     const root = document.createElement("div");

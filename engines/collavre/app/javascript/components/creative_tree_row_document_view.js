@@ -131,6 +131,21 @@ function leavingLink(event) {
   return event.target.closest?.(LEAVING_LINK_SELECTOR) ?? null;
 }
 
+// Turbo swaps same-origin HTML pages into the live document, where a scheduled
+// save still lands; any other link unloads the page and takes the save with it.
+function unloadsPage(link) {
+  if (link.origin !== window.location.origin || link.closest('[data-turbo="false"]')) return true;
+  return /\.(?!(?:html?|xhtml|php)$)[^./]+$/.test(link.pathname);
+}
+
+// The link to hold back: any leaving link on the document view's own surface,
+// and one that unloads the page wherever it sits, such as in a comment.
+function heldLink(event, onSurface) {
+  const link = leavingLink(event);
+  if (!link || link.closest("#inline-edit-form")) return null;
+  return onSurface || unloadsPage(link) ? link : null;
+}
+
 // Unloading the page would cancel a save still on its way, and the close
 // button is disabled while an upload is pending. So the click is held back
 // until the editor has flushed to the server, then repeated; a failed save
@@ -153,15 +168,16 @@ async function followAfterSave(link, event) {
 // While an editor is open in document view, a plain click outside it closes
 // it, as its close button does: on a row, the title or the empty page around
 // them. Controls, the editor's own popups and other panels keep it open. A
-// link that leaves the page waits for the draft to be saved first. Runs in the capture phase (see
-// creatives/document_view_controller.js), ahead of the row's own click handling.
+// link that leaves the page waits for the draft to be saved first. Runs in the
+// capture phase (see creatives/document_view_controller.js), ahead of the
+// row's own click handling.
 export function handleDocumentOutsideClick(root, event) {
   const target = event.target;
-  if (!root.contains(target) && !target.contains(root)) return;
-  if (root.matches(SELECT_MODE_SELECTOR) || target.closest?.(EDITOR_UI_SELECTOR)) return;
-  const link = leavingLink(event);
+  const inside = root.contains(target) || target.contains(root);
+  const onSurface = inside && !root.matches(SELECT_MODE_SELECTOR) && !target.closest?.(EDITOR_UI_SELECTOR);
+  const link = heldLink(event, onSurface);
   if (link) return void followAfterSave(link, event);
-  if (target.closest?.(INTERACTIVE_SELECTOR) || hasTextSelection()) return;
+  if (!onSurface || target.closest?.(INTERACTIVE_SELECTOR) || hasTextSelection()) return;
   if (closeOpenEditor()) editorClosingClicks.add(event);
 }
 

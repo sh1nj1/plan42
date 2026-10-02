@@ -266,6 +266,29 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
+  test "a link outside the document that unloads the page saves the open editor's draft first" do
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+    # A comment's link sits in the popup, outside the document view's element.
+    page.execute_script(<<~JS)
+      const link = document.createElement('a');
+      link.id = 'outside-link';
+      link.href = '/robots.txt';
+      link.textContent = 'robots';
+      link.style.cssText = 'position: fixed; top: 0; left: 0; z-index: 99999';
+      document.body.appendChild(link);
+    JS
+    assert_equal false, page.evaluate_script("document.querySelector('[data-controller~=\"creatives--document-view\"]').contains(document.getElementById('outside-link'))")
+    find("#outside-link").click
+
+    assert_current_path "/robots.txt", wait: 10
+    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+  end
+
   test "a workspace sidebar link replaces the frame without losing the open editor's draft" do
     visit collavre.creative_path(@root, view: "document")
 
