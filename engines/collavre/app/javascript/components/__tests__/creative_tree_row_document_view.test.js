@@ -21,6 +21,17 @@ function container({ documentView = true } = {}) {
   return el;
 }
 
+// The page renders the title row beside the tree, under the element that
+// carries the document view controller and its class.
+function page({ documentView = true } = {}) {
+  const root = document.createElement("div");
+  root.classList.toggle("creative-document-view", documentView);
+  document.body.appendChild(root);
+  const tree = container({ documentView });
+  root.appendChild(tree);
+  return { root, tree };
+}
+
 async function mountRow(props, parent) {
   await import("../creative_tree_row.js");
   const el = document.createElement("creative-tree-row");
@@ -137,7 +148,7 @@ describe("creative-tree-row in document view", () => {
 
   test("the title edits on a plain click, but not on its links or in select mode", async () => {
     stubSelection(true);
-    const el = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, container());
+    const el = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, page().root);
     el.descriptionHtml = 'Title <a href="#anchor">link</a>';
     await el.updateComplete;
     const handler = editClicks(el);
@@ -156,26 +167,27 @@ describe("creative-tree-row in document view", () => {
 
   test("select mode toggled from the menu keeps body and title clicks out of the editor", async () => {
     stubSelection(true);
-    const parent = container();
-    const body = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
-    const title = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, parent);
+    const { root, tree } = page();
+    const body = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, tree);
+    const title = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, root);
     const handler = jest.fn();
-    parent.addEventListener("creative-edit-click", handler);
+    root.addEventListener("creative-edit-click", handler);
 
-    parent.toggleAttribute("data-select-mode-active", true);
+    root.toggleAttribute("data-select-mode-active", true);
     body.querySelector(".creative-content").click();
     title.querySelector(".creative-title-content").click();
     expect(handler).not.toHaveBeenCalled();
 
-    parent.toggleAttribute("data-select-mode-active", false);
+    root.toggleAttribute("data-select-mode-active", false);
     body.querySelector(".creative-content").click();
-    expect(handler).toHaveBeenCalledTimes(1);
+    title.querySelector(".creative-title-content").click();
+    expect(handler).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("creative-tree-row in tree view", () => {
   test("a title click does nothing", async () => {
-    const el = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, container({ documentView: false }));
+    const el = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, page({ documentView: false }).root);
     const handler = editClicks(el);
 
     el.querySelector(".creative-title-content").click();

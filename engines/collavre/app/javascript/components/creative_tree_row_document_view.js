@@ -1,7 +1,8 @@
 // Document view renders the same <creative-tree-row> elements as the tree, but
 // the body is for reading, selecting and editing. The mode lives on an ancestor
 // (see creatives/document_view_controller.js) so lazily added rows pick it up.
-const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"]';
+// The title row sits beside the tree, so it only has the controller's class.
+const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"], .creative-document-view';
 const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
 

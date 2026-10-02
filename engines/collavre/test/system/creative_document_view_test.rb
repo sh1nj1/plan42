@@ -120,6 +120,22 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
+  test "a click on the title edits it in place" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+
+    find(".creative-title-content").click
+
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+    find("#inline-close", wait: 5).click
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 10
+
+    assert_selector ".creative-title-content", text: "Spec edited"
+    assert_equal "Spec edited", ActionController::Base.helpers.strip_tags(@root.reload.description).strip
+  end
+
   test "select mode selects rows instead of opening the editor" do
     visit collavre.creative_path(@root, view: "document")
     assert_selector content_selector(@first)
