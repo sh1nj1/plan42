@@ -69,6 +69,27 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal order, row_order
   end
 
+  test "document titles and headings keep the tree view font" do
+    @first.update!(description: "<h1>Heading one</h1>")
+    @second.update!(description: "<h2>Heading two</h2><h3>Heading three</h3>")
+    visit collavre.creative_path(@root)
+    selectors = [ ".creative-tree-title .page-title",
+      "#{content_selector(@first)} h1",
+      "#{content_selector(@second)} h2",
+      "#{content_selector(@second)} h3" ]
+    fonts = selectors.map do |selector|
+      assert_selector selector
+      page.evaluate_script("getComputedStyle(document.querySelector(#{selector.to_json})).fontFamily")
+    end
+
+    find("#document-view-btn").click
+    assert_selector ".creative-document-view"
+
+    selectors.zip(fonts).each do |selector, font|
+      assert_equal font, page.evaluate_script("getComputedStyle(document.querySelector(#{selector.to_json})).fontFamily")
+    end
+  end
+
   test "the document view stays on while moving through the tree and after a reload" do
     visit collavre.creative_path(@root)
     find("#document-view-btn").click

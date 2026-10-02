@@ -1902,7 +1902,6 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-document-view {
-    --creative-document-heading-font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Noto Serif KR", serif;
     --creative-h1-size: 1.6em;
     --creative-h2-size: 1.3em;
     --creative-h3-size: 1.12em;
@@ -1920,11 +1919,6 @@ creative-tree-row.is-being-edited .creative-tree {
 
 .creative-document-view .creative-row {
     padding: 3px 0;
-}
-
-.creative-document-view .creative-row-start :is(h1, h2, h3),
-.creative-document-view .creative-tree-title .page-title {
-    font-family: var(--creative-document-heading-font);
 }
 
 .creative-document-view .creative-row.level-1 {
