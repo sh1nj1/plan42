@@ -1,4 +1,5 @@
 import { Controller } from '@hotwired/stimulus'
+import { handleDocumentOutsideClick } from '../../components/creative_tree_row_document_view'
 
 const VIEW_PARAM = 'view'
 const VIEW_COOKIE = 'creative_view'
@@ -27,6 +28,12 @@ export default class extends Controller {
   static values = { active: Boolean }
 
   connect() {
+    // Capture phase: the click must close the editor before a row reacts to it.
+    this.closeEditorOnOutsideClick = (event) => {
+      if (this.activeValue) handleDocumentOutsideClick(this.element, event)
+    }
+    document.addEventListener('click', this.closeEditorOnOutsideClick, true)
+
     const url = new URL(window.location.href)
     const requested = url.searchParams.get(VIEW_PARAM)
     if (requested === null) {
@@ -38,6 +45,10 @@ export default class extends Controller {
     storeView(this.activeValue)
     url.searchParams.delete(VIEW_PARAM)
     window.history.replaceState(window.history.state, '', url)
+  }
+
+  disconnect() {
+    document.removeEventListener('click', this.closeEditorOnOutsideClick, true)
   }
 
   toggle() {

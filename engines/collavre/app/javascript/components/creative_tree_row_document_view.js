@@ -10,6 +10,11 @@ const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img, video, audio";
 const DRAG_HANDLE_SELECTOR = ".creative-drag-handle";
 const OPEN_EDITOR_SELECTOR = ":scope > .creative-tree > #inline-edit-form";
+const OVERLAY_SELECTOR = '.popup-menu, .popup-box, dialog, [role="dialog"], [class*="modal"]';
+const KEEPS_EDITOR_SELECTOR = `#inline-edit-form, ${INTERACTIVE_SELECTOR}, ${OVERLAY_SELECTOR}`;
+
+// Clicks that already closed the editor, so the row under them opens nothing.
+const editorClosingClicks = new WeakSet();
 
 export function isDocumentView(row) {
   return row.closest(DOCUMENT_VIEW_SELECTOR) !== null;
@@ -108,6 +113,24 @@ function closeOpenEditor() {
   return true;
 }
 
+function hasTextSelection() {
+  const selection = window.getSelection?.();
+  return Boolean(selection) && !selection.isCollapsed;
+}
+
+// While an editor is open in document view, a plain click outside it closes
+// it, as its close button does: on a row, the title or the empty page around
+// them. Controls, the editor's own popups and other panels keep it open. Runs
+// in the capture phase (see creatives/document_view_controller.js), ahead of
+// the row's own click handling.
+export function handleDocumentOutsideClick(root, event) {
+  const target = event.target;
+  if (!root.contains(target) && !target.contains(root)) return;
+  if (root.matches(SELECT_MODE_SELECTOR) || target.closest?.(KEEPS_EDITOR_SELECTOR)) return;
+  if (hasTextSelection()) return;
+  if (closeOpenEditor()) editorClosingClicks.add(event);
+}
+
 // A click that ends a selection drag must keep the selection and stay out of
 // the editor; only a plain click on an editable row opens it. While an editor
 // is open, a click on another row closes it, as its close button does, and
@@ -115,9 +138,8 @@ function closeOpenEditor() {
 export function handleDocumentBodyClick(row, event) {
   if (selectModeActive(row)) return;
   if (event.target.closest(INTERACTIVE_SELECTOR)) return;
-  const selection = window.getSelection?.();
-  if (selection && !selection.isCollapsed) return;
-  if (closeOpenEditor()) return;
+  if (hasTextSelection()) return;
+  if (editorClosingClicks.has(event) || closeOpenEditor()) return;
   if (!row.canWrite) return;
   row.dispatchEditClick(row.querySelector(".edit-inline-btn"));
 }

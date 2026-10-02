@@ -219,6 +219,33 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_selector "#{tree_selector(@second)} > #inline-edit-form", visible: true, wait: 5
   end
 
+  test "a click on the empty page outside the open editor closes it and saves" do
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+
+    # A click inside the editor keeps it open.
+    field.click
+    assert_selector "#{tree_selector(@first)} > #inline-edit-form", visible: true
+
+    # Below the last row there is no creative, only the page.
+    x, y = page.evaluate_script(<<~JS)
+      (() => {
+        const rect = document.getElementById('creatives').getBoundingClientRect();
+        return [Math.round(rect.left + rect.width / 2), Math.round(rect.bottom + 12)];
+      })()
+    JS
+    assert_equal true, page.evaluate_script("document.elementFromPoint(#{x}, #{y}).closest('creative-tree-row') === null")
+    page.driver.browser.action.move_to_location(x, y).click.perform
+
+    assert_no_selector ".lexical-content-editable", visible: true, wait: 10
+    assert_selector content_selector(@first), text: "First paragraph edited"
+    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+  end
+
   test "a click edits in place and the change shows in the tree view" do
     visit collavre.creative_path(@root, view: "document")
 

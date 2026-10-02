@@ -130,3 +130,32 @@ test('tolerates a page without the toggle or the tree', async () => {
 
   expect(root.classList.contains('creative-document-view')).toBe(true)
 })
+
+test('a click outside the open editor closes it only in document view, until disconnected', async () => {
+  const root = mount({ active: true })
+  document.cookie = 'creative_view=document; path=/'
+  await flush()
+  const editor = document.createElement('div')
+  editor.id = 'inline-edit-form'
+  editor.innerHTML = '<button id="inline-close"></button>'
+  root.appendChild(editor)
+  const closed = jest.fn()
+  editor.querySelector('button').addEventListener('click', closed)
+  const blank = document.createElement('div')
+  root.appendChild(blank)
+
+  blank.click()
+  expect(closed).toHaveBeenCalledTimes(1)
+
+  root.querySelector('[data-creatives--document-view-target="toggle"]').click()
+  await flush()
+  blank.click()
+  expect(closed).toHaveBeenCalledTimes(1)
+
+  root.querySelector('[data-creatives--document-view-target="toggle"]').click()
+  await flush()
+  root.removeAttribute('data-controller')
+  await flush()
+  blank.click()
+  expect(closed).toHaveBeenCalledTimes(1)
+})

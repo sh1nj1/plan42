@@ -92,6 +92,88 @@ describe("creative-tree-row in document view", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  test("a plain click outside the open editor closes it", async () => {
+    const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
+    const root = document.createElement("div");
+    root.className = "creative-document-view";
+    root.innerHTML = `
+      <div class="blank"></div>
+      <button class="control"></button>
+      <div class="share-modal"><p class="in-modal"></p></div>
+      <div id="inline-edit-form"><button id="inline-close"></button><p class="draft"></p></div>`;
+    const page = document.createElement("main");
+    const panel = document.createElement("aside");
+    page.append(root, panel);
+    document.body.appendChild(page);
+    const editor = root.querySelector("#inline-edit-form");
+    const closed = jest.fn();
+    root.querySelector("#inline-close").addEventListener("click", closed);
+    const clickOn = (target) => {
+      const event = { target };
+      handleDocumentOutsideClick(root, event);
+      return event;
+    };
+    stubSelection(true);
+
+    // Inside the editor, on controls, in overlays and in other panels: stays open.
+    clickOn(root.querySelector(".draft"));
+    clickOn(root.querySelector(".control"));
+    clickOn(root.querySelector(".in-modal"));
+    clickOn(panel);
+    expect(closed).not.toHaveBeenCalled();
+
+    // A click that ends a selection drag keeps the editor too.
+    stubSelection(false);
+    clickOn(root.querySelector(".blank"));
+    expect(closed).not.toHaveBeenCalled();
+    stubSelection(true);
+
+    // Select mode owns clicks while it is on.
+    root.setAttribute("data-select-mode-active", "");
+    clickOn(root.querySelector(".blank"));
+    expect(closed).not.toHaveBeenCalled();
+    root.removeAttribute("data-select-mode-active");
+
+    // Empty space in the view and the page around it close the editor.
+    clickOn(root.querySelector(".blank"));
+    clickOn(page);
+    clickOn(document);
+    expect(closed).toHaveBeenCalledTimes(3);
+
+    // Nothing to close once the form is hidden.
+    editor.style.display = "none";
+    clickOn(root.querySelector(".blank"));
+    expect(closed).toHaveBeenCalledTimes(3);
+  });
+
+  test("a click that closed the editor does not open the row under it", async () => {
+    const { handleDocumentOutsideClick } = await import("../creative_tree_row_document_view.js");
+    const root = container();
+    root.classList.add("creative-document-view");
+    const edited = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, root);
+    const other = await mountRow({ creativeId: "9", canWrite: true, linkUrl: "/creatives/9" }, root);
+    const editor = document.createElement("div");
+    editor.id = "inline-edit-form";
+    const close = document.createElement("button");
+    close.id = "inline-close";
+    editor.appendChild(close);
+    edited.querySelector(".creative-tree").appendChild(editor);
+    // The real close button hides the form at once.
+    close.addEventListener("click", () => { editor.style.display = "none"; });
+    const handler = editClicks(other);
+    stubSelection(true);
+    const capture = (event) => handleDocumentOutsideClick(root, event);
+    document.addEventListener("click", capture, true);
+
+    other.querySelector(".creative-content").click();
+    expect(editor.style.display).toBe("none");
+    expect(handler).not.toHaveBeenCalled();
+
+    other.querySelector(".creative-content").click();
+    expect(handler).toHaveBeenCalledTimes(1);
+    document.removeEventListener("click", capture, true);
+  });
+
   test("rows are not drag sources, and become draggable again in tree view", async () => {
     const parent = container();
     const el = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
