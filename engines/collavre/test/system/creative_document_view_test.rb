@@ -120,6 +120,25 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
+  test "select mode selects rows instead of opening the editor" do
+    visit collavre.creative_path(@root, view: "document")
+    assert_selector content_selector(@first)
+    find('[aria-controls="creative-overflow-menu"]').click
+    find("#select-creative-btn").click
+
+    find(content_selector(@first)).click
+    find(content_selector(@second)).click
+
+    assert_selector "#creatives .select-creative-checkbox:checked", count: 2
+    assert_no_selector "#inline-edit-form-element", visible: true
+
+    find('[aria-controls="creative-overflow-menu"]').click
+    find("#select-creative-btn").click
+    find(content_selector(@first)).click
+
+    assert_selector ".lexical-content-editable", wait: 5
+  end
+
   test "progress and the way into a creative are left out, and return with the tree" do
     visit collavre.creative_path(@root, view: "document")
     assert_selector content_selector(@first)

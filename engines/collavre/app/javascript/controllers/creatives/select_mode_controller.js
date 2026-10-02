@@ -235,6 +235,9 @@ export default class extends Controller {
       checkbox.style.display = show ? '' : 'none'
     })
 
+    // Rows read this to stay out of the editor while selecting (document view).
+    this.element.toggleAttribute('data-select-mode-active', show)
+
     this.toggleElements('.add-creative-btn', !show)
     this.toggleElements('.creative-tags', !show)
     this.toggleElements('.comments-btn', !show)

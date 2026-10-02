@@ -168,6 +168,7 @@ test('before caching clears selections and restores the inactive UI, then permit
   await flush()
   const controller = controllerFor(application)
   controller.toggle(new Event('click'))
+  expect(element.hasAttribute('data-select-mode-active')).toBe(true)
   controller.selectAllTarget.checked = true
   controller.toggleSelectAll({ currentTarget: controller.selectAllTarget })
   controller.dragging = true
@@ -176,6 +177,7 @@ test('before caching clears selections and restores the inactive UI, then permit
 
   expect(controller.active).toBe(false)
   expect(controller.dragging).toBe(false)
+  expect(element.hasAttribute('data-select-mode-active')).toBe(false)
   expect(element.querySelectorAll('input:checked')).toHaveLength(0)
   expect(element.querySelectorAll('.selected')).toHaveLength(0)
   expect(controller.toggleTarget.textContent).toBe('Select')

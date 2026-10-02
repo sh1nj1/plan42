@@ -140,6 +140,24 @@ describe("creative-tree-row in document view", () => {
     el.querySelector(".creative-title-content").click();
     expect(handler).toHaveBeenCalledTimes(1);
   });
+
+  test("select mode toggled from the menu keeps body and title clicks out of the editor", async () => {
+    stubSelection(true);
+    const parent = container();
+    const body = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const title = await mountRow({ creativeId: "5", canWrite: true, isTitle: true }, parent);
+    const handler = jest.fn();
+    parent.addEventListener("creative-edit-click", handler);
+
+    parent.toggleAttribute("data-select-mode-active", true);
+    body.querySelector(".creative-content").click();
+    title.querySelector(".creative-title-content").click();
+    expect(handler).not.toHaveBeenCalled();
+
+    parent.toggleAttribute("data-select-mode-active", false);
+    body.querySelector(".creative-content").click();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("creative-tree-row in tree view", () => {

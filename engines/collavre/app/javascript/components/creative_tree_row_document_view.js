@@ -2,6 +2,7 @@
 // the body is for reading, selecting and editing. The mode lives on an ancestor
 // (see creatives/document_view_controller.js) so lazily added rows pick it up.
 const DOCUMENT_VIEW_SELECTOR = '[data-view-mode="document"]';
+const SELECT_MODE_SELECTOR = "[data-select-mode-active]";
 const INTERACTIVE_SELECTOR = "a, button, input, img";
 
 export function isDocumentView(row) {
@@ -21,9 +22,16 @@ export function visitRowLink(row) {
   }
 }
 
+// Select mode toggled from the overflow menu lives on the select-mode
+// controller's element, not on the row's own selectMode property.
+function selectModeActive(row) {
+  return row.selectMode || row.closest(SELECT_MODE_SELECTOR) !== null;
+}
+
 // A click that ends a selection drag must keep the selection and stay out of
 // the editor; only a plain click on an editable row opens it.
 export function handleDocumentBodyClick(row) {
+  if (selectModeActive(row)) return;
   const selection = window.getSelection?.();
   if (selection && !selection.isCollapsed) return;
   if (!row.canWrite) return;
@@ -31,7 +39,7 @@ export function handleDocumentBodyClick(row) {
 }
 
 export function handleDocumentTitleClick(row, event) {
-  if (!isDocumentView(row) || row.selectMode) return;
+  if (!isDocumentView(row)) return;
   if (event.target.closest(INTERACTIVE_SELECTOR)) return;
   handleDocumentBodyClick(row);
 }
