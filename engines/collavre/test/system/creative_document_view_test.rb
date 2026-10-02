@@ -266,6 +266,23 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
   end
 
+  test "a workspace sidebar link replaces the frame without losing the open editor's draft" do
+    visit collavre.creative_path(@root, view: "document")
+
+    find(content_selector(@first)).click
+    field = find(".lexical-content-editable", wait: 5)
+    find("[data-lexical-editor-root][data-editor-ready='true']", wait: 5)
+    field.send_keys(:end, " edited")
+    find(".creative-workspace-tree-toggle").click
+    find(".creative-workspace-tree-link[data-creative-id='#{@second.id}']", wait: 10).click
+
+    assert_current_path collavre.creatives_path(id: @second.id), wait: 10
+    # The frame swap keeps the document, so the debounced save still lands.
+    saved = -> { ActionController::Base.helpers.strip_tags(@first.reload.description).strip }
+    Timeout.timeout(15) { sleep 0.2 until saved.call == "First paragraph edited" }
+    assert_equal "First paragraph edited", saved.call
+  end
+
   test "a link that leaves the page waits for a pending upload before the draft is saved" do
     linked = Creative.create!(
       description: %(See <a href="/robots.txt">the robots file</a>),
