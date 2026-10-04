@@ -17,6 +17,13 @@ jest.unstable_mockModule('../../../creatives/drag_drop/indicator', () => ({ init
 jest.unstable_mockModule('../../../creatives/drag_drop/event_handlers', () => ({
   addGlobalListeners, removeGlobalListeners, createCreativeTreeDragDrop,
 }))
+const fileRegistries = []
+const createCreativeFileDrop = jest.fn(() => {
+  const registry = { destroy: jest.fn() }
+  fileRegistries.push(registry)
+  return registry
+})
+jest.unstable_mockModule('../../../creatives/drag_drop/file_drop', () => ({ createCreativeFileDrop }))
 const DragDropController = (await import('../drag_drop_controller')).default
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
@@ -25,6 +32,7 @@ test('shares one gesture registry across tree mounts and releases it after the l
   application.register('creatives--drag-drop', DragDropController)
   const mount = () => {
     const element = document.createElement('div')
+    element.setAttribute('data-creatives--drag-drop-file-failure-text-value', '첨부 실패')
     element.dataset.controller = 'creatives--drag-drop'
     element.setAttribute('data-creatives--drag-drop-partial-failure-text-value', '일부 항목을 이동하지 못했습니다.')
     document.body.appendChild(element)
@@ -36,6 +44,8 @@ test('shares one gesture registry across tree mounts and releases it after the l
     await flush()
     expect(createCreativeTreeDragDrop).toHaveBeenCalledTimes(1)
     expect(createCreativeTreeDragDrop).toHaveBeenCalledWith({ partialFailureMessage: '일부 항목을 이동하지 못했습니다.' })
+    expect(createCreativeFileDrop).toHaveBeenCalledWith({ failureMessage: '첨부 실패' })
+    expect(createCreativeFileDrop).toHaveBeenCalledTimes(1)
     expect(addGlobalListeners).toHaveBeenCalledTimes(1)
 
     first.remove()
@@ -45,6 +55,7 @@ test('shares one gesture registry across tree mounts and releases it after the l
 
     second.remove()
     await flush()
+    expect(fileRegistries[0].destroy).toHaveBeenCalledTimes(1)
     expect(registries[0].destroy).toHaveBeenCalledTimes(1)
     expect(removeGlobalListeners).toHaveBeenCalledTimes(1)
 
