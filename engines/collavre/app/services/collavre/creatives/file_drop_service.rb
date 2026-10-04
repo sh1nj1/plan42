@@ -21,9 +21,11 @@ module Collavre
       private
 
       def upload(file)
-        @blobs << ActiveStorage::Blob.create_and_upload!(
+        blob = ActiveStorage::Blob.create_after_unfurling!(
           io: file.tempfile, filename: file.original_filename, content_type: file.content_type
         )
+        @blobs << blob
+        blob.upload_without_unfurling(file.tempfile)
       end
 
       def attachment_description

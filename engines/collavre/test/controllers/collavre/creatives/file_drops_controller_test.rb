@@ -124,14 +124,14 @@ module Collavre
 
       test "partial upload failure cleans up earlier blobs" do
         calls = 0
-        original = ActiveStorage::Blob.method(:create_and_upload!)
+        original = ActiveStorage::Blob.method(:create_after_unfurling!)
         uploader = lambda do |**args|
           calls += 1
           raise IOError, "Upload failed" if calls == 2
 
           original.call(**args)
         end
-        ActiveStorage::Blob.stub :create_and_upload!, uploader do
+        ActiveStorage::Blob.stub :create_after_unfurling!, uploader do
           assert_no_difference [ "Creative.count", "ActiveStorage::Blob.count" ] do
             assert_raises(IOError) do
               FileDropService.new(target: @target, direction: "up", files: [ upload, upload ], user: @owner).call
@@ -149,6 +149,16 @@ module Collavre
         end
         assert_equal "Target", @target.reload.description
         assert_empty @target.files
+      end
+
+      test "storage upload failure purges the blob saved before transfer" do
+        ActiveStorage::Blob.service.stub :upload, ->(*) { raise IOError, "Storage unavailable" } do
+          assert_no_difference "ActiveStorage::Blob.count" do
+            assert_raises(IOError) do
+              FileDropService.new(target: @target, direction: "child", files: [ upload ], user: @owner).call
+            end
+          end
+        end
       end
 
       private
