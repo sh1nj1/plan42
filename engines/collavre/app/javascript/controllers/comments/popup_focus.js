@@ -1,4 +1,5 @@
-// Only the focused opener may yield to initial chat autofocus after loading.
+// A click may leave prior focus unchanged; only exempt that pre-loading control.
 export function openingFocusOptions(button) {
-  return button && document.activeElement === button ? { openingControl: button } : {}
+  const active = document.activeElement
+  return button && active?.matches('button, a[href]') ? { openingControl: active } : {}
 }
