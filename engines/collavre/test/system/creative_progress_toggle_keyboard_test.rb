@@ -124,10 +124,22 @@ class CreativeProgressToggleKeyboardTest < ApplicationSystemTestCase
   # send the opposite value and the two could settle out of order.
   test "space is ignored while the request is in flight" do
     page.execute_script(<<~JS)
+      const originalFetch = window.fetch.bind(window);
+      const progressPath = #{"/creatives/#{@leaf.id}".to_json};
       window.__patchCount = 0;
-      window.fetch = () => { window.__patchCount += 1; return new Promise(() => {}); };
+      window.fetch = (input, options = {}) => {
+        const url = new URL(input instanceof Request ? input.url : input, window.location.href);
+        const method = options.method || (input instanceof Request ? input.method : 'GET');
+        if (url.pathname === progressPath && method.toUpperCase() === 'PATCH') {
+          window.__patchCount += 1;
+          return new Promise(() => {});
+        }
+        return originalFetch(input, options);
+      };
     JS
 
+    # Background traffic must not count as a progress update.
+    page.execute_script("fetch(window.location.href, { method: 'HEAD' })")
     press_space_on_checkbox
     assert_selector "#{toggle_selector}[data-current-progress='1']", wait: 5
     press_space
