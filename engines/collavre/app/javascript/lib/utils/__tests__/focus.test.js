@@ -39,6 +39,18 @@ describe('focusWhenAvailable', () => {
       expect(document.activeElement).toBe(other.firstElementChild)
     })
 
+  test.each(['<button>Move</button>', '<a href="#">Move</a>', '<div tabindex="0">Move</div>', '<div tabindex="-1">Move</div>'])(
+    'protects keyboard navigation on %s', markup => {
+      document.body.insertAdjacentHTML('beforeend', markup)
+      const action = document.body.lastElementChild
+      focusWhenAvailable(target)
+      action.focus()
+      flush()
+      expect(document.activeElement).toBe(action)
+      focusWhenAvailable(target, { explicit: true })
+      expect(document.activeElement).toBe(target)
+    })
+
   test('protects a focused descendant of a rich text editor', () => {
     document.body.insertAdjacentHTML('beforeend', '<div contenteditable="true"><span tabindex="0">text</span></div>')
     const span = document.querySelector('span')

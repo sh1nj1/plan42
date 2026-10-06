@@ -30,7 +30,7 @@ function isVisible(element) {
 
 function autoFocusBlocked(target) {
   const active = document.activeElement
-  if (active !== target && active?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
+  if (active !== target && active?.closest('button, a[href], [tabindex], input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
   // The shared editor stays open even when save controls temporarily blur it.
   return editingCreative?.isConnected || isVisible(document.getElementById('inline-edit-form'))
 }
