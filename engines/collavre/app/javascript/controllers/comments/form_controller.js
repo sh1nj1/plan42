@@ -765,7 +765,7 @@ export default class extends Controller {
     const needsSpace = currentValue && !currentValue.endsWith(' ')
     this.textareaTarget.value = `${currentValue}${needsSpace ? ' ' : ''}${transcript}`
     this.textareaTarget.dispatchEvent(new Event('input'))
-    this.focusTextarea()
+    this.focusTextarea({ openingControl: this.voiceButtonTarget })
   }
 
   handleRecognitionError() {

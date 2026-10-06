@@ -135,6 +135,42 @@ describe('FormController - draft persistence', () => {
       expect(document.activeElement).toBe(input)
     })
 
+    const voiceResult = () => controller.handleRecognitionResult({
+      resultIndex: 0,
+      results: [[{ transcript: 'spoken text' }]],
+    })
+    const focusVoiceButton = () => {
+      controller.voiceButtonTarget.style.display = ''
+      controller.voiceButtonTarget.focus()
+    }
+
+    test('voice results focus the composer from the voice button', () => {
+      focusVoiceButton()
+      controller.textareaTarget.value = 'Existing'
+      voiceResult()
+      flush()
+      expect(controller.textareaTarget.value).toBe('Existing spoken text')
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test('voice results preserve a different button selected before the frame', () => {
+      focusVoiceButton()
+      voiceResult()
+      controller.submitTarget.focus()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve an open creative editor', () => {
+      focusVoiceButton()
+      const editor = document.createElement('form')
+      editor.id = 'inline-edit-form'
+      container.append(editor)
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.voiceButtonTarget)
+    })
+
     test('comment editing explicitly focuses the composer', () => {
       otherInput()
       controller.startEditing({ id: '1', content: 'edit me' })
