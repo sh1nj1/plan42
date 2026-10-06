@@ -8,10 +8,10 @@ document.addEventListener('creative-editing:stop', () => { editingCreative = nul
 document.addEventListener('turbo:before-cache', () => { editingCreative = null })
 
 // Check at execution time: focus may change while a frame is queued.
-export function focusWhenAvailable(target, { explicit = false } = {}) {
+export function focusWhenAvailable(target, { explicit = false, openingControl = null } = {}) {
   const focus = () => {
     if (!isVisible(target) || target.disabled) return
-    if (!explicit && autoFocusBlocked(target)) return
+    if (!explicit && autoFocusBlocked(target, openingControl)) return
     target.focus()
   }
   // Keep direct actions synchronous (including mobile keyboard activation).
@@ -28,9 +28,9 @@ function isVisible(element) {
   return true
 }
 
-function autoFocusBlocked(target) {
+function autoFocusBlocked(target, openingControl) {
   const active = document.activeElement
-  if (active !== target && active?.closest('button, a[href], [tabindex], input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
+  if (active !== target && active !== openingControl && active?.closest('button, a[href], [tabindex], input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return true
   // The shared editor stays open even when save controls temporarily blur it.
   return editingCreative?.isConnected || isVisible(document.getElementById('inline-edit-form'))
 }

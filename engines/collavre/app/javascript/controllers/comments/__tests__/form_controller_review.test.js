@@ -81,6 +81,17 @@ describe('FormController - Review Quote Chips', () => {
   const getActiveId = (ctrl) => ctrl._reviewStore.activeId
 
   describe('auto focus on open', () => {
+    test('passes the original opening control to deferred autofocus', async () => {
+      const reset = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})
+      const openingControl = document.createElement('button')
+      container.append(openingControl)
+      openingControl.focus()
+      controller.onPopupOpened({ creativeId: '123', canComment: true, openingControl })
+      await new Promise(resolve => requestAnimationFrame(resolve))
+      expect(document.activeElement).toBe(controller.textareaTarget)
+      reset.mockRestore()
+    })
+
     test('skips initial focus when popup opts out', () => {
       container.querySelector('#comments-popup').dataset.autoFocusOnOpen = 'false'
       const resetFormSpy = jest.spyOn(controller, 'resetForm').mockImplementation(() => {})

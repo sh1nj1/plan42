@@ -435,6 +435,8 @@ export default class extends Controller {
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId, openGeneration }) {
+    // Only the focused opener may yield to initial chat autofocus after loading.
+    const openingControl = document.activeElement === this.currentButton ? this.currentButton : null
     this.topicsController?.clearOverrideTopicId()
     // Drop the previous creative's topic selection from the form controller
     // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
@@ -487,7 +489,7 @@ export default class extends Controller {
     }
 
     if (this.formController) {
-      this.formController.onPopupOpened({ creativeId, canComment })
+      this.formController.onPopupOpened({ creativeId, canComment, ...(openingControl ? { openingControl } : {}) })
     }
     if (this.listController) {
       const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined

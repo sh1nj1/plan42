@@ -188,7 +188,7 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--presence')
   }
 
-  onPopupOpened({ creativeId, canComment }) {
+  onPopupOpened({ creativeId, canComment, openingControl }) {
     this.creativeId = creativeId
     this.element.dataset.creativeId = creativeId || ''
     if (canComment) this._drafts._draftSaveSuspendedForPermission = false
@@ -205,7 +205,7 @@ export default class extends Controller {
     this.resetForm()
     this._drafts._draftSaveSuspendedForPermission = !canComment
     if (canComment && this.shouldAutoFocusOnOpen()) {
-      this.focusTextarea()
+      this.focusTextarea({ openingControl })
     }
     this._restoreDraft()
   }

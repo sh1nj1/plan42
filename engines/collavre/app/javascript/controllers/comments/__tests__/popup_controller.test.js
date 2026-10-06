@@ -6,6 +6,7 @@
 import { Application } from '@hotwired/stimulus'
 import { jest } from '@jest/globals'
 import CommentsPopupController from '../popup_controller'
+import { focusWhenAvailable } from '../../../lib/utils/focus'
 import chatDrafts from '../../../lib/chat_drafts'
 
 describe('CommentsPopupController', () => {
@@ -435,6 +436,31 @@ describe('CommentsPopupController', () => {
             topicId: '7',
         })
     })
+
+	test.each([false, true])('click-open autofocus preserves focus moved during topic loading: %s', async moved => {
+		const opener = document.getElementById('trigger-btn')
+		const textarea = document.createElement('textarea')
+		const other = document.createElement('button')
+		container.append(textarea, other)
+		let finishTopicsLoad
+		Object.defineProperty(controller, 'topicsController', { configurable: true, value: {
+			clearOverrideTopicId: jest.fn(),
+			onPopupOpened: () => new Promise(resolve => { finishTopicsLoad = resolve }),
+		} })
+		Object.defineProperty(controller, 'formController', { configurable: true, value: {
+			onPopupOpened: ({ openingControl }) => focusWhenAvailable(textarea, { openingControl }),
+			onPopupClosed: jest.fn(),
+		} })
+		opener.focus()
+		const pendingOpen = controller.open(opener)
+		if (moved) other.focus()
+		finishTopicsLoad()
+		await pendingOpen
+		await new Promise(resolve => requestAnimationFrame(resolve))
+		expect(document.activeElement).toBe(moved ? other : textarea)
+		delete controller.formController
+		delete controller.topicsController
+	})
 
     test('same-creative deep links clear suppression from a canceled pending open', async () => {
         const popup = document.getElementById('comments-popup')
