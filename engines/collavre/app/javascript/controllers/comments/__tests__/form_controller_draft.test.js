@@ -142,6 +142,9 @@ describe('FormController - draft persistence', () => {
     const focusVoiceButton = () => {
       controller.voiceButtonTarget.style.display = ''
       controller.voiceButtonTarget.focus()
+      jest.spyOn(controller, 'setupSpeechRecognition').mockReturnValue(true)
+      jest.spyOn(controller, 'tryStartRecognition').mockImplementation(() => {})
+      controller.startSpeechRecognition()
     }
 
     test('voice results focus the composer from the voice button', () => {
@@ -151,6 +154,46 @@ describe('FormController - draft persistence', () => {
       flush()
       expect(controller.textareaTarget.value).toBe('Existing spoken text')
       expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test.each(['button', 'a'])('voice results restore focus when activation leaves a stale %s focused', (tag) => {
+      const stale = document.createElement(tag)
+      if (tag === 'a') stale.href = '#prior'
+      container.append(stale)
+      focusVoiceButton()
+      controller.listening = false
+      stale.focus()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test('voice results preserve an input focused when recognition starts', () => {
+      focusVoiceButton()
+      controller.listening = false
+      const input = otherInput()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    test('an already active recognition session retains its initial focus owner', () => {
+      focusVoiceButton()
+      controller.submitTarget.focus()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve focus moved while recognition is pending', () => {
+      focusVoiceButton()
+      controller.submitTarget.focus()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
     })
 
     test('voice results preserve a different button selected before the frame', () => {

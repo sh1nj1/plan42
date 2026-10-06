@@ -12,6 +12,7 @@ import { appendRunOptions } from './run_options_controller'
 import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
 import { focusWhenAvailable } from '../../lib/utils/focus'
+import { openingFocusOptions } from './popup_focus'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -700,9 +701,8 @@ export default class extends Controller {
   }
 
   startSpeechRecognition() {
-    if (!this.setupSpeechRecognition()) return
-    if (this.listening) return
-
+    if (!this.setupSpeechRecognition() || this.listening) return
+    this.voiceFocusOptions = openingFocusOptions(this.voiceButtonTarget)
     this.listening = true
     this.tryStartRecognition()
   }
@@ -756,8 +756,7 @@ export default class extends Controller {
     const transcript = Array.from(latestResult || [])
       .map((result) => result?.transcript)
       .filter(Boolean)
-      .join(' ')
-      .trim()
+      .join(' ').trim()
 
     if (!transcript) return
 
@@ -765,7 +764,7 @@ export default class extends Controller {
     const needsSpace = currentValue && !currentValue.endsWith(' ')
     this.textareaTarget.value = `${currentValue}${needsSpace ? ' ' : ''}${transcript}`
     this.textareaTarget.dispatchEvent(new Event('input'))
-    this.focusTextarea({ openingControl: this.voiceButtonTarget })
+    this.focusTextarea(this.voiceFocusOptions)
   }
 
   handleRecognitionError() {
