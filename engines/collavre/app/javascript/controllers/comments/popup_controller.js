@@ -1,3 +1,4 @@
+import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
@@ -307,7 +308,7 @@ export default class extends Controller {
     this.element.dataset.creativeId = ''
     this.element.dataset.canComment = 'false'
     this.element.dataset.creativeSnippet = ''
-    this.titleTarget.textContent = this.element.dataset.defaultTitle || ''
+    setCreativeTitle(this.titleTarget, this.element.dataset.defaultTitle || '', '')
     this._clearChatActiveRow()
     this._hideNavDropdown()
 
@@ -361,7 +362,7 @@ export default class extends Controller {
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
-    this.titleTarget.textContent = snippet
+    setCreativeTitle(this.titleTarget, snippet, resolvedCreativeId)
 
     this._markChatActiveRow(resolvedCreativeId)
 
@@ -405,7 +406,7 @@ export default class extends Controller {
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = 'true'
-    this.titleTarget.textContent = snippet
+    setCreativeTitle(this.titleTarget, snippet, resolvedCreativeId)
 
     this._markChatActiveRow(resolvedCreativeId)
 

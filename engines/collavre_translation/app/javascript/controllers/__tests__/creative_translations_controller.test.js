@@ -359,3 +359,64 @@ test('failed creative retries on reload but failure while polling waits for anot
   expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST', 'GET', 'GET', 'POST'])
   expect(row.querySelector('h1').textContent).toBe('번역 제목')
 })
+
+function addNavigationLabel(text, id = '1', length = '24') {
+  const title = document.createElement('h3')
+  title.dataset.translationLabel = ''
+  title.dataset.translationLength = length
+  title.dataset.creativeId = id
+  title.dataset.originalLabel = text
+  title.textContent = text
+  document.body.append(title)
+  controller.scan()
+  return title
+}
+
+test('breadcrumb and chat labels translate, truncate after translation and toggle together', async () => {
+  const breadcrumb = addNavigationLabel('English title', '1', '20')
+  const chat = addNavigationLabel('English title')
+  const translated = 'A translated title that is much longer than the original'
+  fetchMock.mockResolvedValue(response('completed', JSON.stringify([{ original: 'English title', translated }])))
+  await controller.load(breadcrumb)
+  await controller.load(chat)
+  expect(breadcrumb.textContent).toBe(translated.slice(0, 17) + '...')
+  expect(chat.textContent).toBe(translated.slice(0, 21) + '...')
+  controller.menuButton.click()
+  expect(breadcrumb.textContent).toBe('English title')
+  expect(chat.textContent).toBe('English title')
+})
+
+test('truncated original labels match stored descriptions and reject stale titles', async () => {
+  const title = addNavigationLabel('English...', '1', '10')
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(title)
+  expect(title.textContent).toBe('번역 제목')
+  const stale = addNavigationLabel('Different...', '1', '10')
+  await controller.load(stale)
+  expect(stale.textContent).toBe('Different...')
+})
+
+test('chat navigation aborts stale requests and preserves the newly assigned title', async () => {
+  const title = addNavigationLabel('English title')
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(title)
+  const previous = controller.rows.get(title)
+  title.textContent = 'New title'
+  title.dataset.originalLabel = 'New title'
+  title.dataset.creativeId = '2'
+  await tick()
+  expect(previous.abort.signal.aborted).toBe(true)
+  expect(title.textContent).toBe('New title')
+  expect(controller.rows.get(title).id).toBe('2')
+  fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: 'completed',
+    original_html: '<p>New title</p>', content: JSON.stringify([{ original: 'New title', translated: '새 제목' }]) }) })
+  await controller.load(title)
+  expect(title.textContent).toBe('새 제목')
+  expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/2/translation?embed=0', expect.anything())
+  title.textContent = 'Comments'
+  delete title.dataset.creativeId
+  delete title.dataset.originalLabel
+  await tick()
+  expect(controller.rows.has(title)).toBe(false)
+  expect(title.textContent).toBe('Comments')
+})

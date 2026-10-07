@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { sanitizeDescriptionHtml } from "collavre/lib/utils/sanitize_description"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
-import { PROTECTED, translationSource, translationContent, translationUrl, treeTranslation } from "./workspace_translation"
+import { LABEL, ROWS, PROTECTED, translationSource, translationContent, translationUrl, treeTranslation } from "./workspace_translation"
 
 
 export default class extends Controller {
@@ -11,7 +11,7 @@ export default class extends Controller {
     this.rows = new Map()
     this.showTranslated = true
     this.observer = new MutationObserver(() => this.scan())
-    this.observer.observe(document.body, { childList: true, subtree: true })
+    this.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-creative-id', 'data-original-label'] })
     this.visibility = new IntersectionObserver(entries => {
       entries.filter(entry => entry.isIntersecting).forEach(entry => {
         this.visibility.unobserve(entry.target)
@@ -24,12 +24,12 @@ export default class extends Controller {
   scan() {
     this.mountMenu()
     this.rows.forEach((state, row) => {
-      if (!row.isConnected || translationSource(row) !== state.source ||
+      if (!row.isConnected || row.dataset.creativeId !== state.id || translationSource(row) !== state.source ||
           (state.content && state.content !== translationContent(row))) this.cleanup(row, state)
     })
-    document.querySelectorAll('creative-tree-row[creative-id], .creative-workspace-tree-link[data-creative-id]').forEach(row => {
+    document.querySelectorAll(ROWS).forEach(row => {
       if (this.rows.has(row) || !translationSource(row)) return
-      this.rows.set(row, { source: translationSource(row), abort: new AbortController() })
+      this.rows.set(row, { source: translationSource(row), id: row.dataset.creativeId, abort: new AbortController() })
       this.visibility.observe(row)
     })
   }
@@ -48,8 +48,8 @@ export default class extends Controller {
       let result = await request('GET')
       if (['missing', 'pending'].includes(result.status) || (retryFailed && result.status === 'failed')) result = await request('POST')
       if (state.abort.signal.aborted || translationSource(row) !== state.source) return
-      if (row.matches('.creative-workspace-tree-link')) {
-        result = treeTranslation(result, state.source)
+      if (row.matches(LABEL)) {
+        result = treeTranslation(result, state.source, row)
         if (!result) return
       } else if (sanitizeDescriptionHtml(result.original_html) !== state.source) return
       if (state.digest && state.digest !== result.source_digest) return
@@ -118,7 +118,9 @@ export default class extends Controller {
     state.abort.abort()
     clearTimeout(state.timer)
     this.visibility.unobserve(row)
-    state.nodes?.forEach(({ node, original }) => { if (node.isConnected) node.textContent = original })
+    state.nodes?.forEach(({ node, original, translated }) => {
+      if (node.isConnected && node.textContent === translated) node.textContent = original
+    })
     if (state.exportHandler) row.removeEventListener("click", state.exportHandler, true)
     this.rows.delete(row)
   }
