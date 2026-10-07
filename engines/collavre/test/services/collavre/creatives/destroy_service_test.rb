@@ -41,13 +41,39 @@ module Collavre
         assert Creative.exists?(nested_link.id)
       end
 
+      test "removing an owned intermediate link preserves downstream links for both deletion modes" do
+        viewer = users(:two)
+        [ false, true ].each do |with_children|
+          link = Creative.create!(user: viewer, origin: @target)
+          downstream = Creative.create!(user: @user, origin: link, parent: @root)
+          tail = Creative.create!(user: viewer, origin: downstream)
+          link.linked_creatives.load
+
+          assert link.destroyable_by?(viewer)
+          assert_not @target.destroyable_by?(viewer)
+          DestroyService.new(creative: link, user: viewer, delete_with_children: with_children).call
+
+          assert_not Creative.exists?(link.id)
+          assert_equal @target.id, downstream.reload.origin_id
+          assert_equal @user.id, downstream.user_id
+          assert_equal @root.id, downstream.parent_id
+          assert_equal downstream.id, tail.reload.origin_id
+          assert_equal @target, tail.effective_origin
+          assert Creative.exists?(@child.id)
+          assert_not downstream.destroyable_by?(viewer)
+        end
+      end
+
       test "does not cascade through linked descendants into their origin" do
         other = Creative.create!(description: "Other", user: @user)
         other_child = Creative.create!(description: "Other child", user: @user, parent: other)
         link = Creative.create!(user: @user, parent: @child, origin: other)
 
+        downstream = Creative.create!(user: users(:two), origin: link)
+
         DestroyService.new(creative: @target, user: @user, delete_with_children: true).call
 
+        assert_equal other.id, downstream.reload.origin_id
         assert_not Creative.exists?(link.id)
         assert Creative.exists?(other.id)
         assert Creative.exists?(other_child.id)

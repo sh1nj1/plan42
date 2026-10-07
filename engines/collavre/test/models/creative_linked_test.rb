@@ -17,6 +17,33 @@ class CreativeLinkedTest < ActiveSupport::TestCase
     end
   end
 
+  test "direct shell destruction preserves links while original destruction still cascades" do
+    original = Creative.create!(user: users(:one), description: "Original")
+    link = Creative.create!(user: users(:two), origin: original)
+    downstream = Creative.create!(user: users(:one), origin: link)
+
+    link.destroy!
+
+    assert_equal original.id, downstream.reload.origin_id
+    assert_equal original, downstream.effective_origin
+    original.destroy!
+    assert_not Creative.exists?(downstream.id)
+  end
+
+  test "aborted shell destruction rolls back downstream repointing" do
+    original = Creative.create!(user: users(:one), description: "Original")
+    link = Creative.create!(user: users(:two), origin: original)
+    downstream = Creative.create!(user: users(:one), origin: link)
+    link.define_singleton_method(:preserve_downstream_links) do
+      super()
+      throw :abort
+    end
+
+    assert_not link.destroy
+    assert_equal link.id, downstream.reload.origin_id
+    assert Creative.exists?(link.id)
+  end
+
   test "children created under a linked creative are redirected to origin" do
     owner = User.create!(email: "owner@example.com", password: "password", name: "Owner")
     viewer = User.create!(email: "viewer@example.com", password: "password", name: "Viewer")

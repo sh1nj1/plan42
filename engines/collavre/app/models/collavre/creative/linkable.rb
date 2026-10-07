@@ -7,7 +7,8 @@ module Collavre
         belongs_to :origin, class_name: "Collavre::Creative", optional: true
         has_many :linked_creatives, class_name: "Collavre::Creative", foreign_key: :origin_id, dependent: :destroy
 
-        # origin_id is immutable once a record is persisted. Permission
+        # origin_id is immutable once persisted, except for the deletion-only
+        # rewrite below that preserves the effective origin. Permission
         # resolution (PermissionChecker / PermissionFilter) treats a linked
         # creative as its origin, and the permission cache has no invalidation
         # path for a moved origin link. Promote the "origin_id is immutable"
@@ -17,6 +18,7 @@ module Collavre
         attr_readonly :origin_id
 
         validate :origin_cannot_be_self
+        before_destroy :preserve_downstream_links, prepend: true
         before_validation :redirect_parent_to_origin
       end
 
@@ -76,6 +78,15 @@ module Collavre
       end
 
       private
+
+      def preserve_downstream_links
+        return unless origin_id.present?
+
+        # This deletion-only rewrite keeps the effective origin and permissions unchanged.
+        # Bypass attr_readonly deliberately, before dependent: :destroy loads the links.
+        linked_creatives.update_all(origin_id: origin_id)
+        linked_creatives.reset
+      end
 
       def redirect_parent_to_origin
         if parent&.origin_id.present?

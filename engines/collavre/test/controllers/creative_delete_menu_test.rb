@@ -118,12 +118,17 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
 
     [ nil, true ].each do |recursive|
       link = Creative.create!(user: @user, parent: @parent, origin: origin)
+      downstream = Creative.create!(user: users(:two), origin: link)
       delete creative_path(link), params: { delete_with_children: recursive }, headers: { "Accept" => "application/json" }
       assert_response :no_content
       assert_not Creative.exists?(link.id)
       assert Creative.exists?(origin.id)
       assert_equal origin.id, child.reload.parent_id
       assert Creative.exists?(other_link.id)
+      assert_equal origin.id, downstream.reload.origin_id
+      assert_equal users(:two).id, downstream.user_id
+      assert downstream.has_permission?(@user, :read)
+      assert_not downstream.destroyable_by?(@user)
     end
 
     [ origin, other_link ].each do |target|
