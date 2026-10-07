@@ -80,8 +80,9 @@ module Collavre
       private
 
       def preserve_downstream_links
-        return unless origin_id.present?
+        return if origin_id.blank? || destroyed_by_association
 
+        # Association-driven destruction must retain the recursive link cascade.
         # This deletion-only rewrite keeps the effective origin unchanged
         # and resolves permissions against the new immediate origin.
         # Bypass attr_readonly deliberately, before dependent: :destroy loads the links.

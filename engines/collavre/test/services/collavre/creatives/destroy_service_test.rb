@@ -22,6 +22,22 @@ module Collavre
         assert_not Creative.exists?(grandchild.id)
       end
 
+      test "deleting an original cascades through intact linked chains in both modes" do
+        [ false, true ].each do |with_children|
+          original = Creative.create!(user: @user, description: "Original")
+          link = Creative.create!(user: users(:two), origin: original)
+          downstream = Creative.create!(user: @user, origin: link)
+          tail = Creative.create!(user: users(:two), origin: downstream)
+          original.linked_creatives.load
+
+          DestroyService.new(creative: original, user: @user, delete_with_children: with_children).call
+
+          [ original, link, downstream, tail ].each do |creative|
+            assert_not Creative.exists?(creative.id)
+          end
+        end
+      end
+
       test "reparents children by default" do
         DestroyService.new(creative: @target, user: @user).call
 

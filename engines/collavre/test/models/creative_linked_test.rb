@@ -30,6 +30,21 @@ class CreativeLinkedTest < ActiveSupport::TestCase
     assert_not Creative.exists?(downstream.id)
   end
 
+  test "original destruction cascades through intact chained links" do
+    original = Creative.create!(user: users(:one), description: "Original")
+    link = Creative.create!(user: users(:two), origin: original)
+    downstream = Creative.create!(user: users(:one), origin: link)
+    tail = Creative.create!(user: users(:two), origin: downstream)
+    original.linked_creatives.load
+    link.linked_creatives.load
+
+    original.destroy!
+
+    [ original, link, downstream, tail ].each do |creative|
+      assert_not Creative.exists?(creative.id)
+    end
+  end
+
   test "aborted shell destruction rolls back downstream repointing" do
     original = Creative.create!(user: users(:one), description: "Original")
     link = Creative.create!(user: users(:two), origin: original)
