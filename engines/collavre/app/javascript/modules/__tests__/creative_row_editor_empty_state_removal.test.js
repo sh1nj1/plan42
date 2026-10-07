@@ -30,6 +30,8 @@ jest.unstable_mockModule('../../lib/utils/dialog', () => ({
   promptDialog: jest.fn(() => Promise.resolve(null)),
 }))
 
+const { confirmDialog } = await import('../../lib/utils/dialog')
+
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
 const {
   buildEditorDom, defineTreeRowStub, renderEmptyState, appendExistingRow, flush,
@@ -135,6 +137,63 @@ describe('empty state after the last creative is removed', () => {
     buildEditorDom(document.getElementById('center-frame'))
     initializeCreativeRowEditor()
     document.getElementById('metadata-popup').style.display = 'none'
+  })
+
+  test.each([false, true])('link removal preserves origin child IDs (withChildren=%s)', async (withChildren) => {
+    renderEmptyState()
+    const calls = stubTreeController()
+    const { tree, rowComponent } = appendExistingRow(42)
+    rowComponent.dataset.originId = '100'
+    appendChildRow(42, 43)
+    appendChildRow(43, 44)
+    const destroyed = jest.fn()
+    document.addEventListener('creative-destroyed', destroyed, { once: true })
+
+    await openEditorOn(tree)
+    document.getElementById(withChildren ? 'inline-delete-with-children' : 'inline-delete').click()
+    await flush()
+
+    expect(destroyMock).toHaveBeenCalledWith('42', false)
+    expect(destroyed).toHaveBeenCalledTimes(1)
+    expect(destroyed.mock.calls[0][0].detail.creativeIds).toEqual(['42'])
+    expect(calls.requestReload).toBe(0)
+  })
+
+  test('link menu uses localized removal wording and resets for a regular creative', async () => {
+    const button = document.getElementById('inline-delete')
+    Object.assign(button.dataset, {
+      removeLinkLabel: '링크 제거', removeLinkConfirm: '링크를 제거하시겠습니까?',
+      deleteLabel: '이 글만 삭제', deleteConfirm: '이 글을 삭제하시겠습니까?',
+    })
+    const { tree, rowComponent } = appendExistingRow(42)
+    rowComponent.dataset.originId = '100'
+    const regular = appendExistingRow(45)
+    await openEditorOn(tree)
+
+    expect(button.textContent).toBe('링크 제거')
+    expect(button.title).toBe('링크 제거')
+    expect(document.getElementById('inline-delete-with-children').hidden).toBe(true)
+    button.click()
+    await flush()
+    expect(confirmDialog).toHaveBeenCalledWith('링크를 제거하시겠습니까?', { danger: true })
+
+    await openEditorOn(regular.tree)
+    expect(button.textContent).toBe('이 글만 삭제')
+    expect(button.dataset.confirm).toBe('이 글을 삭제하시겠습니까?')
+    expect(document.getElementById('inline-delete-with-children').hidden).toBe(false)
+  })
+
+  test('regular recursive deletion includes descendants in its destruction event', async () => {
+    const { tree } = appendExistingRow(42)
+    appendChildRow(42, 43)
+    appendChildRow(43, 44)
+    const destroyed = jest.fn()
+    document.addEventListener('creative-destroyed', destroyed, { once: true })
+    await openEditorOn(tree)
+    document.getElementById('inline-delete-with-children').click()
+    await flush()
+    expect(destroyMock).toHaveBeenCalledWith('42', true)
+    expect(destroyed.mock.calls[0][0].detail.creativeIds).toEqual(['42', '43', '44'])
   })
 
   test('restores the hidden card when the first creative is deleted again', async () => {

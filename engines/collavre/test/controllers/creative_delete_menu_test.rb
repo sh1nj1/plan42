@@ -17,6 +17,9 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
         get creatives_path(id: @creative.id), headers: headers
 
         assert_response :success
+        assert_select "#inline-delete[data-remove-link-label=?][data-remove-link-confirm=?]",
+          I18n.t("collavre.creatives.index.remove_link", locale: locale),
+          I18n.t("collavre.creatives.index.are_you_sure_remove_link", locale: locale)
         assert_select "#creative-overflow-menu form[action=?][data-turbo-frame='_top']", creative_path(@creative) do
           assert_select "[name='_method'][value='delete']"
           assert_select "[name='delete_with_children'][value='true']"
@@ -96,6 +99,9 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
       [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
         get creatives_path(id: link.id), headers: headers
         assert_response :success
+        assert_select "#inline-delete[data-remove-link-label=?][data-remove-link-confirm=?]",
+          I18n.t("collavre.creatives.index.remove_link", locale: locale),
+          I18n.t("collavre.creatives.index.are_you_sure_remove_link", locale: locale)
         assert_select "#creative-overflow-menu form[action=?][data-turbo-confirm=?]", creative_path(link),
           I18n.t("collavre.creatives.index.are_you_sure_remove_link", locale: locale) do
           assert_select "#delete-current-creative-btn", text: I18n.t("collavre.creatives.index.remove_link", locale: locale)
