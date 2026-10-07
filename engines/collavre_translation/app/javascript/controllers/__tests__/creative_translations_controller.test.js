@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import { jest } from '@jest/globals'
 import { Application } from '@hotwired/stimulus'
+import { setCreativeTitle } from 'collavre/lib/creative_title'
 
 const fetchMock = jest.fn()
 jest.unstable_mockModule('collavre/lib/api/csrf_fetch', () => ({ default: fetchMock }))
@@ -419,4 +420,26 @@ test('chat navigation aborts stale requests and preserves the newly assigned tit
   await tick()
   expect(controller.rows.has(title)).toBe(false)
   expect(title.textContent).toBe('Comments')
+})
+
+test('reopening the same chat preserves translated nodes and original toggling', async () => {
+  const title = addNavigationLabel('English title')
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  await controller.load(title)
+  const state = controller.rows.get(title)
+  const node = title.firstChild
+  expect(title.textContent).toBe('번역 제목')
+  title.hidden = true
+  setCreativeTitle(title, 'English title', 1)
+  title.hidden = false
+  await tick()
+  expect(controller.rows.get(title)).toBe(state)
+  expect(title.firstChild).toBe(node)
+  expect(title.textContent).toBe('번역 제목')
+  controller.menuButton.click()
+  expect(title.textContent).toBe('English title')
+  setCreativeTitle(title, 'English title', '1')
+  await tick()
+  controller.menuButton.click()
+  expect(title.textContent).toBe('번역 제목')
 })
