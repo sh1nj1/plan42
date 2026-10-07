@@ -73,6 +73,40 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal order, row_order
   end
 
+  test "document text keeps the tree view typography" do
+    @first.update!(description: "<h1>Heading one</h1>")
+    @second.update!(description: "<h2>Heading two</h2><h3>Heading three</h3>")
+    paragraph = Creative.create!(description: "Plain paragraph", user: @user, parent: @root)
+    visit collavre.creative_path(@root)
+    selectors = [ ".creative-tree-title .page-title",
+      "#{content_selector(@first)} h1",
+      "#{content_selector(@second)} h2",
+      "#{content_selector(@second)} h3",
+      content_selector(@first), content_selector(paragraph), ".creative-title-content" ]
+    styles = selectors.map do |selector|
+      assert_selector selector
+      page.evaluate_script(<<~JS)
+        (() => {
+          const style = getComputedStyle(document.querySelector(#{selector.to_json}));
+          return [style.fontFamily, style.fontSize, style.lineHeight, style.fontWeight, style.letterSpacing];
+        })()
+      JS
+    end
+
+    find("#document-view-btn").click
+    assert_selector ".creative-document-view"
+
+    selectors.zip(styles).each do |selector, style|
+      actual = page.evaluate_script(<<~JS)
+        (() => {
+          const style = getComputedStyle(document.querySelector(#{selector.to_json}));
+          return [style.fontFamily, style.fontSize, style.lineHeight, style.fontWeight, style.letterSpacing];
+        })()
+      JS
+      assert_equal style, actual, "Typography changed for #{selector}"
+    end
+  end
+
   test "the document view stays on while moving through the tree and after a reload" do
     visit collavre.creative_path(@root)
     find("#document-view-btn").click
