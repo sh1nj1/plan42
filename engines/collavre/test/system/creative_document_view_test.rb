@@ -69,24 +69,37 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_equal order, row_order
   end
 
-  test "document titles and headings keep the tree view font" do
+  test "document text keeps the tree view typography" do
     @first.update!(description: "<h1>Heading one</h1>")
     @second.update!(description: "<h2>Heading two</h2><h3>Heading three</h3>")
+    paragraph = Creative.create!(description: "Plain paragraph", user: @user, parent: @root)
     visit collavre.creative_path(@root)
     selectors = [ ".creative-tree-title .page-title",
       "#{content_selector(@first)} h1",
       "#{content_selector(@second)} h2",
-      "#{content_selector(@second)} h3" ]
-    fonts = selectors.map do |selector|
+      "#{content_selector(@second)} h3",
+      content_selector(@first), content_selector(paragraph), ".creative-title-content" ]
+    styles = selectors.map do |selector|
       assert_selector selector
-      page.evaluate_script("getComputedStyle(document.querySelector(#{selector.to_json})).fontFamily")
+      page.evaluate_script(<<~JS)
+        (() => {
+          const style = getComputedStyle(document.querySelector(#{selector.to_json}));
+          return [style.fontFamily, style.fontSize, style.lineHeight, style.fontWeight, style.letterSpacing];
+        })()
+      JS
     end
 
     find("#document-view-btn").click
     assert_selector ".creative-document-view"
 
-    selectors.zip(fonts).each do |selector, font|
-      assert_equal font, page.evaluate_script("getComputedStyle(document.querySelector(#{selector.to_json})).fontFamily")
+    selectors.zip(styles).each do |selector, style|
+      actual = page.evaluate_script(<<~JS)
+        (() => {
+          const style = getComputedStyle(document.querySelector(#{selector.to_json}));
+          return [style.fontFamily, style.fontSize, style.lineHeight, style.fontWeight, style.letterSpacing];
+        })()
+      JS
+      assert_equal style, actual, "Typography changed for #{selector}"
     end
   end
 

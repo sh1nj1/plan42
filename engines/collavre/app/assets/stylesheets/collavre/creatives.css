@@ -1901,13 +1901,6 @@ creative-tree-row.is-being-edited .creative-tree {
     border-color: var(--color-active, var(--text-muted));
 }
 
-.creative-document-view {
-    --creative-h1-size: 1.6em;
-    --creative-h2-size: 1.3em;
-    --creative-h3-size: 1.12em;
-    --creative-body-lh: 1.7;
-}
-
 .creative-document-view .tree-line {
     display: none;
 }
@@ -1940,12 +1933,7 @@ creative-tree-row.is-being-edited .creative-tree {
 .creative-document-view .creative-title-content {
     min-width: 0;
     max-width: none;
-    line-height: var(--creative-body-lh);
     user-select: text;
-}
-
-.creative-document-view .creative-row-start :is(h1, h2, h3) .creative-content {
-    line-height: 1.3;
 }
 
 .creative-document-view .creative-row:hover .creative-content,
