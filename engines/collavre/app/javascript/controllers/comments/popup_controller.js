@@ -5,6 +5,7 @@ import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
 import { openingFocusOptions } from './popup_focus'
 import { scheduleOpenFromUrl, clearPendingOpenFromUrl } from './popup_url_open'
+
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
@@ -356,12 +357,11 @@ export default class extends Controller {
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
-    const snippet = button.dataset.creativeSnippet || ''
+    const snippet = setCreativeTitle(this.titleTarget, button.dataset.creativeSnippet || '', resolvedCreativeId)
 
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
-    setCreativeTitle(this.titleTarget, snippet, resolvedCreativeId)
 
     this._markChatActiveRow(resolvedCreativeId)
 
@@ -399,13 +399,12 @@ export default class extends Controller {
     if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
-    const snippet = this.element.dataset.creativeSnippet || ''
+    const snippet = setCreativeTitle(this.titleTarget, this.element.dataset.creativeSnippet || '', resolvedCreativeId)
 
     this.currentButton = null
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = 'true'
-    setCreativeTitle(this.titleTarget, snippet, resolvedCreativeId)
 
     this._markChatActiveRow(resolvedCreativeId)
 
