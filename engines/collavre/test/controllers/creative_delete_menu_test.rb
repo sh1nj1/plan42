@@ -148,6 +148,38 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
     assert Creative.exists?(origin.id)
   end
 
+  test "revoked root links expose removal without disclosing origin content in full and frame views" do
+    origin = Creative.create!(user: users(:two), description: "Secret revoked origin")
+    child = Creative.create!(user: users(:two), parent: origin, description: "Secret revoked child")
+    link = Creative.create!(user: @user, origin: origin)
+    other_link = Creative.create!(user: users(:two), origin: origin)
+    assert_not link.has_permission?(@user, :read)
+
+    %w[en ko].each do |locale|
+      @user.update!(locale: locale)
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path(id: link.id), headers: headers
+        assert_response :success
+        assert_select "#creative-overflow-menu form[action=?][data-turbo-confirm=?]", creative_path(link),
+          I18n.t("collavre.creatives.index.are_you_sure_remove_link", locale: locale) do
+          assert_select "#delete-current-creative-btn", text: I18n.t("collavre.creatives.index.remove_link", locale: locale)
+        end
+        assert_not_includes response.body, origin.description
+        assert_not_includes response.body, child.description
+        assert_select "#share-creative-btn", count: 0
+        get creatives_path(id: other_link.id), headers: headers
+        assert_select "#delete-current-creative-btn", count: 0
+      end
+    end
+
+    delete creative_path(link), params: { delete_with_children: true }
+    assert_redirected_to creatives_path
+    assert_not Creative.exists?(link.id)
+    assert Creative.exists?(origin.id)
+    assert Creative.exists?(child.id)
+    assert Creative.exists?(other_link.id)
+  end
+
   test "nested admin deletion redirects to root when the parent is private" do
     parent = Creative.create!(user: users(:two), description: "Private parent")
     target = Creative.create!(user: users(:two), parent: parent, description: "Shared target")

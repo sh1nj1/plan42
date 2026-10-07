@@ -157,13 +157,14 @@
           <div class="creative-overflow-divider"></div>
           <%= render 'integrations_menu', creative: current_creative %>
         <% end %>
-        <% if current_creative&.destroyable_by?(Current.user) %>
+        <% removable_creative = current_creative || @removable_link %>
+        <% if removable_creative&.destroyable_by?(Current.user) %>
           <div class="creative-overflow-divider"></div>
-          <%= button_to creative_path(current_creative), method: :delete,
+          <%= button_to creative_path(removable_creative), method: :delete,
                 params: { delete_with_children: true },
                 id: 'delete-current-creative-btn', class: 'popup-menu-item danger-link',
-                form: { data: { turbo_frame: '_top', turbo_confirm: t(current_creative.origin_id.present? ? 'collavre.creatives.index.are_you_sure_remove_link' : 'collavre.creatives.index.are_you_sure_delete_with_children') } } do %>
-            <span aria-hidden="true"><%= svg_tag 'trash-bold-outline.svg', width: 16, height: 16 %></span> <%= t(current_creative.origin_id.present? ? 'collavre.creatives.index.remove_link' : 'collavre.creatives.index.delete') %>
+                form: { data: { turbo_frame: '_top', turbo_confirm: t(removable_creative.origin_id.present? ? 'collavre.creatives.index.are_you_sure_remove_link' : 'collavre.creatives.index.are_you_sure_delete_with_children') } } do %>
+            <span aria-hidden="true"><%= svg_tag 'trash-bold-outline.svg', width: 16, height: 16 %></span> <%= t(removable_creative.origin_id.present? ? 'collavre.creatives.index.remove_link' : 'collavre.creatives.index.delete') %>
           <% end %>
         <% end %>
         <div class="creative-overflow-divider mobile-only"></div>
