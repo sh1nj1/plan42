@@ -85,6 +85,63 @@ class CreativeDeleteMenuTest < ActionDispatch::IntegrationTest
     assert Creative.exists?(@child.id)
   end
 
+  test "owned public read links show localized removal in full and frame menus" do
+    origin = Creative.create!(user: users(:two), description: "Public origin")
+    CreativeShare.create!(creative: origin, permission: :read)
+    link = Creative.create!(user: @user, parent: @parent, origin: origin)
+    assert_not link.has_permission?(@user, :write)
+
+    %w[en ko].each do |locale|
+      @user.update!(locale: locale)
+      [ {}, { "Turbo-Frame" => "creative-workspace-content" } ].each do |headers|
+        get creatives_path(id: link.id), headers: headers
+        assert_response :success
+        assert_select "#creative-overflow-menu form[action=?][data-turbo-confirm=?]", creative_path(link),
+          I18n.t("collavre.creatives.index.are_you_sure_remove_link", locale: locale) do
+          assert_select "#delete-current-creative-btn", text: I18n.t("collavre.creatives.index.remove_link", locale: locale)
+        end
+      end
+    end
+  end
+
+  test "owned links can be removed with either deletion option without affecting the origin tree or other links" do
+    origin = Creative.create!(user: users(:two), description: "Public origin")
+    child = Creative.create!(user: users(:two), parent: origin, description: "Origin child")
+    CreativeShare.create!(creative: origin, permission: :read)
+    other_link = Creative.create!(user: users(:two), origin: origin)
+
+    [ nil, true ].each do |recursive|
+      link = Creative.create!(user: @user, parent: @parent, origin: origin)
+      delete creative_path(link), params: { delete_with_children: recursive }, headers: { "Accept" => "application/json" }
+      assert_response :no_content
+      assert_not Creative.exists?(link.id)
+      assert Creative.exists?(origin.id)
+      assert_equal origin.id, child.reload.parent_id
+      assert Creative.exists?(other_link.id)
+    end
+
+    [ origin, other_link ].each do |target|
+      assert_no_difference "Creative.count" do
+        delete creative_path(target), params: { delete_with_children: true }
+      end
+      assert_redirected_to creative_path(target)
+    end
+    get creatives_path(id: other_link.id)
+    assert_select "#delete-current-creative-btn", count: 0
+  end
+
+  test "owned link removal remains available after origin sharing is revoked" do
+    origin = Creative.create!(user: users(:two), description: "Private origin")
+    link = Creative.create!(user: @user, parent: @parent, origin: origin)
+    assert_not link.has_permission?(@user, :read)
+
+    delete creative_path(link)
+
+    assert_redirected_to creatives_path(id: @parent.id)
+    assert_not Creative.exists?(link.id)
+    assert Creative.exists?(origin.id)
+  end
+
   test "nested admin deletion redirects to root when the parent is private" do
     parent = Creative.create!(user: users(:two), description: "Private parent")
     target = Creative.create!(user: users(:two), parent: parent, description: "Shared target")

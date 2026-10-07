@@ -20,6 +20,13 @@ module Collavre
         before_validation :redirect_parent_to_origin
       end
 
+      def destroyable_by?(user)
+        return false unless Kollavy::AccessScope.allowed?(self, user)
+        return true if origin_id.present? && user && user_id == user.id
+
+        has_permission?(user, :admin)
+      end
+
       # Returns the effective attribute for linked creatives
       def effective_attribute(attr, visited_ids = Set.new)
         return self[attr] if origin_id.nil? || attr.to_s == "parent_id"

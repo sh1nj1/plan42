@@ -1,6 +1,22 @@
 require "test_helper"
 
 class CreativeLinkedTest < ActiveSupport::TestCase
+  test "link removal checks the shell owner and retains the access scope boundary" do
+    owner = users(:one)
+    viewer = users(:two)
+    original = Creative.create!(user: owner, description: "Original")
+    link = Creative.create!(user: viewer, origin: original)
+
+    assert_equal owner, link.user
+    assert link.destroyable_by?(viewer)
+    assert_not link.destroyable_by?(nil)
+    assert original.destroyable_by?(owner)
+    assert_not original.destroyable_by?(viewer)
+    Collavre::Kollavy::AccessScope.stub :allowed?, false do
+      assert_not link.destroyable_by?(viewer)
+    end
+  end
+
   test "children created under a linked creative are redirected to origin" do
     owner = User.create!(email: "owner@example.com", password: "password", name: "Owner")
     viewer = User.create!(email: "viewer@example.com", password: "password", name: "Viewer")
