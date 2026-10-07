@@ -5,7 +5,6 @@ import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
 import { openingFocusOptions } from './popup_focus'
 import { scheduleOpenFromUrl, clearPendingOpenFromUrl } from './popup_url_open'
-
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
 const CREATIVE_DESTROYED_EVENT = 'creative-destroyed'
