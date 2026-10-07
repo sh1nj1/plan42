@@ -1,3 +1,4 @@
+import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
@@ -307,7 +308,7 @@ export default class extends Controller {
     this.element.dataset.creativeId = ''
     this.element.dataset.canComment = 'false'
     this.element.dataset.creativeSnippet = ''
-    this.titleTarget.textContent = this.element.dataset.defaultTitle || ''
+    setCreativeTitle(this.titleTarget, this.element.dataset.defaultTitle || '', '')
     this._clearChatActiveRow()
     this._hideNavDropdown()
 
@@ -356,12 +357,11 @@ export default class extends Controller {
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
-    const snippet = button.dataset.creativeSnippet || ''
+    const snippet = setCreativeTitle(this.titleTarget, button.dataset.creativeSnippet || '', resolvedCreativeId)
 
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
-    this.titleTarget.textContent = snippet
 
     this._markChatActiveRow(resolvedCreativeId)
 
@@ -399,13 +399,12 @@ export default class extends Controller {
     if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
-    const snippet = this.element.dataset.creativeSnippet || ''
+    const snippet = setCreativeTitle(this.titleTarget, this.element.dataset.creativeSnippet || '', resolvedCreativeId)
 
     this.currentButton = null
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = 'true'
-    this.titleTarget.textContent = snippet
 
     this._markChatActiveRow(resolvedCreativeId)
 
