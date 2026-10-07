@@ -82,7 +82,8 @@ module Collavre
       def preserve_downstream_links
         return unless origin_id.present?
 
-        # This deletion-only rewrite keeps the effective origin and permissions unchanged.
+        # This deletion-only rewrite keeps the effective origin unchanged
+        # and resolves permissions against the new immediate origin.
         # Bypass attr_readonly deliberately, before dependent: :destroy loads the links.
         linked_creatives.update_all(origin_id: origin_id)
         linked_creatives.reset
