@@ -54,6 +54,12 @@ class CommentTranslationLayoutTest < ApplicationSystemTestCase
             button.click
             assert_equal I18n.t('collavre_translation.show_translation', locale: locale), button[:title]
             assert_equal button[:title], button['aria-label']
+          elsif terminal_status == "failed"
+            retry_label = I18n.t('collavre_translation.translate', locale: locale)
+            assert_selector '#translation-layout-fixture .comment-content-action-controls button:not(:disabled)', text: retry_label
+            button = find('#translation-layout-fixture .comment-content-action-controls button')
+            assert_equal retry_label, button[:title]
+            assert_equal retry_label, button['aria-label']
           else
             assert_no_selector '#translation-layout-fixture .comment-content-action-controls button'
           end

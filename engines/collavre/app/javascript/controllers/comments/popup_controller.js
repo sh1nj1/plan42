@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
+import { openingFocusOptions } from './popup_focus'
 import { scheduleOpenFromUrl, clearPendingOpenFromUrl } from './popup_url_open'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
@@ -435,6 +436,7 @@ export default class extends Controller {
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId, openGeneration }) {
+    const focusOptions = openingFocusOptions(this.currentButton)
     this.topicsController?.clearOverrideTopicId()
     // Drop the previous creative's topic selection from the form controller
     // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
@@ -486,9 +488,7 @@ export default class extends Controller {
       suppressedListController.suppressTopicChangeLoad = false
     }
 
-    if (this.formController) {
-      this.formController.onPopupOpened({ creativeId, canComment })
-    }
+    this.formController?.onPopupOpened({ creativeId, canComment, ...focusOptions })
     if (this.listController) {
       const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
       this.listController.onPopupOpened({ creativeId, highlightId, topicId })

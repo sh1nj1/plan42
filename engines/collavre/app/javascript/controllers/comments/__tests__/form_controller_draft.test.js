@@ -135,6 +135,85 @@ describe('FormController - draft persistence', () => {
       expect(document.activeElement).toBe(input)
     })
 
+    const voiceResult = () => controller.handleRecognitionResult({
+      resultIndex: 0,
+      results: [[{ transcript: 'spoken text' }]],
+    })
+    const focusVoiceButton = () => {
+      controller.voiceButtonTarget.style.display = ''
+      controller.voiceButtonTarget.focus()
+      jest.spyOn(controller, 'setupSpeechRecognition').mockReturnValue(true)
+      jest.spyOn(controller, 'tryStartRecognition').mockImplementation(() => {})
+      controller.startSpeechRecognition()
+    }
+
+    test('voice results focus the composer from the voice button', () => {
+      focusVoiceButton()
+      controller.textareaTarget.value = 'Existing'
+      voiceResult()
+      flush()
+      expect(controller.textareaTarget.value).toBe('Existing spoken text')
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test.each(['button', 'a'])('voice results restore focus when activation leaves a stale %s focused', (tag) => {
+      const stale = document.createElement(tag)
+      if (tag === 'a') stale.href = '#prior'
+      container.append(stale)
+      focusVoiceButton()
+      controller.listening = false
+      stale.focus()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test('voice results preserve an input focused when recognition starts', () => {
+      focusVoiceButton()
+      controller.listening = false
+      const input = otherInput()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    test('an already active recognition session retains its initial focus owner', () => {
+      focusVoiceButton()
+      controller.submitTarget.focus()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve focus moved while recognition is pending', () => {
+      focusVoiceButton()
+      controller.submitTarget.focus()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve a different button selected before the frame', () => {
+      focusVoiceButton()
+      voiceResult()
+      controller.submitTarget.focus()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve an open creative editor', () => {
+      focusVoiceButton()
+      const editor = document.createElement('form')
+      editor.id = 'inline-edit-form'
+      container.append(editor)
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.voiceButtonTarget)
+    })
+
     test('comment editing explicitly focuses the composer', () => {
       otherInput()
       controller.startEditing({ id: '1', content: 'edit me' })

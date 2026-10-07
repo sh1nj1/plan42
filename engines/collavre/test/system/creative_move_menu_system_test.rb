@@ -153,7 +153,8 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
 
   test "Escape closes floating results before cancelling and restoring focus" do
     visit collavre.creatives_path(id: @source.id)
-    open_move_menu(:return)
+    open_move_menu(:return, delayed_chat_focus: true)
+    assert_selector "#creative-move-results"
     find('[data-creative-move-target="destination"]').send_keys(:escape)
     assert_selector "dialog[open][data-creative-move-target]"
     assert_no_selector "#creative-move-results"
@@ -463,10 +464,24 @@ class CreativeMoveMenuSystemTest < ApplicationSystemTestCase
     )
   end
 
-  def open_move_menu(key = nil)
+  def open_move_menu(key = nil, delayed_chat_focus: false)
     toggle = find('[aria-controls="creative-overflow-menu"]')
     key ? toggle.send_keys(key) : toggle.click
     action = find('#creative-overflow-menu [data-creative-move-id]')
+    if delayed_chat_focus
+      # Reproduce a comments response arriving while the menu action has focus.
+      page.evaluate_async_script(<<~JS, action)
+        const action = arguments[0]
+        const done = arguments[arguments.length - 1]
+        action.focus()
+        const popup = document.getElementById('comments-popup')
+        const form = window.Stimulus.getControllerForElementAndIdentifier(popup, 'comments--form')
+        form.focusTextarea()
+        requestAnimationFrame(() => done())
+      JS
+      assert page.evaluate_script("document.activeElement === arguments[0]", action),
+        "Delayed chat loading must preserve focus on the move action"
+    end
     key ? action.send_keys(key) : action.click
   end
 
