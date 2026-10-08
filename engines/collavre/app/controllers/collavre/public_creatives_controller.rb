@@ -17,6 +17,10 @@ module Collavre
       @creative = Creative.find_by!(public_id: params[:public_id])
       raise ActiveRecord::RecordNotFound unless @creative.origin_id.nil? && @creative.publicly_readable?
 
+      if SystemSetting.creatives_login_required? && !@creative.has_permission?(Current.user, :read)
+        raise ActiveRecord::RecordNotFound
+      end
+
       slug = @creative.public_slug
       return if params[:slug].to_s == slug
 

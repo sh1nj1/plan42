@@ -99,6 +99,17 @@ module Collavre
       assert_response :not_found
     end
 
+    test "login-gated public pages honor user-specific denies" do
+      public_id = publish
+      SystemSetting.create!(key: "creatives_login_required", value: "true")
+      perform_enqueued_jobs { CreativeShare.create!(creative: @creative, user: users(:two), permission: :no_access) }
+      sign_in_as(users(:two), password: "password")
+
+      get public_creative_path(public_id: public_id, slug: "public-plan")
+
+      assert_response :not_found
+    end
+
     test "requires sign-in when creatives require login" do
       public_id = publish
       SystemSetting.create!(key: "creatives_login_required", value: "true")
