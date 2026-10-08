@@ -50,6 +50,7 @@ module Collavre
     after_update :reconcile_topic_read_pointers_for_permission_change, if: :permission_context_changed?
     after_destroy :reconcile_topic_read_pointers_for_permission_change
     after_commit :broadcast_share_change, on: [ :create, :update ]
+    after_commit :assign_public_id, on: [ :create, :update ], if: :public_grant?
     after_destroy_commit :remove_cache
     after_destroy_commit :broadcast_share_destroy
 
@@ -63,7 +64,18 @@ module Collavre
       shared_by_id || creative.user_id
     end
 
+    # A public grant (no user) that allows reading publishes the creative.
+    def public_grant?
+      user_id.nil? && !no_access?
+    end
+
     private
+
+    # Give a newly published creative its public address up front, so the
+    # sitemap and share modal rarely need to assign one on a read.
+    def assign_public_id
+      creative&.effective_origin&.ensure_public_id!
+    end
 
     def touch_creative_subtree
       creatives_to_touch = []

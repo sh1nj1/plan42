@@ -80,6 +80,8 @@
 *   **User Search**: Auto-suggest users by name or email.
 *   **User List**: View list of users with access.
 *   **Permission Management**: Update permissions or remove users.
+*   **Search Discovery**: `/sitemap.xml` lists explicitly published, active root creatives that anonymous visitors can read. Descendants and linked creatives are excluded from sitemap entries.
+*   **Crawler Policy**: `/robots.txt` disallows crawling by default, explicitly allows `/p/` and `/sitemap.xml` under the engine mount path, plus the assets and tree JSON a client-rendered `/p/` page loads, and lists the sitemap. Requiring login for creatives empties the sitemap and disallows all crawling.
 
 ### User Settings
 *   **Profile**: Manage user profile.
