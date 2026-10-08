@@ -1,7 +1,7 @@
 require "test_helper"
 
 module Collavre
-  class PublicCreativesControllerTest < ActionDispatch::IntegrationTest
+  class CreativesControllerPublicPageTest < ActionDispatch::IntegrationTest
     setup do
       SystemSetting.where(key: "creatives_login_required").destroy_all
       @owner = users(:one)
@@ -13,25 +13,44 @@ module Collavre
       creative.ensure_public_id!
     end
 
-    test "renders a publicly shared creative signed out" do
+    test "renders the client-rendered creative view with server-rendered metadata" do
       public_id = publish
+      Creative.create!(user: @owner, parent: @creative, description: "<p>First step</p><p>Details</p>")
+      canonical = public_creative_url(public_id: public_id, slug: "public-plan")
 
       get public_creative_path(public_id: public_id, slug: "public-plan")
 
       assert_response :success
-      assert_select "h1", "Public Plan"
-      assert_select "title", /Public Plan/
-      assert_select "a", text: I18n.t("collavre.public_creatives.show.open_in_app"), count: 0
+      assert_select "title", "Public Plan — #{I18n.t('app.name')}"
+      assert_select "meta[name=description][content=?]", "First step Details"
+      assert_select "link[rel=canonical][href=?]", canonical
+      assert_select "meta[property='og:title'][content=?]", "Public Plan"
+      assert_select "meta[property='og:description'][content=?]", "First step Details"
+      assert_select "meta[property='og:url'][content=?]", canonical
+      assert_select "meta[property='og:type'][content=article]"
+      assert_select "meta[name='twitter:card'][content=summary]"
+      assert_select "meta[name=robots]", count: 0
+      assert_select "creative-tree-row[is-title][creative-id=?]", @creative.id.to_s
+      assert_select "#creatives[data-creatives--tree-url-value*=?]", "id=#{@creative.id}"
     end
 
-    test "offers the app view to a signed-in reader" do
+    test "the app view of a creative is not indexable" do
+      publish
+
+      get creatives_path(id: @creative.id, view: "list")
+
+      assert_response :success
+      assert_select "meta[name=robots][content=noindex]"
+      assert_select "link[rel=canonical]", count: 0
+    end
+
+    test "sends a signed-in reader to the app view" do
       public_id = publish
       sign_in_as(users(:two), password: "password")
 
       get public_creative_path(public_id: public_id, slug: "public-plan")
 
-      assert_response :success
-      assert_select "a[href=?]", creatives_path(id: @creative.id), text: I18n.t("collavre.public_creatives.show.open_in_app")
+      assert_redirected_to creatives_path(id: @creative.id)
     end
 
     test "redirects a missing or stale slug to the canonical address" do
@@ -52,7 +71,7 @@ module Collavre
       get public_creative_path(public_id: public_id)
 
       assert_response :success
-      assert_select "h1", "!!!"
+      assert_select "meta[property='og:title'][content=?]", "!!!"
     end
 
     test "an untitled creative falls back to the untitled label" do
@@ -62,7 +81,9 @@ module Collavre
       get public_creative_path(public_id: public_id)
 
       assert_response :success
-      assert_select "h1", I18n.t("collavre.public_creatives.show.untitled")
+      untitled = I18n.t("collavre.public_creatives.show.untitled")
+      assert_select "meta[property='og:title'][content=?]", untitled
+      assert_select "meta[name=description][content=?]", untitled
     end
 
     test "a creative that is not public is a 404 even with a public id" do
@@ -99,9 +120,8 @@ module Collavre
       assert_response :not_found
     end
 
-    test "login-gated public pages honor user-specific denies" do
+    test "a signed-in reader denied the creative gets a 404" do
       public_id = publish
-      SystemSetting.create!(key: "creatives_login_required", value: "true")
       perform_enqueued_jobs { CreativeShare.create!(creative: @creative, user: users(:two), permission: :no_access) }
       sign_in_as(users(:two), password: "password")
 
@@ -120,3 +140,4 @@ module Collavre
     end
   end
 end
+

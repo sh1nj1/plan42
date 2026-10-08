@@ -10,7 +10,7 @@ module Collavre
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
     include Collavre::CreativeDestroyable
-    include Collavre::PublicCreativeRedirectable
+    include Collavre::PublicCreativeRedirectable, Collavre::PublicCreativePage
     include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
@@ -22,8 +22,8 @@ module Collavre
     # via enforce_creatives_login_policy below. A broader per-Creative role model
     # (beyond the read/feedback/write/admin share levels) is a product decision
     # tracked separately and intentionally deferred.
-    allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
-    before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
+    allow_unauthenticated_access only: %i[ index children export_markdown show slide_view public_page ]
+    before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view public_page ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
     include Collavre::CreativeTypeEditable

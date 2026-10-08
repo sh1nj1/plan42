@@ -217,9 +217,20 @@
   <% end %>
 </div>
 
-<% if @parent_creative %>
+<%# A public creative's indexable address is its /p/ page; the app view of
+    any creative, public or not, stays out of search results. %>
+<% if @public_creative %>
+  <%= render "public_meta", creative: @public_creative %>
+<% else %>
   <% content_for :head do %>
-    <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
+    <meta name="robots" content="noindex">
+  <% end %>
+<% end %>
+<% if @parent_creative %>
+  <% unless @public_creative %>
+    <% content_for :head do %>
+      <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
+    <% end %>
   <% end %>
   <% title_templates = [
         content_tag(:template, data: { part: "description" }) { embed_youtube_iframe(@parent_creative.effective_description) },
