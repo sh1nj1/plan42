@@ -3,6 +3,7 @@ module CollavreTranslation
     include Collavre::Comments::CommentScoping
     include TranslationLocale
     allow_unauthenticated_access
+    before_action :require_authentication, if: -> { Collavre::SystemSetting.creatives_login_required? }
     before_action :load_comment
     before_action :require_auto_translation
     before_action :validate_locale

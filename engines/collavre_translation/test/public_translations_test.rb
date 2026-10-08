@@ -6,6 +6,7 @@ module CollavreTranslation
 
     setup do
       use_translation_test_queue
+      Collavre::SystemSetting.where(key: "creatives_login_required").destroy_all
       CollavreTranslation.model = "test-model"
       @author = users(:one)
       @author.update!(locale: "en", auto_translation_enabled: true)
@@ -35,6 +36,34 @@ module CollavreTranslation
         assert Translation.find_by(translatable: source, target_locale: "en")
         post url, params: { lang: "fr" }
         assert_response :unprocessable_entity
+      end
+    end
+
+    test "global login policy blocks anonymous translation reads and requests before loading resources" do
+      Collavre::SystemSetting.create!(key: "creatives_login_required", value: "true")
+      [ @creative_url, @comment_url, "/translation/creatives/0/translation", "/translation/comments/0/translation" ].each do |url|
+        [ :get, :post ].each do |method|
+          assert_no_difference "Translation.count" do
+            assert_no_enqueued_jobs only: TranslateJob do
+              public_send(method, url, params: { lang: "ko" }, xhr: true)
+              assert_response :unauthorized
+              assert_empty response.body
+            end
+          end
+        end
+      end
+      get @creative_url
+      assert_redirected_to Collavre::Engine.routes.url_helpers.new_session_path
+    end
+
+    test "global login policy permits authenticated readers of public translations" do
+      Collavre::SystemSetting.create!(key: "creatives_login_required", value: "true")
+      sign_in_as users(:three), password: "password"
+      [ @creative_url, @comment_url ].each do |url|
+        [ :get, :post ].each do |method|
+          public_send(method, url, params: { lang: "ko" }, xhr: true)
+          assert_response :success
+        end
       end
     end
 

@@ -2,6 +2,7 @@ module CollavreTranslation
   class CreativeTranslationsController < Collavre::ApplicationController
     include TranslationLocale
     allow_unauthenticated_access
+    before_action :require_authentication, if: -> { Collavre::SystemSetting.creatives_login_required? }
     before_action :load_creative
 
     def show
