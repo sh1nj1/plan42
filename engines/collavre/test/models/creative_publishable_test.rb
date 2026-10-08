@@ -15,6 +15,45 @@ module Collavre
       assert @creative.reload.publicly_readable?
     end
 
+    test "a public read grant assigns the public id up front" do
+      perform_enqueued_jobs { CreativeShare.create!(creative: @creative, user: nil, permission: :read) }
+
+      assert_not_nil @creative.reload.public_id
+    end
+
+    test "a public no_access entry or a user share does not publish" do
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @creative, user: nil, permission: :no_access)
+        CreativeShare.create!(creative: @creative, user: users(:two), permission: :read)
+      end
+
+      assert_nil @creative.reload.public_id
+    end
+
+    test "updating a denied grant publishes and regranting keeps the address" do
+      share = nil
+      perform_enqueued_jobs do
+        share = CreativeShare.create!(creative: @creative, user: nil, permission: :no_access)
+        share.update!(permission: :read)
+      end
+      token = @creative.reload.public_id
+      assert_not_nil token
+
+      perform_enqueued_jobs do
+        share.update!(permission: :no_access)
+        share.update!(permission: :read)
+      end
+      assert_equal token, @creative.reload.public_id
+    end
+
+    test "a public grant on a linked placement assigns the origin address" do
+      linked = Creative.create!(user: @owner, origin: @creative)
+      perform_enqueued_jobs { CreativeShare.create!(creative: linked, user: nil, permission: :read) }
+
+      assert_not_nil @creative.reload.public_id
+      assert_nil linked.reload.public_id
+    end
+
     test "ensure_public_id! assigns a stable token once" do
       assert_nil @creative.public_id
 

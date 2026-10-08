@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  get "/robots.txt", to: "collavre/seo#robots"
+
   # Mount Collavre engine - all core functionality is in the engine
   mount Collavre::Engine => "/"
 

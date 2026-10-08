@@ -28,6 +28,7 @@ The main application engine containing:
 - `Collavre::SessionsController` - Login/logout
 - `Collavre::UsersController` - User management
 - `Collavre::CreativesController` - CRUD + tree operations
+- `Collavre::SeoController` - `/sitemap.xml` and dynamic `/robots.txt`; sitemap lists active, unlinked root creatives with an explicit public read grant and anonymous read access. Responses advertise a one-hour public cache lifetime; more than 10,000 entries produce a sitemap index with `?page=` links. When `creatives_login_required` is enabled, the sitemap is empty and robots disallows all crawling.
 - `Collavre::CommentsController` - Comment management
 - `Collavre::TasksController` - Task management
 - `Collavre::TopicsController` - Topic management
