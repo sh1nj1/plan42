@@ -75,6 +75,10 @@
       <% end %>
       <a href="<%= creatives_path %>" class="creative-breadcrumb-link" data-turbo-action="advance"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
+        <% if @parent_creative.publicly_readable? %>
+          <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
+          <span class="creative-breadcrumb-public"><%= t('collavre.creatives.index.public_share') %></span>
+        <% end %>
         <% readable_breadcrumb_ancestors(@parent_creative).each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
           <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-translation-label data-creative-id="<%= ancestor.id %>" data-original-label="<%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %>" data-translation-length="20" data-turbo-action="advance" data-turbo-prefetch="false" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
