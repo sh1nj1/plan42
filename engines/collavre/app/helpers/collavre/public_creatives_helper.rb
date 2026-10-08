@@ -24,7 +24,7 @@ module Collavre
 
       simple_title = %w[p h1 h2 h3 h4 h5 h6].include?(first_block.name) &&
         first_block.css(PUBLIC_BLOCK_SELECTOR).empty?
-      first_block.remove if simple_title
+      first_block.remove if simple_title && first_block.text.squish.length <= Creative::TITLE_MAX_LENGTH
       fragment.to_html
     end
 

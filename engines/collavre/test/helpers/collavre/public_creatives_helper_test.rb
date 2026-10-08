@@ -41,6 +41,23 @@ module Collavre
       assert_not public_creative_heading?(creative_with(text))
     end
 
+    test "root bodies retain simple blocks whose title is truncated" do
+      text = "Published paragraph " * 20
+      %w[p h1 h2 h3 h4 h5 h6].each do |tag|
+        html = "<#{tag}>#{text}</#{tag}>"
+        creative = creative_with(html)
+        assert_equal Creative::TITLE_MAX_LENGTH, creative.public_title.length
+        assert_equal html, public_creative_body(creative)
+      end
+    end
+
+    test "root bodies remove only complete simple titles" do
+      text = "x" * Creative::TITLE_MAX_LENGTH
+      assert_equal "<p>Body</p>", public_creative_body(creative_with("<p>#{text}</p><p>Body</p>"))
+      html = "<p>#{text}x</p><p>Body</p>"
+      assert_equal html, public_creative_body(creative_with(html))
+    end
+
     test "heading tags start at h2 and stop at h6" do
       assert_equal "h2", public_creative_heading_tag(1)
       assert_equal "h4", public_creative_heading_tag(3)
