@@ -14,7 +14,7 @@ module Collavre
       return false if label.blank? || label.length > PUBLIC_HEADING_MAX_LENGTH
 
       fragment = Nokogiri::HTML5.fragment(html)
-      fragment.css(PUBLIC_BLOCK_SELECTOR).empty? && fragment.children.count { |node| node.text.strip.present? } <= 1
+      fragment.css(PUBLIC_BLOCK_SELECTOR).empty? && fragment.css("p").size <= 1 && fragment.children.count { |node| node.text.strip.present? } <= 1
     end
 
     def public_creative_body(creative)

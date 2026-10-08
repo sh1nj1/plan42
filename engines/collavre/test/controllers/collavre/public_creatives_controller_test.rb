@@ -143,6 +143,21 @@ module Collavre
       assert_select ".public-creative-body p", text: "Overview", count: 0
     end
 
+    test "preserves nested paragraphs in root and child descriptions" do
+      @creative.update!(description: "<div><p>Summary</p><p>Details</p></div>")
+      Creative.create!(user: @owner, parent: @creative,
+                       description: "<div><p>Child summary</p><p>Child details</p></div>")
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: @creative.public_slug)
+
+      assert_response :success
+      assert_select ".public-creative-body div p", count: 4
+      assert_select ".public-creative-body div p", "Details"
+      assert_select ".public-creative-body div p", "Child details"
+      assert_select ".public-creative-heading", count: 0
+    end
+
     test "preserves hard line breaks in root and child descriptions" do
       @creative.update!(description: "<p>First<br>Second</p>")
       Creative.create!(user: @owner, parent: @creative, description: "<p>Child first<br>Child second</p>")
