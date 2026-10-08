@@ -72,6 +72,22 @@ module Collavre
       assert_equal 120, @creative.public_title.length
     end
 
+    test "public title descends through wrappers in document order" do
+      {
+        "<div><p>Summary</p><p>Details</p></div>" => "Summary",
+        "<ul><li>First</li><li>Second</li></ul>" => "First",
+        "<table><tr><td>First</td><td>Second</td></tr></table>" => "First",
+        "<div>Leading <p>Details</p></div>" => "Leading",
+        "Leading <div><p>Details</p></div>" => "Leading",
+        "<div><p> </p><p>First <strong>bold</strong> text</p></div>" => "First bold text",
+        "<div></div>" => ""
+      }.each do |html, title|
+        @creative.description = html
+        assert_equal title, @creative.public_title
+        assert_equal Creative.public_slug_for(title), @creative.public_slug
+      end
+    end
+
     test "public_slug is capped without a trailing hyphen" do
       slug = Creative.public_slug_for("#{'a' * 59} bcd")
 

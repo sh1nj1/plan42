@@ -54,9 +54,18 @@ module Collavre
       # opening line rather than by every block run together.
       def public_title
         fragment = Nokogiri::HTML5.fragment(effective_origin.description.to_s)
-        first_block = fragment.children.find { |node| node.text.strip.present? }
+        first_block = first_public_title_block(fragment)
         (first_block || fragment).text.squish.truncate(TITLE_MAX_LENGTH)
       end
+
+      def first_public_title_block(node)
+        first = node.children.find { |child| child.text.strip.present? }
+        return unless first
+        return first if first.text? || first.css("#{TITLE_BLOCK_SELECTOR}, div, section, article, ul, ol, table").empty?
+
+        first_public_title_block(first)
+      end
+      private :first_public_title_block
 
       # Human-readable URL segment derived from the title. Letters and digits of
       # every script are kept (so Korean titles stay Korean), everything else
