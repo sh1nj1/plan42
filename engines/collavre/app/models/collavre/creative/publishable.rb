@@ -18,6 +18,7 @@ module Collavre
       SLUG_MAX_LENGTH = 60
       PUBLIC_ID_ATTEMPTS = 5
       TITLE_MAX_LENGTH = 120
+      TITLE_CONTAINER_SELECTOR = "div, section, article, ul, ol, dl, table"
       TITLE_BLOCK_SELECTOR = "p, li, dt, dd, h1, h2, h3, h4, h5, h6, th, td, blockquote, pre"
 
       def publicly_readable?
@@ -61,11 +62,22 @@ module Collavre
       def first_public_title_block(node)
         first = node.children.find { |child| child.text.strip.present? }
         return unless first
-        return first if first.text? || first.css("#{TITLE_BLOCK_SELECTOR}, div, section, article, ul, ol, dl, table").empty?
+        return leading_public_title_nodes(first) unless public_title_block_node?(first)
+        return first if first.css("#{TITLE_BLOCK_SELECTOR}, #{TITLE_CONTAINER_SELECTOR}").empty?
 
         first_public_title_block(first)
       end
-      private :first_public_title_block
+      def public_title_block_node?(node)
+        selector = "#{TITLE_BLOCK_SELECTOR}, #{TITLE_CONTAINER_SELECTOR}"
+        node.element? && (node.matches?(selector) || node.css(selector).any?)
+      end
+
+      def leading_public_title_nodes(first)
+        nodes = [ first, *first.xpath("following-sibling::node()") ]
+          .take_while { |node| !public_title_block_node?(node) }
+        Nokogiri::XML::NodeSet.new(first.document, nodes)
+      end
+      private :first_public_title_block, :public_title_block_node?, :leading_public_title_nodes
 
       # Human-readable URL segment derived from the title. Letters and digits of
       # every script are kept (so Korean titles stay Korean), everything else
