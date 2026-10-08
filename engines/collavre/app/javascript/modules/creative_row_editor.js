@@ -1,3 +1,4 @@
+import { updateRemovalButtons, destroyedIdsForRemoval, promotesChildrenToRoot as removalPromotesChildren, shouldRefreshRemovalParent } from './creative_removal'
 import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
 import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
@@ -588,6 +589,7 @@ function setupEditorSession() {
         const isArchived = targetRow?.hasAttribute('archived');
         archiveBtn.textContent = isArchived ? (archiveBtn.dataset.restoreLabel || 'Restore') : (archiveBtn.dataset.archiveLabel || 'Archive');
       }
+      updateRemovalButtons(deleteBtn, deleteWithChildrenBtn, Boolean(originalOriginId));
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
       if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
@@ -1584,6 +1586,9 @@ function setupEditorSession() {
       if (!currentTree || !form.dataset.creativeId) return;
       const id = form.dataset.creativeId;
       const tree = currentTree;
+      // A link displays its origin's children, but removing it only deletes the shell.
+      const isLink = Boolean(inlinePayloadFromTree(tree)?.origin_id);
+      withChildren = withChildren && !isLink;
       const trees = Array.from(document.querySelectorAll('.creative-tree'));
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
@@ -1599,16 +1604,7 @@ function setupEditorSession() {
       }
 
       creativesApi.destroy(id, withChildren).then(() => {
-        const destroyedIds = [String(id)];
-        if (withChildren) {
-          const childrenContainer = document.getElementById("creative-children-" + id);
-          if (childrenContainer) {
-            childrenContainer.querySelectorAll('creative-tree-row').forEach(row => {
-              const cid = row.getAttribute('creative-id');
-              if (cid) destroyedIds.push(cid);
-            });
-          }
-        }
+        const destroyedIds = destroyedIdsForRemoval(id, withChildren);
         document.dispatchEvent(new CustomEvent('creative-destroyed', {
           detail: { creativeIds: destroyedIds }
         }));
@@ -1630,10 +1626,9 @@ function setupEditorSession() {
         // container would say "no children" for every tree the user never opened.
         // The container is still consulted as well, because a child inserted
         // client-side is in the DOM before any flag round-trips.
-        const promotesChildrenToRoot = !withChildren && !parentTree &&
-          (rowFlagHasChildren(treeRowElement(tree)) ||
-            !!childrenTree?.querySelector('creative-tree-row'));
-        if (!withChildren && childrenTree && parentTree) {
+        const promotesChildrenToRoot = removalPromotesChildren({ isLink, withChildren, parentTree,
+          hasChildren: rowFlagHasChildren(treeRowElement(tree)), childrenTree });
+        if (shouldRefreshRemovalParent(isLink, withChildren, childrenTree, parentTree)) {
           refreshChildren(parentTree).then(() => {
             if (parentTree) refreshRow(parentTree);
           });
