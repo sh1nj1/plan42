@@ -152,7 +152,9 @@ class CreativesControllerEmptyStateTest < ActionDispatch::IntegrationTest
     end
     sign_out
 
-    get creatives_path(id: creative.id)
+    # A bare ?id= link to public content moves to its /p/ page; any extra
+    # parameter keeps the app view this test is about.
+    get creatives_path(id: creative.id, view: "tree")
 
     assert_response :success
     assert_includes response.body, html_t("collavre.creatives.index.empty_state_heading_sub")

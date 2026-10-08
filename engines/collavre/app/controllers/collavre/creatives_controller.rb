@@ -10,6 +10,7 @@ module Collavre
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
     include Collavre::CreativeDestroyable
+    include Collavre::PublicCreativeRedirectable
     include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
@@ -564,10 +565,6 @@ module Collavre
         visit["client_id"] if visit.is_a?(Hash)
       rescue ActiveSupport::MessageVerifier::InvalidSignature
         nil
-      end
-
-      def turbo_prefetch_request?
-        request.headers["X-Sec-Purpose"] == "prefetch"
       end
 
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)

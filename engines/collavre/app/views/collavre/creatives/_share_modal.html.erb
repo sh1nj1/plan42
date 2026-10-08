@@ -29,6 +29,15 @@
       <button type="submit" class="btn btn-primary" data-share-invite-target="submit" data-share="<%= t('collavre.creatives.index.share') %>" data-invite="<%= t('collavre.creatives.index.invite') %>"><%= t('collavre.creatives.index.share') %></button>
       <button type="button" id="creative-invite-link" class="btn btn-secondary" data-creative-id="<%= (@parent_creative || @creative).id %>" data-no-access-message="<%= t('collavre.creatives.index.invite_link_no_access') %>" data-copied-template="<%= t('collavre.creatives.index.invite_link_copied_permission', permission: '__PERMISSION__') %>"><%= t('collavre.creatives.index.invite_link') %></button>
     </form>
+    <% if defined?(@public_url) && @public_url %>
+      <div class="share-public-link">
+        <label for="share-public-url"><%= t('collavre.creatives.share.public_link') %></label>
+        <div class="share-public-link-row">
+          <input type="text" id="share-public-url" value="<%= @public_url %>" readonly />
+          <button type="button" id="share-public-link-copy" class="btn btn-secondary" data-copied-message="<%= t('collavre.creatives.share.public_link_copied') %>"><%= t('collavre.creatives.share.copy_public_link') %></button>
+        </div>
+      </div>
+    <% end %>
     <% has_any_shares = @shared_list.any? || (defined?(@pending_invitations) && @pending_invitations.any?) || @inherited_shares.any? %>
     <% if has_any_shares %>
       <div style="margin-top:1em;">

@@ -1,0 +1,21 @@
+<% title = Collavre::HtmlText.label(@creative.description) %>
+<% content_for :page_title, title.presence || t('collavre.public_creatives.show.untitled') %>
+
+<div class="landing">
+  <article class="landing-section">
+    <div class="landing-container public-creative-container">
+      <header class="public-creative-header">
+        <h1 class="public-creative-title"><%= title.presence || t('collavre.public_creatives.show.untitled') %></h1>
+        <% if authenticated? %>
+          <%= link_to t('collavre.public_creatives.show.open_in_app'), collavre.creatives_path(id: @creative.id), class: "landing-btn landing-btn-ghost" %>
+        <% end %>
+      </header>
+    </div>
+  </article>
+
+  <footer class="landing-footer">
+    <div class="landing-container landing-footer-inner">
+      <p class="landing-footer-copy"><%= t('collavre.landing.footer.copyright', year: Date.today.year, app_name: t('app.name')) %></p>
+    </div>
+  </footer>
+</div>
