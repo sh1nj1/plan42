@@ -32,6 +32,15 @@ module Collavre
       end
     end
 
+    test "root bodies preserve rich fragments without title blocks and long plain text" do
+      html = '<div>Overview</div><video src="/movie.mp4"></video>'
+      assert_equal html, public_creative_body(creative_with(html))
+      assert_not public_creative_heading?(creative_with(html))
+      text = 'Long published content ' * 20
+      assert_equal text, public_creative_body(creative_with(text))
+      assert_not public_creative_heading?(creative_with(text))
+    end
+
     test "heading tags start at h2 and stop at h6" do
       assert_equal "h2", public_creative_heading_tag(1)
       assert_equal "h4", public_creative_heading_tag(3)

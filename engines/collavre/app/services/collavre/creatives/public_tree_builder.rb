@@ -20,8 +20,10 @@ module Collavre
 
       DEFAULT_LIMIT = 500
       DEFAULT_MAX_DEPTH = 8
+      DEFAULT_CANDIDATE_LIMIT = 1_000
 
-      def initialize(root, limit: DEFAULT_LIMIT, max_depth: DEFAULT_MAX_DEPTH, user: nil)
+      def initialize(root, limit: DEFAULT_LIMIT, max_depth: DEFAULT_MAX_DEPTH, user: nil, candidate_limit: DEFAULT_CANDIDATE_LIMIT)
+        @candidate_remaining = candidate_limit
         @user = user
         @root = root.effective_origin
         @limit = limit
@@ -74,9 +76,15 @@ module Collavre
         scope = Creative.active.where(parent_id: parent_ids).includes(:origin).order(:sequence, :id)
         offset = 0
         loop do
-          children = scope.limit(100).offset(offset).to_a
+          if @candidate_remaining <= 0
+            @truncated ||= scope.offset(offset).exists?
+            break
+          end
+
+          children = scope.limit([ 100, @candidate_remaining ].min).offset(offset).to_a
           break if children.empty?
 
+          @candidate_remaining -= children.length
           readable = PermissionFilter.new(user: nil).readable_ids(children.map(&:id)).to_set
           readable &= PermissionFilter.new(user: @user).readable_ids(children.map(&:id)).to_set if @user
           children.each { |child| yield child if readable.include?(child.id) }

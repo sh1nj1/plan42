@@ -52,6 +52,24 @@ module Collavre
         assert_equal [ 100, 7 ], batches
       end
 
+      test "caps denied candidates across breadth levels" do
+        checked = []
+        filter = Object.new
+        filter.define_singleton_method(:readable_ids) { |ids| checked << ids; [] }
+        PermissionFilter.stub(:new, filter) do
+          builder = PublicTreeBuilder.new(@root, candidate_limit: 1)
+          assert_empty builder.call
+          assert builder.truncated?
+        end
+        assert_equal [ [ @a.id ] ], checked
+      end
+
+      test "exhausting candidates at a leaf does not truncate" do
+        builder = PublicTreeBuilder.new(@b, candidate_limit: 0)
+        assert_empty builder.call
+        assert_not builder.truncated?
+      end
+
       test "skips archived children" do
         @b.update!(archived_at: Time.current)
 
