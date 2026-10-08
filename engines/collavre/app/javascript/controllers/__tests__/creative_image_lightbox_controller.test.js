@@ -558,3 +558,14 @@ test('preserves fitted-image swipes and suppresses navigation after pan or pinch
   touch(stage, 'touchend', [], [finger(20)])
   expect(dialog().querySelector('img').alt).toBe('Second')
 })
+
+test('double-click toggles zoom through the pointer capture stage', () => {
+  click('#first')
+  const image = dialog().querySelector('img')
+  const stage = dialog().querySelector('.image-lightbox-stage')
+  image.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, clientX: 100, clientY: 100 }))
+  expect(image.style.transform).toContain('scale(2.5)')
+  stage.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+  expect(image.style.transform).toBe('translate(0px, 0px) scale(1)')
+  expect(stage.style.cursor).toBe('')
+})

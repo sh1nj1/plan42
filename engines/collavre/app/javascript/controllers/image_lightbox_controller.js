@@ -107,7 +107,6 @@ export default class extends Controller {
     this._panY = 0
 
     const stage = dialog.querySelector(".image-lightbox-stage")
-    const imgEl = dialog.querySelector(".image-lightbox-image")
 
     // Mouse wheel zoom
     stage.addEventListener("wheel", (e) => {
@@ -117,7 +116,7 @@ export default class extends Controller {
     }, { passive: false })
 
     // Double-click to toggle zoom
-    imgEl.addEventListener("dblclick", (e) => {
+    stage.addEventListener("dblclick", (e) => {
       e.stopPropagation()
       if (this._zoom > 1) {
         this._resetZoom()

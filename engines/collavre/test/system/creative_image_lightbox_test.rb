@@ -35,6 +35,17 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     assert_match "translate(0px, 0px) scale(1)", image[:style]
   end
 
+  test "double clicking toggles zoom back to fit after pointer capture" do
+    visit collavre.creatives_path
+    find("#creative-#{@creative.id} img[alt='First']").click
+    image = find(".image-lightbox-image")
+    image.double_click
+    assert_match "scale(2.5)", image[:style]
+    image.double_click
+    assert_match "translate(0px, 0px) scale(1)", image[:style]
+    assert_equal "", page.evaluate_script("document.querySelector('.image-lightbox-stage').style.cursor")
+  end
+
   test "the gallery navigates images across creative rows in list order" do
     sibling = Creative.create!(user: @user, description: "Another gallery")
     sibling.files.attach(@creative.files.first.blob)
