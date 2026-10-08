@@ -21,6 +21,8 @@ ko:
         edit: 수정
         append_as_parent_creative: 상위에 추가
         append_below_creative: 아래에 추가
+        remove_link: "링크 제거"
+        are_you_sure_remove_link: "이 링크를 제거하시겠습니까? 원본 글과 하위 글은 유지됩니다."
         delete: 삭제
         archive: 아카이브
         archive_confirm: 이 항목과 모든 하위 항목을 아카이브할까요?

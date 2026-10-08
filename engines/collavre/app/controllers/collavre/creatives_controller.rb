@@ -36,8 +36,7 @@ module Collavre
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
-            creative = Creative.find_by(id: params[:id])
-            @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+            assign_index_creative_permissions
             if Current.user
               @last_visited_creative_client_id = last_visited_creative_client_id
               @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
