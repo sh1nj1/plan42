@@ -4,6 +4,6 @@
 get "features", to: "features#index", as: :features
 get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
 
-# Public, server-rendered pages for publicly shared creatives
-get "p/:public_id(/:slug)", to: "public_creatives#show", as: :public_creative,
+# Indexable addresses for publicly shared creatives (Collavre::PublicCreativePage)
+get "p/:public_id(/:slug)", to: "creatives#public_page", as: :public_creative,
     constraints: { public_id: Collavre::Creative::Publishable::PUBLIC_ID_FORMAT }, format: false
