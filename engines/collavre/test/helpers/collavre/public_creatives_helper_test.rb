@@ -20,6 +20,18 @@ module Collavre
       assert_not public_creative_heading?(creative_with(""))
     end
 
+    test "root bodies retain composite blocks and unwrapped links" do
+      [
+        '<blockquote><p>Quoted text</p></blockquote>',
+        '<ul><li>First item</li><li>Second item</li></ul>',
+        '<p><a href="/guide">Guide</a></p>',
+        '<a href="/manual" download="manual">Manual</a>'
+      ].each do |html|
+        assert_equal html, public_creative_body(creative_with(html))
+        assert_not public_creative_heading?(creative_with(html))
+      end
+    end
+
     test "heading tags start at h2 and stop at h6" do
       assert_equal "h2", public_creative_heading_tag(1)
       assert_equal "h4", public_creative_heading_tag(3)

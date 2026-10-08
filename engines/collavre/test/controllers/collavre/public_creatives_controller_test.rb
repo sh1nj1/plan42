@@ -128,6 +128,33 @@ module Collavre
       assert_select ".public-creative-body p", text: "Overview", count: 0
     end
 
+    test "preserves root and child links including downloads" do
+      @creative.update!(description: '<p><a href="https://example.com">Reference</a></p>')
+      Creative.create!(user: @owner, parent: @creative,
+                       description: '<a href="/files/manual.pdf" download="manual.pdf">Manual</a>')
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: @creative.public_slug)
+
+      assert_response :success
+      assert_select '.public-creative-body a[href="https://example.com"]', "Reference"
+      assert_select '.public-creative-body a[href="/files/manual.pdf"][download="manual.pdf"]', "Manual"
+    end
+
+    test "preserves complete composite root blocks and their formatting" do
+      code = "puts 'example'\n" * 20
+      @creative.update!(description: "<pre><code>#{code}</code></pre>")
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: @creative.public_slug)
+
+      assert_response :success
+      assert_select ".public-creative-body pre code" do |elements|
+        assert_equal code, elements.first.text
+      end
+      assert_select "h1", @creative.public_title
+    end
+
     test "notes when the page shows only part of a large tree" do
       Creative.create!(user: @owner, parent: @creative, description: "Child", sequence: 1)
       public_id = publish

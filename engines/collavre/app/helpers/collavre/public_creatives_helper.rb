@@ -3,7 +3,7 @@
 module Collavre
   module PublicCreativesHelper
     PUBLIC_HEADING_MAX_LENGTH = 120
-    PUBLIC_BLOCK_SELECTOR = "table, ul, ol, img, video, iframe, pre, blockquote, hr, h1, h2, h3, h4, h5, h6"
+    PUBLIC_BLOCK_SELECTOR = "a, table, ul, ol, img, video, iframe, pre, blockquote, hr, h1, h2, h3, h4, h5, h6"
 
     # A creative whose description is a short, single line of text reads as a
     # section title, so it becomes a heading in the outline. Anything richer —
@@ -20,8 +20,12 @@ module Collavre
     def public_creative_body(creative)
       fragment = Nokogiri::HTML5.fragment(creative.description.to_s)
       first_block = fragment.css(Creative::Publishable::TITLE_BLOCK_SELECTOR).find { |node| node.text.strip.present? }
-      first_block&.remove
-      first_block ? fragment.to_html : ""
+      return fragment.to_html unless first_block
+
+      simple_title = %w[p h1 h2 h3 h4 h5 h6].include?(first_block.name) &&
+        first_block.css(PUBLIC_BLOCK_SELECTOR).empty?
+      first_block.remove if simple_title
+      fragment.to_html
     end
 
     # The page title is the only <h1>; depth below it maps onto h2..h6.
