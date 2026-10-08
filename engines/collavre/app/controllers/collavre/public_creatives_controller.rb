@@ -26,7 +26,7 @@ module Collavre
         return redirect_to(public_creative_path(public_id: @creative.public_id, slug: slug.presence), status: :moved_permanently)
       end
 
-      tree = Creatives::PublicTreeBuilder.new(@creative)
+      tree = Creatives::PublicTreeBuilder.new(@creative, user: SystemSetting.creatives_login_required? ? Current.user : nil)
       @nodes = tree.call
       @truncated = tree.truncated?
     end

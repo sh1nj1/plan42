@@ -125,12 +125,13 @@ module Collavre
       assert_response :success
       assert_select "h1", "Overview"
       assert_select ".public-creative-body li", "Point one"
+      assert_select ".public-creative-body p", text: "Overview", count: 0
     end
 
     test "notes when the page shows only part of a large tree" do
       Creative.create!(user: @owner, parent: @creative, description: "Child", sequence: 1)
       public_id = publish
-      limited = ->(creative) { Creatives::PublicTreeBuilder.allocate.tap { |builder| builder.send(:initialize, creative, limit: 0) } }
+      limited = ->(creative, **options) { Creatives::PublicTreeBuilder.allocate.tap { |builder| builder.send(:initialize, creative, limit: 0) } }
 
       Creatives::PublicTreeBuilder.stub(:new, limited) do
         get public_creative_path(public_id: public_id, slug: "public-plan")

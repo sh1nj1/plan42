@@ -30,6 +30,28 @@ module Collavre
         end
       end
 
+      test "applies user denies without exposing private content" do
+        perform_enqueued_jobs { CreativeShare.create!(creative: @b, user: users(:two), permission: :no_access) }
+        assert_equal [ [ "A", [ [ "A1", [] ] ] ] ], outline(PublicTreeBuilder.new(@root, user: users(:two)).call)
+      end
+
+      test "permission batches stay bounded for wide trees" do
+        105.times { |i| Creative.create!(user: @owner, parent: @root, description: "Child #{i}", sequence: i + 3) }
+        batches = []
+        filter = PermissionFilter.new(user: nil)
+        original = filter.method(:readable_ids)
+        filter.define_singleton_method(:readable_ids) do |ids|
+          batches << ids.size
+          original.call(ids)
+        end
+        PermissionFilter.stub(:new, filter) do
+          builder = PublicTreeBuilder.new(@root, limit: 101, max_depth: 1)
+          assert_equal 101, builder.call.size
+          assert builder.truncated?
+        end
+        assert_equal [ 100, 7 ], batches
+      end
+
       test "skips archived children" do
         @b.update!(archived_at: Time.current)
 

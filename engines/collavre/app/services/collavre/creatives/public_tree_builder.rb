@@ -5,13 +5,13 @@ module Collavre
     # Builds the subtree an anonymous reader may see under a public creative, for
     # server-rendered public pages.
     #
-    # Permission is always resolved for the anonymous reader (user: nil) — never
-    # the signed-in visitor — so a public page cannot leak private content to
+    # Anonymous permission is always required. Login-gated pages additionally
+    # enforce the authenticated reader's permissions, without exposing private content to
     # whoever happens to be looking. Linked creatives contribute their origin's
     # content and children, and PermissionFilter already hides a link whose
     # origin is not public.
     #
-    # The walk is breadth-first with one children query and one permission batch
+    # The walk is breadth-first with bounded child queries and permission batches
     # per level, and stops at `limit` nodes or `max_depth` levels so a huge tree
     # cannot make the page unbounded. `truncated?` reports whether anything was
     # left out.
@@ -21,7 +21,8 @@ module Collavre
       DEFAULT_LIMIT = 500
       DEFAULT_MAX_DEPTH = 8
 
-      def initialize(root, limit: DEFAULT_LIMIT, max_depth: DEFAULT_MAX_DEPTH)
+      def initialize(root, limit: DEFAULT_LIMIT, max_depth: DEFAULT_MAX_DEPTH, user: nil)
+        @user = user
         @root = root.effective_origin
         @limit = limit
         @max_depth = max_depth
@@ -42,7 +43,7 @@ module Collavre
           break if frontier.empty?
 
           next_frontier = {}
-          readable_children(frontier.keys).each do |child|
+          readable_children(frontier.keys) do |child|
             if count >= @limit
               @truncated = true
               break
@@ -70,9 +71,17 @@ module Collavre
       private
 
       def readable_children(parent_ids)
-        children = Creative.active.where(parent_id: parent_ids).includes(:origin).order(:sequence, :id).to_a
-        readable = PermissionFilter.new(user: nil).readable_ids(children.map(&:id)).to_set
-        children.select { |child| readable.include?(child.id) }
+        scope = Creative.active.where(parent_id: parent_ids).includes(:origin).order(:sequence, :id)
+        offset = 0
+        loop do
+          children = scope.limit(100).offset(offset).to_a
+          break if children.empty?
+
+          readable = PermissionFilter.new(user: nil).readable_ids(children.map(&:id)).to_set
+          readable &= PermissionFilter.new(user: @user).readable_ids(children.map(&:id)).to_set if @user
+          children.each { |child| yield child if readable.include?(child.id) }
+          offset += children.length
+        end
       end
     end
   end

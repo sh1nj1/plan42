@@ -17,6 +17,13 @@ module Collavre
       fragment.css(PUBLIC_BLOCK_SELECTOR).empty? && fragment.css("p").size <= 1
     end
 
+    def public_creative_body(creative)
+      fragment = Nokogiri::HTML5.fragment(creative.description.to_s)
+      first_block = fragment.css(Creative::Publishable::TITLE_BLOCK_SELECTOR).find { |node| node.text.strip.present? }
+      first_block&.remove
+      first_block ? fragment.to_html : ""
+    end
+
     # The page title is the only <h1>; depth below it maps onto h2..h6.
     def public_creative_heading_tag(level)
       "h#{(level + 1).clamp(2, 6)}"
