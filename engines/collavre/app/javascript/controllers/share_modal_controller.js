@@ -1,3 +1,4 @@
+import { initializePublicLink, showShareMessage } from "../lib/share_modal_links"
 import { Controller } from "@hotwired/stimulus"
 import { confirmDialog, alertDialog } from "../lib/utils/dialog"
 
@@ -121,7 +122,7 @@ export default class extends Controller {
     this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
     this.#initializeInviteLink()
-    this.#initializePublicLink()
+    initializePublicLink()
   }
 
   #constrainModalHeight(modal) {
@@ -347,39 +348,7 @@ export default class extends Controller {
   }
 
   #showMessage(text, type) {
-    if (!text) return
-    const modal = document.getElementById("share-creative-modal")
-    if (!modal) return
-
-    const existing = modal.querySelector(".share-modal-message")
-    if (existing) existing.remove()
-
-    const msg = document.createElement("div")
-    msg.className = `share-modal-message share-modal-message-${type}`
-    msg.textContent = text
-
-    const title = modal.querySelector("h2")
-    if (title) {
-      title.insertAdjacentElement("afterend", msg)
-    } else {
-      modal.querySelector(".popup-box")?.prepend(msg)
-    }
-
-    setTimeout(() => msg.remove(), 4000)
-  }
-
-  #initializePublicLink() {
-    const copyBtn = document.getElementById("share-public-link-copy")
-    const urlInput = document.getElementById("share-public-url")
-    if (!copyBtn || !urlInput) return
-
-    copyBtn.onclick = () => {
-      const plan42Copy = window.Plan42 && window.Plan42.copyTextToClipboard
-      const copyPromise = plan42Copy
-        ? plan42Copy(urlInput.value)
-        : navigator.clipboard?.writeText(urlInput.value)
-      copyPromise?.then(() => this.#showMessage(copyBtn.dataset.copiedMessage, "success"))
-    }
+    showShareMessage(text, type)
   }
 
   #initializeInviteLink() {
