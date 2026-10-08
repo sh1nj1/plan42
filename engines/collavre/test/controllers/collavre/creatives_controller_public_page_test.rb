@@ -58,43 +58,51 @@ module Collavre
       assert_select ".creative-breadcrumb a[data-creative-id=?]", parent.id.to_s, text: "Owner Parent"
     end
 
-    test "public status stays in the breadcrumb for signed-out and signed-in readers" do
-      public_id = publish
+    test "public ancestors remain clickable without a synthetic public share segment" do
+      private_root = Creative.create!(user: @owner, description: "Private Root Secret")
+      blog = Creative.create!(user: @owner, parent: private_root, description: "Blog")
+      @creative.update!(parent: blog)
+      publish(blog)
+      public_id = @creative.ensure_public_id!
+
       get public_creative_path(public_id: public_id, slug: "public-plan")
-      assert_response :success
-      assert_select ".creative-breadcrumb-public", I18n.t("collavre.creatives.index.public_share")
+      assert_public_breadcrumb(blog, private_root)
 
-      sign_in_as(@owner, password: "password")
+      sign_in_as(users(:two), password: "password")
       get creatives_path(id: @creative.id)
+      assert_public_breadcrumb(blog, private_root)
+
+      get creative_path(blog)
+      assert_redirected_to creatives_path(id: blog.id)
+      follow_redirect!
       assert_response :success
-      assert_select ".creative-breadcrumb-public", I18n.t("collavre.creatives.index.public_share")
+      assert_select ".creative-breadcrumb-current", "Blog"
     end
 
-    test "inherited public status preserves the readable ancestor path" do
-      parent = Creative.create!(user: @owner, description: "Public Parent")
-      @creative.update!(parent: parent)
-      publish(parent)
-      sign_in_as(@owner, password: "password")
+    test "revoked ancestors disappear while the independently public current item remains" do
+      blog = Creative.create!(user: @owner, description: "Blog")
+      @creative.update!(parent: blog)
+      publish(blog)
+      public_id = publish
+      perform_enqueued_jobs { CreativeShare.find_by!(creative: blog, user_id: nil).destroy! }
 
-      get creatives_path(id: @creative.id)
+      get public_creative_path(public_id: public_id, slug: "public-plan")
 
       assert_response :success
-      assert_select ".creative-breadcrumb-public", I18n.t("collavre.creatives.index.public_share")
-      assert_select ".creative-breadcrumb a[data-creative-id=?]", parent.id.to_s, text: "Public Parent"
+      assert_select ".creative-breadcrumb a[data-creative-id=?]", blog.id.to_s, count: 0
       assert_select ".creative-breadcrumb-current", "Public Plan"
+      assert_select ".creative-breadcrumb-public", count: 0
     end
 
-    test "private and revoked creatives have no public breadcrumb label" do
-      sign_in_as(@owner, password: "password")
-      get creatives_path(id: @creative.id)
+    def assert_public_breadcrumb(blog, private_root)
       assert_response :success
       assert_select ".creative-breadcrumb-public", count: 0
-
-      publish
-      perform_enqueued_jobs { CreativeShare.find_by!(creative: @creative, user_id: nil).destroy! }
-      get creatives_path(id: @creative.id)
-      assert_response :success
-      assert_select ".creative-breadcrumb-public", count: 0
+      assert_select ".creative-breadcrumb a" do |links|
+        assert_equal [ I18n.t("collavre.creatives.index.root_breadcrumb"), "Blog", "Public Plan" ], links.map(&:text)
+      end
+      assert_select ".creative-breadcrumb a[data-creative-id=?][href=?]", blog.id.to_s, creative_path(blog), text: "Blog"
+      assert_select ".creative-breadcrumb a[data-creative-id=?]", private_root.id.to_s, count: 0
+      assert_no_match "Private Root Secret", response.body
     end
 
     test "the app view of a creative is not indexable" do
