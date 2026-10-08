@@ -18,7 +18,7 @@ module Collavre
       SLUG_MAX_LENGTH = 60
       PUBLIC_ID_ATTEMPTS = 5
       TITLE_MAX_LENGTH = 120
-      TITLE_BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, th, td, blockquote, pre"
+      TITLE_BLOCK_SELECTOR = "p, li, dt, dd, h1, h2, h3, h4, h5, h6, th, td, blockquote, pre"
 
       def publicly_readable?
         has_permission?(nil, :read)
@@ -61,7 +61,7 @@ module Collavre
       def first_public_title_block(node)
         first = node.children.find { |child| child.text.strip.present? }
         return unless first
-        return first if first.text? || first.css("#{TITLE_BLOCK_SELECTOR}, div, section, article, ul, ol, table").empty?
+        return first if first.text? || first.css("#{TITLE_BLOCK_SELECTOR}, div, section, article, ul, ol, dl, table").empty?
 
         first_public_title_block(first)
       end

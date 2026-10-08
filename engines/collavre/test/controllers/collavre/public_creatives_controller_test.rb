@@ -131,6 +131,23 @@ module Collavre
       assert_select ".public-creative-cta a[href=?]", new_user_path
     end
 
+    test "authored body headings follow subtree depth with one page h1" do
+      @creative.update!(description: "<div><h1>Public plan</h1><p>Introduction</p></div>")
+      child = Creative.create!(user: @owner, parent: @creative, description: "<h1>Section</h1><p>Text</p><h2>Subsection</h2>")
+      Creative.create!(user: @owner, parent: child, description: "<h1>Nested</h1><p>Details</p>")
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: "public-plan")
+
+      assert_response :success
+      assert_select "h1", count: 1
+      assert_select ".public-creative-body h2", "Public plan"
+      assert_select ".public-creative-body h2", "Section"
+      assert_select ".public-creative-body h3", "Subsection"
+      assert_select ".public-creative-body h3", "Nested"
+      assert_select ".public-creative-body p", "Details"
+    end
+
     test "a rich root description is rendered below the title" do
       @creative.update!(description: "<p>Overview</p><ul><li>Point one</li></ul>")
       public_id = publish

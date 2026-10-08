@@ -12,7 +12,7 @@
       </header>
 
       <% unless public_creative_heading?(@creative) || title.blank? %>
-        <div class="public-creative-body"><%= embed_youtube_iframe(public_creative_body(@creative)) %></div>
+        <div class="public-creative-body"><%= embed_youtube_iframe(public_creative_body_headings(public_creative_body(@creative))) %></div>
       <% end %>
 
       <%= render partial: "collavre/public_creatives/node", collection: @nodes, as: :node, locals: { level: 1 } %>

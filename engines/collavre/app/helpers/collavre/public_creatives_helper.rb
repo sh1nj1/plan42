@@ -17,6 +17,17 @@ module Collavre
       fragment.css(PUBLIC_BLOCK_SELECTOR).empty? && fragment.css("p").size <= 1 && fragment.children.count { |node| node.text.strip.present? } <= 1
     end
 
+    def public_creative_body_headings(html, level: 1)
+      fragment = Nokogiri::HTML5.fragment(html.to_s)
+      headings = fragment.css("h1, h2, h3, h4, h5, h6")
+      first_level = headings.map { |heading| heading.name.delete_prefix("h").to_i }.min
+      headings.each do |heading|
+        offset = heading.name.delete_prefix("h").to_i - first_level
+        heading.name = public_creative_heading_tag(level + offset)
+      end
+      fragment.to_html
+    end
+
     def public_creative_body(creative)
       fragment = Nokogiri::HTML5.fragment(creative.description.to_s)
       first_block = fragment.children.find { |node| node.text.strip.present? }

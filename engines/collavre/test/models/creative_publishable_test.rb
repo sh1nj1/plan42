@@ -80,6 +80,8 @@ module Collavre
         "<div>Leading <p>Details</p></div>" => "Leading",
         "Leading <div><p>Details</p></div>" => "Leading",
         "<div><p> </p><p>First <strong>bold</strong> text</p></div>" => "First bold text",
+        "<dl><dt>Term</dt><dd>Definition</dd></dl>" => "Term",
+        "<dl><dt> </dt><dd>Definition</dd></dl>" => "Definition",
         "<div></div>" => ""
       }.each do |html, title|
         @creative.description = html

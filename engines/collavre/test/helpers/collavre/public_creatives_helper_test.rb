@@ -65,6 +65,16 @@ module Collavre
       assert_equal html, public_creative_body(creative)
     end
 
+    test "body headings preserve relative depth below the page title" do
+      html = '<h1>Section</h1><p>Text</p><h2>Subsection</h2><h6>Deep</h6>'
+      assert_equal '<h2>Section</h2><p>Text</p><h3>Subsection</h3><h6>Deep</h6>',
+                   public_creative_body_headings(html)
+      assert_equal '<h4>Section</h4><p>Text</p><h5>Subsection</h5><h6>Deep</h6>',
+                   public_creative_body_headings(html, level: 3)
+      assert_equal "<h6>Section</h6>", public_creative_body_headings("<h2>Section</h2>", level: 9)
+      assert_equal "<p>Text</p>", public_creative_body_headings("<p>Text</p>")
+    end
+
     test "heading tags start at h2 and stop at h6" do
       assert_equal "h2", public_creative_heading_tag(1)
       assert_equal "h4", public_creative_heading_tag(3)
