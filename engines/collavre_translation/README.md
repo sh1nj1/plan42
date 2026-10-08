@@ -51,8 +51,9 @@ For publicly readable creatives, translation availability follows the effective 
 `auto_translation_enabled` setting. Public comments follow their own author’s setting.
 Private content retains the reader preference gate; private comments remain inaccessible
 to anonymous readers. Read permissions, linked-origin permissions and explicit denials
-are checked before cache reads or enqueueing. A public page mounts reader controllers
-even when the visitor is signed out or has disabled their own preference.
+are checked before cache reads or enqueueing. Reader pages mount translation controllers whenever the engine is enabled,
+including root and search lists, regardless of the visitor preference or parent
+visibility. Individual endpoints enforce each source policy.
 
 The creative controller mounts once on the reader index page, never in shared
 row broadcasts. Its observer translates live appended/replaced rows using the

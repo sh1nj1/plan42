@@ -75,6 +75,47 @@ module CollavreTranslation
       assert_select '[data-controller="comment-translation-reader"]', count: 1
     end
 
+    test "disabled readers mount translation for root and search lists" do
+      reader = users(:three)
+      reader.update!(locale: "ko", auto_translation_enabled: false)
+      sign_in_as reader, password: "password"
+      [ {}, { search: "public English document" } ].each do |params|
+        get "/creatives", params: params
+        assert_response :success
+        assert_select '[data-controller="creative-translations"]', count: 1
+        assert_select '[data-controller="comment-translation-reader"]', count: 1
+      end
+      get "/creatives.json", params: { search: "public English document", simple: true }
+      assert_response :success
+      assert_includes response.parsed_body.map { |row| row["id"] }, @creative.id
+      post @creative_url
+      assert_response :success
+      assert Translation.for_creative(@creative, "ko")
+    end
+
+    test "disabled reader mounts translation for public child under private parent" do
+      reader = users(:three)
+      reader.update!(auto_translation_enabled: false)
+      parent = Collavre::Creative.create!(user: reader, description: "Private parent")
+      @creative.update!(parent: parent)
+      refute parent.has_permission?(nil, :read)
+      assert @creative.has_permission?(nil, :read)
+      sign_in_as reader, password: "password"
+      get "/creatives", params: { id: parent.id }
+      assert_response :success
+      assert_select '[data-controller="creative-translations"]', count: 1
+      assert_select '[data-controller="comment-translation-reader"]', count: 1
+    end
+
+    test "disabled engine does not mount reader controllers" do
+      CollavreTranslation.model = ""
+      get "/creatives", params: { id: @creative.id }
+      follow_redirect! if response.redirect?
+      assert_response :success
+      assert_select '[data-controller="creative-translations"]', count: 0
+      assert_select '[data-controller="comment-translation-reader"]', count: 0
+    end
+
     test "private comments and explicit reader denials remain inaccessible" do
       @comment.update!(private: true)
       reader = users(:three)

@@ -8,11 +8,5 @@ module CollavreTranslation
 
       CreativeTranslationPolicy.enabled?(reader)
     end
-
-    def self.reader_enabled?(reader, creative)
-      CreativeTranslationPolicy.enabled?(reader) ||
-        (creative && creative.has_permission?(reader, :read) &&
-          creative.has_permission?(nil, :read) && CollavreTranslation.enabled?)
-    end
   end
 end
