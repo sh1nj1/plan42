@@ -16,11 +16,14 @@ module Collavre
     end
 
     # The outline under the title, in reading order: the first anonymous-readable
-    # children. A creative without any falls back to its own text.
+    # children. A creative without any falls back to its own text. Readability
+    # uses the same batch filter as the client-side tree, so a linked child
+    # hidden at its placement is skipped even when its origin is public.
     def public_creative_description(creative)
-      children = creative.children.active.limit(PUBLIC_DESCRIPTION_CHILD_LIMIT)
+      children = creative.children.active.limit(PUBLIC_DESCRIPTION_CHILD_LIMIT).to_a
+      readable = Creatives::PermissionFilter.new(user: nil).readable_ids(children.map(&:id)).to_set
       texts = children.filter_map do |child|
-        public_creative_text(child.effective_description) if child.has_permission?(nil, :read)
+        public_creative_text(child.effective_description) if readable.include?(child.id)
       end
       text = texts.join(" ").squish.presence || public_creative_text(creative.description)
       text.truncate(PUBLIC_DESCRIPTION_MAX_LENGTH)

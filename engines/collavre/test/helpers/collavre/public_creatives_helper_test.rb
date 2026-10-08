@@ -36,6 +36,15 @@ module Collavre
       assert_equal "Shared section", public_creative_description(@creative)
     end
 
+    test "a linked child hidden at its placement is skipped even when its origin is public" do
+      origin = Creative.create!(user: @owner, description: "<p>Shared section</p>")
+      perform_enqueued_jobs { CreativeShare.create!(creative: origin, user: nil, permission: :read) }
+      link = Creative.create!(user: @owner, parent: @creative, origin: origin)
+      perform_enqueued_jobs { CreativeShare.create!(creative: link, user: nil, permission: :no_access) }
+
+      assert_equal "Plan", public_creative_description(@creative)
+    end
+
     test "the description falls back to the creative's own text and is capped" do
       assert_equal "Plan", public_creative_description(@creative)
 

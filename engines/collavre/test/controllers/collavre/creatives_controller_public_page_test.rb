@@ -34,6 +34,30 @@ module Collavre
       assert_select "#creatives[data-creatives--tree-url-value*=?]", "id=#{@creative.id}"
     end
 
+    test "the breadcrumb omits private ancestors of a nested public creative" do
+      parent = Creative.create!(user: @owner, description: "<p>Private Parent Secret</p>")
+      @creative.update!(parent: parent)
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: "public-plan")
+
+      assert_response :success
+      assert_select ".creative-breadcrumb-current", "Public Plan"
+      assert_select ".creative-breadcrumb a[data-creative-id=?]", parent.id.to_s, count: 0
+      assert_no_match "Private Parent Secret", response.body
+    end
+
+    test "the breadcrumb keeps ancestors the viewer can read" do
+      parent = Creative.create!(user: @owner, description: "<p>Owner Parent</p>")
+      @creative.update!(parent: parent)
+      sign_in_as(@owner, password: "password")
+
+      get creatives_path(id: @creative.id, view: "list")
+
+      assert_response :success
+      assert_select ".creative-breadcrumb a[data-creative-id=?]", parent.id.to_s, text: "Owner Parent"
+    end
+
     test "the app view of a creative is not indexable" do
       publish
 
@@ -140,4 +164,3 @@ module Collavre
     end
   end
 end
-
