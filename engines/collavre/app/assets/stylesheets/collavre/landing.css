@@ -725,3 +725,81 @@ body.dark-mode .landing-shot-dark { display: block; }
   text-align: center;
   margin-top: var(--space-8);
 }
+
+/* ─── Public creative pages ─────────────────────────────────────────────────── */
+
+/* A shared creative is a document: one measured reading column like the feature
+   guides, with the outline's depth carried by heading levels rather than
+   indentation so a deep tree stays readable on a phone. */
+.public-creative-container {
+  max-width: 760px;
+}
+
+.public-creative-header {
+  margin-bottom: var(--space-7);
+}
+
+.public-creative-title {                /* L2 */
+  font-size: var(--text-5);
+  font-weight: var(--weight-7);
+  margin-bottom: var(--space-4);
+}
+
+.public-creative-node {
+  margin-top: var(--space-4);
+}
+
+.public-creative-heading {              /* L3 */
+  font-size: var(--text-3);
+  font-weight: var(--weight-6);
+}
+
+h2.public-creative-heading {
+  margin-top: var(--space-6);
+}
+
+.public-creative-body {                 /* L4 */
+  font-size: var(--text-2);
+  line-height: var(--leading-3);
+  overflow-wrap: anywhere;
+}
+
+.public-creative-body img,
+.public-creative-body video {
+  max-width: 100%;
+  height: auto;
+}
+
+.public-creative-body table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.public-creative-body th,
+.public-creative-body td {
+  border: 1px solid var(--border-color);
+  padding: var(--space-2) var(--space-3);
+}
+
+.public-creative-truncated {
+  margin-top: var(--space-7);
+  color: var(--text-muted);
+  font-size: var(--text-2);
+}
+
+.public-creative-cta {
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.public-creative-cta p {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-2);
+}

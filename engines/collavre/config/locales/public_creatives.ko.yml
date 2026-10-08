@@ -5,3 +5,5 @@ ko:
       show:
         untitled: "제목 없음"
         open_in_app: "앱에서 열기"
+        truncated: "내용이 많아 일부만 표시합니다."
+        cta: "%{app_name}로 만든 문서입니다. 가입하고 직접 만들어 공유해 보세요."

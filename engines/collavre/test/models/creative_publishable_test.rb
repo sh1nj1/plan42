@@ -56,6 +56,22 @@ module Collavre
       assert_equal "", Creative.public_slug_for("!!!")
     end
 
+    test "public_title is the first block of text" do
+      assert_equal "Hello, Public World!", @creative.public_title
+
+      @creative.description = "<h2>Plan&nbsp;A</h2><ul><li>Step one</li></ul>"
+      assert_equal "Plan A", @creative.public_title
+
+      @creative.description = "<ul><li> </li><li>Second item</li></ul>"
+      assert_equal "Second item", @creative.public_title
+
+      @creative.description = "Plain   text"
+      assert_equal "Plain text", @creative.public_title
+
+      @creative.description = "<p>#{'word ' * 40}</p>"
+      assert_equal 120, @creative.public_title.length
+    end
+
     test "public_slug is capped without a trailing hyphen" do
       slug = Creative.public_slug_for("#{'a' * 59} bcd")
 

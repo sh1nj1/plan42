@@ -99,6 +99,59 @@ module Collavre
       assert_response :not_found
     end
 
+    test "renders the public subtree as an outline signed out" do
+      child = Creative.create!(user: @owner, parent: @creative, description: "<p>Goals</p>", sequence: 1)
+      Creative.create!(user: @owner, parent: child, description: "<p>First</p><p>Second paragraph</p>", sequence: 1)
+      hidden = Creative.create!(user: @owner, parent: @creative, description: "<p>Secret</p>", sequence: 2)
+      public_id = publish
+      perform_enqueued_jobs { CreativeShare.create!(creative: hidden, user: nil, permission: :no_access) }
+
+      get public_creative_path(public_id: public_id, slug: "public-plan")
+
+      assert_response :success
+      assert_select "h2.public-creative-heading", "Goals"
+      assert_select ".public-creative-body p", "Second paragraph"
+      assert_not_includes response.body, "Secret"
+      assert_select ".public-creative-truncated", count: 0
+      assert_select ".public-creative-cta a[href=?]", new_user_path
+    end
+
+    test "a rich root description is rendered below the title" do
+      @creative.update!(description: "<p>Overview</p><ul><li>Point one</li></ul>")
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: "overview")
+
+      assert_response :success
+      assert_select "h1", "Overview"
+      assert_select ".public-creative-body li", "Point one"
+    end
+
+    test "notes when the page shows only part of a large tree" do
+      Creative.create!(user: @owner, parent: @creative, description: "Child", sequence: 1)
+      public_id = publish
+      limited = ->(creative) { Creatives::PublicTreeBuilder.allocate.tap { |builder| builder.send(:initialize, creative, limit: 0) } }
+
+      Creatives::PublicTreeBuilder.stub(:new, limited) do
+        get public_creative_path(public_id: public_id, slug: "public-plan")
+      end
+
+      assert_select ".public-creative-truncated", I18n.t("collavre.public_creatives.show.truncated")
+    end
+
+    test "signed-in readers see the anonymous view without the sign-up prompt" do
+      private_child = Creative.create!(user: @owner, parent: @creative, description: "Owner only", sequence: 1)
+      public_id = publish
+      perform_enqueued_jobs { CreativeShare.create!(creative: private_child, user: nil, permission: :no_access) }
+      sign_in_as(@owner, password: "password")
+
+      get public_creative_path(public_id: public_id, slug: "public-plan")
+
+      assert_response :success
+      assert_not_includes response.body, "Owner only"
+      assert_select ".public-creative-cta", count: 0
+    end
+
     test "requires sign-in when creatives require login" do
       public_id = publish
       SystemSetting.create!(key: "creatives_login_required", value: "true")

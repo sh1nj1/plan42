@@ -5,3 +5,5 @@ en:
       show:
         untitled: "Untitled"
         open_in_app: "Open in app"
+        truncated: "This page is long, so only part of it is shown here."
+        cta: "Made with %{app_name}. Sign up to build and share your own."

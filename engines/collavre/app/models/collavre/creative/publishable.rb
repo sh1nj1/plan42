@@ -17,6 +17,8 @@ module Collavre
       PUBLIC_ID_FORMAT = /[0-9A-Za-z]{#{PUBLIC_ID_LENGTH}}/
       SLUG_MAX_LENGTH = 60
       PUBLIC_ID_ATTEMPTS = 5
+      TITLE_MAX_LENGTH = 120
+      TITLE_BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, th, td, blockquote, pre"
 
       def publicly_readable?
         has_permission?(nil, :read)
@@ -47,11 +49,20 @@ module Collavre
         raise ActiveRecord::RecordNotSaved.new("Could not assign a public id", self)
       end
 
+      # The page title: the first block of text in the description, so a rich
+      # description (a heading line followed by a list, say) is titled by its
+      # opening line rather than by every block run together.
+      def public_title
+        fragment = Nokogiri::HTML5.fragment(effective_origin.description.to_s)
+        first_block = fragment.css(TITLE_BLOCK_SELECTOR).find { |node| node.text.strip.present? }
+        (first_block || fragment).text.squish.truncate(TITLE_MAX_LENGTH)
+      end
+
       # Human-readable URL segment derived from the title. Letters and digits of
       # every script are kept (so Korean titles stay Korean), everything else
       # collapses to single hyphens.
       def public_slug
-        self.class.public_slug_for(Collavre::HtmlText.label(effective_origin.description))
+        self.class.public_slug_for(public_title)
       end
 
       class_methods do

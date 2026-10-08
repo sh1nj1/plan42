@@ -1,0 +1,11 @@
+<% creative = node.creative %>
+<section class="public-creative-node">
+  <% if public_creative_heading?(creative) %>
+    <%= content_tag public_creative_heading_tag(level), Collavre::HtmlText.label(creative.description), class: "public-creative-heading" %>
+  <% else %>
+    <div class="public-creative-body"><%= embed_youtube_iframe(creative.description) %></div>
+  <% end %>
+  <% if node.children.any? %>
+    <%= render partial: "collavre/public_creatives/node", collection: node.children, as: :node, locals: { level: level + 1 } %>
+  <% end %>
+</section>

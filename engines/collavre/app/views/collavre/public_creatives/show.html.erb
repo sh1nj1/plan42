@@ -1,4 +1,4 @@
-<% title = Collavre::HtmlText.label(@creative.description) %>
+<% title = @creative.public_title %>
 <% content_for :page_title, title.presence || t('collavre.public_creatives.show.untitled') %>
 
 <div class="landing">
@@ -10,6 +10,24 @@
           <%= link_to t('collavre.public_creatives.show.open_in_app'), collavre.creatives_path(id: @creative.id), class: "landing-btn landing-btn-ghost" %>
         <% end %>
       </header>
+
+      <% unless public_creative_heading?(@creative) || title.blank? %>
+        <div class="public-creative-body"><%= embed_youtube_iframe(@creative.description) %></div>
+      <% end %>
+
+      <%= render partial: "collavre/public_creatives/node", collection: @nodes, as: :node, locals: { level: 1 } %>
+
+      <% if @truncated %>
+        <p class="public-creative-truncated"><%= t('collavre.public_creatives.show.truncated') %></p>
+      <% end %>
+
+      <% unless authenticated? %>
+        <aside class="public-creative-cta">
+          <p><%= t('collavre.public_creatives.show.cta', app_name: t('app.name')) %></p>
+          <%= link_to t('collavre.users.new.sign_up'), collavre.new_user_path, class: "landing-btn" %>
+          <%= link_to t('app.sign_in'), collavre.new_session_path, class: "landing-btn landing-btn-ghost" %>
+        </aside>
+      <% end %>
     </div>
   </article>
 

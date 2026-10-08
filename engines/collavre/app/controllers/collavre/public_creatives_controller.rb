@@ -18,9 +18,13 @@ module Collavre
       raise ActiveRecord::RecordNotFound unless @creative.origin_id.nil? && @creative.publicly_readable?
 
       slug = @creative.public_slug
-      return if params[:slug].to_s == slug
+      unless params[:slug].to_s == slug
+        return redirect_to(public_creative_path(public_id: @creative.public_id, slug: slug.presence), status: :moved_permanently)
+      end
 
-      redirect_to public_creative_path(public_id: @creative.public_id, slug: slug.presence), status: :moved_permanently
+      tree = Creatives::PublicTreeBuilder.new(@creative)
+      @nodes = tree.call
+      @truncated = tree.truncated?
     end
 
     private
