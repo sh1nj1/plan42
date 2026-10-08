@@ -57,6 +57,7 @@ export default class extends Controller {
   // --- Zoom ---
 
   _resetZoom() {
+    this._drag = null
     this._zoom = 1
     this._panX = 0
     this._panY = 0
@@ -79,6 +80,7 @@ export default class extends Controller {
       this._panY += oy * ratio
     }
 
+    if (clamped <= 1) this._drag = null
     this._zoom = clamped
 
     // Reset pan if back to fit
@@ -94,7 +96,7 @@ export default class extends Controller {
     const imgEl = this._dialog?.querySelector(".image-lightbox-image")
     if (!imgEl) return
     imgEl.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})`
-    imgEl.style.cursor = this._zoom > 1 ? "grab" : "default"
+    imgEl.style.cursor = this._zoom > 1 ? (this._drag ? "grabbing" : "grab") : "default"
   }
 
   _setupZoom(dialog) {
@@ -122,33 +124,7 @@ export default class extends Controller {
       }
     })
 
-    // Mouse drag to pan when zoomed
-    let dragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0
-
-    imgEl.addEventListener("mousedown", (e) => {
-      if (this._zoom <= 1) return
-      e.preventDefault()
-      dragging = true
-      dragStartX = e.clientX
-      dragStartY = e.clientY
-      panStartX = this._panX
-      panStartY = this._panY
-      imgEl.style.cursor = "grabbing"
-    })
-
-    window.addEventListener("mousemove", this._onMouseMove = (e) => {
-      if (!dragging) return
-      this._panX = panStartX + (e.clientX - dragStartX)
-      this._panY = panStartY + (e.clientY - dragStartY)
-      this._applyTransform()
-    })
-
-    window.addEventListener("mouseup", this._onMouseUp = () => {
-      if (!dragging) return
-      dragging = false
-      const imgEl2 = this._dialog?.querySelector(".image-lightbox-image")
-      if (imgEl2) imgEl2.style.cursor = this._zoom > 1 ? "grab" : "default"
-    })
+    this._setupPan(stage)
 
     // Pinch zoom (touch)
     let lastPinchDist = 0
@@ -178,9 +154,39 @@ export default class extends Controller {
     }, { passive: false })
   }
 
+  _setupPan(stage) {
+    stage.addEventListener("pointerdown", (event) => {
+      if (this._drag) {
+        this._drag = null
+        this._applyTransform()
+        return
+      }
+      if (this._zoom <= 1 || event.button !== 0 || !event.isPrimary) return
+      event.preventDefault()
+      this._drag = {
+        id: event.pointerId, x: event.clientX, y: event.clientY,
+        panX: this._panX, panY: this._panY
+      }
+      stage.setPointerCapture(event.pointerId)
+      this._applyTransform()
+    })
+    stage.addEventListener("pointermove", (event) => {
+      if (!this._drag || this._drag.id !== event.pointerId) return
+      this._panX = this._drag.panX + event.clientX - this._drag.x
+      this._panY = this._drag.panY + event.clientY - this._drag.y
+      this._applyTransform()
+    })
+    const stop = () => {
+      this._drag = null
+      this._applyTransform()
+    }
+    stage.addEventListener("pointerup", stop)
+    stage.addEventListener("pointercancel", stop)
+    stage.addEventListener("lostpointercapture", stop)
+  }
+
   _cleanupZoom() {
-    if (this._onMouseMove) window.removeEventListener("mousemove", this._onMouseMove)
-    if (this._onMouseUp) window.removeEventListener("mouseup", this._onMouseUp)
+    this._drag = null
   }
 
   _createDialog() {
@@ -318,13 +324,13 @@ export default class extends Controller {
   }
 
   _bindTouchEvents(dialog) {
-    let touchStartX = 0
+    let touchStartX = null
     const stage = dialog.querySelector(".image-lightbox-stage")
     stage.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) touchStartX = e.changedTouches[0].screenX
+      touchStartX = e.touches.length === 1 && this._zoom <= 1 ? e.changedTouches[0].screenX : null
     }, { passive: true })
     stage.addEventListener("touchend", (e) => {
-      if (this._zoom > 1) return
+      if (this._zoom > 1 || touchStartX === null) return
       if (e.changedTouches.length === 1) {
         const diff = e.changedTouches[0].screenX - touchStartX
         if (Math.abs(diff) > 50) {
