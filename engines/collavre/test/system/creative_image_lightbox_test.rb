@@ -26,8 +26,11 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     page.driver.browser.action.move_to(image.native).click_and_hold.move_by(70, 40).perform
     assert_match "translate(70px, 40px) scale(1.25)", image[:style]
     assert_match "grabbing", image[:style]
+    stage = find(".image-lightbox-stage")
+    assert_equal "grabbing", stage.style("cursor")["cursor"]
     page.driver.browser.action.release.perform
     assert_match "cursor: grab;", image[:style]
+    assert_equal "", page.evaluate_script("document.querySelector('.image-lightbox-stage').style.cursor")
     find(".image-lightbox-zoom-reset").click
     assert_match "translate(0px, 0px) scale(1)", image[:style]
   end

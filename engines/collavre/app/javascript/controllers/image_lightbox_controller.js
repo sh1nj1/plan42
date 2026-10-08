@@ -96,6 +96,7 @@ export default class extends Controller {
   _applyTransform() {
     const imgEl = this._dialog?.querySelector(".image-lightbox-image")
     if (!imgEl) return
+    this._dialog.querySelector(".image-lightbox-stage").style.cursor = this._drag ? "grabbing" : ""
     imgEl.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})`
     imgEl.style.cursor = this._zoom > 1 ? (this._drag ? "grabbing" : "grab") : "default"
   }

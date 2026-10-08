@@ -465,8 +465,10 @@ test.each(['mouse', 'touch', 'pen'])('pans zoomed images with %s and retains the
   pointer(stage, 'pointermove', { clientX: 150, clientY: 80 })
   expect(image.style.transform).toBe('translate(50px, -20px) scale(1.25)')
   expect(image.style.cursor).toBe('grabbing')
+  expect(stage.style.cursor).toBe('grabbing')
   pointer(stage, 'pointerup')
   expect(image.style.cursor).toBe('grab')
+  expect(stage.style.cursor).toBe('')
   pointer(stage, 'pointermove', { clientX: 200 })
   expect(image.style.transform).toBe('translate(50px, -20px) scale(1.25)')
 })
@@ -481,6 +483,7 @@ test.each(['pointercancel', 'lostpointercapture'])('stops dragging on %s', (type
   pointer(stage, 'pointermove', { clientX: 160 })
   expect(dialog().querySelector('img').style.transform).toBe('translate(0px, 0px) scale(1.25)')
   expect(dialog().querySelector('img').style.cursor).toBe('grab')
+  expect(stage.style.cursor).toBe('')
 })
 
 test('ignores unzoomed drags, secondary buttons and unrelated pointers; stops pan for pinch', () => {
@@ -499,6 +502,7 @@ test('ignores unzoomed drags, secondary buttons and unrelated pointers; stops pa
   pointer(stage, 'pointerdown', { pointerId: 2, isPrimary: false })
   pointer(stage, 'pointermove', { clientX: 160 })
   expect(dialog().querySelector('img').style.cursor).toBe('grab')
+  expect(stage.style.cursor).toBe('')
   expect(dialog().querySelector('img').style.transform).toBe('translate(0px, 0px) scale(1.25)')
 })
 
@@ -510,6 +514,7 @@ test.each(['.image-lightbox-zoom-reset', '.image-lightbox-zoom-out', '.image-lig
   pointer(stage, 'pointerdown')
   pointer(stage, 'pointermove', { clientX: 160 })
   click(selector)
+  expect(stage.style.cursor).toBe('')
   pointer(stage, 'pointermove', { clientX: 200 })
   expect(dialog().querySelector('img').style.transform).toBe('translate(0px, 0px) scale(1)')
 })
