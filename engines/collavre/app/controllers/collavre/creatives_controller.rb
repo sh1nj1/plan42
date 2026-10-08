@@ -37,6 +37,8 @@ module Collavre
           if params[:id].present?
             creative = Creative.find_by(id: params[:id])
             @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+            public_page = legacy_public_page_redirect(@parent_creative)
+            return redirect_to(public_page, status: :moved_permanently) if public_page
             if Current.user
               @last_visited_creative_client_id = last_visited_creative_client_id
               @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
@@ -569,6 +571,20 @@ module Collavre
 
       def turbo_prefetch_request?
         request.headers["X-Sec-Purpose"] == "prefetch"
+      end
+
+      # Signed-out readers arriving on an old /creatives?id= link to public
+      # content are sent to its canonical /p/ page so search engines index one
+      # address. Links carrying more than the id (an open comment, a topic) and
+      # in-app Turbo Frame navigations keep the app view they asked for.
+      def legacy_public_page_redirect(creative)
+        return if Current.user || creative.nil? || turbo_frame_request?
+        return unless request.query_parameters.keys == [ "id" ]
+
+        origin = creative.effective_origin
+        return unless origin.publicly_readable?
+
+        public_creative_path(public_id: origin.ensure_public_id!, slug: origin.public_slug.presence)
       end
 
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)

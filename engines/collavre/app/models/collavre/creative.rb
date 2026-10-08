@@ -71,6 +71,7 @@ module Collavre
     include TypeSelectable
     include Linkable
     include Permissible
+    include Publishable
     include Describable
     include RealtimeBroadcastable
     include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy, CreationEvents

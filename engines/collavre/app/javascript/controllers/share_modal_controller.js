@@ -121,6 +121,7 @@ export default class extends Controller {
     this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
     this.#initializeInviteLink()
+    this.#initializePublicLink()
   }
 
   #constrainModalHeight(modal) {
@@ -365,6 +366,20 @@ export default class extends Controller {
     }
 
     setTimeout(() => msg.remove(), 4000)
+  }
+
+  #initializePublicLink() {
+    const copyBtn = document.getElementById("share-public-link-copy")
+    const urlInput = document.getElementById("share-public-url")
+    if (!copyBtn || !urlInput) return
+
+    copyBtn.onclick = () => {
+      const plan42Copy = window.Plan42 && window.Plan42.copyTextToClipboard
+      const copyPromise = plan42Copy
+        ? plan42Copy(urlInput.value)
+        : navigator.clipboard?.writeText(urlInput.value)
+      copyPromise?.then(() => this.#showMessage(copyBtn.dataset.copiedMessage, "success"))
+    }
   }
 
   #initializeInviteLink() {

@@ -8,6 +8,10 @@ Collavre::Engine.routes.draw do
   get "features", to: "features#index", as: :features
   get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
 
+  # Public, server-rendered pages for publicly shared creatives
+  get "p/:public_id(/:slug)", to: "public_creatives#show", as: :public_creative,
+      constraints: { public_id: Collavre::Creative::Publishable::PUBLIC_ID_FORMAT }, format: false
+
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]

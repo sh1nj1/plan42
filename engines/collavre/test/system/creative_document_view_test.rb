@@ -523,7 +523,7 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".creative-drag-handle", visible: true
 
     @first.update!(description: "word " * 400)
-    visit collavre.creative_path(@root)
+    visit collavre.creative_path(@root, view: "tree")
     assert_selector content_selector(@first)
     edges = page.evaluate_script(<<~JS, content_selector(@first))
       [document.querySelector(arguments[0]).getBoundingClientRect().right,

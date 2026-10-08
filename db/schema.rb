@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_01_001000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -384,9 +384,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_01_001000) do
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.string "public_id"
     t.index ["archived_at"], name: "index_creatives_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
+    t.index ["public_id"], name: "index_creatives_on_public_id", unique: true
     t.index ["user_id"], name: "index_creatives_on_user_id"
   end
 
