@@ -6,6 +6,9 @@ module Collavre
     PUBLIC_TITLE_MAX_LENGTH = 70
     PUBLIC_DESCRIPTION_MAX_LENGTH = 160
     PUBLIC_DESCRIPTION_CHILD_LIMIT = 20
+    # Bounds the scan past denied children so a long hidden prefix still
+    # reaches the public ones the client-side tree shows.
+    PUBLIC_DESCRIPTION_CANDIDATE_LIMIT = 200
     # Elements whose text would otherwise run into the next block's
     # ("<p>A</p><p>B</p>" must read "A B", not "AB").
     PUBLIC_TEXT_BREAK_SELECTOR = "p, div, li, dt, dd, br, tr, td, th, h1, h2, h3, h4, h5, h6, pre, blockquote"
@@ -20,11 +23,12 @@ module Collavre
     # uses the same batch filter as the client-side tree, so a linked child
     # hidden at its placement is skipped even when its origin is public.
     def public_creative_description(creative)
-      children = creative.children.active.limit(PUBLIC_DESCRIPTION_CHILD_LIMIT).to_a
-      readable = Creatives::PermissionFilter.new(user: nil).readable_ids(children.map(&:id)).to_set
-      texts = children.filter_map do |child|
-        public_creative_text(child.effective_description) if readable.include?(child.id)
-      end
+      candidates = creative.children.active.limit(PUBLIC_DESCRIPTION_CANDIDATE_LIMIT).to_a
+      readable = Creatives::PermissionFilter.new(user: nil).readable_ids(candidates.map(&:id)).to_set
+      texts = candidates.lazy
+        .select { |child| readable.include?(child.id) }
+        .map { |child| public_creative_text(child.effective_description) }
+        .first(PUBLIC_DESCRIPTION_CHILD_LIMIT)
       text = texts.join(" ").squish.presence || public_creative_text(creative.description)
       text.truncate(PUBLIC_DESCRIPTION_MAX_LENGTH)
     end

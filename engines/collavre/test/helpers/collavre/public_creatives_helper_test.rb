@@ -45,6 +45,26 @@ module Collavre
       assert_equal "Plan", public_creative_description(@creative)
     end
 
+    test "the description scans past more denied children than it reads" do
+      PublicCreativesHelper::PUBLIC_DESCRIPTION_CHILD_LIMIT.times do |i|
+        hidden = Creative.create!(user: @owner, parent: @creative, description: "<p>Secret #{i}</p>")
+        perform_enqueued_jobs { CreativeShare.create!(creative: hidden, user: nil, permission: :no_access) }
+      end
+      Creative.create!(user: @owner, parent: @creative, description: "<p>Visible</p>")
+
+      assert_equal "Visible", public_creative_description(@creative)
+    end
+
+    test "the description reads at most the child limit of public children" do
+      (PublicCreativesHelper::PUBLIC_DESCRIPTION_CHILD_LIMIT + 1).times do |i|
+        Creative.create!(user: @owner, parent: @creative, description: "<p>c#{i}</p>")
+      end
+
+      text = public_creative_description(@creative)
+      assert_includes text, "c19"
+      assert_not_includes text, "c20"
+    end
+
     test "the description falls back to the creative's own text and is capped" do
       assert_equal "Plan", public_creative_description(@creative)
 
