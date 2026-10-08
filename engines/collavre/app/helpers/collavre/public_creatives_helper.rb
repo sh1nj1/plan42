@@ -3,7 +3,7 @@
 module Collavre
   module PublicCreativesHelper
     PUBLIC_HEADING_MAX_LENGTH = 120
-    PUBLIC_BLOCK_SELECTOR = "a, br, table, ul, ol, img, video, iframe, pre, blockquote, hr, h1, h2, h3, h4, h5, h6"
+    PUBLIC_BLOCK_SELECTOR = "a, br, table, ul, ol, dl, dt, dd, img, video, iframe, pre, blockquote, hr, h1, h2, h3, h4, h5, h6"
 
     # A creative whose description is a short, single line of text reads as a
     # section title, so it becomes a heading in the outline. Anything richer —

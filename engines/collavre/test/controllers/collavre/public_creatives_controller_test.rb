@@ -158,6 +158,23 @@ module Collavre
       assert_select ".public-creative-heading", count: 0
     end
 
+    test "preserves definition lists in root and child descriptions" do
+      @creative.update!(description: "<dl><dt>Term</dt><dd>Definition</dd></dl>")
+      Creative.create!(user: @owner, parent: @creative,
+                       description: "<dl><dt>Child term</dt><dd>Child definition</dd></dl>")
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: @creative.public_slug)
+
+      assert_response :success
+      assert_select ".public-creative-body dl", count: 2
+      assert_select ".public-creative-body dl dt", "Term"
+      assert_select ".public-creative-body dl dd", "Definition"
+      assert_select ".public-creative-body dl dt", "Child term"
+      assert_select ".public-creative-body dl dd", "Child definition"
+      assert_select ".public-creative-heading", count: 0
+    end
+
     test "preserves hard line breaks in root and child descriptions" do
       @creative.update!(description: "<p>First<br>Second</p>")
       Creative.create!(user: @owner, parent: @creative, description: "<p>Child first<br>Child second</p>")
