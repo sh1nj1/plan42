@@ -24,7 +24,7 @@ module Collavre
       assert_equal "text/plain", response.media_type
       assert_includes response.body, "Allow: /p/"
       assert_includes response.body, "Disallow: /\n"
-      assert_equal [ "Allow: /p/", "Allow: /assets/", "Allow: /creatives?format=json", "Allow: /creatives/*/children", "Allow: /sitemap.xml" ],
+      assert_equal [ "Allow: /p/", "Allow: /assets/", "Allow: /rails/active_storage/", "Allow: /creatives?format=json", "Allow: /creatives/*/children", "Allow: /sitemap.xml" ],
                    response.body.lines.grep(/^Allow:/).map(&:strip)
       assert_includes response.body, "Sitemap: http://www.example.com/sitemap.xml"
       assert_includes response.headers["Cache-Control"], "public"

@@ -62,13 +62,16 @@ module Collavre
       return "User-agent: *\nDisallow: /\n" if SystemSetting.creatives_login_required?
 
       prefix = request.script_name
-      # A /p/ page is client-rendered, so crawlers also need its assets and the
-      # tree JSON it loads. Those endpoints only ever return public content to
-      # an anonymous request.
+      # A /p/ page is client-rendered, so crawlers also need its assets, the
+      # tree JSON it loads and the attached images in its body. The JSON
+      # endpoints only ever return public content to an anonymous request, and
+      # attachment URLs are signed, so only ones linked from public content are
+      # discoverable.
       <<~ROBOTS
         User-agent: *
         Allow: #{prefix}/p/
         Allow: #{Rails.application.config.assets.prefix}/
+        Allow: #{ActiveStorage.routes_prefix}/
         Allow: #{prefix}/creatives?format=json
         Allow: #{prefix}/creatives/*/children
         Disallow: /
