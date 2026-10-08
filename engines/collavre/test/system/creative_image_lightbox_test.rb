@@ -23,7 +23,7 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     find("#creative-#{@creative.id} img[alt='First']").click
     find(".image-lightbox-zoom-in").click
     image = find(".image-lightbox-image")
-    page.driver.browser.action.move_to(image).click_and_hold.move_by(70, 40).perform
+    page.driver.browser.action.move_to(image.native).click_and_hold.move_by(70, 40).perform
     assert_match "translate(70px, 40px) scale(1.25)", image[:style]
     assert_match "grabbing", image[:style]
     page.driver.browser.action.release.perform

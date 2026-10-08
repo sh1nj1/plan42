@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { setupImagePan } from "../lib/image_lightbox_pan"
 import imageLightboxValues from "./image_lightbox_values"
 import { confirmDialog } from "../lib/utils/dialog"
 
@@ -124,7 +125,7 @@ export default class extends Controller {
       }
     })
 
-    this._setupPan(stage)
+    setupImagePan(this, stage)
 
     // Pinch zoom (touch)
     let lastPinchDist = 0
@@ -152,37 +153,6 @@ export default class extends Controller {
         lastPinchDist = dist
       }
     }, { passive: false })
-  }
-
-  _setupPan(stage) {
-    stage.addEventListener("pointerdown", (event) => {
-      if (this._drag) {
-        this._drag = null
-        this._applyTransform()
-        return
-      }
-      if (this._zoom <= 1 || event.button !== 0 || !event.isPrimary) return
-      event.preventDefault()
-      this._drag = {
-        id: event.pointerId, x: event.clientX, y: event.clientY,
-        panX: this._panX, panY: this._panY
-      }
-      stage.setPointerCapture(event.pointerId)
-      this._applyTransform()
-    })
-    stage.addEventListener("pointermove", (event) => {
-      if (!this._drag || this._drag.id !== event.pointerId) return
-      this._panX = this._drag.panX + event.clientX - this._drag.x
-      this._panY = this._drag.panY + event.clientY - this._drag.y
-      this._applyTransform()
-    })
-    const stop = () => {
-      this._drag = null
-      this._applyTransform()
-    }
-    stage.addEventListener("pointerup", stop)
-    stage.addEventListener("pointercancel", stop)
-    stage.addEventListener("lostpointercapture", stop)
   }
 
   _cleanupZoom() {
