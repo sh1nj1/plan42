@@ -13,6 +13,21 @@ module Collavre
       creative.ensure_public_id!
     end
 
+    test "preserves leading div and text content in document order" do
+      public_id = publish
+      [ "<div>Introduction</div><p>Details</p>", "Introduction<p>Details</p>" ].each do |description|
+        @creative.update_column(:description, description)
+
+        assert_equal "Introduction", @creative.public_title
+        get public_creative_path(public_id: public_id, slug: "introduction")
+
+        assert_response :success
+        assert_select "h1", "Introduction"
+        assert_select ".public-creative-body", /Details/
+        assert_select ".public-creative-body", /Introduction/
+      end
+    end
+
     test "renders a publicly shared creative signed out" do
       public_id = publish
 

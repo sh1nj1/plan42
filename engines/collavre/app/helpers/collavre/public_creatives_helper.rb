@@ -14,12 +14,12 @@ module Collavre
       return false if label.blank? || label.length > PUBLIC_HEADING_MAX_LENGTH
 
       fragment = Nokogiri::HTML5.fragment(html)
-      fragment.css(PUBLIC_BLOCK_SELECTOR).empty? && fragment.css("p").size <= 1
+      fragment.css(PUBLIC_BLOCK_SELECTOR).empty? && fragment.children.count { |node| node.text.strip.present? } <= 1
     end
 
     def public_creative_body(creative)
       fragment = Nokogiri::HTML5.fragment(creative.description.to_s)
-      first_block = fragment.css(Creative::Publishable::TITLE_BLOCK_SELECTOR).find { |node| node.text.strip.present? }
+      first_block = fragment.children.find { |node| node.text.strip.present? }
       return fragment.to_html unless first_block
 
       simple_title = %w[p h1 h2 h3 h4 h5 h6].include?(first_block.name) &&

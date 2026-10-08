@@ -54,7 +54,7 @@ module Collavre
       # opening line rather than by every block run together.
       def public_title
         fragment = Nokogiri::HTML5.fragment(effective_origin.description.to_s)
-        first_block = fragment.css(TITLE_BLOCK_SELECTOR).find { |node| node.text.strip.present? }
+        first_block = fragment.children.find { |node| node.text.strip.present? }
         (first_block || fragment).text.squish.truncate(TITLE_MAX_LENGTH)
       end
 
