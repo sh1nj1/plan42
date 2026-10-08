@@ -2,3 +2,4 @@ en:
   collavre_translation:
     preferences:
       auto_translation_enabled: "Automatically translate content"
+      auto_translation_help: "Translate content I read and show my public posts in each visitor’s language."

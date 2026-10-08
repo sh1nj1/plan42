@@ -1,7 +1,7 @@
 # Collavre Translation
 
 Optional comment and creative translation engine. Core content and agent context always retain
-original text. Only authenticated, authorized readers trigger translation, when a
+original text. Authorized readers, including anonymous visitors to public creatives, trigger translation when a
 comment enters the viewport. Responses are fetched per viewer, never broadcast
 on the shared comment stream.
 
@@ -21,7 +21,9 @@ Uses the existing provider API keys from Collavre integration settings. Blank in
 registration disables the feature. This engine owns its tables and the user
 preference column; core registers no translation-specific settings.
 
-Targets English and Korean from the reader's `User#locale`. CLD3 detects source
+Targets English and Korean from the reader's `User#locale`, or browser language for anonymous readers.
+The page's `?lang=en` or `?lang=ko` overrides the translation target without changing a saved preference;
+cache lookups, enqueue requests and polling retain this override. Unsupported targets return 422. CLD3 detects source
 language locally on first read. Hangul-only prose is recognized even in short
 comments; other short or unreliable text stays in its original language. Code, URLs, mentions, HTML tags and Markdown links are masked and
 restored locally. Missing or duplicate placeholders fail closed.
@@ -45,29 +47,30 @@ uncertain. Linked creatives share their origin cache; both link and origin read
 permissions are checked. Requests and polling stop when rows disappear or their
 source changes. Provider failures preserve the original display.
 
-The creative UI and API call the shared `CollavreTranslation.enabled_for?(user)`
-user preference gate for the reader.
+For publicly readable creatives, translation availability follows the effective origin author’s
+`auto_translation_enabled` setting. Public comments follow their own author’s setting.
+Private content retains the reader preference gate; private comments remain inaccessible
+to anonymous readers. Read permissions, linked-origin permissions and explicit denials
+are checked before cache reads or enqueueing. A public page mounts reader controllers
+even when the visitor is signed out or has disabled their own preference.
+
 The creative controller mounts once on the reader index page, never in shared
 row broadcasts. Its observer translates live appended/replaced rows using the
-reader session; background renderer and sender preferences cannot suppress it.
-After source permission checks, API requests return 403 for a disabled reader
-and 503 for a disabled engine, before cache reads or job requests.
-User preferences are owned and migrated by this engine on the shared user table as `Collavre::User#auto_translation_enabled?`
-(default true, including existing users), saved through the authorized profile
-update through the generic `Collavre::ProfilePreferences` parameter registry
-and `profile_preferences` view slot. Its preference controller clears Turbo
-snapshots when that form submits, so Back re-renders the saved reader gate.
-`CollavreTranslation.enabled_for?(user)` is the shared availability gate
-for comments and creative translation. Use it before mounting frontend
-controllers, and check the preference after source authorization in endpoints.
-Shared live comment broadcasts contain inert templates, independent of the author
-or background renderer. The request-rendered `comment-translation-reader`
-controller is mounted only when `enabled_for?(Current.user)` passes and hydrates
-initial, appended, and replaced comment templates. OFF readers never mount a
-translation controller, make requests, or poll. Reuse a per-reader gate for
-creative broadcasts as well; do not gate shared HTML using `Current.user`.
-Disabled readers cannot fetch cached results or enqueue jobs. Original content
-and AI context remain unchanged.
+reader request. Shared live comment broadcasts contain inert templates;
+the request-rendered `comment-translation-reader` hydrates initial, appended and
+replaced templates. Endpoint policy is checked per source, before cache reads or
+job requests, so a public page containing private content does not bypass its
+reader preference. Disabled engines return 503 and disabled content policies
+return 403. Original content and AI context remain unchanged.
+
+User preferences are owned and migrated by this engine on the shared user table as
+`Collavre::User#auto_translation_enabled?` (default true, including existing users),
+saved through the authorized profile update using the generic
+`Collavre::ProfilePreferences` parameter registry and `profile_preferences` view slot.
+Its preference controller clears Turbo snapshots when that form submits, so Back
+re-renders the saved gate. `ContentTranslationPolicy` selects the author or reader
+preference; `CollavreTranslation.enabled_for?(user)` combines that preference with
+engine availability.
 
 Per-user quotas and dedicated usage reporting are separate follow-ups.
 

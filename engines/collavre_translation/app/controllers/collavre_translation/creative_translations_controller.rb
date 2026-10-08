@@ -1,5 +1,7 @@
 module CollavreTranslation
   class CreativeTranslationsController < Collavre::ApplicationController
+    include TranslationLocale
+    allow_unauthenticated_access
     before_action :load_creative
 
     def show
@@ -13,20 +15,14 @@ module CollavreTranslation
     private
 
     def load_creative
-      return head :unauthorized unless Current.user
-
       @creative = Collavre::Creative.find(params[:creative_id])
-      return head :forbidden unless @creative.has_permission?(Current.user, :read)
+      return head(Current.user ? :forbidden : :unauthorized) unless @creative.has_permission?(Current.user, :read)
       return head :forbidden unless @creative.effective_origin.has_permission?(Current.user, :read)
 
       return head :service_unavailable unless CollavreTranslation.enabled?
-      return head :forbidden unless CreativeTranslationPolicy.enabled?(Current.user)
+      return head :forbidden unless ContentTranslationPolicy.enabled?(@creative.effective_origin, Current.user)
 
       head :unprocessable_entity unless %w[en ko].include?(target_locale)
-    end
-
-    def target_locale
-      Current.user.locale.to_s.split(/[-_]/).first.presence || I18n.default_locale.to_s
     end
 
     def render_translation(record)
