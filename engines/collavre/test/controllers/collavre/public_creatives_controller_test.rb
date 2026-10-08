@@ -143,6 +143,22 @@ module Collavre
       assert_select ".public-creative-body p", text: "Overview", count: 0
     end
 
+    test "preserves hard line breaks in root and child descriptions" do
+      @creative.update!(description: "<p>First<br>Second</p>")
+      Creative.create!(user: @owner, parent: @creative, description: "<p>Child first<br>Child second</p>")
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, slug: @creative.public_slug)
+
+      assert_response :success
+      assert_select ".public-creative-body p", count: 2
+      assert_select ".public-creative-body p br", count: 2
+      assert_select ".public-creative-body p" do |paragraphs|
+        assert_equal [ "First<br>Second", "Child first<br>Child second" ], paragraphs.map(&:inner_html)
+      end
+      assert_select ".public-creative-heading", count: 0
+    end
+
     test "preserves root and child links including downloads" do
       @creative.update!(description: '<p><a href="https://example.com">Reference</a></p>')
       Creative.create!(user: @owner, parent: @creative,

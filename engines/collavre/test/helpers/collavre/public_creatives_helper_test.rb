@@ -58,6 +58,13 @@ module Collavre
       assert_equal html, public_creative_body(creative_with(html))
     end
 
+    test "hard line breaks remain body content" do
+      html = "<p>First<br>Second</p>"
+      creative = creative_with(html)
+      assert_not public_creative_heading?(creative)
+      assert_equal html, public_creative_body(creative)
+    end
+
     test "heading tags start at h2 and stop at h6" do
       assert_equal "h2", public_creative_heading_tag(1)
       assert_equal "h4", public_creative_heading_tag(3)
