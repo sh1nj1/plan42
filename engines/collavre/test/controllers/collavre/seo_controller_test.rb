@@ -24,7 +24,7 @@ module Collavre
       assert_equal "text/plain", response.media_type
       assert_includes response.body, "Allow: /p/"
       assert_includes response.body, "Disallow: /\n"
-      assert_equal [ "Allow: /p/", "Allow: /assets/", "Allow: /rails/active_storage/", "Allow: /creatives?format=json", "Allow: /creatives/*/children", "Allow: /sitemap.xml" ],
+      assert_equal [ "Allow: /p/", "Allow: /assets/", "Allow: /rails/active_storage/", "Allow: /public-assets/", "Allow: /creatives?format=json", "Allow: /creatives/*/children", "Allow: /sitemap.xml" ],
                    response.body.lines.grep(/^Allow:/).map(&:strip)
       assert_includes response.body, "Sitemap: http://www.example.com/sitemap.xml"
       assert_includes response.headers["Cache-Control"], "public"
@@ -110,6 +110,7 @@ module Collavre
       follow_redirect!
       assert_response :success
       assert_includes response.body, "Allow: /collavre/p/"
+      assert_includes response.body, "Allow: /collavre/public-assets/"
       assert_includes response.body, "Allow: /collavre/creatives?format=json"
       assert_includes response.body, "Disallow: /\n"
       assert_includes response.body, "Sitemap: http://www.example.com/collavre/sitemap.xml"
@@ -127,21 +128,29 @@ module Collavre
       assert_empty sitemap_locs
     end
 
-    test "sitemap batches permission checks for only the SQL page" do
+    test "sitemap pages roots in id order" do
       first = publish("First")
       second = publish("Second")
       third = publish("Third")
-      checked = []
-      filter = Object.new
-      filter.define_singleton_method(:readable_ids) { |ids| checked << ids; [] }
+
       SeoController.stub(:sitemap_page_size, 2) do
-        Creatives::PermissionFilter.stub(:new, filter) do
-          get "/sitemap.xml", params: { page: 2 }
-        end
+        get "/sitemap.xml", params: { page: 2 }
       end
-      assert_equal [ [ third.id ] ], checked
-      assert_empty sitemap_locs
+
+      assert_equal [ "http://www.example.com/p/#{third.public_id}/third" ], sitemap_locs
       assert first.id < second.id
+    end
+
+    test "sitemap lists a new public root before the permission cache is built" do
+      creative = Creative.create!(user: @owner, description: "Fresh")
+      CreativeShare.create!(creative: creative, user: nil, permission: :read)
+      creative.reload
+      # Simulate the authz job not having propagated the share yet.
+      CreativeSharesCache.where(creative_id: creative.id).delete_all
+
+      get "/sitemap.xml"
+
+      assert_equal [ "http://www.example.com/p/#{creative.public_id}/fresh" ], sitemap_locs
     end
 
     test "non scalar sitemap pages return an empty sitemap" do

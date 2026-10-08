@@ -41,18 +41,16 @@ module Collavre
       page = [ params[:page].to_i, 1 ].max
       return render(formats: :xml) if page > page_count
 
-      @creatives = readable_page(candidates, page, page_size)
+      @creatives = candidates.order(:id).limit(page_size).offset((page - 1) * page_size)
       render formats: :xml
     end
 
     private
 
-    def readable_page(candidates, page, page_size)
-      page_ids = candidates.order(:id).limit(page_size).offset((page - 1) * page_size).pluck(:id)
-      readable_ids = Creatives::PermissionFilter.new(user: nil).readable_ids(page_ids)
-      Creative.where(id: readable_ids).order(:id)
-    end
-
+    # Reads the shares table directly rather than the permission cache: the
+    # cache is rebuilt by a background job, and a publicly cached sitemap must
+    # not drop a newly published root during that window. A root has no
+    # ancestors, so its own non-denying public share is what makes it readable.
     def published_creatives
       shared_ids = CreativeShare.where(user_id: nil).where.not(permission: :no_access).select(:creative_id)
       Creative.active.where(id: shared_ids, origin_id: nil, parent_id: nil).where.not(public_id: nil)
@@ -63,15 +61,16 @@ module Collavre
 
       prefix = request.script_name
       # A /p/ page is client-rendered, so crawlers also need its assets, the
-      # tree JSON it loads and the attached images in its body. The JSON
-      # endpoints only ever return public content to an anonymous request, and
-      # attachment URLs are signed, so only ones linked from public content are
+      # tree JSON it loads and the attachments in its body. The JSON endpoints
+      # only ever return public content to an anonymous request, and attachment
+      # URLs are signed, so only ones linked from public content are
       # discoverable.
       <<~ROBOTS
         User-agent: *
         Allow: #{prefix}/p/
         Allow: #{Rails.application.config.assets.prefix}/
         Allow: #{ActiveStorage.routes_prefix}/
+        Allow: #{prefix}/public-assets/
         Allow: #{prefix}/creatives?format=json
         Allow: #{prefix}/creatives/*/children
         Disallow: /
