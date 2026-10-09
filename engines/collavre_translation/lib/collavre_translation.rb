@@ -12,7 +12,7 @@ module CollavreTranslation
 
     def model
       @model || Collavre::IntegrationSettings.fetch(:translation_llm_model).presence ||
-        ENV["COLLAVRE_DEFAULT_LLM_MODEL"].presence || "gemini-3.1-flash-lite"
+        ENV["COLLAVRE_DEFAULT_LLM_MODEL"].presence || "gemini-3.5-flash-lite"
     end
 
     def enabled_for?(user)

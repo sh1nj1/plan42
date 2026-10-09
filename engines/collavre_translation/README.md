@@ -6,7 +6,7 @@ comment enters the viewport. Responses are fetched per viewer, never broadcast
 on the shared comment stream.
 
 Translation uses `COLLAVRE_DEFAULT_LLM_VENDOR` and `COLLAVRE_DEFAULT_LLM_MODEL`
-by default (Gemini / `gemini-3.1-flash-lite` when unset). Override the model in **Admin → Integrations → Comment translation**
+by default (Gemini / `gemini-3.5-flash-lite` when unset). Override the model in **Admin → Integrations → Comment translation**
 (`translation_llm_vendor`, `translation_llm_model`). The corresponding deployment
 variables are `TRANSLATION_LLM_VENDOR` and `TRANSLATION_LLM_MODEL`. Alternatively,
 override with a host initializer:

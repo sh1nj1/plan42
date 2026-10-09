@@ -177,7 +177,7 @@ module Collavre
     end
 
     SUPPORTED_LLM_MODELS = [
-      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash-lite",
       "gemini-1.5-flash",
       "gemini-1.5-pro",
       "paperclip/claude_local",
