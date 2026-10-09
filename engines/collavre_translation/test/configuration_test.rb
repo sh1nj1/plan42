@@ -47,7 +47,7 @@ module CollavreTranslation
         ENV.delete("COLLAVRE_DEFAULT_LLM_VENDOR")
         ENV.delete("COLLAVRE_DEFAULT_LLM_MODEL")
         assert_equal "gemini", CollavreTranslation.vendor
-        assert_equal "gemini-3.1-flash-lite", CollavreTranslation.model
+        assert_equal "gemini-3.5-flash-lite", CollavreTranslation.model
         assert CollavreTranslation.enabled?
       end
     ensure
@@ -61,7 +61,7 @@ module CollavreTranslation
           ENV["COLLAVRE_DEFAULT_LLM_VENDOR"] = blank
           ENV["COLLAVRE_DEFAULT_LLM_MODEL"] = blank
           assert_equal "gemini", CollavreTranslation.vendor
-          assert_equal "gemini-3.1-flash-lite", CollavreTranslation.model
+          assert_equal "gemini-3.5-flash-lite", CollavreTranslation.model
           assert CollavreTranslation.enabled?
         end
         CollavreTranslation.model = ""

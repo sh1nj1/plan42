@@ -197,7 +197,7 @@ module Collavre
     end
 
     def default_client(requester)
-      AiClient.new(vendor: "google", model: "gemini-3.1-flash-lite", system_prompt: nil,
+      AiClient.new(vendor: "google", model: "gemini-3.5-flash-lite", system_prompt: nil,
         context: { requester: requester })
     end
 

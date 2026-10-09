@@ -12,6 +12,16 @@ class Collavre::KollavyTest < ActiveSupport::TestCase
     Collavre::Kollavy.seed!
   end
 
+  test "seed uses the default model and respects an environment override" do
+    original = ENV["COLLAVRE_DEFAULT_LLM_MODEL"]
+    ENV.delete("COLLAVRE_DEFAULT_LLM_MODEL")
+    assert_equal "gemini-3.5-flash-lite", seed.llm_model
+    ENV["COLLAVRE_DEFAULT_LLM_MODEL"] = "custom-model"
+    assert_equal "custom-model", seed.llm_model
+  ensure
+    ENV["COLLAVRE_DEFAULT_LLM_MODEL"] = original
+  end
+
   test "agent is nil before seeding" do
     assert_nil Collavre::Kollavy.agent
     refute Collavre::Kollavy.onboard_inbox(@inbox)

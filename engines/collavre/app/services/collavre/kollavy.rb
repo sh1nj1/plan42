@@ -107,7 +107,7 @@ module Collavre
         {
           name: NAME,
           llm_vendor: ENV.fetch("COLLAVRE_DEFAULT_LLM_VENDOR", "gemini"),
-          llm_model: ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite"),
+          llm_model: ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.5-flash-lite"),
           system_prompt: SYSTEM_PROMPT,
           agent_conf: AGENT_CONF,
           tools: TOOLS,
