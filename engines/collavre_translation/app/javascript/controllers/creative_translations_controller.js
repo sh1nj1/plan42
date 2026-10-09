@@ -1,3 +1,4 @@
+import { translationLocaleUrl } from "./translation_locale"
 import { Controller } from "@hotwired/stimulus"
 import { sanitizeDescriptionHtml } from "collavre/lib/utils/sanitize_description"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
@@ -38,7 +39,7 @@ export default class extends Controller {
     const state = this.rows.get(row)
     if (!state) return
     try {
-      const url = translationUrl(this.baseValue, row)
+      const url = translationLocaleUrl(translationUrl(this.baseValue, row))
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })

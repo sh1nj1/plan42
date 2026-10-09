@@ -135,6 +135,26 @@ module Collavre
       assert_redirected_to public_creative_path(public_id: public_id, slug: "public-plan")
     end
 
+    test "preserves lang through canonical and signed-in redirects" do
+      public_id = publish
+      sign_in_as(users(:two), password: "password")
+
+      get public_creative_path(public_id: public_id, slug: "old-title", lang: "ko")
+      assert_response :moved_permanently
+      assert_redirected_to public_creative_path(public_id: public_id, slug: "public-plan", lang: "ko")
+      follow_redirect!
+      assert_redirected_to creatives_path(id: @creative.id, lang: "ko")
+    end
+
+    test "preserves lang when an anonymous reader requests a missing slug" do
+      public_id = publish
+
+      get public_creative_path(public_id: public_id, lang: "en")
+
+      assert_response :moved_permanently
+      assert_redirected_to public_creative_path(public_id: public_id, slug: "public-plan", lang: "en")
+    end
+
     test "a title with no slug characters is served without a slug" do
       @creative.update!(description: "<p>!!!</p>")
       public_id = publish

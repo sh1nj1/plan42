@@ -1,3 +1,4 @@
+import { translationLocaleUrl } from "./translation_locale"
 import { Controller } from "@hotwired/stimulus"
 import { addTableDownloadButtons } from "collavre/lib/utils/table_download"
 import csrfFetch from "collavre/lib/api/csrf_fetch"
@@ -68,7 +69,7 @@ export default class extends Controller {
   async request(method) {
     let response
     try {
-      response = await csrfFetch(this.urlValue, { method, signal: this.abort.signal,
+      response = await csrfFetch(translationLocaleUrl(this.urlValue), { method, signal: this.abort.signal,
         headers: { Accept: 'application/json' } })
     } catch (error) {
       error.retryable = error.name !== 'AbortError'

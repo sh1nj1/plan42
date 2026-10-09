@@ -88,7 +88,7 @@ export default class PopupFullscreen {
       window.history.pushState(
         { fullscreen: true },
         '',
-        `/creatives/${creativeId}/comments/fullscreen`,
+        `/creatives/${creativeId}/comments/fullscreen${window.location.search}`,
       )
     }
 
@@ -135,7 +135,7 @@ export default class PopupFullscreen {
     this.clearPositionStyles({ includeTransform: true })
 
     const creativeId = el.dataset.creativeId
-    const backUrl = this.previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+    const backUrl = this.previousUrl || (creativeId ? `/creatives/${creativeId}${window.location.search}` : null)
     if (backUrl) {
       const url = new URL(backUrl, window.location.origin)
       url.searchParams.delete('open_comments')
@@ -304,7 +304,7 @@ export default class PopupFullscreen {
   }
 
   pushExitUrl(creativeId) {
-    const backUrl = this.previousUrl || (creativeId ? `/creatives/${creativeId}` : null)
+    const backUrl = this.previousUrl || (creativeId ? `/creatives/${creativeId}${window.location.search}` : null)
     if (backUrl) {
       const url = new URL(backUrl, window.location.origin)
       url.searchParams.set('open_comments', 'true')

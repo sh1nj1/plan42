@@ -42,12 +42,12 @@ module CollavreTranslation
       refute_includes html, 'data-controller="comment-translation"'
     end
 
-    test "reader hydration gate follows the viewer preference and shared markup is neutral" do
+    test "reader hydration remains mounted regardless of preference and shared markup is neutral" do
       [ true, false ].each do |enabled|
         @user.update!(auto_translation_enabled: enabled)
         get creatives_path
         assert_response :success
-        assert_select '[data-controller="comment-translation-reader"]', count: enabled ? 1 : 0
+        assert_select '[data-controller="comment-translation-reader"]', count: 1
       end
       Collavre::Current.set(user: nil) do
         [ "Original broadcast", "Edited broadcast" ].each do |content|

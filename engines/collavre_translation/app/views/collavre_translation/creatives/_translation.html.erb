@@ -1,4 +1,4 @@
-<% if CollavreTranslation::CreativeTranslationPolicy.enabled?(Current.user) %>
+<% if CollavreTranslation.enabled? %>
   <div data-controller="creative-translations"
        data-creative-translations-base-value="<%= collavre_translation.creative_translation_path(creative_id: '__ID__') %>"
        data-creative-translations-original-value="<%= t('collavre_translation.original') %>"

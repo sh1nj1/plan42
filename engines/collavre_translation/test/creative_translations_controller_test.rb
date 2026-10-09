@@ -104,7 +104,7 @@ module CollavreTranslation
       end
     end
 
-    test "persisted reader preference gates creative cache requests and controller independently" do
+    test "persisted reader preference gates private cache requests while controller stays mounted" do
       Translation.request!(@creative, "ko").update!(status: "completed", content: "[]")
       Collavre::CreativeSharesCache.create!(creative: @creative, user: users(:two), permission: :read)
       @user.update!(auto_translation_enabled: false)
@@ -116,7 +116,7 @@ module CollavreTranslation
       end
       get "/creatives", params: { id: @creative.id }
       assert_response :success
-      assert_select '[data-controller="creative-translations"]', count: 0
+      assert_select '[data-controller="creative-translations"]', count: 1
 
       delete "/session"
       users(:two).update!(locale: "ko", auto_translation_enabled: true)
@@ -140,11 +140,11 @@ module CollavreTranslation
       assert_response :success
     end
 
-    test "creative page mounts engine extension only when user gate is enabled" do
+    test "creative page mounts engine extension only when engine is enabled" do
       get collavre.creatives_path(id: @creative.id)
       assert_response :success
       assert_select '[data-controller="creative-translations"]', count: 1
-      CreativeTranslationPolicy.stub :enabled?, false do
+      CollavreTranslation.stub :enabled?, false do
         get collavre.creatives_path(id: @creative.id)
         assert_select '[data-controller="creative-translations"]', count: 0
       end

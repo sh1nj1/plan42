@@ -2,3 +2,4 @@ ko:
   collavre_translation:
     preferences:
       auto_translation_enabled: "콘텐츠 자동 번역"
+      auto_translation_help: "읽는 콘텐츠를 번역하고, 내 공개 글을 방문자의 언어로 보여줍니다."

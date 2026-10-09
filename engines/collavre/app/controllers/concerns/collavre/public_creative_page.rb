@@ -25,9 +25,9 @@ module Collavre
 
       slug = creative.public_slug
       if params[:slug].to_s != slug
-        redirect_to public_creative_path(public_id: creative.public_id, slug: slug.presence), status: :moved_permanently
+        redirect_to public_creative_path(public_id: creative.public_id, slug: slug.presence, lang: params[:lang].presence), status: :moved_permanently
       elsif Current.user
-        redirect_to creatives_path(id: creative.id)
+        redirect_to creatives_path(id: creative.id, lang: params[:lang].presence)
       else
         render_public_page(creative)
       end
