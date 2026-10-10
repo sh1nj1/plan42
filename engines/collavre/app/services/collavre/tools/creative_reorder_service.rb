@@ -88,7 +88,12 @@ module Tools
 
       child_ids = children.map(&:id)
       allowed = Collavre::Creatives::PermissionFilter.new(user: Current.user).readable_ids(child_ids, min_permission: :write)
-      allowed.size == child_ids.size
+      return false unless allowed.size == child_ids.size
+      return true unless Current.authoritative_permissions
+
+      # Approval replay: the batch filter reads CreativeSharesCache, which can
+      # still grant a child whose share was revoked during the approval delay.
+      child_ids.all? { |id| Collavre::Creatives::PermissionChecker.current_allowed?(id, Current.user, :write) }
     end
 
     def validate_complete_list(parent, child_ids, ids)
