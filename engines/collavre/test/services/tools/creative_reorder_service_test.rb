@@ -66,6 +66,62 @@ module Collavre
         assert_match "No write permission", result[:error]
         assert_equal [ @a.id, @b.id, @c.id ], @parent.children.order(:sequence).pluck(:id)
       end
+
+      test "does not reveal a child the caller cannot write" do
+        editor = User.create!(name: "Editor", email: "editor_reorder@example.com", password: "password123")
+        CreativeShare.create!(creative: @parent, user: editor, permission: :write)
+        CreativeShare.create!(creative: @b, user: editor, permission: :no_access)
+
+        result = Current.set(user: editor) do
+          CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @a.id ])
+        end
+
+        assert_equal I18n.t("collavre.tools.creative_reorder.errors.child_write_permission"), result[:error]
+        assert_nil result[:missing_ids]
+        assert_equal [ @a.id, @b.id, @c.id ], @parent.children.order(:sequence).pluck(:id)
+      end
+
+      test "returns a generic error when the reorderer denies permission" do
+        reorderer = Object.new
+        def reorderer.reorder_multiple(**) = raise(::Creatives::Reorderer::PermissionError, "Permission denied")
+
+        result = ::Creatives::Reorderer.stub(:new, ->(**) { reorderer }) do
+          CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @b.id, @a.id ])
+        end
+
+        assert_equal I18n.t("collavre.tools.creative_reorder.errors.child_write_permission"), result[:error]
+      end
+
+      test "reports reorderer failures" do
+        reorderer = Object.new
+        def reorderer.reorder_multiple(**) = raise(::Creatives::Reorderer::Error, "boom")
+
+        result = ::Creatives::Reorderer.stub(:new, ->(**) { reorderer }) do
+          CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @b.id, @a.id ])
+        end
+
+        assert_equal "Failed to reorder: boom", result[:error]
+      end
+
+      test "localizes errors" do
+        result = I18n.with_locale(:ko) do
+          CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @a.id, @a.id, @b.id, @c.id ])
+        end
+
+        assert_equal "ordered_ids에 중복된 id가 있습니다.", result[:error]
+      end
+
+      test "returns not found for an unknown parent" do
+        result = CreativeReorderService.new.call(parent_id: 0, ordered_ids: [ @a.id ])
+
+        assert_equal "Creative not found.", result[:error]
+      end
+
+      test "requires a current user" do
+        Current.user = nil
+
+        assert_raises(RuntimeError) { CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @a.id ]) }
+      end
     end
   end
 end
