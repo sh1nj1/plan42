@@ -23,6 +23,7 @@ module Collavre
       creative_update_service
       creative_import_service
       creative_batch_service
+      creative_reorder_service
       topic_create
       topic_update
       cron_create
