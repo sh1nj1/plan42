@@ -89,6 +89,17 @@ class Collavre::Comments::ApprovedToolInvocationTest < ActiveSupport::TestCase
     assert_equal original, @root.children.order(:sequence).pluck(:id)
   end
 
+  test "reorder honours a child grant the cache has not caught up with" do
+    share = Collavre::CreativeShare.create!(creative: @child, user: @agent, permission: :read)
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@root)
+    share.update_columns(permission: Collavre::CreativeShare.permissions[:write])
+    assert_not_includes Collavre::Creatives::PermissionFilter.new(user: @agent).readable_ids([ @child.id ], min_permission: :write), @child.id
+    original = @root.children.order(:sequence).pluck(:id)
+    result = invoke("creative_reorder_service", { parent_id: @root.id, ordered_ids: original.reverse.join(",") })
+    refute result.key?(:error), result.inspect
+    assert_equal original.reverse, @root.children.order(:sequence).pluck(:id)
+  end
+
   test "reorder succeeds on approval replay when every child grant is current" do
     original = @root.children.order(:sequence).pluck(:id)
     result = invoke("creative_reorder_service", { parent_id: @root.id, ordered_ids: original.reverse.join(",") })

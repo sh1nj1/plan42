@@ -41,6 +41,29 @@ module Collavre
         assert_not PermissionChecker.current_placement_allowed?(-1, @agent)
       end
 
+      test "tree checks require the placement grant only for linked shells" do
+        shell = Creative.create!(user: @owner, parent: @root, origin: @child, description: "Placed shell")
+        share(@child, @agent, :write)
+        assert PermissionChecker.current_tree_allowed?(@child.id, @agent, :write)
+        assert_not PermissionChecker.current_tree_allowed?(shell.id, @agent, :write)
+        share(@root, @agent, :write)
+        assert PermissionChecker.current_tree_allowed?(shell.id, @agent, :write)
+        assert_not PermissionChecker.current_tree_allowed?(-1, @agent)
+      end
+
+      test "all_readable? reads current shares only on authoritative replay" do
+        cached = share(@child, @agent, :read)
+        PermissionCacheBuilder.rebuild_for_creative(@root)
+        cached.update_columns(permission: CreativeShare.permissions[:write])
+        filter = PermissionFilter.new(user: @agent)
+        ids = [ @child.id, @child.id ]
+        assert_not filter.all_readable?(ids, min_permission: :write), "The cache still reads :read"
+        Current.set(authoritative_permissions: true) do
+          assert filter.all_readable?(ids, min_permission: :write)
+          assert_not filter.all_readable?([ @child.id, @root.id ], min_permission: :write)
+        end
+      end
+
       test "nearest user share overrides public even when below the threshold" do
         share(@root, nil, :admin)
         inherited = share(@root, @agent, :read)

@@ -21,6 +21,15 @@ module Collavre
         end
       end
 
+      # Authoritative counterpart of PermissionFilter#readable_ids for one id:
+      # the origin grant and, for a linked shell, its placement grant.
+      def self.current_tree_allowed?(creative_id, user, required_permission = :read)
+        return false unless current_allowed?(creative_id, user, required_permission)
+
+        origin_id = Creative.uncached { Creative.where(id: creative_id).pick(:origin_id) }
+        origin_id.nil? || current_placement_allowed?(creative_id, user, required_permission)
+      end
+
       def initialize(creative, user, current_shares: false, placement: false)
         @creative = creative
         @user = user

@@ -85,26 +85,12 @@ module Tools
       ids.map(&:to_i)
     end
 
+    # all_readable? judges current shares on approval replay, so a child grant
+    # changed during the approval delay is honoured before the cache catches up.
     def children_writable?(children)
       return true if children.empty?
 
-      child_ids = children.map(&:id)
-      allowed = Collavre::Creatives::PermissionFilter.new(user: Current.user).readable_ids(child_ids, min_permission: :write)
-      return false unless allowed.size == child_ids.size
-      return true unless Current.authoritative_permissions
-
-      # Approval replay: the batch filter reads CreativeSharesCache, which can
-      # still grant a child whose share was revoked during the approval delay.
-      children.all? { |child| currently_writable?(child) }
-    end
-
-    # current_allowed? resolves a linked shell to its origin, so a shell's own
-    # placement grant is rechecked separately.
-    def currently_writable?(child)
-      checker = Collavre::Creatives::PermissionChecker
-      return false unless checker.current_allowed?(child.id, Current.user, :write)
-
-      child.origin_id.nil? || checker.current_placement_allowed?(child.id, Current.user, :write)
+      Collavre::Creatives::PermissionFilter.new(user: Current.user).all_readable?(children.map(&:id), min_permission: :write)
     end
 
     def validate_complete_list(parent, child_ids, ids)
