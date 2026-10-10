@@ -111,6 +111,16 @@ module Collavre
         assert_equal "ordered_ids에 중복된 id가 있습니다.", result[:error]
       end
 
+      test "reorders the origin's children when given a linked creative" do
+        link = Creative.create!(user: @user, origin_id: @parent.id)
+
+        result = CreativeReorderService.new.call(parent_id: link.id, ordered_ids: [ @b.id, @a.id, @c.id ])
+
+        assert result[:success], "Expected success but got: #{result[:error]}"
+        assert_equal @parent.id, result[:parent_id]
+        assert_equal [ @b.id, @a.id, @c.id ], @parent.children.order(:sequence).pluck(:id)
+      end
+
       test "returns not found for an unknown parent" do
         result = CreativeReorderService.new.call(parent_id: 0, ordered_ids: [ @a.id ])
 

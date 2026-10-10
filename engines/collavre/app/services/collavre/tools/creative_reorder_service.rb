@@ -7,7 +7,7 @@ module Tools
     extend ToolMeta
 
     tool_name "creative_reorder_service"
-    tool_description "Reorder the direct children of a Creative. Pass the complete list of the parent's child ids in the desired order; the children are resequenced to exactly that order. Use creative_retrieval_service (level 1) to read the current children first. The list must contain every direct child exactly once — missing, extra, or duplicate ids are rejected and nothing changes. Requires write permission on the parent and every child. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
+    tool_description "Reorder the direct children of a Creative. Pass the complete list of the parent's child ids in the desired order; the children are resequenced to exactly that order. Use creative_retrieval_service (level 1) to read the current children first. The list must contain every direct child exactly once — missing, extra, or duplicate ids are rejected and nothing changes. Requires write permission on the parent and every child. For a linked Creative, its origin's children are reordered. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
 
     tool_param :parent_id, description: "ID of the Creative whose direct children are reordered.", required: true
     tool_param :ordered_ids, description: "Comma-separated ids of ALL direct children in the desired order, e.g. \"12,45,78\". A JSON array of ids also works.", required: true
@@ -16,8 +16,12 @@ module Tools
     def call(parent_id:, ordered_ids:)
       raise I18n.t("collavre.tools.creative_reorder.errors.current_user_required") unless Current.user
 
-      parent = Creative.find_by(id: parent_id)
-      return error(:creative_not_found, parent_id: parent_id) unless parent
+      requested = Creative.find_by(id: parent_id)
+      return error(:creative_not_found, parent_id: parent_id) unless requested
+
+      # A linked Creative shows its origin's children (linked_children), so
+      # validate and reorder against the origin the agent actually sees.
+      parent = requested.effective_origin
       return error(:write_permission, parent_id: parent_id) unless parent.has_permission?(Current.user, :write)
 
       ids = parse_ids(ordered_ids)
