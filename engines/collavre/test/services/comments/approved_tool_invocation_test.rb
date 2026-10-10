@@ -76,6 +76,19 @@ class Collavre::Comments::ApprovedToolInvocationTest < ActiveSupport::TestCase
     assert_equal original, @root.children.order(:sequence).pluck(:id)
   end
 
+  test "reorder checks the current placement grant of a linked child" do
+    origin = Collavre::Creative.create!(user: @owner, parent: @destination, description: "Origin")
+    link = Collavre::Creative.create!(user: @owner, parent: @root, origin_id: origin.id)
+    placement = Collavre::CreativeShare.create!(creative: link, user: @agent, permission: :write)
+    Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@root)
+    placement.update_columns(permission: Collavre::CreativeShare.permissions[:read])
+    assert_includes Collavre::Creatives::PermissionFilter.new(user: @agent).readable_ids([ link.id ], min_permission: :write), link.id
+    original = @root.children.order(:sequence).pluck(:id)
+    result = invoke("creative_reorder_service", { parent_id: @root.id, ordered_ids: original.reverse.join(",") })
+    assert_equal I18n.t("collavre.tools.creative_reorder.errors.child_write_permission"), result[:error]
+    assert_equal original, @root.children.order(:sequence).pluck(:id)
+  end
+
   test "reorder succeeds on approval replay when every child grant is current" do
     original = @root.children.order(:sequence).pluck(:id)
     result = invoke("creative_reorder_service", { parent_id: @root.id, ordered_ids: original.reverse.join(",") })

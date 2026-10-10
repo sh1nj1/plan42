@@ -31,7 +31,7 @@ module Tools
       ids = parse_ids(ordered_ids)
       return error(:invalid_ids, parent_id: parent_id) if ids.nil?
 
-      reorder_children(parent, ids)
+      reorder_children(requested, parent, ids)
     rescue ::Creatives::Reorderer::PermissionError
       error(:child_write_permission, parent_id: parent_id)
     rescue ConcurrentChangeError
@@ -43,11 +43,13 @@ module Tools
 
     private
 
-    def reorder_children(parent, ids)
+    def reorder_children(requested, parent, ids)
       children = parent.children.to_a
+      # Keep the requested link as a review target: its placement can inherit
+      # ai_write_policy=review even when the origin is auto.
       Creatives::AiWritePolicy.capture(
-        creatives: [ parent, *children ],
-        anchor: Creatives::AiWritePolicy.agent_anchor || parent
+        creatives: [ requested, parent, *children ],
+        anchor: Creatives::AiWritePolicy.agent_anchor || requested
       ) do
         # Snapshot, validate and reorder under one lock: the parent row plus
         # every current/listed child row, so a concurrent move of one of them
@@ -93,7 +95,16 @@ module Tools
 
       # Approval replay: the batch filter reads CreativeSharesCache, which can
       # still grant a child whose share was revoked during the approval delay.
-      child_ids.all? { |id| Collavre::Creatives::PermissionChecker.current_allowed?(id, Current.user, :write) }
+      children.all? { |child| currently_writable?(child) }
+    end
+
+    # current_allowed? resolves a linked shell to its origin, so a shell's own
+    # placement grant is rechecked separately.
+    def currently_writable?(child)
+      checker = Collavre::Creatives::PermissionChecker
+      return false unless checker.current_allowed?(child.id, Current.user, :write)
+
+      child.origin_id.nil? || checker.current_placement_allowed?(child.id, Current.user, :write)
     end
 
     def validate_complete_list(parent, child_ids, ids)

@@ -161,6 +161,25 @@ module Collavre
         assert_equal [ @b.id, @a.id, @c.id ], @parent.children.order(:sequence).pluck(:id)
       end
 
+      test "stores a draft when the requested link's placement requires review" do
+        review_root = Creative.create!(description: "Review root", user: @user, data: { "ai_write_policy" => "review" })
+        link = Creative.create!(user: @user, parent: review_root, origin_id: @parent.id)
+        agent = users(:ai_bot)
+        [ review_root, @parent ].each do |creative|
+          CreativeShare.create!(creative: creative, user: agent, shared_by: @user, permission: :write)
+        end
+        topic = Topic.create!(creative: review_root, user: @user, name: "Review reorder")
+        task = Task.create!(agent: agent, creative: review_root, topic_id: topic.id, name: "Review", status: "running")
+        before = @parent.children.order(:sequence).pluck(:id)
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeReorderService.new.call(parent_id: link.id, ordered_ids: before.reverse)
+        end
+
+        assert result[:pending_review], result.inspect
+        assert_equal before, @parent.children.order(:sequence).pluck(:id)
+      end
+
       test "returns not found for an unknown parent" do
         result = CreativeReorderService.new.call(parent_id: 0, ordered_ids: [ @a.id ])
 

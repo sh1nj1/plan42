@@ -28,6 +28,19 @@ module Collavre
         assert_not PermissionChecker.current_allowed?(-1, @agent, :feedback)
       end
 
+      test "placement checks use the shell row instead of its origin" do
+        shell = Creative.create!(user: @owner, parent: @root, origin: @child, description: "Placed shell")
+        share(@child, @agent, :write)
+        assert PermissionChecker.current_allowed?(shell.id, @agent, :write)
+        assert_not PermissionChecker.current_placement_allowed?(shell.id, @agent, :write)
+        share(@root, @agent, :write)
+        assert PermissionChecker.current_placement_allowed?(shell.id, @agent, :write)
+        share(shell, @agent, :read)
+        assert_not PermissionChecker.current_placement_allowed?(shell.id, @agent, :write)
+        assert PermissionChecker.current_placement_allowed?(shell.id, @owner, :admin)
+        assert_not PermissionChecker.current_placement_allowed?(-1, @agent)
+      end
+
       test "nearest user share overrides public even when below the threshold" do
         share(@root, nil, :admin)
         inherited = share(@root, @agent, :read)
