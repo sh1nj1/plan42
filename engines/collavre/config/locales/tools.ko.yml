@@ -10,7 +10,8 @@ ko:
           invalid_ids: ordered_ids는 정수 id 목록이어야 합니다.
           duplicate_ids: ordered_ids에 중복된 id가 있습니다.
           incomplete_list: ordered_ids에는 모든 직속 하위 항목이 정확히 한 번씩 포함되어야 합니다.
-          reorder_failed: "순서를 변경하지 못했습니다: %{message}"
+          reorder_failed: 하위 항목 순서를 변경하지 못했습니다. 변경된 내용은 없습니다.
+          concurrent_change: 순서를 변경하는 동안 하위 항목이 바뀌었습니다. 다시 조회한 뒤 재시도하세요.
       creative_remove_attachment:
         errors:
           current_user_required: Current.user가 필요합니다.

@@ -6,8 +6,12 @@ module Tools
     extend T::Sig
     extend ToolMeta
 
+    # Raised inside the parent lock when the resulting order differs from the
+    # submitted one, rolling the reorder back.
+    class ConcurrentChangeError < StandardError; end
+
     tool_name "creative_reorder_service"
-    tool_description "Reorder the direct children of a Creative. Pass the complete list of the parent's child ids in the desired order; the children are resequenced to exactly that order. Use creative_retrieval_service (level 1) to read the current children first. The list must contain every direct child exactly once — missing, extra, or duplicate ids are rejected and nothing changes. Requires write permission on the parent and every child. For a linked Creative, its origin's children are reordered. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
+    tool_description "Reorder the direct children of a Creative. Pass the complete list of the parent's child ids in the desired order; the children are resequenced to exactly that order. Use creative_retrieval_service with level 2 (level 1 returns only the parent itself) to read the current children first. The list must contain every direct child exactly once — missing, extra, or duplicate ids are rejected and nothing changes. Requires write permission on the parent and every child. For a linked Creative, its origin's children are reordered. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
 
     tool_param :parent_id, description: "ID of the Creative whose direct children are reordered.", required: true
     tool_param :ordered_ids, description: "Comma-separated ids of ALL direct children in the desired order, e.g. \"12,45,78\". A JSON array of ids also works.", required: true
@@ -27,30 +31,49 @@ module Tools
       ids = parse_ids(ordered_ids)
       return error(:invalid_ids, parent_id: parent_id) if ids.nil?
 
+      reorder_children(parent, ids)
+    rescue ::Creatives::Reorderer::PermissionError
+      error(:child_write_permission, parent_id: parent_id)
+    rescue ConcurrentChangeError
+      error(:concurrent_change, parent_id: parent_id)
+    rescue ::Creatives::Reorderer::Error => e
+      Rails.logger.warn("[creative_reorder] parent=#{parent_id} #{e.class}: #{e.message}")
+      error(:reorder_failed, parent_id: parent_id)
+    end
+
+    private
+
+    def reorder_children(parent, ids)
       children = parent.children.to_a
-      # Authorize every child before comparing lists so missing_ids never
-      # reveals a child the caller cannot write (or even see).
-      return error(:child_write_permission, parent_id: parent_id) unless children_writable?(children)
-
-      validation_error = validate_complete_list(parent, children.map(&:id), ids)
-      return validation_error if validation_error
-
       Creatives::AiWritePolicy.capture(
         creatives: [ parent, *children ],
         anchor: Creatives::AiWritePolicy.agent_anchor || parent
       ) do
-        ::Creatives::Reorderer.new(user: Current.user).reorder_multiple(
-          dragged_ids: ids, target_id: parent.id, direction: "child"
-        )
-        { success: true, parent_id: parent.id, ordered_ids: parent.children.order(:sequence).pluck(:id) }
+        # Snapshot, validate and reorder under one lock: the parent row plus
+        # every current/listed child row, so a concurrent move of one of them
+        # waits for this transaction instead of being silently overwritten.
+        parent.with_lock { locked_reorder(parent, ids) }
       end
-    rescue ::Creatives::Reorderer::PermissionError
-      error(:child_write_permission, parent_id: parent_id)
-    rescue ::Creatives::Reorderer::Error => e
-      error(:reorder_failed, parent_id: parent_id, message: e.message)
     end
 
-    private
+    def locked_reorder(parent, ids)
+      children = Creative.where(parent_id: parent.id).or(Creative.where(id: ids)).order(:id).lock.to_a
+                         .select { |creative| creative.parent_id == parent.id }
+      # Authorize every child before comparing lists so missing_ids never
+      # reveals a child the caller cannot write (or even see).
+      return error(:child_write_permission, parent_id: parent.id) unless children_writable?(children)
+
+      validation_error = validate_complete_list(parent, children.map(&:id), ids)
+      return validation_error if validation_error
+
+      ::Creatives::Reorderer.new(user: Current.user).reorder_multiple(
+        dragged_ids: ids, target_id: parent.id, direction: "child"
+      )
+      result_ids = parent.children.order(:sequence).pluck(:id)
+      raise ConcurrentChangeError unless result_ids == ids
+
+      { success: true, parent_id: parent.id, ordered_ids: result_ids }
+    end
 
     def parse_ids(value)
       raw = value.is_a?(Array) ? value : value.to_s.split(",")
@@ -78,8 +101,8 @@ module Tools
       error(:incomplete_list, parent_id: parent.id, missing_ids: missing, unknown_ids: extra)
     end
 
-    def error(key, message: nil, **attributes)
-      { error: I18n.t("collavre.tools.creative_reorder.errors.#{key}", message: message), **attributes }
+    def error(key, **attributes)
+      { error: I18n.t("collavre.tools.creative_reorder.errors.#{key}"), **attributes }
     end
   end
 end

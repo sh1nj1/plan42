@@ -100,7 +100,47 @@ module Collavre
           CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @b.id, @a.id ])
         end
 
-        assert_equal "Failed to reorder: boom", result[:error]
+        assert_equal I18n.t("collavre.tools.creative_reorder.errors.reorder_failed"), result[:error]
+        assert_no_match "boom", result[:error]
+      end
+
+      test "localizes reorderer failures without the raw exception message" do
+        reorderer = Object.new
+        def reorderer.reorder_multiple(**) = raise(::Creatives::Reorderer::Error, "Invalid creatives")
+
+        result = I18n.with_locale(:ko) do
+          ::Creatives::Reorderer.stub(:new, ->(**) { reorderer }) do
+            CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @b.id, @a.id ])
+          end
+        end
+
+        assert_equal "하위 항목 순서를 변경하지 못했습니다. 변경된 내용은 없습니다.", result[:error]
+      end
+
+      test "rolls back when the children change during the reorder" do
+        parent = @parent
+        real = ::Creatives::Reorderer.new(user: @user)
+        reorderer = Object.new
+        reorderer.define_singleton_method(:reorder_multiple) do |**args|
+          real.reorder_multiple(**args)
+          Creative.create!(description: "Concurrent", user: parent.user, parent: parent)
+        end
+
+        result = ::Creatives::Reorderer.stub(:new, ->(**) { reorderer }) do
+          CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @b.id, @a.id ])
+        end
+
+        assert_equal I18n.t("collavre.tools.creative_reorder.errors.concurrent_change"), result[:error]
+        assert_equal [ @a.id, @b.id, @c.id ], @parent.children.order(:sequence).pluck(:id)
+      end
+
+      test "rejects a listed child that was moved away before the lock" do
+        @b.update!(parent: nil)
+
+        result = CreativeReorderService.new.call(parent_id: @parent.id, ordered_ids: [ @c.id, @b.id, @a.id ])
+
+        assert_equal [ @b.id ], result[:unknown_ids]
+        assert_nil @b.reload.parent_id
       end
 
       test "localizes errors" do
