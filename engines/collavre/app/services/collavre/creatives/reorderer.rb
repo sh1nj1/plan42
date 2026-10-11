@@ -120,9 +120,8 @@ module Creatives
     # inserting below it. PermissionFilter applies both origin access and the
     # shell-placement gate, and batches the subjects for multi-drag.
     def require_permissions!(creatives, level)
-      ids = creatives.uniq(&:id).map(&:id)
-      allowed_ids = Collavre::Creatives::PermissionFilter.new(user: user).readable_ids(ids, min_permission: level)
-      return if allowed_ids.size == ids.size
+      ids = creatives.map(&:id)
+      return if Collavre::Creatives::PermissionFilter.new(user: user).all_readable?(ids, min_permission: level)
 
       raise PermissionError, "Permission denied"
     end

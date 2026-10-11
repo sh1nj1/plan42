@@ -1,6 +1,17 @@
 en:
   collavre:
     tools:
+      creative_reorder:
+        errors:
+          current_user_required: Current.user is required.
+          creative_not_found: Creative not found.
+          write_permission: No write permission on this Creative.
+          child_write_permission: No write permission on one or more child Creatives.
+          invalid_ids: ordered_ids must be a list of integer ids.
+          duplicate_ids: ordered_ids contains duplicates.
+          incomplete_list: ordered_ids must list every direct child exactly once.
+          reorder_failed: Failed to reorder the children. Nothing was changed.
+          concurrent_change: The children changed while reordering. Read them again and retry.
       creative_remove_attachment:
         errors:
           current_user_required: Current.user is required.

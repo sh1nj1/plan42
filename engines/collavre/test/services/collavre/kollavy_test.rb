@@ -38,6 +38,7 @@ class Collavre::KollavyTest < ActiveSupport::TestCase
     assert_equal Collavre::Kollavy::TOOLS, kollavy.tools
     assert_includes kollavy.tools, "collavre_source_read"
     assert Collavre::ToolApprovalPolicy.agent_requires_approval?(kollavy, "creative_update_service")
+    assert Collavre::ToolApprovalPolicy.agent_requires_approval?(kollavy, "creative_reorder_service")
     refute Collavre::ToolApprovalPolicy.agent_requires_approval?(kollavy, "creative_retrieval_service")
     assert_equal 20, kollavy.chat_history_limit
     assert kollavy.avatar.attached?
