@@ -398,4 +398,18 @@ class PermissionCacheJobTest < ActiveJob::TestCase
     assert_equal 0, private_move
     refute @child.reload.publicly_readable?
   end
+
+  test "an approved replay moving a public creative still flushes the CDN" do
+    other = Creative.create!(user: @owner, description: "Other", progress: 0.0)
+    perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: nil, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      perform_enqueued_jobs do
+        Current.set(authoritative_permissions: true) { @child.update!(parent: other) }
+      end
+    end
+
+    assert_equal 1, flushes
+    refute @child.reload.publicly_readable?
+  end
 end

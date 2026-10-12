@@ -159,8 +159,10 @@ module Collavre
         when :rebuild
           # The cache still holds the pre-move permissions here, so this tells
           # whether the subtree was public and its CDN copies must be evicted.
+          # An approved replay's authoritative override would read the new
+          # placement instead, so force the cached (pre-move) view.
           args = { creative_id: id }
-          args[:flush_public_cdn] = true if publicly_readable?
+          args[:flush_public_cdn] = true if Current.set(authoritative_permissions: false) { publicly_readable? }
           PermissionCacheJob.perform_later(:rebuild_for_creative, **args)
         when :rebuild_owner
           old_user_id, new_user_id = accumulated["user_id"]
