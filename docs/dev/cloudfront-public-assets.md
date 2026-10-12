@@ -61,8 +61,12 @@ authorization, `private, no-store` responses, and authenticated direct uploads.
   invalidates `/public-assets/*` after the permission cache is updated.
 
 Jobs are enqueued after the surrounding transaction commits, so a racing request
-cannot re-cache a blob the transaction is hiding. Browser caches cannot be
-invalidated (`max-age` one hour).
+cannot re-cache a blob the transaction is hiding. Each invalidation is repeated
+once 15 minutes later (`CdnInvalidationJob::FOLLOW_UP_DELAY`): a response that
+passed authorization just before the revoke may still be streaming when the
+first invalidation finishes, and CloudFront caches it when the transfer ends.
+A transfer longer than that window can still be cached until `s-maxage`.
+Browser caches cannot be invalidated (`max-age` one hour).
 
 ## Rollout
 

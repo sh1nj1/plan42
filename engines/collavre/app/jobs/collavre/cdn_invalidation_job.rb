@@ -5,8 +5,16 @@ module Collavre
   # retried job re-submits the same batch instead of creating a duplicate.
   # Throttling (e.g. too many wildcard invalidations in progress) and network
   # errors are retried with backoff; a final failure is logged as an error.
+  #
+  # A /public-assets response that passed authorization before the revoke can
+  # still be streaming when the first invalidation completes, and CloudFront
+  # stores it once the transfer ends. So every invalidation schedules one
+  # follow-up for the same paths after FOLLOW_UP_DELAY, which evicts any such
+  # in-flight response that finished within that window.
   class CdnInvalidationJob < ApplicationJob
     class InvalidationFailed < StandardError; end
+
+    FOLLOW_UP_DELAY = 15.minutes
 
     queue_as :default
     # Enqueued from model callbacks mid-transaction; running before commit would
@@ -17,7 +25,7 @@ module Collavre
       Rails.logger.error("[CdnInvalidationJob] giving up on #{job.arguments.first.inspect}: #{error.message}")
     end
 
-    def perform(paths)
+    def perform(paths, follow_up: false)
       distribution_id = Collavre::CdnInvalidation.distribution_id
       return if distribution_id.blank? || paths.blank?
 
@@ -28,6 +36,7 @@ module Collavre
           caller_reference: "collavre-#{job_id}"
         }
       )
+      self.class.set(wait: FOLLOW_UP_DELAY).perform_later(paths, follow_up: true) unless follow_up
     rescue LoadError => e
       Rails.logger.error("[CdnInvalidationJob] aws-sdk-cloudfront unavailable: #{e.message}")
     rescue StandardError => e

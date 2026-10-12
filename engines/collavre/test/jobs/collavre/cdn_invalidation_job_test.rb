@@ -5,6 +5,15 @@ require "aws-sdk-cloudfront"
 
 module Collavre
   class CdnInvalidationJobTest < ActiveSupport::TestCase
+    include ActiveJob::TestHelper
+
+    setup do
+      @original_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :test
+    end
+
+    teardown { ActiveJob::Base.queue_adapter = @original_adapter }
+
     def with_distribution(id = "E123", &block)
       CdnInvalidation.stub(:distribution_id, id, &block)
     end
@@ -27,6 +36,40 @@ module Collavre
       batch = request[:params][:invalidation_batch]
       assert_equal({ quantity: 1, items: [ "/public-assets/blobs/abc/*" ] }, batch[:paths])
       assert_equal "collavre-#{job.job_id}", batch[:caller_reference]
+    end
+
+    test "schedules one delayed follow-up for responses still streaming at revoke time" do
+      client = stubbed_client
+      paths = [ "/public-assets/blobs/abc/*" ]
+
+      with_distribution do
+        Aws::CloudFront::Client.stub(:new, client) do
+          assert_enqueued_with(job: CdnInvalidationJob, args: [ paths, { follow_up: true } ]) do
+            CdnInvalidationJob.perform_now(paths)
+          end
+          follow_up = enqueued_jobs.last
+          assert_in_delta CdnInvalidationJob::FOLLOW_UP_DELAY.from_now.to_f, follow_up[:at], 5
+
+          clear_enqueued_jobs
+          assert_no_enqueued_jobs { CdnInvalidationJob.perform_now(paths, follow_up: true) }
+        end
+      end
+
+      assert_equal 2, client.api_requests.count { |r| r[:operation_name] == :create_invalidation }
+    end
+
+    test "does not schedule a follow-up when the invalidation fails" do
+      client = stubbed_client
+      client.stub_responses(:create_invalidation, "TooManyInvalidationsInProgress")
+      job = CdnInvalidationJob.new([ "/public-assets/*" ])
+
+      with_distribution do
+        Aws::CloudFront::Client.stub(:new, client) do
+          assert_no_enqueued_jobs(only: CdnInvalidationJob) do
+            assert_raises(CdnInvalidationJob::InvalidationFailed) { job.perform([ "/public-assets/*" ]) }
+          end
+        end
+      end
     end
 
     test "skips when no distribution is configured or no paths are given" do
