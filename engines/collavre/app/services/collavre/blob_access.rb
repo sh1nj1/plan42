@@ -11,8 +11,9 @@ module Collavre
   #   - CreativeChange history  -> the changed (or anchor) creative is readable
   #   - User#avatar             -> always readable
   #
-  # A blob attached to nothing yet (direct upload before save, draft embed) is
-  # readable by its uploader or by readers of a creative whose description
+  # A blob attached to nothing yet is readable by its uploader (direct upload
+  # before save) or, when it has no recorded uploader (server-created blob
+  # before reconcile attaches it), by readers of a creative whose description
   # embeds it. Pass `user: nil` to ask whether the blob is public (readable
   # anonymously), which is the only case /public-assets may cache publicly.
   #
@@ -22,6 +23,26 @@ module Collavre
   class BlobAccess
     UPLOADER_METADATA_KEY = "uploaded_by_id"
     PUBLIC_METADATA_KEY = "public_asset"
+
+    # Attaching a blob to a record makes it readable through that record, so a
+    # record may only adopt blobs its author can already read, or a fresh
+    # server-created blob (no uploader, attached nowhere) that has no owner yet.
+    def self.adoptable?(blob, user:)
+      return true if new(blob, user: user).readable?
+
+      blob.metadata[UPLOADER_METADATA_KEY].blank? && !ActiveStorage::Attachment.exists?(blob_id: blob.id)
+    end
+
+    # The subset of `blobs` the request user (or, outside a request, `owner`)
+    # may adopt; refusals are logged.
+    def self.adoptable(blobs, owner: nil)
+      user = Collavre::Current.user || owner
+      blobs.select do |blob|
+        adoptable?(blob, user: user).tap do |ok|
+          Rails.logger.warn("BlobAccess: refused to attach unreadable blob #{blob.id}") unless ok
+        end
+      end
+    end
 
     def initialize(blob, user:)
       @blob = blob
@@ -82,8 +103,12 @@ module Collavre
       [ change.creative_id, change.change_set&.anchor_creative_id ].compact.select(&:positive?)
     end
 
+    # An uploader-tagged blob stays private to its uploader until it is
+    # attached; otherwise anyone could grant themselves access by embedding a
+    # leaked signed id in their own creative.
     def unattached_readable?
-      return true if user && blob.metadata[UPLOADER_METADATA_KEY].to_s == user.id.to_s
+      uploader_id = blob.metadata[UPLOADER_METADATA_KEY]
+      return user.present? && uploader_id.to_s == user.id.to_s if uploader_id.present?
 
       pattern = "%#{ActiveRecord::Base.sanitize_sql_like(blob.signed_id)}%"
       readable_creative?(Collavre::Creative.where("description LIKE ?", pattern).pluck(:id))

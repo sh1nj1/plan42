@@ -120,7 +120,10 @@ module Collavre
         stale_blob_ids = stale_attachments.pluck(:blob_id)
         stale_attachments.delete_all
         schedule_blob_purge_rechecks(stale_blob_ids)
-        blobs.reject { |blob| retained_ids.include?(blob.id) }.each do |blob|
+        fresh = blobs.reject { |blob| retained_ids.include?(blob.id) }
+        # A retained file is readable through the change, so a snapshot cannot
+        # pull in a blob its author cannot already read.
+        BlobAccess.adoptable(fresh, owner: change.change_set&.user || change.creative&.user).each do |blob|
           change.history_file_attachments.create!(name: "history_files", blob: blob)
         end
       end

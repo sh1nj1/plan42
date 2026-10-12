@@ -133,6 +133,15 @@ module Collavre
       assert_not readable?(file, nil)
     end
 
+    test "an embedding does not expose an unattached upload beyond its uploader" do
+      file = blob
+      file.update!(metadata: file.metadata.merge(BlobAccess::UPLOADER_METADATA_KEY => @reader.id.to_s))
+      Creative.create!(description: %(<img src="/public-assets/blobs/#{file.signed_id}/f.txt">), user: @stranger)
+
+      assert_not readable?(file, @stranger)
+      assert readable?(file, @reader)
+    end
+
     test "unattached blob embedded in a readable description is readable" do
       file = blob
       @creative.update_column(:description, %(<img src="/public-assets/blobs/#{file.signed_id}/f.txt">))

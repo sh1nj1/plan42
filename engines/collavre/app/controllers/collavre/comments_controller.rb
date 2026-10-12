@@ -8,6 +8,7 @@ module Collavre
 
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
+    before_action :require_adoptable_images, only: :create
 
     include Collavre::Comments::ApprovalGateActions
     include Collavre::Comments::HistoryTopicGuard
@@ -233,6 +234,15 @@ module Collavre
     end
 
     private
+
+    # A signed blob id is not a capability: a comment may only adopt blobs the
+    # commenter can already read (their own direct uploads included).
+    def require_adoptable_images
+      blobs = Array(params.dig(:comment, :images)).grep(String).filter_map { |id| ActiveStorage::Blob.find_signed(id) }
+      return if BlobAccess.adoptable(blobs).size == blobs.size
+
+      render json: { error: I18n.t("collavre.comments.no_permission") }, status: :forbidden
+    end
 
     def live_claude_agent_ids_for(users)
       agent_ids = users.filter_map { |user| user.id if user.claude_channel_agent? }
