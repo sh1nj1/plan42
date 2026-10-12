@@ -481,7 +481,12 @@ describe("creative-tree-row in document view", () => {
 
   test.each([
     ["Click to open this creative; drag and drop to move it.", "<h2>First &amp; second</h2>", "First & second"],
-    ["클릭하면 안으로 이동, 드래그&드롭으로 이동 가능", "<p>첫 문서</p>", "첫 문서"]
+    ["클릭하면 안으로 이동, 드래그&드롭으로 이동 가능", "<p>첫 문서</p>", "첫 문서"],
+    ["Open", "<p>  First\n\t &nbsp; second  </p>", "First second"],
+    ["Open", `<p>${"word ".repeat(400)}</p>`, `${"word ".repeat(16).slice(0, 79)}…`],
+    ["Open", `<p>${"가".repeat(80)}</p>`, "가".repeat(80)],
+    ["Open", `<p>${"😀".repeat(81)}</p>`, `${"😀".repeat(79)}…`],
+    ["Open", "<p> &nbsp; \n </p>", "8"]
   ])("the accessible name identifies the target with localized guidance", async (hint, descriptionHtml, name) => {
     const parent = container();
     parent.dataset.dragHandleHint = hint;

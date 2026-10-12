@@ -41,7 +41,8 @@ export function renderDragHandle(row) {
   const hint = row.closest("[data-drag-handle-hint]")?.dataset.dragHandleHint;
   const description = document.createElement("div");
   description.innerHTML = row.descriptionHtml || "";
-  const targetName = description.textContent.trim() || row.creativeId;
+  const text = Array.from(description.textContent.replace(/\s+/gu, " ").trim());
+  const targetName = (text.length > 80 ? `${text.slice(0, 79).join("")}…` : text.join("")) || row.creativeId;
   const accessibleName = [targetName, hint].filter(Boolean).join(": ");
   return html`
     <a class="creative-action-btn creative-drag-handle" draggable="true" href=${row.linkUrl}
