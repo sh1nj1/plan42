@@ -8,7 +8,9 @@ module Collavre
   #   - Creative#files          -> the creative is readable (origin permission)
   #   - Comment#images          -> the comment's creative is readable and the
   #                                comment is not private to someone else
-  #   - CreativeChange history  -> the changed (or anchor) creative is readable
+  #   - CreativeChange history  -> the history entry is visible and a snapshot
+  #                                state referencing the blob is visible under
+  #                                the permission path recorded with it
   #   - User#avatar             -> always readable
   #
   # A blob attached to nothing yet is readable by its uploader (direct upload
@@ -58,7 +60,7 @@ module Collavre
       return true if attachments.any? { |attachment| avatar?(attachment) }
 
       creative_ids = attachments.flat_map { |attachment| creative_ids_for(attachment) }
-      readable_creative?(creative_ids)
+      readable_creative?(creative_ids) || attachments.any? { |attachment| history_readable?(attachment) }
     end
 
     private
@@ -75,8 +77,6 @@ module Collavre
         [ attachment.record_id ]
       when Collavre::Comment.name
         comment_creative_ids(attachment.record_id)
-      when Collavre::CreativeChange.name
-        change_creative_ids(attachment.record_id)
       else
         []
       end
@@ -94,15 +94,38 @@ module Collavre
       user.present? && [ comment.user_id, comment.approver_id ].include?(user.id)
     end
 
-    # Only a draft create, whose creative_id is a negative placeholder until
-    # approval, falls back to the change set's anchor creative. A real creative
-    # (even a deleted one) never borrows the anchor's readers.
-    def change_creative_ids(change_id)
-      change = Collavre::CreativeChange.includes(:change_set).find_by(id: change_id)
-      return [] unless change
-      return [ change.creative_id ] if change.creative_id.to_i.positive?
+    # A retained file is only as visible as the history that keeps it: the
+    # change itself (live creative, actor-only for a hard delete, parent for a
+    # draft create) and a snapshot state that references the file, judged by
+    # the permission path recorded with that snapshot rather than the
+    # creative's current placement.
+    def history_readable?(attachment)
+      return false unless attachment.record_type == Collavre::CreativeChange.name
 
-      [ change.change_set&.anchor_creative_id ].compact
+      change = Collavre::CreativeChange.includes(:change_set).find_by(id: attachment.record_id)
+      return false unless change && history_visibility.changes([ change ]).any?
+
+      %w[before after].any? do |state|
+        references_blob?(change.public_send(state)) &&
+          history_visibility.historical_snapshots_visible?([ change ], state)
+      end
+    end
+
+    def references_blob?(snapshot)
+      signed_ids = %w[description markdown_source].flat_map do |key|
+        Collavre::Creatives::History.extract_signed_ids(snapshot[key])
+      end
+      signed_ids.any? { |signed_id| signed_blob_id(signed_id) == blob.id }
+    end
+
+    def signed_blob_id(signed_id)
+      ActiveStorage::Blob.find_signed(signed_id)&.id
+    rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+      nil
+    end
+
+    def history_visibility
+      @history_visibility ||= Collavre::Creatives::ChangeSetVisibility.new(user: user)
     end
 
     # An uploader-tagged blob stays private to its uploader until it is
