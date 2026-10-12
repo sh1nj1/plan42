@@ -1994,11 +1994,12 @@ creative-tree-row.is-being-edited .creative-tree {
     pointer-events: auto;
 }
 
-/* The handle is the row's only drag source and appears on hover. Touch has no
-   hover and drags nothing here, so it gives the width to the text. A laptop
-   with a touchscreen still has a fine primary pointer and keeps the handle. */
+/* Keep the link in the keyboard focus order on every device. On touch it
+   takes no layout space until focused, preserving the text alignment. */
 .creative-drag-handle {
-    display: none;
+    display: inline-flex;
+    position: absolute;
+    pointer-events: none;
     width: 20px;
     color: var(--text-muted);
     cursor: grab;
@@ -2007,13 +2008,19 @@ creative-tree-row.is-being-edited .creative-tree {
     user-select: none;
 }
 
+.creative-document-view .creative-drag-handle:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 .creative-drag-handle:active {
     cursor: grabbing;
 }
 
 @media (hover: hover) and (pointer: fine) {
     .creative-document-view .creative-drag-handle {
-        display: inline-flex;
+        position: static;
+        pointer-events: auto;
     }
 
     /* The title has no handle; it leaves the same room so it lines up. */
@@ -2021,8 +2028,7 @@ creative-tree-row.is-being-edited .creative-tree {
         padding-left: 20px;
     }
 
-    .creative-document-view .creative-row:hover .creative-drag-handle,
-    .creative-document-view .creative-drag-handle:focus-visible {
+    .creative-document-view .creative-row:hover .creative-drag-handle {
         opacity: 1;
     }
 }

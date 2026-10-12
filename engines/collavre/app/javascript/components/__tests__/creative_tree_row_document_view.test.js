@@ -472,11 +472,21 @@ describe("creative-tree-row in document view", () => {
     expect(handle.tagName).toBe("A");
     expect(handle.getAttribute("href")).toBe("/creatives/8");
     expect(handle.title).toBe(parent.dataset.dragHandleHint);
-    expect(handle.getAttribute("aria-label")).toBe(parent.dataset.dragHandleHint);
+    expect(handle.getAttribute("aria-label")).toBe(`8: ${parent.dataset.dragHandleHint}`);
     expect(handle.hasAttribute("aria-hidden")).toBe(false);
     expect(handle.dataset.turboAction).toBe("advance");
     expect(handle.dataset.turboPrefetch).toBe("false");
     expect(edits).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["Click to open this creative; drag and drop to move it.", "<h2>First &amp; second</h2>", "First & second"],
+    ["클릭하면 안으로 이동, 드래그&드롭으로 이동 가능", "<p>첫 문서</p>", "첫 문서"]
+  ])("the accessible name identifies the target with localized guidance", async (hint, descriptionHtml, name) => {
+    const parent = container();
+    parent.dataset.dragHandleHint = hint;
+    const row = await mountRow({ creativeId: "8", canWrite: true, descriptionHtml }, parent);
+    expect(row.querySelector(".creative-drag-handle").getAttribute("aria-label")).toBe(`${name}: ${hint}`);
   });
 
   test.each(["row", "ancestor"])("the handle does not navigate in %s select mode", async (mode) => {

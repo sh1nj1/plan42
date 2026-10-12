@@ -594,6 +594,18 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
          document.querySelector(arguments[0]).getBoundingClientRect().left]
       JS
       assert_in_delta lefts[1], lefts[0], 1
+
+      selector = "creative-tree-row[creative-id='#{@first.id}'] .creative-drag-handle"
+      page.execute_script("document.activeElement.blur()")
+      100.times do
+        page.driver.browser.action.send_keys(:tab).perform
+        break if page.evaluate_script("document.activeElement.matches(arguments[0])", selector)
+      end
+      assert page.evaluate_script("document.activeElement.matches(arguments[0])", selector)
+      assert_selector selector, visible: true
+      assert_selector selector, style: { opacity: "1" }
+      page.driver.browser.action.send_keys(:enter).perform
+      assert_selector "creative-tree-row[creative-id='#{@first.id}'] .creative-tree-title"
     end
   end
 

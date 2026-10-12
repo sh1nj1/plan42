@@ -39,9 +39,13 @@ export function renderDragHandle(row) {
   if (!isDocumentView(row)) return nothing;
   if (!row.canWrite) return html`<span class="creative-action-btn creative-drag-handle" style="visibility: hidden" aria-hidden="true"></span>`;
   const hint = row.closest("[data-drag-handle-hint]")?.dataset.dragHandleHint;
+  const description = document.createElement("div");
+  description.innerHTML = row.descriptionHtml || "";
+  const targetName = description.textContent.trim() || row.creativeId;
+  const accessibleName = [targetName, hint].filter(Boolean).join(": ");
   return html`
     <a class="creative-action-btn creative-drag-handle" draggable="true" href=${row.linkUrl}
-       title=${hint ?? nothing} aria-label=${hint ?? nothing} data-turbo-action="advance"
+       title=${hint ?? nothing} aria-label=${accessibleName || nothing} data-turbo-action="advance"
        data-turbo-prefetch="false" @click=${(event) => handleDragHandleClick(row, event)}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
         <circle cx="5.5" cy="3.5" r="1.3"/><circle cx="10.5" cy="3.5" r="1.3"/>
