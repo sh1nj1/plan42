@@ -39,9 +39,10 @@ export function renderDragHandle(row) {
   if (!isDocumentView(row)) return nothing;
   if (!row.canWrite) return html`<span class="creative-action-btn creative-drag-handle" style="visibility: hidden" aria-hidden="true"></span>`;
   const hint = row.closest("[data-drag-handle-hint]")?.dataset.dragHandleHint;
-  const description = document.createElement("div");
+  // Template contents are inert, so extracting a label cannot load media.
+  const description = document.createElement("template");
   description.innerHTML = row.descriptionHtml || "";
-  const text = Array.from(description.textContent.replace(/\s+/gu, " ").trim());
+  const text = Array.from(description.content.textContent.replace(/\s+/gu, " ").trim());
   const targetName = (text.length > 80 ? `${text.slice(0, 79).join("")}…` : text.join("")) || row.creativeId;
   const accessibleName = [targetName, hint].filter(Boolean).join(": ");
   return html`

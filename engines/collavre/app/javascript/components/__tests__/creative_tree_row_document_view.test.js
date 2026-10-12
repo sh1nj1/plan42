@@ -494,6 +494,31 @@ describe("creative-tree-row in document view", () => {
     expect(row.querySelector(".creative-drag-handle").getAttribute("aria-label")).toBe(`${name}: ${hint}`);
   });
 
+  test("extracting the handle name parses media in an inert template document", async () => {
+    const { renderDragHandle } = await import("../creative_tree_row_document_view.js");
+    const row = document.createElement("div");
+    container().appendChild(row);
+    Object.assign(row, {
+      canWrite: true, creativeId: "8", linkUrl: "/creatives/8",
+      descriptionHtml: '<p>Media &amp; text</p><img src="/attachment.png"><video src="/clip.mp4"></video><iframe src="/embed"></iframe>'
+    });
+    const setter = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML").set;
+    const parsed = [];
+    jest.spyOn(Element.prototype, "innerHTML", "set").mockImplementation(function (value) {
+      setter.call(this, value);
+      if (value === row.descriptionHtml) parsed.push(this);
+    });
+
+    const result = renderDragHandle(row);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].tagName).toBe("TEMPLATE");
+    expect(parsed[0].content.ownerDocument).not.toBe(document);
+    expect(parsed[0].content.ownerDocument.defaultView).toBeNull();
+    expect(parsed[0].content.querySelectorAll("img, video, iframe")).toHaveLength(3);
+    expect(result.values).toContain("Media & text");
+  });
+
   test.each(["row", "ancestor"])("the handle does not navigate in %s select mode", async (mode) => {
     const parent = container();
     if (mode === "ancestor") parent.setAttribute("data-select-mode-active", "");
