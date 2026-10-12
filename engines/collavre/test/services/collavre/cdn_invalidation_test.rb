@@ -239,6 +239,36 @@ module Collavre
       assert_equal [ [ "/public-assets/blobs/#{@blob.signed_id}/*" ] ], recorded
     end
 
+    def draft_create_retaining(blob)
+      change_set = CreativeChangeSet.create!(anchor_creative: @creative, anchor_source: "agent_topic", user: @owner,
+                                             actor_kind: "agent", origin: "tool", status: "draft")
+      change = change_set.creative_changes.create!(creative_id: -1, operation: "create", before: {},
+                                                   after: { "parent_id" => @creative.id, "description" => "<p>d</p>" })
+      change.history_file_attachments.create!(name: "history_files", blob: blob)
+      change_set
+    end
+
+    test "leaving draft status invalidates the cached files the draft retained" do
+      change_set = draft_create_retaining(@blob)
+      CdnInvalidation.mark_publicly_cached(@blob)
+
+      recorded = with_distribution { recorded_invalidations { change_set.update!(status: "rejected") } }
+
+      assert_equal [ [ "/public-assets/blobs/#{@blob.signed_id}/*" ] ], recorded
+    end
+
+    test "other change set updates do not invalidate retained files" do
+      change_set = draft_create_retaining(@blob)
+      CdnInvalidation.mark_publicly_cached(@blob)
+      change_set.update!(status: "rejected")
+
+      recorded = with_distribution do
+        recorded_invalidations { change_set.update!(status: "reverted") }
+      end
+
+      assert_empty recorded
+    end
+
     test "invalidation jobs wait for the surrounding transaction to commit" do
       assert CdnInvalidationJob.enqueue_after_transaction_commit
     end
