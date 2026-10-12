@@ -1,39 +1,67 @@
 # CloudFront behavior — /public-assets/*
 
-Collavre's externally-public attachments (landing-page assets, etc.) are served
-from `/public-assets/blobs/:signed_id/*filename`. `PublicAssetsController` forces
-`Cache-Control: public, max-age=31536000, immutable`, so CloudFront can cache
-them safely.
+Collavre serves attachments from `/public-assets/blobs/:signed_id/*filename`.
+The `signed_id` only identifies the blob; it is **not** a capability.
+`PublicAssetsController` decides per request:
 
-## CloudFront cache behavior to add
+- **Public blob** (readable anonymously: attached to a publicly shared creative,
+  a user avatar, ...) — streamed with
+  `Cache-Control: public, max-age=3600, s-maxage=86400`, so CloudFront can
+  cache it.
+- **Any other blob** — `302` to `/rails/active_storage/blobs/proxy/...` with
+  `Cache-Control: private, no-store`. That endpoint authorizes the viewer
+  (session cookie or OAuth bearer token) on every request and answers `404`
+  when they may not read the blob.
 
-Add a single behavior to the existing distribution that fronts Rails:
+Access rules live in `Collavre::BlobAccess`: creative files follow the creative
+(origin) read permission, comment images follow the comment's creative and the
+comment's private flag, history snapshots follow the changed creative, and a
+blob attached to nothing yet is readable by its uploader.
+
+The stock ActiveStorage endpoints (`/rails/active_storage/blobs/*`,
+`/representations/*`, `/direct_uploads`, `/disk/*`) are hardened by
+`Collavre::ActiveStorageAccess`: the X-Origin-Secret check, the same
+authorization, `private, no-store` responses, and authenticated direct uploads.
+
+## CloudFront cache behavior
 
 - **Path pattern:** `/public-assets/*`
 - **Origin:** existing Rails origin
 - **Viewer protocol policy:** Redirect HTTP to HTTPS
 - **Allowed methods:** GET, HEAD
-- **Cache policy:** Managed-CachingOptimized (or equivalent long-TTL: min 1d, default 1y, max 1y)
-- **Origin request policy:** Managed-CORS-S3Origin (forward only the Host header; do not forward cookies or Authorization)
+- **Cache policy:** Managed-CachingOptimized (honors the origin's `s-maxage`)
+- **Origin request policy:** Managed-CORS-S3Origin (forward only the Host
+  header; do not forward cookies or Authorization). Authorization happens on
+  the redirect target, which goes through the default behavior.
 - **Compress objects automatically:** Yes
 
-## Environment variable
+`/rails/active_storage/*` must stay on a behavior that forwards cookies and
+`Authorization` and does not cache (the default app behavior).
 
-- `PUBLIC_ASSETS_HOST` (optional) — CloudFront domain. When set, the `url`
-  returned by the MCP tools is an absolute URL
-  (`https://cdn.example.com/public-assets/...`). When unset, the URL is
-  origin-relative.
+## Environment variables
+
+- `PUBLIC_ASSETS_HOST` (optional) — CloudFront domain. When set, URLs returned
+  by the MCP tools are absolute, and private-blob redirects point back at
+  `DEFAULT_URL_HOST` so the browser sends its session cookie.
+- `CLOUDFRONT_DISTRIBUTION_ID` (optional) — enables invalidation (below). The
+  IAM principal used for S3 (or the instance role) needs
+  `cloudfront:CreateInvalidation` on this distribution.
 
 ## Cache invalidation
 
-The `signed_id` is deterministic from the blob's identity, and re-attaching an
-attachment produces a new `signed_id`, so cached entries are naturally replaced
-without explicit invalidation. To invalidate intentionally, remove and re-attach
-the attachment.
+`Collavre::CdnInvalidation` enqueues `CdnInvalidationJob` when:
 
-## Authorization model
+- a blob that `/public-assets` served publicly is detached or purged —
+  invalidates `/public-assets/blobs/<signed_id>/*`;
+- a public share is removed or downgraded to `no_access` — invalidates
+  `/public-assets/*` after the permission cache is updated.
 
-`/public-assets/*` is **accessible without authentication**. The `signed_id` is
-the only capability. If you need access-controlled assets, keep using the
-existing `rails_blob_path` (engine-internal callers) — that route is not covered
-by the CloudFront cache behavior above.
+Moving a creative out of a public subtree is not tracked; `s-maxage` bounds that
+case to one day. Browser caches cannot be invalidated (`max-age` one hour).
+
+## Rollout
+
+Before this change every blob was served `public, max-age=31536000, immutable`.
+After deploying, invalidate `/public-assets/*` once so CloudFront drops private
+blobs it already cached. Copies already in browsers or other caches cannot be
+recalled.

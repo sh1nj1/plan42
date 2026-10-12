@@ -64,13 +64,18 @@ class PermissionCacheJob < ApplicationJob
     share = CreativeShare.find_by(id: creative_share_id)
     return unless share
     Creatives::PermissionCacheBuilder.propagate_share(share)
+    # A public share downgraded to no_access unpublishes the subtree. Evict the
+    # CDN only now, after the cache reflects it, so a request racing the
+    # invalidation cannot re-cache the blob as public.
+    CdnInvalidation.invalidate_all_public_assets if share.user_id.nil? && share.no_access?
   end
 
   def remove_share(creative_share_id, creative_id, user_id)
     CreativeSharesCache.where(source_share_id: creative_share_id).delete_all
     creative = Creative.find_by(id: creative_id)
-    return unless creative
-    Creatives::PermissionCacheBuilder.rebuild_from_ancestors_for_user(creative, user_id)
+    Creatives::PermissionCacheBuilder.rebuild_from_ancestors_for_user(creative, user_id) if creative
+    # Same ordering as propagate_share: evict after the public rows are gone.
+    CdnInvalidation.invalidate_all_public_assets if user_id.nil?
   end
 
   # Purge the stale cache rows a relocated/reassigned share left behind. Only

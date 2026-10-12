@@ -8,7 +8,7 @@ module Tools
     include Collavre::PublicAssetsHelper
 
     tool_name "creative_list_attachments_service"
-    tool_description "List all attachments on a Creative with public URLs, filenames, content types, and sizes. Requires :read permission."
+    tool_description "List all attachments on a Creative with /public-assets URLs (fetchable only by viewers who can read the Creative), filenames, content types, and sizes. Requires :read permission."
 
     tool_param :creative_id, description: "ID of the Creative.", required: true
 

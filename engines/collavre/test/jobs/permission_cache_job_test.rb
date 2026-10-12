@@ -298,4 +298,50 @@ class PermissionCacheJobTest < ActiveJob::TestCase
     # Cache should be cleared (job executed inline)
     refute CreativeSharesCache.exists?(creative: @root, user: @shared_user)
   end
+  def count_public_asset_flushes
+    count = 0
+    Collavre::CdnInvalidation.stub(:invalidate_all_public_assets, -> { count += 1 }) { yield }
+    count
+  end
+
+  test "removing a public share flushes public assets from the CDN" do
+    share = perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: nil, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      PermissionCacheJob.perform_now(:remove_share, creative_share_id: share.id, creative_id: @root.id, user_id: nil)
+    end
+
+    assert_equal 1, flushes
+  end
+
+  test "removing a user share does not flush the CDN" do
+    share = perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: @shared_user, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      PermissionCacheJob.perform_now(:remove_share, creative_share_id: share.id, creative_id: @root.id, user_id: @shared_user.id)
+    end
+
+    assert_equal 0, flushes
+  end
+
+  test "removing a public share of a deleted creative still flushes the CDN" do
+    flushes = count_public_asset_flushes do
+      PermissionCacheJob.perform_now(:remove_share, creative_share_id: 0, creative_id: 0, user_id: nil)
+    end
+
+    assert_equal 1, flushes
+  end
+
+  test "downgrading a public share to no_access flushes the CDN, other public updates do not" do
+    share = perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: nil, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      share.update_column(:permission, CreativeShare.permissions[:feedback])
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      share.update_column(:permission, CreativeShare.permissions[:no_access])
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+    end
+
+    assert_equal 1, flushes
+  end
 end
