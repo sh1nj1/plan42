@@ -20,11 +20,10 @@ module Collavre
   # anonymously), which is the only case /public-assets may cache publicly.
   #
   # Operators can publish a blob explicitly (landing-page media that belongs to
-  # no public creative) with the PUBLIC_METADATA_KEY flag; see
+  # no public creative) with the BlobAccessFlag public_asset flag; see
   # `rake collavre:public_assets:publish`.
   class BlobAccess
     UPLOADER_METADATA_KEY = "uploaded_by_id"
-    PUBLIC_METADATA_KEY = "public_asset"
 
     # Attaching a blob to a record makes it readable through that record, so a
     # record may only adopt blobs its author can already read, or a fresh
@@ -52,7 +51,7 @@ module Collavre
     end
 
     def readable?
-      return true if blob.metadata[PUBLIC_METADATA_KEY] == true
+      return true if Collavre::BlobAccessFlag.set?(blob.id, :public_asset)
 
       attachments = ActiveStorage::Attachment.where(blob_id: blob.id).to_a
       return unattached_readable? if attachments.empty?

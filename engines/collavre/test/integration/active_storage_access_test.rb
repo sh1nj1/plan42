@@ -159,11 +159,11 @@ module Collavre
       assert_response :unauthorized
     end
 
-    test "direct uploads record the uploader, overriding client metadata" do
+    test "direct uploads record the uploader, and client metadata cannot publish" do
       sign_in_as(@reader, password: "password")
       params = direct_upload_params
       params[:blob][:metadata] = {
-        BlobAccess::UPLOADER_METADATA_KEY => @owner.id.to_s, BlobAccess::PUBLIC_METADATA_KEY => true, "custom" => "kept"
+        BlobAccess::UPLOADER_METADATA_KEY => @owner.id.to_s, "public_asset" => true, "custom" => "kept"
       }
 
       post url_helpers.rails_direct_uploads_path, params: params, as: :json
@@ -172,7 +172,7 @@ module Collavre
       blob = ActiveStorage::Blob.find_signed!(response.parsed_body["signed_id"])
       assert_equal @reader.id.to_s, blob.metadata[BlobAccess::UPLOADER_METADATA_KEY]
       assert_equal "kept", blob.metadata["custom"]
-      assert_nil blob.metadata[BlobAccess::PUBLIC_METADATA_KEY]
+      assert_not BlobAccess.new(blob, user: nil).readable?
       assert BlobAccess.new(blob, user: @reader).readable?
       assert_not BlobAccess.new(blob, user: @owner).readable?
     end

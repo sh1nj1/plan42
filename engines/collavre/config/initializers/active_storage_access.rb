@@ -14,7 +14,10 @@ Rails.application.config.to_prepare do
 end
 
 ActiveSupport.on_load(:active_storage_blob) do
-  after_destroy_commit { Collavre::CdnInvalidation.invalidate_blob(self) }
+  after_destroy_commit do
+    Collavre::CdnInvalidation.invalidate_blob(self)
+    Collavre::BlobAccessFlag.where(blob_id: id).delete_all
+  end
 end
 
 ActiveSupport.on_load(:active_storage_attachment) do

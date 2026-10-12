@@ -85,20 +85,14 @@ module Collavre
       end
     end
 
-    # Prepended so it wraps the controller's own #blob_args. Keys that grant
-    # access are server-owned: a client-sent uploader id is overwritten and
-    # publish/CDN flags are dropped.
+    # Prepended so it wraps the controller's own #blob_args. The uploader id
+    # grants access, so a client-sent value is overwritten.
     module UploaderMetadata
-      SERVER_OWNED_KEYS = [
-        Collavre::BlobAccess::PUBLIC_METADATA_KEY,
-        Collavre::CdnInvalidation::PUBLICLY_CACHED_METADATA_KEY
-      ].freeze
-
       private
 
       def blob_args
         args = super
-        metadata = args[:metadata].to_h.except(*SERVER_OWNED_KEYS)
+        metadata = args[:metadata].to_h
           .merge(Collavre::BlobAccess::UPLOADER_METADATA_KEY => blob_viewer.id.to_s)
         args.merge(metadata: metadata)
       end

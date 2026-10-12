@@ -17,7 +17,7 @@ module Collavre
     # Unpublishing also evicts the CDN copy.
     def unpublish!(signed_ids)
       blobs_for(signed_ids).each do |blob|
-        write_flag(blob, nil)
+        write_flag(blob, false)
         Collavre::CdnInvalidation.invalidate_blob(blob)
       end
     end
@@ -33,13 +33,9 @@ module Collavre
       Array(signed_ids).filter_map { |signed_id| ActiveStorage::Blob.find_signed(signed_id) }
     end
 
-    # update_column and the row lock: see CdnInvalidation.mark_publicly_cached.
+    # Touches only the publish flag; see BlobAccessFlag.write!.
     def write_flag(blob, value)
-      blob.with_lock do
-        metadata = blob.metadata.except(Collavre::BlobAccess::PUBLIC_METADATA_KEY)
-        metadata[Collavre::BlobAccess::PUBLIC_METADATA_KEY] = true if value
-        blob.update_column(:metadata, metadata)
-      end
+      Collavre::BlobAccessFlag.write!(blob.id, :public_asset, value)
     end
   end
 end

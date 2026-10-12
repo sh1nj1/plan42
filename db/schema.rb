@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_12_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -107,6 +107,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_000000) do
     t.index ["callback_access_token_id"], name: "index_agent_workspaces_on_callback_access_token_id", unique: true
     t.index ["manifest_token_digest"], name: "index_agent_workspaces_on_manifest_token_digest", unique: true
     t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
+  end
+
+  create_table "blob_access_flags", force: :cascade do |t|
+    t.bigint "blob_id", null: false
+    t.boolean "public_asset", default: false, null: false
+    t.boolean "cdn_public", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["blob_id"], name: "index_blob_access_flags_on_blob_id", unique: true
   end
 
   create_table "calendar_events", force: :cascade do |t|

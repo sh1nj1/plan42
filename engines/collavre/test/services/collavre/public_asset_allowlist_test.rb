@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "test_helper"
-require Collavre::Engine.root.join("db/migrate/20261012000000_publish_landing_public_assets")
+require Collavre::Engine.root.join("db/migrate/20261012000001_publish_landing_public_assets")
 
 module Collavre
   class PublicAssetAllowlistTest < ActiveSupport::TestCase
@@ -50,11 +50,22 @@ module Collavre
       assert_nothing_raised { PublishLandingPublicAssets.new.down }
     end
 
-    test "direct-upload clients cannot set server-owned metadata" do
-      keys = ActiveStorageAccess::UploaderMetadata::SERVER_OWNED_KEYS
+    # ActiveStorage's analyzer writes back a metadata snapshot read before a
+    # slow analysis; that must not change the publish flag either way.
+    test "a stale blob metadata write neither revokes nor restores the publish flag" do
+      stale = ActiveStorage::Blob.find(@blob.id)
+      PublicAssetAllowlist.publish!([ @blob.signed_id ])
+      stale.update!(metadata: stale.metadata.merge("analyzed" => true))
+      assert public?(@blob)
 
-      assert_includes keys, BlobAccess::PUBLIC_METADATA_KEY
-      assert_includes keys, CdnInvalidation::PUBLICLY_CACHED_METADATA_KEY
+      stale = ActiveStorage::Blob.find(@blob.id)
+      PublicAssetAllowlist.unpublish!([ @blob.signed_id ])
+      stale.update!(metadata: stale.metadata.merge("analyzed" => true))
+      assert_not public?(@blob)
+    end
+
+    test "write! rejects unknown flags" do
+      assert_raises(ArgumentError) { BlobAccessFlag.write!(@blob.id, :metadata, true) }
     end
   end
 end

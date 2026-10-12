@@ -10,7 +10,6 @@ module Collavre
   # so private blobs (never cached by the CDN) cost no invalidation requests.
   # A no-op unless CLOUDFRONT_DISTRIBUTION_ID is configured.
   module CdnInvalidation
-    PUBLICLY_CACHED_METADATA_KEY = "cdn_public"
     ALL_PUBLIC_ASSETS_PATH = "/public-assets/*"
 
     module_function
@@ -23,22 +22,17 @@ module Collavre
       distribution_id.present?
     end
 
-    # update_column skips Blob callbacks, which would otherwise touch every
-    # record the blob is attached to on a plain GET. The row lock reloads the
-    # metadata first, so a GET that read it before a concurrent unpublish
-    # cannot write the stale public flag back (see PublicAssetAllowlist).
+    # The marker is a separate row written atomically (BlobAccessFlag), so it
+    # can neither restore a concurrently revoked publish flag nor be erased by
+    # ActiveStorage rewriting the blob metadata.
     def mark_publicly_cached(blob)
       return if publicly_cached?(blob)
 
-      blob.with_lock do
-        next if publicly_cached?(blob)
-
-        blob.update_column(:metadata, blob.metadata.merge(PUBLICLY_CACHED_METADATA_KEY => true))
-      end
+      Collavre::BlobAccessFlag.write!(blob.id, :cdn_public, true)
     end
 
     def publicly_cached?(blob)
-      blob.metadata[PUBLICLY_CACHED_METADATA_KEY].present?
+      Collavre::BlobAccessFlag.set?(blob.id, :cdn_public)
     end
 
     def blob_paths(blob)

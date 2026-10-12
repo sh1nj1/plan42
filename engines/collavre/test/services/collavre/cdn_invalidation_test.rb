@@ -42,9 +42,27 @@ module Collavre
 
       CdnInvalidation.mark_publicly_cached(stale)
 
-      metadata = @blob.reload.metadata
       assert CdnInvalidation.publicly_cached?(@blob)
-      assert_nil metadata[BlobAccess::PUBLIC_METADATA_KEY]
+      assert_not BlobAccess.new(@blob.reload, user: nil).readable?
+    end
+
+    test "the cached marker survives a stale blob metadata write (ActiveStorage analysis)" do
+      stale = ActiveStorage::Blob.find(@blob.id)
+      CdnInvalidation.mark_publicly_cached(@blob)
+
+      stale.update!(metadata: stale.metadata.merge("analyzed" => true, "width" => 10))
+
+      assert CdnInvalidation.publicly_cached?(@blob.reload)
+    end
+
+    test "purging a blob invalidates its cached copy and drops its flags" do
+      CdnInvalidation.mark_publicly_cached(@blob)
+      PublicAssetAllowlist.publish!([ @blob.signed_id ])
+
+      recorded = with_distribution { recorded_invalidations { @blob.purge } }
+
+      assert_equal [ CdnInvalidation.blob_paths(@blob) ], recorded
+      assert_not BlobAccessFlag.exists?(blob_id: @blob.id)
     end
 
     test "does nothing for blobs CloudFront never cached" do

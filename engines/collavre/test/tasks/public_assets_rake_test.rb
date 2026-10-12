@@ -26,11 +26,11 @@ module Collavre
     test "publish and unpublish toggle the flag for the given signed ids" do
       output = run_task("collavre:public_assets:publish", signed_ids: @blob.signed_id)
       assert_match(/Published 1 blob/, output)
-      assert @blob.reload.metadata[BlobAccess::PUBLIC_METADATA_KEY]
+      assert BlobAccessFlag.set?(@blob.id, :public_asset)
 
       output = run_task("collavre:public_assets:unpublish", signed_ids: @blob.signed_id)
       assert_match(/Unpublished 1 blob/, output)
-      assert_nil @blob.reload.metadata[BlobAccess::PUBLIC_METADATA_KEY]
+      assert_not BlobAccessFlag.set?(@blob.id, :public_asset)
     end
 
     test "publish_landing publishes landing blobs that exist" do
