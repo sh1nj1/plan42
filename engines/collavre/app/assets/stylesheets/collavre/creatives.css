@@ -2021,7 +2021,8 @@ creative-tree-row.is-being-edited .creative-tree {
         padding-left: 20px;
     }
 
-    .creative-document-view .creative-row:hover .creative-drag-handle {
+    .creative-document-view .creative-row:hover .creative-drag-handle,
+    .creative-document-view .creative-drag-handle:focus-visible {
         opacity: 1;
     }
 }

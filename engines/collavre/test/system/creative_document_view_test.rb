@@ -54,6 +54,19 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
         .perform
   end
 
+  test "clicking the document drag handle enters the creative" do
+    visit collavre.creative_path(@root, view: "document")
+    find(content_selector(@first)).hover
+    handle = find("creative-tree-row[creative-id='#{@first.id}'] .creative-drag-handle")
+    assert_equal I18n.t("collavre.dnd.document_drag_handle_hint", locale: @user.locale), handle["title"]
+
+    handle.click
+
+    assert_selector "creative-tree-row[creative-id='#{@first.id}'] .creative-tree-title"
+    assert_selector ".creative-document-view #creatives[data-view-mode='document']"
+    assert_no_selector "#inline-edit-form", visible: true
+  end
+
   test "switching views keeps content and order, and the toggle returns to the tree" do
     visit collavre.creative_path(@root)
     assert_selector content_selector(@first)

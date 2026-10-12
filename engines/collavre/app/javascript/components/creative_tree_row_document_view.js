@@ -38,14 +38,17 @@ export function rowDraggableAttr(row) {
 export function renderDragHandle(row) {
   if (!isDocumentView(row)) return nothing;
   if (!row.canWrite) return html`<span class="creative-action-btn creative-drag-handle" style="visibility: hidden" aria-hidden="true"></span>`;
+  const hint = row.closest("[data-drag-handle-hint]")?.dataset.dragHandleHint;
   return html`
-    <span class="creative-action-btn creative-drag-handle" draggable="true" aria-hidden="true">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <a class="creative-action-btn creative-drag-handle" draggable="true" href=${row.linkUrl}
+       title=${hint ?? nothing} aria-label=${hint ?? nothing} data-turbo-action="advance"
+       data-turbo-prefetch="false" @click=${(event) => handleDragHandleClick(row, event)}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
         <circle cx="5.5" cy="3.5" r="1.3"/><circle cx="10.5" cy="3.5" r="1.3"/>
         <circle cx="5.5" cy="8" r="1.3"/><circle cx="10.5" cy="8" r="1.3"/>
         <circle cx="5.5" cy="12.5" r="1.3"/><circle cx="10.5" cy="12.5" r="1.3"/>
       </svg>
-    </span>
+    </a>
   `;
 }
 
@@ -105,6 +108,14 @@ export function visitRowLink(row) {
 // controller's element, not on the row's own selectMode property.
 function selectModeActive(row) {
   return row.selectMode || row.closest(SELECT_MODE_SELECTOR) !== null;
+}
+
+// Keep selection gestures from following the handle link. Plain clicks use
+// native/Turbo navigation, including the document editor save-before-leave guard.
+function handleDragHandleClick(row, event) {
+  if (!selectModeActive(row)) return;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 // The shared form stays in the page hidden once closed; only a visible one is

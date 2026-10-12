@@ -454,6 +454,45 @@ describe("creative-tree-row in document view", () => {
     expect(el.querySelector(".creative-drag-handle")).toBeNull();
   });
 
+  test("the handle is a localized navigation link without opening the editor", async () => {
+    const parent = container();
+    parent.dataset.dragHandleHint = "Click to open this creative; drag and drop to move it.";
+    const row = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const handle = row.querySelector(".creative-drag-handle");
+    const edits = editClicks(row);
+    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+    // Cancel only after checking the component, to avoid jsdom navigation.
+    parent.addEventListener("click", (click) => {
+      expect(click.defaultPrevented).toBe(false);
+      click.preventDefault();
+    }, { once: true });
+
+    handle.querySelector("svg").dispatchEvent(event);
+
+    expect(handle.tagName).toBe("A");
+    expect(handle.getAttribute("href")).toBe("/creatives/8");
+    expect(handle.title).toBe(parent.dataset.dragHandleHint);
+    expect(handle.getAttribute("aria-label")).toBe(parent.dataset.dragHandleHint);
+    expect(handle.hasAttribute("aria-hidden")).toBe(false);
+    expect(handle.dataset.turboAction).toBe("advance");
+    expect(handle.dataset.turboPrefetch).toBe("false");
+    expect(edits).not.toHaveBeenCalled();
+  });
+
+  test.each(["row", "ancestor"])("the handle does not navigate in %s select mode", async (mode) => {
+    const parent = container();
+    if (mode === "ancestor") parent.setAttribute("data-select-mode-active", "");
+    const row = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8", selectMode: mode === "row" }, parent);
+    const bubbled = jest.fn();
+    parent.addEventListener("click", bubbled);
+    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+
+    row.querySelector(".creative-drag-handle svg").dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(bubbled).not.toHaveBeenCalled();
+  });
+
   test("a row the user cannot write keeps the handle's slot empty and drags nothing", async () => {
     const { startsRowDrag, isRowDragSource } = await import("../creative_tree_row_document_view.js");
     const el = await mountRow({ creativeId: "8", canWrite: false, linkUrl: "/creatives/8" }, container());
