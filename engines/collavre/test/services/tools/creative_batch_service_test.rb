@@ -322,6 +322,7 @@ module Collavre
         )
         source = Creative.create!(description: "Source", user: @user)
         source.files.attach(blob)
+        CreativeShare.create!(creative: source, user: agent, shared_by: @user, permission: :read)
         signed_id = blob.signed_id
         description = "[Existing file](/public-assets/blobs/#{signed_id}/existing.txt)"
 
@@ -338,6 +339,25 @@ module Collavre
         change = CreativeChangeSet.find(result[:change_set_id]).creative_changes.sole
         assert_equal blob.id, change.history_file_attachments.sole.blob_id
         assert_includes change.after["markdown_source"], signed_id
+      end
+
+      test "does not retain a preexisting blob the reviewing agent cannot read" do
+        task, agent = review_agent_turn
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: StringIO.new("secret"), filename: "secret.txt", content_type: "text/plain"
+        )
+        Creative.create!(description: "Private source", user: @user).files.attach(blob)
+        description = "[Secret](/public-assets/blobs/#{blob.signed_id}/secret.txt)"
+
+        result = Current.set(user: agent, agent_turn: { user: @user, task: task }) do
+          CreativeBatchService.new.call(operations: [
+            { "action" => "update", "id" => @root.id, "description" => description }
+          ])
+        end
+
+        assert result[:pending_review], result.inspect
+        change = CreativeChangeSet.find(result[:change_set_id]).creative_changes.sole
+        assert_empty change.history_file_attachments
       end
 
       test "approves a draft update using its canonical markdown snapshot" do
