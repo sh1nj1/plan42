@@ -22,4 +22,13 @@ end
 
 ActiveSupport.on_load(:active_storage_attachment) do
   after_destroy_commit { Collavre::CdnInvalidation.invalidate_blob(ActiveStorage::Blob.find_by(id: blob_id)) }
+
+  # Attachment#purge / #purge_later and the description reconcile remove the
+  # row with delete, which skips the destroy hook; a blob still attached
+  # elsewhere is never purged either, so evict on every per-record delete.
+  prepend(Module.new do
+    def delete
+      super.tap { Collavre::CdnInvalidation.invalidate_blob(ActiveStorage::Blob.find_by(id: blob_id)) }
+    end
+  end)
 end

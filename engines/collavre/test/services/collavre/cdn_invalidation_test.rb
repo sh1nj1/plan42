@@ -143,6 +143,26 @@ module Collavre
       assert ActiveStorage::Blob.exists?(@blob.id)
     end
 
+    test "purging a comment image still attached elsewhere invalidates it" do
+      # Attachment#purge deletes the row (no destroy hook) and the blob purge
+      # is a no-op while the cross-posted copy keeps it, as in remove_image.
+      image = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("x"), filename: "p.png", content_type: "image/png")
+      public_post = Comment.create!(creative: @creative, user: @owner, content: "public")
+      private_copy = Comment.create!(creative: @creative, user: @owner, content: "inbox", private: true)
+      public_post.images.attach(image)
+      private_copy.images.attach(image)
+      CdnInvalidation.mark_publicly_cached(image)
+      path = [ "/public-assets/blobs/#{image.signed_id}/*" ]
+
+      recorded = with_distribution do
+        recorded_invalidations { public_post.images.attachments.first.purge }
+      end
+
+      assert_equal [ path ], recorded
+      assert ActiveStorage::Blob.exists?(image.id)
+      assert_equal [ image.id ], private_copy.reload.images.blobs.pluck(:id)
+    end
+
     test "a comment made private or moved invalidates its cached images; other edits do not" do
       image = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("x"), filename: "p.png", content_type: "image/png")
       comment = Comment.create!(creative: @creative, user: @owner, content: "hi")
