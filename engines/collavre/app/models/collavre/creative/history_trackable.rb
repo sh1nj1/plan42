@@ -8,6 +8,9 @@ module Collavre
       included do
         around_save :record_change_history
         before_destroy :record_destroy_history
+        # A hard delete makes the history actor-only, so files only history
+        # retains must leave the CDN too (creative files evict on their own).
+        after_destroy :evict_cached_history_files
 
         has_many :creative_changes, class_name: "Collavre::CreativeChange", dependent: nil
       end
@@ -81,6 +84,13 @@ module Collavre
           operation: "destroy",
           before: Creatives::History.snapshot(self),
           after: {}
+        )
+      end
+
+      def evict_cached_history_files
+        CdnInvalidation.invalidate_blob_ids(
+          ActiveStorage::Attachment.where(record_type: CreativeChange.name, name: "history_files",
+                                          record_id: CreativeChange.where(creative_id: id).select(:id)).select(:blob_id)
         )
       end
 

@@ -239,6 +239,26 @@ module Collavre
       assert_equal [ [ "/public-assets/blobs/#{@blob.signed_id}/*" ] ], recorded
     end
 
+    test "hard-deleting a creative invalidates the cached files its history retained" do
+      # Removed from the creative earlier: only history keeps the blob alive.
+      history_change_retaining(@blob)
+      CdnInvalidation.mark_publicly_cached(@blob)
+
+      recorded = with_distribution { recorded_invalidations { @creative.destroy! } }
+
+      assert_includes recorded, [ "/public-assets/blobs/#{@blob.signed_id}/*" ]
+    end
+
+    test "hard-deleting a creative leaves files retained by other creatives' history alone" do
+      other = Creative.create!(description: "<p>o</p>", user: @owner)
+      history_change_retaining(@blob)
+      CdnInvalidation.mark_publicly_cached(@blob)
+
+      recorded = with_distribution { recorded_invalidations { other.destroy! } }
+
+      assert_not_includes recorded, [ "/public-assets/blobs/#{@blob.signed_id}/*" ]
+    end
+
     def draft_create_retaining(blob)
       change_set = CreativeChangeSet.create!(anchor_creative: @creative, anchor_source: "agent_topic", user: @owner,
                                              actor_kind: "agent", origin: "tool", status: "draft")
