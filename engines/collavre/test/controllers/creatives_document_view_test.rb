@@ -76,6 +76,8 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
       get creatives_path
 
       assert_select "#document-view-btn[title=?][aria-label=?]", toggle, toggle
+      hint = I18n.t("collavre.dnd.document_drag_handle_hint", locale: locale)
+      assert_select "[data-drag-handle-hint=?]", hint
     end
   end
 

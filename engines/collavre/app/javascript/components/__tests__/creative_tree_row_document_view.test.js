@@ -454,6 +454,85 @@ describe("creative-tree-row in document view", () => {
     expect(el.querySelector(".creative-drag-handle")).toBeNull();
   });
 
+  test("the handle is a localized navigation link without opening the editor", async () => {
+    const parent = container();
+    parent.dataset.dragHandleHint = "Click to open this creative; drag and drop to move it.";
+    const row = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8" }, parent);
+    const handle = row.querySelector(".creative-drag-handle");
+    const edits = editClicks(row);
+    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+    // Cancel only after checking the component, to avoid jsdom navigation.
+    parent.addEventListener("click", (click) => {
+      expect(click.defaultPrevented).toBe(false);
+      click.preventDefault();
+    }, { once: true });
+
+    handle.querySelector("svg").dispatchEvent(event);
+
+    expect(handle.tagName).toBe("A");
+    expect(handle.getAttribute("href")).toBe("/creatives/8");
+    expect(handle.title).toBe(parent.dataset.dragHandleHint);
+    expect(handle.getAttribute("aria-label")).toBe(`8: ${parent.dataset.dragHandleHint}`);
+    expect(handle.hasAttribute("aria-hidden")).toBe(false);
+    expect(handle.dataset.turboAction).toBe("advance");
+    expect(handle.dataset.turboPrefetch).toBe("false");
+    expect(edits).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["Click to open this creative; drag and drop to move it.", "<h2>First &amp; second</h2>", "First & second"],
+    ["클릭하면 안으로 이동, 드래그&드롭으로 이동 가능", "<p>첫 문서</p>", "첫 문서"],
+    ["Open", "<p>  First\n\t &nbsp; second  </p>", "First second"],
+    ["Open", `<p>${"word ".repeat(400)}</p>`, `${"word ".repeat(16).slice(0, 79)}…`],
+    ["Open", `<p>${"가".repeat(80)}</p>`, "가".repeat(80)],
+    ["Open", `<p>${"😀".repeat(81)}</p>`, `${"😀".repeat(79)}…`],
+    ["Open", "<p> &nbsp; \n </p>", "8"]
+  ])("the accessible name identifies the target with localized guidance", async (hint, descriptionHtml, name) => {
+    const parent = container();
+    parent.dataset.dragHandleHint = hint;
+    const row = await mountRow({ creativeId: "8", canWrite: true, descriptionHtml }, parent);
+    expect(row.querySelector(".creative-drag-handle").getAttribute("aria-label")).toBe(`${name}: ${hint}`);
+  });
+
+  test("extracting the handle name parses media in an inert template document", async () => {
+    const { renderDragHandle } = await import("../creative_tree_row_document_view.js");
+    const row = document.createElement("div");
+    container().appendChild(row);
+    Object.assign(row, {
+      canWrite: true, creativeId: "8", linkUrl: "/creatives/8",
+      descriptionHtml: '<p>Media &amp; text</p><img src="/attachment.png"><video src="/clip.mp4"></video><iframe src="/embed"></iframe>'
+    });
+    const setter = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML").set;
+    const parsed = [];
+    jest.spyOn(Element.prototype, "innerHTML", "set").mockImplementation(function (value) {
+      setter.call(this, value);
+      if (value === row.descriptionHtml) parsed.push(this);
+    });
+
+    const result = renderDragHandle(row);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].tagName).toBe("TEMPLATE");
+    expect(parsed[0].content.ownerDocument).not.toBe(document);
+    expect(parsed[0].content.ownerDocument.defaultView).toBeNull();
+    expect(parsed[0].content.querySelectorAll("img, video, iframe")).toHaveLength(3);
+    expect(result.values).toContain("Media & text");
+  });
+
+  test.each(["row", "ancestor"])("the handle does not navigate in %s select mode", async (mode) => {
+    const parent = container();
+    if (mode === "ancestor") parent.setAttribute("data-select-mode-active", "");
+    const row = await mountRow({ creativeId: "8", canWrite: true, linkUrl: "/creatives/8", selectMode: mode === "row" }, parent);
+    const bubbled = jest.fn();
+    parent.addEventListener("click", bubbled);
+    const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+
+    row.querySelector(".creative-drag-handle svg").dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(bubbled).not.toHaveBeenCalled();
+  });
+
   test("a row the user cannot write keeps the handle's slot empty and drags nothing", async () => {
     const { startsRowDrag, isRowDragSource } = await import("../creative_tree_row_document_view.js");
     const el = await mountRow({ creativeId: "8", canWrite: false, linkUrl: "/creatives/8" }, container());

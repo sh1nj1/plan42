@@ -54,6 +54,19 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
         .perform
   end
 
+  test "clicking the document drag handle enters the creative" do
+    visit collavre.creative_path(@root, view: "document")
+    find(content_selector(@first)).hover
+    handle = find("creative-tree-row[creative-id='#{@first.id}'] .creative-drag-handle")
+    assert_equal I18n.t("collavre.dnd.document_drag_handle_hint", locale: @user.locale), handle["title"]
+
+    handle.click
+
+    assert_selector "creative-tree-row[creative-id='#{@first.id}'] .creative-tree-title"
+    assert_selector ".creative-document-view #creatives[data-view-mode='document']"
+    assert_no_selector "#inline-edit-form", visible: true
+  end
+
   test "switching views keeps content and order, and the toggle returns to the tree" do
     visit collavre.creative_path(@root)
     assert_selector content_selector(@first)
@@ -581,6 +594,18 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
          document.querySelector(arguments[0]).getBoundingClientRect().left]
       JS
       assert_in_delta lefts[1], lefts[0], 1
+
+      selector = "creative-tree-row[creative-id='#{@first.id}'] .creative-drag-handle"
+      page.execute_script("document.activeElement.blur()")
+      100.times do
+        page.driver.browser.action.send_keys(:tab).perform
+        break if page.evaluate_script("document.activeElement.matches(arguments[0])", selector)
+      end
+      assert page.evaluate_script("document.activeElement.matches(arguments[0])", selector)
+      assert_selector selector, visible: true
+      assert_selector selector, style: { opacity: "1" }
+      page.driver.browser.action.send_keys(:enter).perform
+      assert_selector "creative-tree-row[creative-id='#{@first.id}'] .creative-tree-title"
     end
   end
 
