@@ -62,10 +62,16 @@ module Collavre
       assert_equal PNG.b, response.body.b
       assert_equal "private, no-store", response.headers["Cache-Control"]
       assert_equal "noindex, nofollow", response.headers["X-Robots-Tag"]
+    end
 
-      get endpoints(@blob)[:blob_redirect]
-      assert_response :redirect
-      assert_match(/private/, response.headers["Cache-Control"])
+    test "redirects to the service URL are never cached, so revocation applies on the next request" do
+      sign_in_as(@owner, password: "password")
+
+      %i[blob_redirect representation_redirect].each do |endpoint|
+        get endpoints(@blob)[endpoint]
+        assert_response :redirect
+        assert_equal "private, no-store", response.headers["Cache-Control"], endpoint
+      end
     end
 
     test "representations are served to authorized viewers" do

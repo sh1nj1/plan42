@@ -56,6 +56,12 @@ module Collavre
       def http_cache_forever(public: false)
         yield
       end
+
+      # The redirect controllers call expires_in(service_urls_expire_in), which
+      # drops no-store and would let a browser replay the cached 302 (and its
+      # signed service URL) after access is revoked. Keep no-store.
+      def expires_in(*)
+      end
     end
 
     # Direct uploads: only signed-in users (or bearer clients) may create blobs,
