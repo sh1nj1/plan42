@@ -8,7 +8,7 @@ module Collavre
 
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
-    before_action :require_adoptable_images, only: :create
+    before_action :require_adoptable_images, only: [ :create, :update ]
 
     include Collavre::Comments::ApprovalGateActions
     include Collavre::Comments::HistoryTopicGuard

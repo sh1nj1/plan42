@@ -94,13 +94,15 @@ module Collavre
       user.present? && [ comment.user_id, comment.approver_id ].include?(user.id)
     end
 
-    # A draft create has a negative placeholder creative_id until approval, so
-    # fall back to the change set's anchor creative.
+    # Only a draft create, whose creative_id is a negative placeholder until
+    # approval, falls back to the change set's anchor creative. A real creative
+    # (even a deleted one) never borrows the anchor's readers.
     def change_creative_ids(change_id)
       change = Collavre::CreativeChange.includes(:change_set).find_by(id: change_id)
       return [] unless change
+      return [ change.creative_id ] if change.creative_id.to_i.positive?
 
-      [ change.creative_id, change.change_set&.anchor_creative_id ].compact.select(&:positive?)
+      [ change.change_set&.anchor_creative_id ].compact
     end
 
     # An uploader-tagged blob stays private to its uploader until it is

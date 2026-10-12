@@ -104,6 +104,21 @@ module Collavre
       assert_not readable?(file, @stranger)
     end
 
+    test "history snapshot of a real creative does not borrow the anchor's readers" do
+      hidden = Creative.create!(description: "<p>hidden</p>", user: @owner)
+      change_set = CreativeChangeSet.create!(
+        anchor_creative: @creative, anchor_source: "agent_topic", user: @owner,
+        actor_kind: "agent", origin: "tool", status: "draft"
+      )
+      change = change_set.creative_changes.create!(creative_id: hidden.id, operation: "update", before: {}, after: {}, position: 0)
+      file = blob
+      change.history_file_attachments.create!(name: "history_files", blob: file)
+      CreativeShare.create!(creative: @creative, user: @stranger, permission: :read)
+
+      assert readable?(file, @owner)
+      assert_not readable?(file, @stranger)
+    end
+
     test "missing history change denies access" do
       file = blob
       ActiveStorage::Attachment.insert_all!([ { name: "history_files", record_type: CreativeChange.name, record_id: 0, blob_id: file.id, created_at: Time.current } ])

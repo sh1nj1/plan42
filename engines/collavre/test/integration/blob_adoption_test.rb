@@ -93,5 +93,17 @@ module Collavre
       assert_response :created
       assert_equal [ own.id ], Comment.last.images.blobs.pluck(:id)
     end
+
+    test "a comment update cannot attach someone else's blob by signed id" do
+      target = Creative.create!(description: "<p>mine</p>", user: @stranger)
+      comment = Comment.create!(creative: target, user: @stranger, content: "hi")
+      sign_in_as(@stranger, password: "password")
+
+      patch collavre.creative_comment_path(target, comment), params: { comment: { content: "hi", images: [ @secret.signed_id ] } }
+
+      assert_response :forbidden
+      assert_not comment.reload.images.attached?
+      assert_not readable?(@secret, @stranger)
+    end
   end
 end

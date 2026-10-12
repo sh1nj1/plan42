@@ -146,6 +146,27 @@ module Collavre
       assert_equal [ path, path, path ], recorded
     end
 
+    test "moving a topic invalidates the cached images of its comments" do
+      image = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("x"), filename: "p.png", content_type: "image/png")
+      uncached = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("y"), filename: "q.png", content_type: "image/png")
+      topic = @creative.topics.create!(name: "Moving", user: @owner)
+      moved = Comment.create!(creative: @creative, topic: topic, user: @owner, content: "hi")
+      moved.images.attach(image)
+      moved.images.attach(uncached)
+      staying = Comment.create!(creative: @creative, user: @owner, content: "stay")
+      other_image = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("z"), filename: "r.png", content_type: "image/png")
+      staying.images.attach(other_image)
+      [ image, other_image ].each { |blob| CdnInvalidation.mark_publicly_cached(blob) }
+      target = Creative.create!(description: "<p>private</p>", user: @owner)
+
+      recorded = with_distribution do
+        recorded_invalidations { Topics::TopicMove.new(topic: topic, target_creative: target).call }
+      end
+
+      assert_equal [ [ "/public-assets/blobs/#{image.signed_id}/*" ] ], recorded
+      assert_equal target.id, moved.reload.creative_id
+    end
+
     test "invalidation jobs wait for the surrounding transaction to commit" do
       assert CdnInvalidationJob.enqueue_after_transaction_commit
     end

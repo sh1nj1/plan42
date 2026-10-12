@@ -12,6 +12,16 @@ module Collavre
         after_update_commit :invalidate_public_image_cache, if: :image_visibility_changed?
       end
 
+      class_methods do
+        # Bulk relocations (update_all) skip the callback above, so callers
+        # evict the moved comments' images explicitly. The job waits for commit.
+        def invalidate_public_images_of(comments)
+          ActiveStorage::Blob.joins(:attachments)
+            .where(active_storage_attachments: { record_type: name, name: "images", record_id: comments.select(:id) })
+            .find_each { |blob| CdnInvalidation.invalidate_blob(blob) }
+        end
+      end
+
       private
 
       def image_visibility_changed?
