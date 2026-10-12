@@ -167,6 +167,40 @@ module Collavre
       assert_equal target.id, moved.reload.creative_id
     end
 
+    def history_change_retaining(blob)
+      change_set = CreativeChangeSet.create!(anchor_creative: @creative, anchor_source: "agent_topic", user: @owner,
+                                             actor_kind: "agent", origin: "tool", status: "applied")
+      change = change_set.creative_changes.create!(creative_id: @creative.id, operation: "update",
+                                                   before: { "description" => "<p>a</p>" }, after: { "description" => "<p>b</p>" })
+      change.history_file_attachments.create!(name: "history_files", blob: blob)
+      change
+    end
+
+    test "dropping a stale history reference invalidates the cached blob" do
+      # The blob stays attached to the creative, so the purge recheck keeps it.
+      @creative.files.attach(@blob)
+      change = history_change_retaining(@blob)
+      CdnInvalidation.mark_publicly_cached(@blob)
+
+      recorded = with_distribution do
+        recorded_invalidations { Creatives::History.retain_snapshot_files!(change) }
+      end
+
+      assert_equal [ [ "/public-assets/blobs/#{@blob.signed_id}/*" ] ], recorded
+      assert_not change.history_file_attachments.exists?
+      assert ActiveStorage::Blob.exists?(@blob.id)
+    end
+
+    test "destroying a history change invalidates its cached retained files" do
+      @creative.files.attach(@blob)
+      change = history_change_retaining(@blob)
+      CdnInvalidation.mark_publicly_cached(@blob)
+
+      recorded = with_distribution { recorded_invalidations { change.destroy! } }
+
+      assert_equal [ [ "/public-assets/blobs/#{@blob.signed_id}/*" ] ], recorded
+    end
+
     test "invalidation jobs wait for the surrounding transaction to commit" do
       assert CdnInvalidationJob.enqueue_after_transaction_commit
     end

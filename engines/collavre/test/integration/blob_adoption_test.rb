@@ -105,5 +105,26 @@ module Collavre
       assert_not comment.reload.images.attached?
       assert_not readable?(@secret, @stranger)
     end
+
+    test "an avatar cannot adopt someone else's blob by signed id" do
+      sign_in_as(@stranger, password: "password")
+
+      patch collavre.user_path(@stranger), params: { user: { avatar: @secret.signed_id } }
+
+      assert_response :forbidden
+      assert_not @stranger.reload.avatar.attached?
+      assert_not readable?(@secret, @stranger)
+      assert_not readable?(@secret, nil)
+    end
+
+    test "an avatar may use the user's own upload" do
+      own = upload(BlobAccess::UPLOADER_METADATA_KEY => @stranger.id.to_s)
+      sign_in_as(@stranger, password: "password")
+
+      patch collavre.user_path(@stranger), params: { user: { avatar: own.signed_id } }
+
+      assert_redirected_to collavre.user_path(@stranger)
+      assert_equal own.id, @stranger.reload.avatar.blob.id
+    end
   end
 end

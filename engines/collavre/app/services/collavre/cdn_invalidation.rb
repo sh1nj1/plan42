@@ -51,6 +51,13 @@ module Collavre
       enqueue(blob_paths(blob))
     end
 
+    # For attachment rows removed with delete/delete_all, which skip the
+    # attachment invalidation callback; a blob still attached elsewhere is
+    # never purged either.
+    def invalidate_blob_ids(blob_ids)
+      ActiveStorage::Blob.where(id: blob_ids).find_each { |blob| invalidate_blob(blob) }
+    end
+
     # Which blobs a revoked share exposed is not tracked per subtree, and the
     # revoke is rare, so flush the whole /public-assets behavior.
     def invalidate_all_public_assets
