@@ -344,4 +344,58 @@ class PermissionCacheJobTest < ActiveJob::TestCase
 
     assert_equal 1, flushes
   end
+  test "moving a public share away from its subtree flushes the CDN" do
+    other = Creative.create!(user: @owner, description: "Other", progress: 0.0)
+    share = perform_enqueued_jobs { CreativeShare.create!(creative: @child, user: nil, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      perform_enqueued_jobs { share.update!(creative: other) }
+    end
+
+    assert_equal 1, flushes
+    refute CreativeSharesCache.exists?(source_share_id: share.id, creative_id: @child.id)
+  end
+
+  test "reassigning a public share to a user flushes the CDN" do
+    share = perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: nil, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      perform_enqueued_jobs { share.update!(user: @shared_user) }
+    end
+
+    assert_equal 1, flushes
+  end
+
+  test "moving a user share does not flush the CDN" do
+    other = Creative.create!(user: @owner, description: "Other", progress: 0.0)
+    user_share = perform_enqueued_jobs { CreativeShare.create!(creative: @child, user: @shared_user, permission: :read) }
+
+    flushes = count_public_asset_flushes do
+      perform_enqueued_jobs { user_share.update!(creative: other) }
+    end
+
+    assert_equal 0, flushes
+  end
+
+  test "propagate_share with flush_public_cdn flushes even if the share is gone" do
+    flushes = count_public_asset_flushes do
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: 0, flush_public_cdn: true)
+    end
+
+    assert_equal 1, flushes
+  end
+
+  test "moving a publicly readable creative flushes the CDN, a private one does not" do
+    other = Creative.create!(user: @owner, description: "Other", progress: 0.0)
+    perform_enqueued_jobs { CreativeShare.create!(creative: @root, user: nil, permission: :read) }
+    private_root = Creative.create!(user: @owner, description: "Private", progress: 0.0)
+    private_child = Creative.create!(user: @owner, description: "Private child", progress: 0.0, parent: private_root)
+
+    public_move = count_public_asset_flushes { perform_enqueued_jobs { @child.update!(parent: other) } }
+    private_move = count_public_asset_flushes { perform_enqueued_jobs { private_child.update!(parent: other) } }
+
+    assert_equal 1, public_move
+    assert_equal 0, private_move
+    refute @child.reload.publicly_readable?
+  end
 end

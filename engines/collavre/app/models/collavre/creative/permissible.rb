@@ -157,7 +157,11 @@ module Collavre
       def run_permission_cache_operation(operation, accumulated)
         case operation
         when :rebuild
-          PermissionCacheJob.perform_later(:rebuild_for_creative, creative_id: id)
+          # The cache still holds the pre-move permissions here, so this tells
+          # whether the subtree was public and its CDN copies must be evicted.
+          args = { creative_id: id }
+          args[:flush_public_cdn] = true if publicly_readable?
+          PermissionCacheJob.perform_later(:rebuild_for_creative, **args)
         when :rebuild_owner
           old_user_id, new_user_id = accumulated["user_id"]
           PermissionCacheJob.perform_later(:update_owner,

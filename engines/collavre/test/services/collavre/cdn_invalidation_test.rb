@@ -96,6 +96,48 @@ module Collavre
       assert ActiveStorage::Blob.exists?(@blob.id)
     end
 
+    test "detaching a description attachment still referenced elsewhere invalidates it" do
+      # Description reconciliation detaches with attachment.delete (no destroy
+      # callbacks) and keeps a blob another creative still embeds, so neither
+      # the attachment nor the purge hook can fire.
+      @creative.files.attach(@blob)
+      Creative.create!(description: "<p>#{@blob.signed_id}</p>", user: @owner)
+      CdnInvalidation.mark_publicly_cached(@blob)
+      attachment = @creative.files.attachments.first
+
+      recorded = with_distribution do
+        recorded_invalidations { @creative.send(:detach_and_maybe_purge, attachment) }
+      end
+
+      assert_equal [ [ "/public-assets/blobs/#{@blob.signed_id}/*" ] ], recorded
+      assert ActiveStorage::Blob.exists?(@blob.id)
+    end
+
+    test "a comment made private or moved invalidates its cached images; other edits do not" do
+      image = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("x"), filename: "p.png", content_type: "image/png")
+      comment = Comment.create!(creative: @creative, user: @owner, content: "hi")
+      comment.images.attach(image)
+      CdnInvalidation.mark_publicly_cached(image)
+      path = [ "/public-assets/blobs/#{image.signed_id}/*" ]
+      other = Creative.create!(description: "<p>other</p>", user: @owner)
+
+      recorded = with_distribution do
+        recorded_invalidations do
+          comment.update!(content: "edited")
+          comment.update!(private: true)
+          comment.update!(private: false)
+          comment.update_columns(creative_id: other.id)
+          comment.reload.update!(creative: @creative)
+        end
+      end
+
+      assert_equal [ path, path, path ], recorded
+    end
+
+    test "invalidation jobs wait for the surrounding transaction to commit" do
+      assert CdnInvalidationJob.enqueue_after_transaction_commit
+    end
+
     test "flushing all public assets enqueues the wildcard" do
       recorded = with_distribution { recorded_invalidations { CdnInvalidation.invalidate_all_public_assets } }
 

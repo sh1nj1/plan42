@@ -51,13 +51,18 @@ authorization, `private, no-store` responses, and authenticated direct uploads.
 
 `Collavre::CdnInvalidation` enqueues `CdnInvalidationJob` when:
 
-- a blob that `/public-assets` served publicly is detached or purged —
-  invalidates `/public-assets/blobs/<signed_id>/*`;
-- a public share is removed or downgraded to `no_access` — invalidates
-  `/public-assets/*` after the permission cache is updated.
+- a blob that `/public-assets` served publicly is detached (including
+  description reconciliation, which keeps blobs still embedded elsewhere) or
+  purged — invalidates `/public-assets/blobs/<signed_id>/*`;
+- a comment is made private or moved to another creative — invalidates its
+  publicly served images;
+- a public share is removed, downgraded to `no_access`, moved to another
+  creative or reassigned to a user, or a publicly readable creative is moved —
+  invalidates `/public-assets/*` after the permission cache is updated.
 
-Moving a creative out of a public subtree is not tracked; `s-maxage` bounds that
-case to one day. Browser caches cannot be invalidated (`max-age` one hour).
+Jobs are enqueued after the surrounding transaction commits, so a racing request
+cannot re-cache a blob the transaction is hiding. Browser caches cannot be
+invalidated (`max-age` one hour).
 
 ## Rollout
 

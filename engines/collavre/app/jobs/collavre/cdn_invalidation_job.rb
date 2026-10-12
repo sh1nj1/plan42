@@ -9,6 +9,9 @@ module Collavre
     class InvalidationFailed < StandardError; end
 
     queue_as :default
+    # Enqueued from model callbacks mid-transaction; running before commit would
+    # let a racing request re-cache a blob the transaction is about to hide.
+    self.enqueue_after_transaction_commit = true
 
     retry_on InvalidationFailed, wait: :polynomially_longer, attempts: 8 do |job, error|
       Rails.logger.error("[CdnInvalidationJob] giving up on #{job.arguments.first.inspect}: #{error.message}")

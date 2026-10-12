@@ -71,6 +71,10 @@ module Collavre
 
     private
 
+    def public_grant_before_last_save?
+      user_id_before_last_save.nil? && permission_before_last_save.to_s != "no_access"
+    end
+
     # Give a newly published creative its public address up front, so the
     # sitemap and share modal rarely need to assign one on a read.
     def assign_public_id
@@ -156,6 +160,9 @@ module Collavre
         # preserving the prior branch order.
         if operations.include?(:relocate) || operations.include?(:reassign)
           propagate_args[:purge_stale] = true
+          # The old placement was a public grant: once purged, its subtree may
+          # be private, so the job must also evict publicly cached assets.
+          propagate_args[:flush_public_cdn] = true if public_grant_before_last_save?
           rebuild_vacated_subtree(relocated: operations.include?(:relocate))
         end
       end

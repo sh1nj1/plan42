@@ -312,6 +312,10 @@ module Collavre
         attachment.delete
         return if blob.nil?
 
+        # delete skips the attachment's after_destroy_commit invalidation, and a
+        # blob still referenced elsewhere is never purged, so evict it here.
+        CdnInvalidation.invalidate_blob(blob)
+
         signed_id = blob.signed_id
         still_referenced = Creative.where.not(id: id)
                                    .where("description LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%")
