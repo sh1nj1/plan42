@@ -8,7 +8,7 @@ module Tools
     include Collavre::PublicAssetsHelper
 
     tool_name "creative_attach_files_service"
-    tool_description "Attach inline, agent-generated TEXT content (markdown, html, svg, plain text) to a Creative. The content is stored as an ActiveStorage blob, embedded into the Creative's description, and served via /public-assets URLs. Anyone may fetch a URL only while they can read the Creative: publicly shared attachments are CDN-cached, others redirect to an authorized endpoint (session or bearer token).\n\nUse this for content the agent produced as text (notes, generated markdown/html/svg).\n\nFor BINARY files already on disk (png, mp4, pdf), use the CLI `collavre attach --creative <id> --file <path>` instead — it uploads the raw bytes over a bearer multipart HTTP endpoint without base64 bloat.\n\nRequires :write permission on the target Creative. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
+    tool_description "Attach inline, agent-generated TEXT content (markdown, html, svg, plain text) to a Creative. The content is stored as an ActiveStorage blob, embedded into the Creative's description, and a download URL is returned. Anyone may fetch it only while they can read the Creative: publicly shared attachments get a CDN-cached /public-assets URL, others an app-host URL authorized per request (session or bearer token).\n\nUse this for content the agent produced as text (notes, generated markdown/html/svg).\n\nFor BINARY files already on disk (png, mp4, pdf), use the CLI `collavre attach --creative <id> --file <path>` instead — it uploads the raw bytes over a bearer multipart HTTP endpoint without base64 bloat.\n\nRequires :write permission on the target Creative. A Creative with inherited ai_write_policy=review stores a draft in History for approval."
 
     tool_param :creative_id, description: "ID of the Creative to attach content to.", required: true
     tool_param :files, description: "Array of objects: { filename, content, content_type? }. `content` is the literal UTF-8 text to store (e.g. markdown/html/svg source). `content_type` is inferred from the filename when omitted.", required: true
@@ -60,7 +60,7 @@ module Tools
             filename: b.filename.to_s,
             content_type: b.content_type,
             byte_size: b.byte_size,
-            url: public_asset_url(b)
+            url: attachment_access_url(b)
           }
         }
       }

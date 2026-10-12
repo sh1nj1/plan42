@@ -28,7 +28,12 @@ module Collavre
       blob = ActiveStorage::Blob.find_signed!(params[:signed_id])
       return redirect_to_authorized_path(blob) unless blob_readable?(blob, user: nil)
 
+      # Re-check after marking so an unpublish or share revoke that landed since
+      # the first check is not served (and CDN-cached) as public. Only CDN
+      # misses reach here, so the extra reload is cheap.
       Collavre::CdnInvalidation.mark_publicly_cached(blob)
+      return redirect_to_authorized_path(blob) unless blob_readable?(blob.reload, user: nil)
+
       response.headers["Cache-Control"] = PUBLIC_CACHE_CONTROL
       send_blob_stream blob, disposition: "inline"
     rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound

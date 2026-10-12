@@ -90,6 +90,16 @@ module Collavre
       assert_response :not_found
     end
 
+    test "the shared Kollavy agent stays confined to its task tree" do
+      agent = Collavre::Kollavy.seed!
+      CreativeShare.create!(creative: @creative, user: agent, permission: :read)
+      Current.reset
+
+      get endpoints(@blob)[:blob_proxy], headers: bearer(agent)
+
+      assert_response :not_found
+    end
+
     test "revoked bearer tokens are rejected" do
       headers = bearer(@owner)
       Doorkeeper::AccessToken.find_by(resource_owner_id: @owner.id, application: @app).revoke

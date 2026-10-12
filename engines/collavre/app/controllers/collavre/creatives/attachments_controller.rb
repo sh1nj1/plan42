@@ -52,7 +52,7 @@ module Collavre
           filename: blob.filename.to_s,
           content_type: blob.content_type,
           byte_size: blob.byte_size,
-          url: public_asset_url(blob)
+          url: attachment_access_url(blob)
         }
       end
 

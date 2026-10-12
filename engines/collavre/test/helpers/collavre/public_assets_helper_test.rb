@@ -29,5 +29,24 @@ module Collavre
       url = public_asset_url(@blob)
       assert_match %r{\A/public-assets/blobs/[^/]+/x\.txt\z}, url
     end
+
+    test "attachment access URL keeps the CDN URL for public blobs" do
+      perform_enqueued_jobs { CreativeShare.create!(creative: @creative, user: nil, permission: :read) }
+
+      assert_equal public_asset_url(@blob), attachment_access_url(@blob)
+    end
+
+    test "attachment access URL points private blobs at the authorized app-host route" do
+      ENV["PUBLIC_ASSETS_HOST"] = "https://cdn.example.com"
+      Rails.application.routes.stub(:default_url_options, { host: "app.example.com", protocol: "https" }) do
+        assert_match %r{\Ahttps://app\.example\.com/rails/active_storage/blobs/proxy/[^/]+/x\.txt\z},
+          attachment_access_url(@blob)
+      end
+      Rails.application.routes.stub(:default_url_options, {}) do
+        assert_match %r{\A/rails/active_storage/blobs/proxy/[^/]+/x\.txt\z}, attachment_access_url(@blob)
+      end
+    ensure
+      ENV.delete("PUBLIC_ASSETS_HOST")
+    end
   end
 end

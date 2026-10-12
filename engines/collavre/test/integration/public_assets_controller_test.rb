@@ -91,6 +91,18 @@ module Collavre
       assert_match %r{\Ahttps://app\.example\.com/rails/active_storage/blobs/proxy/}, response.location
     end
 
+    test "does not serve publicly when the blob is unpublished while it is marked" do
+      PublicAssetAllowlist.publish!([ @blob.signed_id ])
+      unpublish = ->(_blob) { PublicAssetAllowlist.unpublish!([ @blob.signed_id ]) }
+
+      CdnInvalidation.stub(:mark_publicly_cached, unpublish) do
+        get "/public-assets/blobs/#{@blob.signed_id}/hello.txt"
+      end
+
+      assert_response :found
+      assert_equal "private, no-store", response.headers["Cache-Control"]
+    end
+
     test "returns 404 for bad signed_id" do
       get "/public-assets/blobs/not-a-valid-signed-id/hello.txt"
       assert_response :not_found

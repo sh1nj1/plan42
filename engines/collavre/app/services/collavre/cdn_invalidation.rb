@@ -24,11 +24,17 @@ module Collavre
     end
 
     # update_column skips Blob callbacks, which would otherwise touch every
-    # record the blob is attached to on a plain GET.
+    # record the blob is attached to on a plain GET. The row lock reloads the
+    # metadata first, so a GET that read it before a concurrent unpublish
+    # cannot write the stale public flag back (see PublicAssetAllowlist).
     def mark_publicly_cached(blob)
       return if publicly_cached?(blob)
 
-      blob.update_column(:metadata, blob.metadata.merge(PUBLICLY_CACHED_METADATA_KEY => true))
+      blob.with_lock do
+        next if publicly_cached?(blob)
+
+        blob.update_column(:metadata, blob.metadata.merge(PUBLICLY_CACHED_METADATA_KEY => true))
+      end
     end
 
     def publicly_cached?(blob)

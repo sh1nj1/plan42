@@ -33,11 +33,13 @@ module Collavre
       Array(signed_ids).filter_map { |signed_id| ActiveStorage::Blob.find_signed(signed_id) }
     end
 
-    # update_column: see CdnInvalidation.mark_publicly_cached.
+    # update_column and the row lock: see CdnInvalidation.mark_publicly_cached.
     def write_flag(blob, value)
-      metadata = blob.metadata.except(Collavre::BlobAccess::PUBLIC_METADATA_KEY)
-      metadata[Collavre::BlobAccess::PUBLIC_METADATA_KEY] = true if value
-      blob.update_column(:metadata, metadata)
+      blob.with_lock do
+        metadata = blob.metadata.except(Collavre::BlobAccess::PUBLIC_METADATA_KEY)
+        metadata[Collavre::BlobAccess::PUBLIC_METADATA_KEY] = true if value
+        blob.update_column(:metadata, metadata)
+      end
     end
   end
 end

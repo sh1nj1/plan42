@@ -18,6 +18,11 @@ module Collavre
       return @blob_viewer if defined?(@blob_viewer)
 
       @blob_viewer = session_blob_viewer || bearer_blob_viewer
+      # These controllers skip the API authenticator, so establish Current.user
+      # here: Kollavy::AccessScope only restricts the shared Kollavy agent to
+      # its task tree (and fails closed without one) when Current.user is set.
+      Collavre::Current.user = @blob_viewer if @blob_viewer
+      @blob_viewer
     end
 
     def blob_readable?(blob, user: blob_viewer)

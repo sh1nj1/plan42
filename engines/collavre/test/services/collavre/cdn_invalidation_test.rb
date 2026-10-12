@@ -35,6 +35,18 @@ module Collavre
       assert_equal updated_at, @creative.reload.updated_at
     end
 
+    test "marking a stale blob cannot restore a concurrently revoked public flag" do
+      PublicAssetAllowlist.publish!([ @blob.signed_id ])
+      stale = ActiveStorage::Blob.find(@blob.id)
+      PublicAssetAllowlist.unpublish!([ @blob.signed_id ])
+
+      CdnInvalidation.mark_publicly_cached(stale)
+
+      metadata = @blob.reload.metadata
+      assert CdnInvalidation.publicly_cached?(@blob)
+      assert_nil metadata[BlobAccess::PUBLIC_METADATA_KEY]
+    end
+
     test "does nothing for blobs CloudFront never cached" do
       recorded = with_distribution do
         recorded_invalidations do
