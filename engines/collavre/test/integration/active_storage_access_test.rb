@@ -177,7 +177,34 @@ module Collavre
       assert_not BlobAccess.new(blob, user: @owner).readable?
     end
 
+    test "with forgery protection on, bearer clients may direct upload but cookie sessions need the token" do
+      with_forgery_protection do
+        post url_helpers.rails_direct_uploads_path, params: direct_upload_params, headers: bearer(@reader), as: :json
+        assert_response :success
+        blob = ActiveStorage::Blob.find_signed!(response.parsed_body["signed_id"])
+        assert_equal @reader.id.to_s, blob.metadata[BlobAccess::UPLOADER_METADATA_KEY]
+
+        post url_helpers.rails_direct_uploads_path, params: direct_upload_params,
+          headers: { "Authorization" => "Bearer invalid" }, as: :json
+        assert_response :unauthorized
+      end
+
+      sign_in_as(@reader, password: "password")
+      with_forgery_protection do
+        post url_helpers.rails_direct_uploads_path, params: direct_upload_params, as: :json
+        assert_response :unprocessable_content
+      end
+    end
+
     private
+
+    def with_forgery_protection
+      original = ActionController::Base.allow_forgery_protection
+      ActionController::Base.allow_forgery_protection = true
+      yield
+    ensure
+      ActionController::Base.allow_forgery_protection = original
+    end
 
     def direct_upload_params
       {

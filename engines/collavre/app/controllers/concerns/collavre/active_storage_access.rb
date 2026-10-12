@@ -83,6 +83,14 @@ module Collavre
       def require_blob_uploader!
         head :unauthorized unless blob_viewer
       end
+
+      # ActiveStorage::BaseController forges-protects with :exception, and a
+      # bearer client has no authenticity token. A cross-site form cannot set
+      # an Authorization header, so a valid bearer token proves intent; cookie
+      # sessions still need the CSRF token.
+      def verified_request?
+        super || bearer_blob_viewer.present?
+      end
     end
 
     # Prepended so it wraps the controller's own #blob_args. The uploader id
