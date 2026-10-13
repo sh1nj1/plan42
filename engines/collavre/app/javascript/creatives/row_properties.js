@@ -7,3 +7,7 @@ export function applyDisplayProgress(row, node) {
   }
   return node.inline_editor_payload || {}
 }
+
+export function normalizeBoolean(value) {
+  return value === true || value === 'true' || value === ''
+}

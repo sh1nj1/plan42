@@ -1,8 +1,5 @@
-import { applyDisplayProgress } from './display_progress'
+import { applyDisplayProgress, normalizeBoolean } from './row_properties'
 import { applyInlineDataset } from '../modules/creative_inline_dataset'
-function normalizeBoolean(value) {
-  return value === true || value === 'true' || value === ''
-}
 
 function setDatasetValue(element, key, value) {
   if (!element) return
