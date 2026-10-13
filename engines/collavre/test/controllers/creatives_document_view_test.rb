@@ -40,6 +40,20 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     assert_equal 1, response.parsed_body.dig("title_progress", "display_progress")
   end
 
+  test "initial HTML title uses combined filter progress before the JSON tree loads" do
+    parent = Creative.create!(description: "Filtered parent", user: @user)
+    leaf = Creative.create!(description: "Tagged completed leaf", user: @user, parent: parent, progress: 1)
+    label = Label.create!(creative: leaf, owner: @user)
+    Tag.create!(creative_id: leaf.id, label: label)
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "nonexistent-filter-match", view: "document")
+    assert_response :success
+    assert_select "creative-tree-row[is-title][data-display-progress='0']"
+    assert_select "creative-tree-row[is-title] template[data-part='progress'] .creative-progress-incomplete", text: "0%"
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "Tagged", view: "document")
+    assert_response :success
+    assert_select "creative-tree-row[is-title][data-display-progress='1.0']"
+  end
+
   test "filtered title refresh does not expose an unreadable parent" do
     creative = Creative.create!(description: "Private doc", user: users(:two))
     get creatives_path(id: creative.id, tags: [ "999999" ], format: :json)
