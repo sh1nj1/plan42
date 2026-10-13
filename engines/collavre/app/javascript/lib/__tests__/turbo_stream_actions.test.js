@@ -237,3 +237,15 @@ test('direct progress updates invalidate filtered presentation but unfiltered up
   expect(row.dataset.progressValue).toBe('1')
   document.removeEventListener('creative-sync:refetch', refetch)
 })
+
+test('a remote progress broadcast refetches an empty root tag and progress filter', () => {
+  document.body.innerHTML = '<div id="creatives" data-creatives--tree-url-value="/creatives?format=json&amp;tags%5B%5D=7&amp;min_progress=1"></div>'
+  const refetch = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  try {
+    dispatchCreativeTreeStream({ action: 'updated', creative: { id: 7, progress: 1 } })
+    expect(refetch).toHaveBeenCalledTimes(1)
+  } finally {
+    document.removeEventListener('creative-sync:refetch', refetch)
+  }
+})
