@@ -7,7 +7,7 @@ import {
     updateProgressHtml,
 } from "../creatives/tree_renderer"
 import { hideTreeEmptyState, restoreTreeEmptyState } from "../modules/creative_tree_empty_state"
-import { invalidateCreativeTree } from "./creative_tree_invalidation"
+import { invalidateCreativeTree, refreshFilteredProgress } from "./creative_tree_invalidation"
 
 // Register custom actions on both the imported Turbo and the global window.Turbo
 function registerStreamAction(name, handler) {
@@ -56,6 +56,7 @@ registerStreamAction("refresh_creative_tree", function () {
 
     // Update ancestor progress for all actions
     updateAncestorProgress(creative.ancestors)
+    refreshFilteredProgress()
     document.dispatchEvent(new CustomEvent('workspace-tree:invalidate'))
 })
 
@@ -351,6 +352,7 @@ export function updateProgressForRow(row, progress, progressText, progressHtml =
     const displayText = progressText != null ? (progressText || '\u00a0\u00a0') : `${pct}%`
 
     row.dataset.progressValue = String(progress)
+    refreshFilteredProgress()
 
     if (row.progressHtml) {
         const updated = progressHtml && !row.selectMode

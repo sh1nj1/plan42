@@ -26,6 +26,7 @@ module Collavre
     before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view public_page ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::CreativesIndexTitle
     include Collavre::CreativeTypeEditable
     include Collavre::Concerns::CreativeHistoryTrackable
 
@@ -33,7 +34,7 @@ module Collavre
       respond_to do |format|
         format.html do
           visit_received_at = Time.current
-          # HTML only needs parent_creative for nav/title - skip expensive filtered queries
+          # HTML needs parent metadata and initial title progress; body rows load via JSON
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
             assign_index_creative_permissions
@@ -52,7 +53,7 @@ module Collavre
             end
           end
           @creatives = []  # CSR will fetch via JSON
-          @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+    prepare_index_title
           if Current.user&.creative_workspace_enabled?
             @workspace_path_ids = Creatives::WorkspacePathResolver.new(
               creative: @parent_creative,
@@ -114,8 +115,7 @@ module Collavre
               allowed_creative_ids: @allowed_creative_ids,
               progress_map: @progress_map
             )
-            payload = { creatives: @creatives_tree_json }
-            payload[:pagination] = index_result.pagination if index_result.pagination
+            payload = view_context.filtered_tree_payload(@creatives_tree_json, @parent_creative, index_result.pagination)
             render json: payload
           end
         end
@@ -596,15 +596,6 @@ module Collavre
       # FilterPipeline. Passing an explicitly permitted hash (rather than
       # params.to_unsafe_h) keeps arbitrary client-supplied keys out of the
       # query layer while preserving every filter the index endpoint supports.
-      def index_query_params
-        params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron, :reaction_emoji,
-          :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
-          :assignee_id, :unassigned, :show_archived, :page, :per_page,
-          tags: []
-        ).to_h
-      end
-
       def workspace_tree_expanded_ids
         permitted = params.permit(expand: [])[:expand]
         Array(permitted).filter_map { |id| Integer(id, exception: false) }

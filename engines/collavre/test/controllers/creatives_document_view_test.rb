@@ -6,6 +6,73 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     sign_in_as(@user, password: "password")
   end
 
+  test "filtered title and body reflect a tagged leaf progress change" do
+    parent = Creative.create!(description: "Filtered parent", user: @user)
+    leaf = Creative.create!(description: "Tagged leaf", user: @user, parent: parent, progress: 0)
+    Creative.create!(description: "Other leaf", user: @user, parent: parent, progress: 0)
+    label = Label.create!(creative: leaf, owner: @user)
+    Tag.create!(creative_id: leaf.id, label: label)
+    path = creatives_path(id: parent.id, tags: [ label.id.to_s ], format: :json)
+    get path
+    assert_equal 0, response.parsed_body.dig("title_progress", "display_progress")
+    patch creative_path(leaf), params: { creative: { progress: 1 } }, as: :json
+    assert_response :success
+    get path
+    assert_response :success
+    assert_equal 1, response.parsed_body.dig("title_progress", "display_progress")
+    assert_equal 0.5, parent.reload.progress
+  end
+
+  test "empty combined filters preserve zero title progress instead of tag-only progress" do
+    parent = Creative.create!(description: "Filtered parent", user: @user)
+    leaf = Creative.create!(description: "Tagged completed leaf", user: @user, parent: parent, progress: 1)
+    label = Label.create!(creative: leaf, owner: @user)
+    Tag.create!(creative_id: leaf.id, label: label)
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "nonexistent-filter-match", format: :json)
+    assert_response :success
+    assert_empty response.parsed_body.fetch("creatives")
+    title = response.parsed_body.fetch("title_progress")
+    assert_equal parent.id, title["id"]
+    assert_equal 0, title["display_progress"]
+    assert_includes title["progress_html"], 'creative-progress-incomplete">0%</span>'
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "Tagged", format: :json)
+    assert_response :success
+    assert_equal 1, response.parsed_body.dig("title_progress", "display_progress")
+  end
+
+  test "initial HTML title uses combined filter progress before the JSON tree loads" do
+    parent = Creative.create!(description: "Filtered parent", user: @user)
+    leaf = Creative.create!(description: "Tagged completed leaf", user: @user, parent: parent, progress: 1)
+    label = Label.create!(creative: leaf, owner: @user)
+    Tag.create!(creative_id: leaf.id, label: label)
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "nonexistent-filter-match", view: "document")
+    assert_response :success
+    assert_select "creative-tree-row[is-title][data-display-progress='0']"
+    assert_select "creative-tree-row[is-title] template[data-part='progress'] .creative-progress-incomplete", text: "0%"
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "Tagged", view: "document")
+    assert_response :success
+    assert_select "creative-tree-row[is-title][data-display-progress='1.0']"
+  end
+
+  test "filtered title refresh does not expose an unreadable parent" do
+    creative = Creative.create!(description: "Private doc", user: users(:two))
+    get creatives_path(id: creative.id, tags: [ "999999" ], format: :json)
+    assert_response :success
+    assert_nil response.parsed_body["title_progress"]
+  end
+
+  test "filtered JSON refetch includes current title progress" do
+    creative = Creative.create!(description: "Complete doc", user: @user, progress: 1)
+    get creatives_path(id: creative.id, tags: [ "999999" ], format: :json)
+    assert_response :success
+    title = response.parsed_body.fetch("title_progress")
+    assert_equal creative.id, title["id"]
+    assert_equal 0, title["display_progress"]
+    assert_includes title["progress_html"], 'data-current-progress="0"'
+    get creatives_path(id: creative.id, format: :json)
+    assert_nil response.parsed_body["title_progress"]
+  end
+
   test "tree view is the default and offers the document view toggle" do
     get creatives_path
 
@@ -25,6 +92,16 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     assert_select ".creative-document-view[data-creatives--document-view-active-value='true']"
     assert_select "#document-view-btn[aria-pressed='true']"
     assert_select "#creatives[data-view-mode='document'][data-dnd-disabled]"
+  end
+
+  test "title background receives filtered progress separately from editor progress" do
+    creative = Creative.create!(description: "Complete doc", user: @user, progress: 1)
+    get creatives_path(id: creative.id, view: "document", tags: [ "999999" ])
+    assert_response :success
+    assert_select "creative-tree-row[is-title][data-progress-value='1.0'][data-display-progress='0']"
+
+    get creatives_path(id: creative.id, view: "document")
+    assert_select "creative-tree-row[is-title][data-display-progress]", count: 0
   end
 
   test "the remembered view follows the user into any creative" do

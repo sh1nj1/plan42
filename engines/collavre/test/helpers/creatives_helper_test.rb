@@ -3,6 +3,32 @@ require "test_helper"
 class CreativesHelperTest < ActionView::TestCase
   include Collavre::CreativesHelper
 
+  test "precomputed progress avoids a second filtered traversal including zero" do
+    creative = Creative.create!(user: users(:one), description: "Filtered title", progress: 1)
+    creative.define_singleton_method(:progress_for_tags) { |_tags| raise "Duplicate traversal" }
+    params[:tags] = [ "999999" ]
+    creative.filtered_progress = 0
+    html = render_creative_progress(creative, has_children: false, can_write: true, can_feedback: false)
+    assert_includes html, 'data-current-progress="0"'
+  end
+
+  test "filtered title payload calculates progress once and reuses it for the control" do
+    creative = Creative.create!(user: users(:one), description: "Filtered title", progress: 1)
+    calls = 0
+    creative.define_singleton_method(:progress_for_tags) { |_tags| calls += 1; 0 }
+    params[:tags] = [ "999999" ]
+    Current.user = users(:one)
+    creative.define_singleton_method(:has_permission?) { |_user, permission| permission == :read }
+    payload = filtered_title_progress(creative)
+    assert_equal 1, calls
+    assert_equal 0, payload[:display_progress]
+    assert_includes payload[:progress_html], "0%"
+    Current.user = nil
+    params.delete(:tags)
+    assert_nil filtered_title_progress(creative)
+    assert_nil filtered_title_progress(nil)
+  end
+
   test "render_cron_badge shows the count, schedules, and next run times" do
     task = Struct.new(:key, :schedule, :next_time, :arguments)
     first = task.new(

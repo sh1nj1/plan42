@@ -166,7 +166,7 @@ module Creatives
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
-          inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
+          **progress_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(
             creative,
             has_children: has_children,
@@ -237,6 +237,19 @@ module Creatives
         edit_off_icon_html: edit_off_icon_html,
         origin_link_html: origin_link_html_for(creative)
       }
+    end
+
+    def progress_payload_for(creative, can_write:)
+      {
+        display_progress: display_progress_for(creative),
+        inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write)
+      }
+    end
+
+    def display_progress_for(creative)
+      return nil if raw_params[:tags].blank?
+
+      creative.filtered_progress || creative.progress_for_tags(Array(raw_params[:tags]).map(&:to_s)) || 0
     end
 
     def inline_editor_payload_for(creative, can_write:)

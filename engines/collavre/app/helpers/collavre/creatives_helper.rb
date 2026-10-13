@@ -65,6 +65,26 @@ module Collavre
       end
     end
 
+    def filtered_tree_payload(nodes, parent, pagination)
+      payload = { creatives: nodes, title_progress: filtered_title_progress(parent) }
+      payload[:pagination] = pagination if pagination
+      payload
+    end
+
+    def filtered_title_progress(creative)
+      return nil if params[:tags].blank?
+
+      creative ||= Creative.find_by(id: params[:id])
+      return nil unless creative&.has_permission?(Current.user, :read)
+
+      progress = creative.filtered_progress = @progress_map&.fetch(creative.id.to_s, 0) || creative_progress_value(creative)
+      {
+        id: creative.id,
+        display_progress: progress,
+        progress_html: render_creative_progress(creative)
+      }
+    end
+
     # A tag filter narrows what counts toward progress, so the filtered value
     # wins when one is applied; `filtered_progress` is the preloaded form the
     # browse tree hands down, and progress_for_tags is the per-node fallback.

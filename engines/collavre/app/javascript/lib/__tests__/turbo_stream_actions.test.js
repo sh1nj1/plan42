@@ -214,3 +214,38 @@ test('an older update broadcast cannot replace a queued local row after the edit
   dispatchCreativeTreeStream(payload)
   expect(applyRowProperties).toHaveBeenCalledTimes(1)
 })
+
+
+test('progress broadcasts refetch filtered rows and title instead of keeping their initial display value', () => {
+  document.body.innerHTML = '<creative-tree-row is-title creative-id="42" data-display-progress="0"></creative-tree-row><creative-tree-row creative-id="7" data-display-progress="0"></creative-tree-row>'
+  const refetch = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch, { once: true })
+  dispatchCreativeTreeStream({ action: 'updated', creative: { id: 7, progress: 1, ancestors: [{ id: 42, progress: 0.5 }] } })
+  expect(refetch).toHaveBeenCalled()
+})
+
+test('direct progress updates invalidate filtered presentation but unfiltered updates do not refetch', () => {
+  const row = document.createElement('creative-tree-row')
+  document.body.appendChild(row)
+  const refetch = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  updateProgressForRow(row, 1, '')
+  expect(refetch).not.toHaveBeenCalled()
+  row.dataset.displayProgress = '0'
+  updateProgressForRow(row, 1, '')
+  expect(refetch).toHaveBeenCalledTimes(1)
+  expect(row.dataset.progressValue).toBe('1')
+  document.removeEventListener('creative-sync:refetch', refetch)
+})
+
+test('a remote progress broadcast refetches an empty root tag and progress filter', () => {
+  document.body.innerHTML = '<div id="creatives" data-creatives--tree-url-value="/creatives?format=json&amp;tags%5B%5D=7&amp;min_progress=1"></div>'
+  const refetch = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  try {
+    dispatchCreativeTreeStream({ action: 'updated', creative: { id: 7, progress: 1 } })
+    expect(refetch).toHaveBeenCalledTimes(1)
+  } finally {
+    document.removeEventListener('creative-sync:refetch', refetch)
+  }
+})
