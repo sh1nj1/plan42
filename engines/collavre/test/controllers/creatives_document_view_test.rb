@@ -6,6 +6,42 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     sign_in_as(@user, password: "password")
   end
 
+  test "filtered title and body reflect a tagged leaf progress change" do
+    parent = Creative.create!(description: "Filtered parent", user: @user)
+    leaf = Creative.create!(description: "Tagged leaf", user: @user, parent: parent, progress: 0)
+    Creative.create!(description: "Other leaf", user: @user, parent: parent, progress: 0)
+    label = Label.create!(creative: leaf, owner: @user)
+    Tag.create!(creative_id: leaf.id, label: label)
+    path = creatives_path(id: parent.id, tags: [ label.id.to_s ], format: :json)
+    get path
+    assert_equal 0, response.parsed_body.dig("title_progress", "display_progress")
+    patch creative_path(leaf), params: { creative: { progress: 1 } }, as: :json
+    assert_response :success
+    get path
+    assert_response :success
+    assert_equal 1, response.parsed_body.dig("title_progress", "display_progress")
+    assert_equal 0.5, parent.reload.progress
+  end
+
+  test "filtered title refresh does not expose an unreadable parent" do
+    creative = Creative.create!(description: "Private doc", user: users(:two))
+    get creatives_path(id: creative.id, tags: [ "999999" ], format: :json)
+    assert_response :success
+    assert_nil response.parsed_body["title_progress"]
+  end
+
+  test "filtered JSON refetch includes current title progress" do
+    creative = Creative.create!(description: "Complete doc", user: @user, progress: 1)
+    get creatives_path(id: creative.id, tags: [ "999999" ], format: :json)
+    assert_response :success
+    title = response.parsed_body.fetch("title_progress")
+    assert_equal creative.id, title["id"]
+    assert_equal 0, title["display_progress"]
+    assert_includes title["progress_html"], 'data-current-progress="0"'
+    get creatives_path(id: creative.id, format: :json)
+    assert_nil response.parsed_body["title_progress"]
+  end
+
   test "tree view is the default and offers the document view toggle" do
     get creatives_path
 

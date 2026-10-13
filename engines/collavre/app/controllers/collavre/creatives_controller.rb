@@ -114,8 +114,7 @@ module Collavre
               allowed_creative_ids: @allowed_creative_ids,
               progress_map: @progress_map
             )
-            payload = { creatives: @creatives_tree_json }
-            payload[:pagination] = index_result.pagination if index_result.pagination
+            payload = view_context.filtered_tree_payload(@creatives_tree_json, @parent_creative, index_result.pagination)
             render json: payload
           end
         end

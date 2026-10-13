@@ -414,3 +414,5 @@ export function dispatchCreativeTreeUpdated(container) {
   const event = new CustomEvent('creative-tree:updated', { bubbles: true })
   container.dispatchEvent(event)
 }
+
+export { filteredTreeNodes } from './filtered_progress_sync'

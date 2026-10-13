@@ -6,7 +6,7 @@ import { highlightCodeBlocks } from "../lib/utils/markdown";
 import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
-import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
+import { applyProgressControl, applyAncestorProgress, refreshFilteredProgress } from "../creatives/filtered_progress_sync";
 import { documentProgressStyle, isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick } from "./creative_tree_row_document_view";
 
 const BULLET_STARTING_LEVEL = 3;
@@ -604,9 +604,10 @@ class CreativeTreeRow extends LitElement {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
+      refreshFilteredProgress();
       // Update this row's progressHtml from server response
       if (data.progress_html) {
-        this._applyProgressHtml(this, data.progress_html);
+        applyProgressControl(this, data.progress_html);
       }
       // Update progressValue for inline editor
       if (data.progress != null) {
@@ -617,19 +618,7 @@ class CreativeTreeRow extends LitElement {
         this.hasChildren = data.has_children;
       }
       // Update ancestor rows progress if returned
-      if (data.ancestors) {
-        for (const ancestor of data.ancestors) {
-          const row = document.querySelector(`creative-tree-row[creative-id="${ancestor.id}"]`);
-          if (row) {
-            if (ancestor.progress_html) {
-              this._applyProgressHtml(row, ancestor.progress_html);
-            }
-            if (ancestor.progress != null) {
-              row.dataset.progressValue = String(ancestor.progress);
-            }
-          }
-        }
-      }
+      applyAncestorProgress(data.ancestors);
     } catch (err) {
       // Revert optimistic UI
       if (checkbox) checkbox.checked = wasComplete;
@@ -641,14 +630,6 @@ class CreativeTreeRow extends LitElement {
     } finally {
       wrap.classList.remove("progress-toggle-saving");
     }
-  }
-
-  _applyProgressHtml(row, serverHtml) {
-    syncProgressHtmlFromDom(row);
-    row.progressHtml = row.progressHtml
-      ? replaceProgressControl(row.progressHtml, serverHtml)
-      : serverHtml;
-    row.dataset.progressHtml = row.progressHtml;
   }
 
   _handleContentClick(event) {
