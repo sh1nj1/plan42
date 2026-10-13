@@ -148,6 +148,28 @@ module Collavre
         refute draft.creative_changes.exists?(creative_id: existing.id)
       end
 
+      test "link approval appends remaining sources after current siblings when reusing a link" do
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        extra = Creative.create!(user: @user, description: "Extra source")
+        result = Current.set(mcp_request: true) { link(@a, @b, extra) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        existing = Creative.create!(user: @user, parent: @parent, origin: @a, sequence: 0)
+        sibling = Creative.create!(user: @user, parent: @parent, description: "Later sibling", sequence: 7)
+        before = [ existing, sibling ].map { |record| Creatives::History.snapshot(record) }
+
+        Current.set(creative_history_context: nil, change_set: nil) do
+          assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+        end
+        children = @parent.children.order(:sequence).to_a
+        assert_equal [ existing.id, sibling.id ], children.first(2).map(&:id)
+        assert_equal [ @b.id, extra.id ], children.last(2).map(&:origin_id)
+        assert_equal [ 0, 7, 8, 9 ], children.map(&:sequence)
+        assert_equal before, [ existing, sibling ].map { |record| Creatives::History.snapshot(record.reload) }
+        children.last(2).each do |child|
+          assert_equal child.sequence, draft.creative_changes.find_by!(creative_id: child.id).after.fetch("sequence")
+        end
+      end
+
       test "link approval rechecks source read permission and cycles" do
         source = Creative.create!(user: users(:two), description: "Other")
         grant = CreativeShare.create!(creative: source, user: @user, permission: :read)

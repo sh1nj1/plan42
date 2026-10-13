@@ -60,6 +60,7 @@ module Collavre
         return if reuse_existing_link(parent, snapshot, virtual_change)
 
         creative = Creative.new(user: parent&.user || @change_set.user || @user, parent: parent)
+        snapshot["sequence"] = (parent.children.lock.pluck(:sequence).compact.max || -1) + 1 if parent && snapshot["origin_id"]
         SnapshotAssignment.call(creative, snapshot)
         creative.save!
         remap_virtual_change!(virtual_change, creative)
