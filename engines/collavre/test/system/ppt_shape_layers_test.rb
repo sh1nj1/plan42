@@ -2,6 +2,9 @@ require_relative "../application_system_test_case"
 
 class PptShapeLayersTest < ApplicationSystemTestCase
   test "filled preset shapes paint their labels above SVG on repeated formatting" do
+    # Hit testing requires all three labels to be inside the viewport, even
+    # when a previous system test left the shared browser at a mobile size.
+    resize_window_to
     visit "about:blank"
     stylesheet = Collavre::Engine.root.join("app/assets/stylesheets/collavre/creatives.css").read
     renderer = Collavre::Engine.root.join("app/javascript/lib/ppt_media.js").read.gsub("export function", "function")
