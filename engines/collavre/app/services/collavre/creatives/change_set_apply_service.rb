@@ -171,11 +171,11 @@ module Collavre
       end
 
       def current_conflict?(creative, change)
-        return History.snapshot(creative) != change.before if @mode == :draft
+        return SnapshotComparison.conflict?(creative, change.before) if @mode == :draft
         return false if @mode == :restore
         return true if change.before.empty? && @creation_revert_policy.conflict?(creative)
 
-        History.snapshot(creative) != change.after
+        SnapshotComparison.conflict?(creative, change.after)
       end
 
       def resolution(change)
