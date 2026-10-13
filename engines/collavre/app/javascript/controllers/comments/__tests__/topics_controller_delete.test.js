@@ -54,6 +54,37 @@ describe('TopicsController#deleteTopic', () => {
     jest.clearAllMocks()
   })
 
+  test('renders a working Main delete button while keeping archive unavailable', async () => {
+    controller.mainTopicId = '1'
+    controller.renderTopics([{ id: 1, name: 'Main' }], true)
+    const button = controller.listTarget.querySelector('.delete-topic-btn[data-id="1"]')
+    expect(button).not.toBeNull()
+    expect(controller.listTarget.querySelector('.archive-topic-btn')).toBeNull()
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    confirmDialog.mockResolvedValue(true)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    button.click()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(global.fetch).toHaveBeenCalledWith('/creatives/42/topics/1', expect.objectContaining({ method: 'DELETE' }))
+    expect(controller.loadTopics).toHaveBeenCalled()
+  })
+
+  test.each([
+    [false, false],
+    [true, true],
+  ])('hides Main delete for canManage=%s and read_only=%s', (canManage, readOnly) => {
+    controller.mainTopicId = '1'
+    controller.renderTopics([{ id: 1, name: 'Main', read_only: readOnly }], canManage)
+    expect(controller.listTarget.querySelector('.delete-topic-btn')).toBeNull()
+  })
+
+  test('keeps regular topic delete and archive controls available', () => {
+    controller.mainTopicId = '1'
+    controller.renderTopics([{ id: 2, name: 'Other' }], true)
+    expect(controller.listTarget.querySelector('.delete-topic-btn[data-id="2"]')).not.toBeNull()
+    expect(controller.listTarget.querySelector('.archive-topic-btn[data-id="2"]')).not.toBeNull()
+  })
+
   test('issues DELETE with the topic id even when currentTarget is nulled after the await', async () => {
     const fetchMock = jest.fn().mockResolvedValue({ ok: true })
     global.fetch = fetchMock
