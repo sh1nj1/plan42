@@ -29,7 +29,7 @@ beforeEach(() => {
 })
 afterEach(() => { detach(); jest.restoreAllMocks(); delete window.Turbo })
 
-test('left swipe navigates on release and suppresses its synthetic click', () => {
+test('left swipe navigates on release and preserves subsequent clicks', () => {
   send('touchstart', [touch(250, 100)])
   send('touchmove', [touch(150, 102)])
   expect(window.Turbo.visit).not.toHaveBeenCalled()
@@ -37,8 +37,6 @@ test('left swipe navigates on release and suppresses its synthetic click', () =>
   expect(window.Turbo.visit).toHaveBeenCalledWith('/creatives/8', undefined)
   const clicked = jest.fn()
   body.addEventListener('click', clicked)
-  body.click()
-  expect(clicked).not.toHaveBeenCalled()
   body.click()
   expect(clicked).toHaveBeenCalledTimes(1)
 })
@@ -114,5 +112,28 @@ test('ignores touches outside a row and works without selection API', () => {
   expect(window.Turbo.visit).not.toHaveBeenCalled()
   window.getSelection.mockReturnValue(null)
   swipe()
+  expect(window.Turbo.visit).toHaveBeenCalledTimes(1)
+})
+
+test.each(['code.lexical-code-block', '.mermaid-chart', '.lexical-table-wrapper'])('ignores horizontal scroll area %s and its descendants', selector => {
+  const container = document.createElement(selector.startsWith('code') ? 'code' : 'div')
+  container.className = selector.split('.').pop()
+  body.appendChild(container)
+  swipe({ target: container })
+  const child = document.createElement('span')
+  container.appendChild(child)
+  swipe({ target: child })
+  expect(window.Turbo.visit).not.toHaveBeenCalled()
+})
+
+test.each([23, 0])('ignores swipes starting %spx from the right edge', inset => {
+  const x = window.innerWidth - inset
+  swipe({ start: [x, 100], move: [x - 100, 102], end: [x - 110, 103] })
+  expect(window.Turbo.visit).not.toHaveBeenCalled()
+})
+
+test('allows swipes starting at the 24px right edge boundary', () => {
+  const x = window.innerWidth - 24
+  swipe({ start: [x, 100], move: [x - 100, 102], end: [x - 110, 103] })
   expect(window.Turbo.visit).toHaveBeenCalledTimes(1)
 })

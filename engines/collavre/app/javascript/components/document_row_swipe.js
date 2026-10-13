@@ -1,6 +1,6 @@
 import { isDocumentView, visitRowLink } from './creative_tree_row_document_view'
 
-const EXCLUDED = 'a, button, input, textarea, select, [contenteditable], img, video, audio, iframe, pre, table, #inline-edit-form, .popup-menu, .popup-box, dialog, [role="dialog"]'
+const EXCLUDED = 'a, button, input, textarea, select, [contenteditable], img, video, audio, iframe, pre, table, code.lexical-code-block, .mermaid-chart, .lexical-table-wrapper, #inline-edit-form, .popup-menu, .popup-box, dialog, [role="dialog"]'
 
 function selectedText() {
   const selection = window.getSelection?.()
@@ -21,11 +21,11 @@ class DocumentRowSwipe {
 
   start(event) {
     this.gesture = null
-    this.suppressClick = false
     if (event.touches.length !== 1 || !window.matchMedia('(max-width: 768px)').matches) return
     const row = event.target.closest('creative-tree-row')
     if (!row || !this.root.contains(row) || event.target.closest(EXCLUDED) || !available(row)) return
     const touch = event.touches[0]
+    if (touch.clientX > window.innerWidth - 24) return
     this.gesture = { row, id: touch.identifier, x: touch.clientX, y: touch.clientY, time: event.timeStamp, horizontal: false }
   }
 
@@ -50,31 +50,19 @@ class DocumentRowSwipe {
     const dx = current.x - touch.clientX
     const dy = Math.abs(current.y - touch.clientY)
     if (!current.horizontal || dx < 80 || dy > 24 || dx < dy * 3 || event.timeStamp - current.time > 700) return
-    this.suppressClick = true
     visitRowLink(current.row)
   }
 
   cancel() { this.gesture = null }
-
-  click(event) {
-    if (!this.suppressClick) return
-    this.suppressClick = false
-    event.preventDefault()
-    event.stopImmediatePropagation()
-  }
-
 }
 
 export function attachDocumentRowSwipe(root) {
   const swipe = new DocumentRowSwipe(root)
   const listeners = Object.fromEntries(['start', 'move', 'end', 'cancel'].map(phase =>
     [`touch${phase}`, swipe[phase].bind(swipe)]))
-  const click = swipe.click.bind(swipe)
   Object.entries(listeners).forEach(([type, listener]) => root.addEventListener(type, listener, { passive: true }))
-  root.addEventListener('click', click, true)
   return () => {
     Object.entries(listeners).forEach(([type, listener]) => root.removeEventListener(type, listener))
-    root.removeEventListener('click', click, true)
     swipe.cancel()
   }
 }
