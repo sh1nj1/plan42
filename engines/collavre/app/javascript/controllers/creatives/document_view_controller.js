@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus'
 import { handleDocumentOutsideClick } from '../../components/creative_tree_row_document_view'
+import { attachDocumentRowSwipe } from '../../components/document_row_swipe'
 
 const VIEW_PARAM = 'view'
 const VIEW_COOKIE = 'creative_view'
@@ -30,6 +31,7 @@ export default class extends Controller {
   static values = { active: Boolean, locked: Boolean }
 
   connect() {
+    this.detachRowSwipe = attachDocumentRowSwipe(this.element)
     // Capture phase: the click must close the editor before a row reacts to it.
     this.closeEditorOnOutsideClick = (event) => {
       if (this.activeValue) handleDocumentOutsideClick(this.element, event)
@@ -52,6 +54,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.detachRowSwipe?.()
     document.removeEventListener('click', this.closeEditorOnOutsideClick, true)
   }
 
