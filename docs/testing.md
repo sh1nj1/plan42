@@ -95,6 +95,12 @@ end
 
 ## Parallel Testing
 
+`rake test` runs ordinary tests in one parallel process and then runs
+`EngineOverrideTest` in a separate serial process. Its `parallelize(workers: 1)`
+changes the process-wide Minitest executor, so loading it with the ordinary
+suite would disable parallel execution for every test. Use `rake test` for the
+complete suite; directly selecting directories containing that file is serial.
+
 Tests run in parallel by default:
 ```ruby
 class ActiveSupport::TestCase
