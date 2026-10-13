@@ -861,6 +861,15 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_reserved_topic_mutations_rejected(inbox, system_topic)
   end
 
+  test "Main topic deletion removes messages and recreates an empty topic on index" do
+    assert_reserved_topic_deletion(@creative, @creative.main_topic(fallback_user: @user))
+  end
+
+  test "inbox System topic deletion removes messages and recreates an empty topic on index" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    assert_reserved_topic_deletion(inbox, inbox.system_topic(fallback_user: @user))
+  end
+
   test "should replace existing primary agent" do
     old_agent = User.create!(
       email: "old@test.local", password: "password123", name: "OldAgent",
@@ -1209,6 +1218,27 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     agent
   end
 
+  def assert_reserved_topic_deletion(creative, topic)
+    comment = creative.comments.create!(topic: topic, user: @user, content: "Old message")
+    unrelated = creative.topics.create!(name: "Unrelated", user: @user)
+    retained = creative.comments.create!(topic: unrelated, user: @user, content: "Keep message")
+
+    delete collavre.creative_topic_url(creative, topic), as: :json
+
+    assert_response :no_content
+    assert_not Collavre::Topic.exists?(topic.id)
+    assert_not Collavre::Comment.exists?(comment.id)
+    assert Collavre::Comment.exists?(retained.id)
+
+    get collavre.creative_topics_url(creative), as: :json
+
+    assert_response :success
+    recreated = creative.topics.find_by!(name: topic.name)
+    assert_not_equal topic.id, recreated.id
+    assert_empty recreated.comments
+    assert_includes response.parsed_body["topics"].pluck("id"), recreated.id
+  end
+
   def assert_reserved_topic_mutations_rejected(creative, topic)
     patch collavre.creative_topic_url(creative, topic),
       params: { topic: { name: "Renamed reserved topic" } }, as: :json
@@ -1219,8 +1249,12 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_nil topic.reload.archived_at
 
-    delete collavre.creative_topic_url(creative, topic), as: :json
+    patch unarchive_creative_topic_url(creative, topic), as: :json
     assert_response :unprocessable_entity
-    assert topic.reload.persisted?
+
+    patch move_creative_topic_url(creative, topic),
+      params: { target_creative_id: creatives(:root_parent).id }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal creative.id, topic.reload.creative_id
   end
 end
