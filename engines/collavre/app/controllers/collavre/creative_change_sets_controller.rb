@@ -17,7 +17,8 @@ module Collavre
 
       response.headers["Cache-Control"] = "no-store"
       render partial: "collavre/creative_change_sets/detail",
-             locals: { creative: @requested_creative, change_set: change_set, diff: diff }
+             locals: { creative: @requested_creative, change_set: change_set, diff: diff,
+                       removal_draft_accessible: accessible_removal_draft? }
     end
 
     def apply

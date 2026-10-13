@@ -430,6 +430,11 @@ module Collavre
       delete session_path
       post session_path, params: { email: viewer.email, password: "password" }
 
+      get creative_change_set_path(@creative, draft)
+      assert_response :success
+      assert_select "button[data-mode=approve]", count: 0
+      assert_select "button[data-mode=reject]", count: 0
+
       post creative_apply_change_set_path(@creative, draft), params: { mode: "approve" }, as: :json
       assert_response :unprocessable_entity
       assert_equal "draft", draft.reload.status
@@ -453,11 +458,17 @@ module Collavre
 
       get creative_change_set_path(shell, draft)
       assert_response :success
+      assert_select "button[data-mode=approve]", count: 1
+      assert_select "button[data-mode=reject]", count: 1
       refute_includes response.body, "Private source"
       get creative_change_set_path(shell, @change_set)
       assert_response :forbidden
 
       shell.update_column(:user_id, users(:two).id)
+      get creative_change_set_path(shell, draft)
+      assert_response :forbidden
+      assert_select "button[data-mode=approve]", count: 0
+      assert_select "button[data-mode=reject]", count: 0
       post creative_apply_change_set_path(shell, draft), params: { mode: "approve" }, as: :json
       assert_response :forbidden
       assert_equal "draft", draft.reload.status
