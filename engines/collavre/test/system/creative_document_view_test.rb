@@ -120,6 +120,35 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     end
   end
 
+  test "document progress backgrounds join across heading and paragraph rows" do
+    nested = Creative.create!(description: "Nested heading", user: @user, parent: @first)
+    Creative.create!(description: "Nested paragraph", user: @user, parent: nested)
+    visit collavre.creative_path(@root, view: "document")
+    find("creative-tree-row[creative-id='#{@first.id}'] .creative-toggle-btn").click
+    assert_selector "#creatives .creative-row.level-2"
+    find("creative-tree-row[creative-id='#{nested.id}'] .creative-toggle-btn").click
+    assert_selector "#creatives .creative-row.level-3"
+
+    rows = page.evaluate_script(<<~JS)
+      Array.from(document.querySelectorAll('#creatives .creative-row')).map(row => {
+        const box = row.getBoundingClientRect();
+        const style = getComputedStyle(row);
+        return { top: box.top, bottom: box.bottom, margin: style.marginTop,
+          radius: style.borderTopRightRadius, padding: parseFloat(style.paddingTop),
+          level: row.classList.contains('level-1') ? 1 : row.classList.contains('level-2') ? 2 : 3 };
+      })
+    JS
+
+    rows.each_cons(2) do |previous, current|
+      assert_in_delta previous["bottom"], current["top"], 0.5, "Progress backgrounds have a vertical gap"
+    end
+    rows.each do |row|
+      assert_equal "0px", row["margin"]
+      assert_equal "0px", row["radius"]
+      assert_operator row["padding"], :>, 3 if row["level"] <= 2
+    end
+  end
+
   test "the document view stays on while moving through the tree and after a reload" do
     visit collavre.creative_path(@root)
     find("#document-view-btn").click
