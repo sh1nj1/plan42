@@ -69,7 +69,7 @@ module Collavre
       def reuse_existing_link(parent, snapshot, virtual_change)
         return false unless snapshot["origin_id"]
 
-        existing = parent&.children&.find_by(origin_id: snapshot["origin_id"])
+        existing = parent&.children&.active&.find_by(origin_id: snapshot["origin_id"])
         return false unless existing
 
         virtual_id = virtual_change.creative_id

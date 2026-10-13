@@ -33,6 +33,37 @@ module Collavre
         assert_equal [ @b.id, @a.id ], @parent.children.order(:sequence).pluck(:origin_id)
       end
 
+      test "linking after a creation revert creates an active shell" do
+        archived = Creative.find(link(@a)[:links].first[:id])
+        change_set = CreativeChangeSet.joins(:creative_changes).find_by!(creative_changes: { creative_id: archived.id, operation: "create" })
+        assert_equal :applied, Creatives::ChangeSetApplyService.new(source: change_set, user: @user, mode: :revert).call.status
+        assert archived.reload.archived?
+
+        result = link(@a)
+        assert result[:success], result.inspect
+        replacement = Creative.find(result[:links].first[:id])
+        refute_equal archived.id, replacement.id
+        refute replacement.archived?
+        assert_equal [ replacement.id ], @parent.children.active.pluck(:id)
+        assert archived.reload.archived?
+        assert_equal result[:links], link(@a)[:links]
+      end
+
+      test "link approval does not reuse an archived pending placement" do
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        archived = Creative.create!(user: @user, parent: @parent, origin: @a, archived_at: Time.current)
+
+        Current.set(creative_history_context: nil, change_set: nil) do
+          assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+        end
+        replacement = @parent.children.active.find_by!(origin_id: @a.id)
+        refute_equal archived.id, replacement.id
+        assert archived.reload.archived?
+        assert_equal replacement.origin_id, draft.creative_changes.find_by!(creative_id: replacement.id).after.fetch("origin_id")
+      end
+
       test "links resolve source and destination shells to origins" do
         source = Creative.create!(user: @user, origin: @a)
         parent = Creative.create!(user: @user, origin: @parent)

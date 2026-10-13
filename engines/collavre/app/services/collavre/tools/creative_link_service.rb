@@ -55,7 +55,7 @@ module Collavre
         sources.each { |source| reorderer.validate_link!(origin: source.effective_origin, parent: parent) }
         links = sources.map do |source|
           origin = source.effective_origin
-          link = parent.children.find_by(origin_id: origin.id) ||
+          link = parent.children.active.find_by(origin_id: origin.id) ||
                  reorderer.link_drop(dragged_id: source.id, target_id: parent.id, direction: "child").new_creative
           { id: link.id, origin_id: link.origin_id, parent_id: link.parent_id }
         end
