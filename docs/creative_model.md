@@ -82,3 +82,21 @@ Creative.active                   # Not archived (archived_at IS NULL)
 Creative.archived                 # Archived (archived_at IS NOT NULL)
 Creative.inboxes                  # Inbox creatives (data->kind = 'inbox')
 ```
+
+## Linking Creatives through MCP
+
+Discover the following tools with `meta_tool`:
+
+- `creative_link_service(parent_id:, creative_ids:)` links source IDs beneath a
+  destination. Sources require read access; the destination requires write access.
+  Source and destination links resolve to their effective origins. New shells are
+  appended in input order. Existing links to the same origin retain their positions.
+- `creative_unlink_service(linked_creative_ids:)` removes only linked shells using
+  the same removal permissions and callbacks as the UI. Ordinary Creative IDs are
+  rejected; origins, their children and other links remain intact.
+
+Both tools accept nonempty arrays of unique positive integer IDs and apply each
+list atomically. A failure rolls back the entire list. Inherited AI review policy
+captures a History draft instead of changing the live tree. Approval checks current
+permissions and link-cycle constraints again. Linked-shell hard deletions remain
+non-revertible after approval, matching the existing UI removal behavior.

@@ -43,6 +43,8 @@ module Collavre
       end
 
       def apply(creative, snapshot, attribute, change)
+        return creative.destroy! if change.operation == "destroy" && creative&.origin_id.present?
+
         remapped = remap_snapshot(snapshot)
         return apply_creation(remapped, change) unless creative
         return creative.update!(remapped.slice(*Array(attribute))) if attribute
