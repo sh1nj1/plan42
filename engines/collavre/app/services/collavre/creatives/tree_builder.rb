@@ -164,10 +164,9 @@ module Creatives
           # such source) so core names no vendor here.
           github_source: creative.read_only_source?,
           sequence: creative.sequence,
-          display_progress: display_progress_for(creative),
           link_url: view_context.collavre.creative_path(creative),
           templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
-          inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
+          **progress_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(
             creative,
             has_children: has_children,
@@ -237,6 +236,13 @@ module Creatives
         edit_icon_html: edit_icon_html,
         edit_off_icon_html: edit_off_icon_html,
         origin_link_html: origin_link_html_for(creative)
+      }
+    end
+
+    def progress_payload_for(creative, can_write:)
+      {
+        display_progress: display_progress_for(creative),
+        inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write)
       }
     end
 

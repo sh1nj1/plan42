@@ -1,3 +1,4 @@
+import { applyDisplayProgress } from './display_progress'
 import { applyInlineDataset } from '../modules/creative_inline_dataset'
 function normalizeBoolean(value) {
   return value === true || value === 'true' || value === ''
@@ -238,14 +239,7 @@ function applyRowProperties(row, node) {
     dirty = true
   }
 
-  // Filtered display progress must not replace the editor's raw progress.
-  if (node.display_progress != null) {
-    setDatasetValue(row, 'displayProgress', node.display_progress)
-  } else if (Object.prototype.hasOwnProperty.call(node, 'display_progress')) {
-    row.removeAttribute('data-display-progress')
-  }
-
-  const inlinePayload = node.inline_editor_payload || {}
+  const inlinePayload = applyDisplayProgress(row, node)
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'description_raw_html')) {
     setDatasetValue(row, 'descriptionRawHtml', inlinePayload.description_raw_html ?? '')
   }
