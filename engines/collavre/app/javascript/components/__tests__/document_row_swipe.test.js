@@ -137,3 +137,13 @@ test('allows swipes starting at the 24px right edge boundary', () => {
   swipe({ start: [x, 100], move: [x - 100, 102], end: [x - 110, 103] })
   expect(window.Turbo.visit).toHaveBeenCalledTimes(1)
 })
+
+test.each(['wrapper', 'toolbar'])('ignores rendered table %s outside the table itself', targetType => {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'table-download-wrapper'
+  wrapper.innerHTML = '<div class="table-download-toolbar"><button>Download</button></div><table><tbody><tr><td>Cell</td></tr></tbody></table>'
+  body.appendChild(wrapper)
+  const target = targetType === 'wrapper' ? wrapper : wrapper.firstElementChild
+  swipe({ target })
+  expect(window.Turbo.visit).not.toHaveBeenCalled()
+})

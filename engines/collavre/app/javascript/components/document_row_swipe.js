@@ -1,6 +1,6 @@
 import { isDocumentView, visitRowLink } from './creative_tree_row_document_view'
 
-const EXCLUDED = 'a, button, input, textarea, select, [contenteditable], img, video, audio, iframe, pre, table, code.lexical-code-block, .mermaid-chart, .lexical-table-wrapper, #inline-edit-form, .popup-menu, .popup-box, dialog, [role="dialog"]'
+const EXCLUDED = 'a, button, input, textarea, select, [contenteditable], img, video, audio, iframe, pre, table, code.lexical-code-block, .mermaid-chart, .lexical-table-wrapper, .table-download-wrapper, #inline-edit-form, .popup-menu, .popup-box, dialog, [role="dialog"]'
 
 function selectedText() {
   const selection = window.getSelection?.()
