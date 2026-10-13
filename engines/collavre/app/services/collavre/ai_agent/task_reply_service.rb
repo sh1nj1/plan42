@@ -38,19 +38,29 @@ module Collavre
         return result(:forbidden, error: "Not authorized") unless agent
 
         task = task_claimer.call(agent, topic, requested_task_id)
-        if requested_task_id.present? && task.nil?
-          # `reason` is the machine-readable half of this 409: only
-          # "already_completed" means the dispatch was answered and the refused
-          # reply is a duplicate. A client that suppresses every conflict as
-          # dedup silently drops a valid answer when the task was cancelled,
-          # failed, or recovered out of `delegated` mid-turn instead.
-          return result(:conflict, error: "Task already completed or not delegated",
-                                   reason: claim_service.conflict_reason(
-                                     agent: agent, topic: topic, requested_task_id: requested_task_id
-                                   ))
-        end
+        return conflict_result(agent) if requested_task_id.present? && task.nil?
 
         persist_reply(creative, agent, task)
+      end
+
+      # `reason` is the machine-readable half of this 409: only
+      # "already_completed" means the dispatch was answered and the refused
+      # reply is a duplicate. A client that suppresses every conflict as
+      # dedup silently drops a valid answer when the task was cancelled,
+      # failed, or recovered out of `delegated` mid-turn instead.
+      #
+      # The duplicate still concludes the caller's turn, so its approvals are
+      # handed off exactly as the winner's are. Siblings share the task id, so
+      # requests raised by the losing session carry the same origin_task_id;
+      # the winner only knew its own, and without this a later decision on the
+      # loser's request could never resume the agent.
+      def conflict_result(agent)
+        error = "Task already completed or not delegated"
+        answered = claim_service.answered_task(agent: agent, topic: topic, requested_task_id: requested_task_id)
+        return result(:conflict, error: error, reason: TaskClaimService::CONFLICT_NOT_DELEGATED) unless answered
+
+        result(:conflict, error: error, reason: TaskClaimService::CONFLICT_ALREADY_COMPLETED,
+                          pending_approval_ids: ClaudeApprovalHandoff.finish!(answered, @pending_approval_ids))
       end
 
       def persist_reply(creative, agent, task)

@@ -88,18 +88,36 @@ test("unacknowledged approvals keep reconnect tracking when replying to the curr
   assert.deepEqual(coordinator.pendingIds(), ["another-turn"]);
 });
 
-test("a sibling's already_completed 409 concludes the turn without touching approvals", async t => {
+test("a sibling's already_completed 409 concludes the turn and hands off acknowledged approvals", async t => {
+  const { waiter, coordinator, active, config } = state();
+  waiter.open("mine");
+  waiter.open("foreign");
+  coordinator.add("mine");
+  coordinator.add("foreign");
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    assert.deepEqual(JSON.parse(String(init?.body)).pending_approval_ids, ["mine", "foreign"]);
+    return Response.json({
+      error: "Task already completed or not delegated", reason: "already_completed",
+      pending_approval_ids: ["mine"],
+    }, { status: 409 });
+  });
+  const result = await replyWithApprovalHandoff(config, 42, "Duplicate", 7, "g1", waiter, coordinator, active);
+  assert.equal(result.handled, false);
+  assert.equal(active.taskId, null);
+  assert.equal(active.topicId, 1);
+  assert.deepEqual(waiter.openIds(), ["foreign"]);
+  assert.deepEqual(coordinator.pendingIds(), ["foreign"]);
+});
+
+test("an already_completed 409 from an older server keeps approvals it did not acknowledge", async t => {
   const { waiter, coordinator, active, config } = state();
   waiter.open("pending");
-  coordinator.add("pending");
   t.mock.method(globalThis, "fetch", async () =>
     Response.json({ error: "Task already completed or not delegated", reason: "already_completed" }, { status: 409 }));
   const result = await replyWithApprovalHandoff(config, 42, "Duplicate", 7, "g1", waiter, coordinator, active);
   assert.equal(result.handled, false);
   assert.equal(active.taskId, null);
-  assert.equal(active.topicId, 1);
   assert.deepEqual(waiter.openIds(), ["pending"]);
-  assert.deepEqual(coordinator.pendingIds(), ["pending"]);
 });
 
 test("a 409 for an unanswered task is raised and keeps the turn", async t => {

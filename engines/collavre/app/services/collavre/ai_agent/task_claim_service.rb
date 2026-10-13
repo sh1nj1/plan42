@@ -90,9 +90,13 @@ module Collavre
       CONFLICT_NOT_DELEGATED = "not_delegated"
 
       def conflict_reason(agent:, topic:, requested_task_id:)
+        answered_task(agent: agent, topic: topic, requested_task_id: requested_task_id) ? CONFLICT_ALREADY_COMPLETED : CONFLICT_NOT_DELEGATED
+      end
+
+      # The refused task when a sibling's reply already concluded it, else nil.
+      def answered_task(agent:, topic:, requested_task_id:)
         task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
-        answered = task&.status == "done" && Comment.exists?(task_id: task.id)
-        answered ? CONFLICT_ALREADY_COMPLETED : CONFLICT_NOT_DELEGATED
+        task if task&.status == "done" && Comment.exists?(task_id: task.id)
       end
 
       def link_reply(task:, comment:)

@@ -1354,6 +1354,44 @@ module Collavre
           assert_equal "already_completed", JSON.parse(response.body)["reason"]
         end
 
+        test "409 already_completed still hands off the losing sibling's approvals" do
+          # Codex P2: siblings share the task id, so an approval the LOSING
+          # session raised carries the same origin_task_id. The winner only
+          # handed off its own requests; without this, a later decision on the
+          # loser's request could never resume the agent.
+          previous_adapter = ActiveJob::Base.queue_adapter
+          reg = register_agent("conflict-handoff")
+          topic = Topic.find(reg["topic_id"])
+          agent = User.find(reg["agent_id"])
+          task = Task.create!(name: "Fanned-out turn", status: "delegated", agent: agent,
+                              topic_id: topic.id, creative_id: topic.creative_id)
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, task_id: task.id, permission_request_id: "loser-1",
+                      approval_question: "Deploy?" }, headers: auth_headers, as: :json
+          assert_response :created
+          approval = Comment.find(response.parsed_body["comment_id"])
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Sibling's answer" },
+            headers: auth_headers, as: :json
+          assert_response :created
+          refute JSON.parse(approval.reload.action)["turn_finished"]
+
+          ActiveJob::Base.queue_adapter = :test
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Duplicate answer",
+                      pending_approval_ids: [ "loser-1", "unknown" ] }, headers: auth_headers, as: :json
+          assert_response :conflict
+          assert_equal "already_completed", response.parsed_body["reason"]
+          assert_equal [ "loser-1" ], response.parsed_body["pending_approval_ids"]
+          assert JSON.parse(approval.reload.action)["turn_finished"]
+
+          approval.decide_claude_channel_permission!(:allow, by: @user)
+          assert_difference("Task.count", 1) { ClaudeApprovalResumeJob.perform_now(approval.id) }
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
         test "409 for a cancelled dispatch is NOT marked already_completed" do
           # Codex P2: an offline-session cancellation or stuck-task recovery flips
           # the task out of `delegated` while the agent is still composing. The
