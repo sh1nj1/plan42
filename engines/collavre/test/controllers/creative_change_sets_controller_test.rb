@@ -445,6 +445,41 @@ module Collavre
       refute_includes @creative.reload.description, "Proposed"
     end
 
+    test "unlink approval rejects revoked admin access while the permission cache is stale" do
+      source = Creative.create!(user: users(:two), description: "Shared source")
+      grant = CreativeShare.create!(creative: source, user: @user, permission: :admin)
+      @creative.update!(data: { "ai_write_policy" => "review" })
+      shell = Creative.create!(user: users(:two), origin: source, parent: @creative)
+      CreativeShare.create!(creative: @creative, user: @user, permission: :admin)
+      result = Current.set(user: @user, mcp_request: true) do
+        Tools::CreativeUnlinkService.new.call(linked_creative_ids: [ shell.id ])
+      end
+      assert result[:pending_review], result.inspect
+      draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+
+      # Preserve the old cached admin grant while downgrading the current share.
+      grant.update_column(:permission, CreativeShare.permissions.fetch("read"))
+      assert shell.reload.destroyable_by?(@user)
+      refute Creatives::PermissionChecker.current_allowed?(shell.id, @user, :admin)
+
+      assert_no_difference "Creative.count" do
+        post creative_apply_change_set_path(@creative, draft), params: { mode: "approve" }, as: :json
+        assert_response :unprocessable_entity
+      end
+      assert_equal "draft", draft.reload.status
+      assert Creative.exists?(shell.id)
+      assert Creative.exists?(source.id)
+      refute Current.authoritative_permissions
+
+      grant.update_column(:permission, CreativeShare.permissions.fetch("admin"))
+      post creative_apply_change_set_path(@creative, draft), params: { mode: "approve" }, as: :json
+      assert_response :success
+      assert_equal "applied", draft.reload.status
+      refute Creative.exists?(shell.id)
+      assert Creative.exists?(source.id)
+      refute Current.authoritative_permissions
+    end
+
     test "owner can inspect and approve root unlink draft after origin access is revoked" do
       source = Creative.create!(user: users(:two), description: "Private source")
       grant = CreativeShare.create!(creative: source, user: @user, permission: :read)

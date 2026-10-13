@@ -24,7 +24,9 @@ module Collavre
       end
 
       def removal_allowed?(creative)
-        creative&.origin_id.present? && creative.destroyable_by?(@user)
+        Current.set(authoritative_permissions: true) do
+          creative&.origin_id.present? && creative.destroyable_by?(@user)
+        end
       end
 
       def creation_allowed?(snapshot, records, writable_ids:, virtual_ids:, anchor_id:)
