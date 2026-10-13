@@ -1,6 +1,15 @@
 require "test_helper"
 
 class CreativeHierarchyFixturesTest < ActiveSupport::TestCase
+  test "common setup preserves the fixture tree without rebuilding it" do
+    original = hierarchy_rows
+    Creative.stub(:rebuild!, -> { flunk "Common setup must not rebuild the fixture tree" }) do
+      run_callbacks(:setup) { }
+    end
+
+    assert_equal original, hierarchy_rows
+  end
+
   test "fixture closure rows match every parent chain" do
     expected = Creative.all.flat_map do |descendant|
       rows = []
