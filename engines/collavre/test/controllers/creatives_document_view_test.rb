@@ -23,6 +23,23 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     assert_equal 0.5, parent.reload.progress
   end
 
+  test "empty combined filters preserve zero title progress instead of tag-only progress" do
+    parent = Creative.create!(description: "Filtered parent", user: @user)
+    leaf = Creative.create!(description: "Tagged completed leaf", user: @user, parent: parent, progress: 1)
+    label = Label.create!(creative: leaf, owner: @user)
+    Tag.create!(creative_id: leaf.id, label: label)
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "nonexistent-filter-match", format: :json)
+    assert_response :success
+    assert_empty response.parsed_body.fetch("creatives")
+    title = response.parsed_body.fetch("title_progress")
+    assert_equal parent.id, title["id"]
+    assert_equal 0, title["display_progress"]
+    assert_includes title["progress_html"], 'creative-progress-incomplete">0%</span>'
+    get creatives_path(id: parent.id, tags: [ label.id.to_s ], search: "Tagged", format: :json)
+    assert_response :success
+    assert_equal 1, response.parsed_body.dig("title_progress", "display_progress")
+  end
+
   test "filtered title refresh does not expose an unreadable parent" do
     creative = Creative.create!(description: "Private doc", user: users(:two))
     get creatives_path(id: creative.id, tags: [ "999999" ], format: :json)

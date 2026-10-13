@@ -77,7 +77,7 @@ module Collavre
       creative ||= Creative.find_by(id: params[:id])
       return nil unless creative&.has_permission?(Current.user, :read)
 
-      progress = creative.filtered_progress = creative_progress_value(creative)
+      progress = creative.filtered_progress = @progress_map&.fetch(creative.id.to_s, 0) || creative_progress_value(creative)
       {
         id: creative.id,
         display_progress: progress,
