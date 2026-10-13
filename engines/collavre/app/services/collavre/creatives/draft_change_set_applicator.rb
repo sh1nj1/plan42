@@ -3,15 +3,18 @@
 module Collavre
   module Creatives
     class DraftChangeSetApplicator
-      def initialize(change_set:, user:, plan:, skipped_change_ids: [])
+      def initialize(change_set:, user:, plan:, skipped_change_ids: [], recomputed_change_ids: [])
         @change_set = change_set
         @user = user
         @plan = plan
         @skipped_change_ids = skipped_change_ids
+        @recomputed_change_ids = recomputed_change_ids
         @id_map = {}
       end
 
       def call
+        # Replay callbacks capture derived progress against the current tree.
+        @change_set.creative_changes.where(id: @recomputed_change_ids.to_a).destroy_all
         preserve_skipped_changes
         History.track(**history_context) do
           Current.change_set = @change_set
@@ -49,6 +52,7 @@ module Collavre
 
         remapped = remap_snapshot(snapshot)
         return apply_creation(remapped, change) unless creative
+        remapped["progress"] = creative.reload.progress if @recomputed_change_ids.include?(change.id)
         return creative.update!(remapped.slice(*Array(attribute))) if attribute
 
         SnapshotAssignment.call(creative, remapped)

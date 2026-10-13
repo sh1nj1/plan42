@@ -231,6 +231,83 @@ module Collavre
         end
       end
 
+      test "link approval recomputes derived progress after concurrent links" do
+        root = Creative.create!(user: @user, description: "Root")
+        @parent.update!(parent: root, data: { "ai_write_policy" => "review" })
+        @a.update!(progress: 1.0)
+        result = Current.set(mcp_request: true) { link(@a, @b) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        existing = Creative.create!(user: @user, parent: @parent, origin: @a, sequence: 0)
+        sibling = Creative.create!(user: @user, parent: @parent, description: "Later sibling", sequence: 1, progress: 0.5)
+        assert_equal 0.75, @parent.reload.progress
+        before = [ existing, sibling ].map { |record| Creatives::History.snapshot(record) }
+
+        Current.set(creative_history_context: nil, change_set: nil) do
+          applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+          assert_equal :applied, applied.status
+        end
+        assert_equal before, [ existing, sibling ].map { |record| Creatives::History.snapshot(record.reload) }
+        assert_equal [ 0, 1, 2 ], @parent.children.order(:sequence).pluck(:sequence)
+        [ @parent, root ].each do |record|
+          assert_equal 0.5, record.reload.progress
+          change = draft.creative_changes.find_by!(creative_id: record.id)
+          assert_equal 0.75, change.before.fetch("progress")
+          assert_equal 0.5, change.after.fetch("progress")
+        end
+      end
+
+      test "reusing every pending link preserves current progress without stale history" do
+        @a.update!(progress: 1.0)
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        Creative.create!(user: @user, parent: @parent, origin: @a)
+        Creative.create!(user: @user, parent: @parent, description: "Later sibling", progress: 0.5)
+
+        Current.set(creative_history_context: nil, change_set: nil) do
+          assert_no_difference "Creative.count" do
+            assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+          end
+        end
+        assert_equal 0.75, @parent.reload.progress
+        assert_empty draft.creative_changes
+      end
+
+      test "link approval still conflicts on concurrent parent content changes" do
+        @a.update!(progress: 1.0)
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a, @b) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        Creative.create!(user: @user, parent: @parent, origin: @a)
+        @parent.update!(description: "Concurrent edit")
+
+        assert_equal :conflict, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+        assert_equal "draft", draft.reload.status
+        assert_equal [ @a.id ], @parent.children.pluck(:origin_id)
+      end
+
+      test "forcing a parent content conflict preserves recomputed progress and actual history" do
+        @a.update!(progress: 1.0)
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        Creative.create!(user: @user, parent: @parent, origin: @a)
+        Creative.create!(user: @user, parent: @parent, description: "Later sibling", progress: 0.5)
+        @parent.update!(description: "Concurrent edit")
+
+        Current.set(creative_history_context: nil, change_set: nil) do
+          applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft,
+                                                       resolutions: { @parent.id => "force" }).call
+          assert_equal :applied, applied.status
+        end
+        assert_equal 0.75, @parent.reload.progress
+        assert_equal "Destination", @parent.description
+        change = draft.creative_changes.find_by!(creative_id: @parent.id)
+        assert_equal "Concurrent edit", change.before.fetch("description")
+        assert_equal 0.75, change.before.fetch("progress")
+        assert_equal 0.75, change.after.fetch("progress")
+      end
+
       test "link approval rechecks source read permission and cycles" do
         source = Creative.create!(user: users(:two), description: "Other")
         grant = CreativeShare.create!(creative: source, user: @user, permission: :read)

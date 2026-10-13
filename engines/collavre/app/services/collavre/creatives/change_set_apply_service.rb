@@ -61,6 +61,7 @@ module Collavre
         retain_authorized_targets(records, writable_ids)
         @conflict_skipped_change_ids = Set.new
         @resolved_change_ids = Set.new
+        @draft_progress = DraftLinkProgressReconciliation.new(@mode, @targets, records, writable_ids, @user, @source_record.anchor_creative_id)
         buckets = @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), result|
           classify_target(change, snapshot, records, writable_ids, result)
         end
@@ -78,6 +79,7 @@ module Collavre
       def classify_target(change, snapshot, records, writable_ids, buckets)
         plan, conflicts, skipped = buckets
         creative = records[change.creative_id]
+        return @resolved_change_ids << change.id if @draft_progress.resolved?(change, creative)
         return classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped) if draft_creation?(change, creative)
         if propagated_target?(change) && !target_writable?(creative, snapshot, records, writable_ids, change)
           return classify_propagated_target(change, creative, snapshot, plan)
@@ -232,9 +234,8 @@ module Collavre
       def apply_draft(source, plan, skipped)
         return result(:skipped, skipped: skipped) unless @complete && only_conflicts_skipped?(skipped)
 
-        DraftChangeSetApplicator.new(
-          change_set: source, user: @user, plan: plan, skipped_change_ids: @draft_discard_change_ids
-        ).call
+        DraftChangeSetApplicator.new(change_set: source, user: @user, plan: plan, skipped_change_ids: @draft_discard_change_ids,
+                                     recomputed_change_ids: @draft_progress.ids & (@resolved_change_ids | plan.map { |entry| entry.last.id }.to_set)).call
         status = skipped.empty? ? :applied : :partial
         result(status, change_set: source, skipped: skipped)
       end
