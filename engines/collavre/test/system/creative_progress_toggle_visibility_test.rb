@@ -132,6 +132,9 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
     assert_opacity checkbox, 1.0, "expected the initial hover to reveal the checkbox", hover: @complete
 
     page.execute_script("document.querySelector('#{row_selector(@complete)}').style.transform = 'translateY(100px)'")
+    # Moving an element does not reliably refresh Chrome's hover hit testing.
+    # Send real pointer input to establish the non-hovered state explicitly.
+    unhover
     assert_opacity checkbox, 0.0, "expected the moved row to leave the pointer"
 
     assert_opacity checkbox, 1.0, "expected hover to follow the moved row", hover: @complete

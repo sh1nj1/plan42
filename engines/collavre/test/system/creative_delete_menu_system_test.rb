@@ -23,7 +23,8 @@ class CreativeDeleteMenuSystemTest < ApplicationSystemTestCase
     open_delete_menu
     find("dialog[role='alertdialog'] .modal-dialog-btn-danger").click
 
-    assert_current_path collavre.creatives_path(id: @parent.id)
+    # Turbo waits for the delete response before navigating; allow for CI latency.
+    assert_current_path collavre.creatives_path(id: @parent.id), wait: 10
     assert_no_selector "#creative-#{@child.id}"
     assert_not Creative.exists?(@creative.id)
     assert_not Creative.exists?(@child.id)
@@ -45,7 +46,7 @@ class CreativeDeleteMenuSystemTest < ApplicationSystemTestCase
       text: I18n.t("collavre.creatives.index.are_you_sure_remove_link")
     find("dialog[role='alertdialog'] .modal-dialog-btn-danger").click
 
-    assert_current_path collavre.creatives_path(id: @parent.id)
+    assert_current_path collavre.creatives_path(id: @parent.id), wait: 10
     assert_not Creative.exists?(link.id)
     assert Creative.exists?(origin.id)
     assert_equal origin.id, child.reload.parent_id
