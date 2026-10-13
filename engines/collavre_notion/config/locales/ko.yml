@@ -1,5 +1,8 @@
 ko:
   collavre_notion:
+    export:
+      image_attachment: "이미지 첨부파일"
+      image: "이미지"
     integration:
       label: "Notion"
       description: "Creative 트리를 Notion 페이지로 내보내기"
@@ -21,7 +24,7 @@ ko:
       connect: "Notion 계정으로 로그인하여 내보내기를 시작하세요."
       login_button: "Notion 계정으로 로그인"
       existing_intro: "연동된 Notion 페이지:"
-      sync_button: "Notion으로 동기화"
+      sync_button: "모든 Notion 연결 동기화"
       workspace: "Notion 워크스페이스가 연결되었습니다. 내보내기 방법을 선택하세요."
       export_option: "내보내기 옵션:"
       export_new_page: "새 페이지 생성"
@@ -32,7 +35,7 @@ ko:
       creative_title: "루트 Creative:"
       workspace_label: "워크스페이스:"
       export_as: "내보내기 형태:"
-      tree_note: "선택한 크리에이티브와 모든 하위 항목이 구조화된 문서로 내보내집니다."
+      tree_note: "선택한 Creative와 모든 하위 항목을 각각 부모 아래의 별도 Notion 페이지로 내보냅니다."
       export_button: "Notion으로 내보내기"
       loading: "로딩 중..."
       load_failed: "연동 상태를 불러오지 못했습니다"

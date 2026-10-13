@@ -1,157 +1,166 @@
 require_relative "../test_helper"
 
 class NotionCreativeExporterTest < ActiveSupport::TestCase
-  def setup
-    @user = create_user(email: "exporter-test@example.com", name: "Exporter Test User")
-
-    @creative = Collavre::Creative.create!(
-      user: @user,
-      description: "Test Creative Title",
-      progress: 0.0
-    )
-
-    @exporter = CollavreNotion::NotionCreativeExporter.new(@creative)
+  setup do
+    @user = create_user
+    @creative = Collavre::Creative.create!(user: @user, description: "Own page text")
   end
 
-  test "should export creative as heading block" do
-    blocks = @exporter.export_blocks
-
-    assert blocks.is_a?(Array), "Should return an array"
-    assert blocks.length >= 1, "Should export at least one block"
-
-    block = blocks.first
-    assert block.present?, "First block should not be nil"
-    assert block.is_a?(Hash), "Block should be a hash"
-
-    assert_equal "block", block[:object]
-    assert_equal "heading_1", block[:type]
-
-    # Check the structure more carefully
-    assert block.key?(:heading_1), "Block should have heading_1 key: #{block.keys}"
-    heading_data = block[:heading_1]
-    assert heading_data.present?, "Heading data should be present"
-    assert heading_data.key?(:rich_text), "Should have rich_text: #{heading_data.keys}"
-
-    rich_text = heading_data[:rich_text]
-    assert rich_text.is_a?(Array), "Rich text should be array"
-    assert rich_text.length > 0, "Rich text should have content"
-
-    text_block = rich_text.first
-    assert text_block.key?(:text), "Should have text key"
-    assert_equal "Test Creative Title", text_block[:text][:content]
+  test "exports own text without descendant content" do
+    Collavre::Creative.create!(user: @user, parent: @creative, description: "Child page")
+    blocks = export
+    assert_equal [ "paragraph" ], blocks.pluck(:type)
+    assert_equal "Own page text", text(blocks.first)
   end
 
-  test "should export with progress when enabled" do
+  test "cleans HTML comments and entities" do
+    @creative.update!(description: "<p>Clean &amp; decoded<!-- hidden --></p>")
+    assert_equal "Clean & decoded", text(export.first)
+  end
+
+  test "nil and empty descriptions have no body blocks" do
+    [ nil, "", ActionText::Content.new("") ].each do |value|
+      @creative.stub(:effective_description, value) { assert_empty export }
+    end
+  end
+
+  test "unterminated comments cannot export hidden tables or images" do
+    html = '<p>Visible</p><!-- hidden <table><tr><td>Secret</td></tr></table><img src="data:image/png;base64,abc" alt="Secret">'
+    @creative.stub(:effective_description, html) do
+      blocks = export
+      assert_equal [ "paragraph" ], blocks.pluck(:type)
+      assert_equal "Visible", text(blocks.first)
+    end
+  end
+
+  test "comment removal does not assemble a new comment opener" do
+    @creative.stub(:effective_description, "<!<!-- hidden -->-->Visible") do
+      assert_equal "-->Visible", text(export.first)
+    end
+  end
+
+  test "splits long text without truncating whitespace at chunk boundaries" do
+    value = "가" * 1999 + "  " + "나" * 2000
+    @creative.stub(:effective_description, value) do
+      blocks = export
+      assert_equal value, blocks.map { |block| text(block) }.join
+      assert blocks.all? { |block| text(block).length <= 2000 }
+    end
+  end
+
+  test "optional progress is an own-page paragraph" do
     @creative.update!(progress: 0.75)
-    exporter = CollavreNotion::NotionCreativeExporter.new(@creative, with_progress: true)
-
-    blocks = exporter.export_blocks
-    block = blocks.first
-
-    assert_includes block[:heading_1][:rich_text][0][:text][:content], "(75%)"
+    assert_equal "(75%)", text(CollavreNotion::NotionCreativeExporter.new(@creative, with_progress: true).export_blocks.last)
   end
 
-  test "should handle deeper level creatives as bulleted lists" do
-    creative = Collavre::Creative.create!(
-      user: @user,
-      description: "Deep Level Creative",
-      progress: 0.0
-    )
-
-    # Test with level 5 (should use bulleted list)
-    exporter = CollavreNotion::NotionCreativeExporter.new(creative)
-    blocks = exporter.send(:convert_creative_to_blocks, creative, level: 5)
-
-    assert_equal "bulleted_list_item", blocks.first[:type]
-  end
-
-  test "should export tree of creatives" do
-    parent = Collavre::Creative.create!(
-      user: @user,
-      description: "Parent Creative",
-      progress: 0.0
-    )
-
-    Collavre::Creative.create!(
-      user: @user,
-      description: "Child 1",
-      parent: parent,
-      progress: 0.0
-    )
-
-    Collavre::Creative.create!(
-      user: @user,
-      description: "Child 2",
-      parent: parent,
-      progress: 0.0
-    )
-
-    exporter = CollavreNotion::NotionCreativeExporter.new(parent)
-    blocks = exporter.export_tree_blocks([ parent ])
-
-    # Should have blocks for parent and both children
-    assert_operator blocks.length, :>=, 3
-
-    # First block should be parent
-    assert_equal "Parent Creative", blocks.first[:heading_1][:rich_text][0][:text][:content]
-  end
-
-  test "should create rich text with proper formatting" do
-    rich_text = @exporter.send(:create_rich_text, "Test Text")
-
-    expected = {
-      type: "text",
-      text: { content: "Test Text" },
-      annotations: {
-        bold: false,
-        italic: false,
-        strikethrough: false,
-        underline: false,
-        code: false,
-        color: "default"
-      }
-    }
-
-    assert_equal expected, rich_text
-  end
-
-  test "should handle HTML content cleaning" do
-    creative = Collavre::Creative.create!(
-      user: @user,
-      description: "<div class='trix-content'><div>Clean Title</div></div>",
-      progress: 0.0
-    )
-
-    exporter = CollavreNotion::NotionCreativeExporter.new(creative)
-    blocks = exporter.export_blocks
-
-    assert_equal "Clean Title", blocks.first[:heading_1][:rich_text][0][:text][:content]
-  end
-
-  test "should extract text content from HTML" do
-    html = "<p><strong>Bold</strong> and <em>italic</em> text</p>"
-    text = @exporter.send(:extract_text_content, html)
-
-    assert_equal "Bold and italic text", text
-  end
-
-  test "should handle empty or nil content" do
-    creative = Collavre::Creative.create!(
-      user: @user,
-      description: "Placeholder",
-      progress: 0.0
-    )
-
-    creative.stub(:effective_description, nil) do
-      exporter = CollavreNotion::NotionCreativeExporter.new(creative)
-      blocks = exporter.export_blocks
-      assert_kind_of Array, blocks
+  test "Markdown tables preserve surrounding and intervening paragraphs" do
+    markdown = "Before\n| A |\n| --- |\n| B |\nMiddle\n| C |\n| --- |\n| D |\nAfter"
+    @creative.stub(:effective_description, markdown) do
+      blocks = export
+      assert_equal %w[paragraph table paragraph table paragraph], blocks.pluck(:type)
+      assert_equal %w[Before Middle After], blocks.select { |block| block[:type] == "paragraph" }.map { |block| text(block) }
+      assert_equal [ "A", "B", "C", "D" ], blocks.select { |block| block[:type] == "table" }.flat_map { |block| block[:table][:children].map { |row| row[:table_row][:cells].first.first[:text][:content] } }
     end
+  end
 
-    creative.stub(:effective_description, ActionText::Content.new("")) do
-      exporter = CollavreNotion::NotionCreativeExporter.new(creative)
-      blocks = exporter.export_blocks
-      assert_kind_of Array, blocks
+  test "HTML tables retain surrounding text and long cells" do
+    html = "<p>Before</p><table><tr><th>Title</th><th>Other</th></tr><tr><td>#{'x' * 4001}</td></tr></table><p>After</p>"
+    @creative.stub(:effective_description, html) do
+      blocks = export
+      assert_equal [ "paragraph", "table", "paragraph" ], blocks.pluck(:type)
+      assert_equal "Before", text(blocks.first)
+      assert_equal "After", text(blocks.last)
+      table = blocks[1][:table]
+      assert_equal 2, table[:table_width]
+      cells = table[:children].last[:table_row][:cells]
+      assert_equal "x" * 4001, cells.first.map { |chunk| chunk[:text][:content] }.join
+      assert_equal [], cells.last
     end
+  end
+
+  test "splits large tables into API sized blocks" do
+    html = "<table>#{'<tr><td>row</td></tr>' * 201}</table>"
+    @creative.stub(:effective_description, html) do
+      blocks = export
+      assert_equal [ 100, 100, 1 ], blocks.map { |block| block[:table][:children].size }
+      assert_equal [ true, false, false ], blocks.map { |block| block[:table][:has_column_header] }
+    end
+  end
+
+
+  test "large markdown tables only mark the original header" do
+    html = "| Header |\n| --- |\n" + (1..200).map { |index| "| Row #{index} |" }.join("\n")
+    @creative.stub(:effective_description, html) do
+      blocks = export
+      assert_equal [ true, false, false ], blocks.map { |block| block[:table][:has_column_header] }
+      rows = blocks.flat_map { |block| block[:table][:children] }
+      assert_equal [ "Header" ] + (1..200).map { |index| "Row #{index}" },
+                   rows.map { |row| row.dig(:table_row, :cells, 0, 0, :text, :content) }
+    end
+  end
+
+  test "exports markdown tables" do
+    @creative.stub(:effective_description, "| Name | Value |\n| --- | --- |\n| Test | 42 |") do
+      table = export.first[:table]
+      assert_equal 2, table[:table_width]
+      assert_equal 2, table[:children].size
+      assert table[:has_column_header]
+    end
+  end
+
+  test "oversized HTML and markdown cells continue on aligned API sized rows" do
+    value = "가" * 200_000 + "끝"
+    [
+      "<table><tr><td>#{value}</td><td>short</td></tr><tr><td>next</td></tr></table>",
+      "| #{value} | short |\n| --- | --- |\n| next | |"
+    ].each do |html|
+      @creative.stub(:effective_description, html) do
+        rows = export.flat_map { |block| block[:table][:children] }.map { |row| row[:table_row][:cells] }
+        assert_equal 3, rows.size
+        assert_equal value, rows.first(2).flat_map(&:first).map { |chunk| chunk[:text][:content] }.join
+        assert_equal "short", rows.first.last.first[:text][:content]
+        assert_equal [], rows.second.last
+        assert_equal "next", rows.last.first.first[:text][:content]
+        assert rows.all? { |row| row.size == 2 && row.all? { |cell| cell.size <= 100 } }
+        assert rows.flatten.all? { |chunk| chunk[:text][:content].length <= 2000 }
+      end
+    end
+  end
+
+  test "cell at rich text limit does not add a continuation row" do
+    @creative.stub(:effective_description, "<table><tr><td>#{'x' * 200_000}</td></tr></table>") do
+      assert_equal 1, export.first[:table][:children].size
+    end
+  end
+
+  test "image placeholders use the locale" do
+    @creative.stub(:effective_description, '<img src="data:image/png;base64,abc" alt="">') do
+      I18n.with_locale(:ko) { assert_equal "📷 이미지", text(export.last) }
+    end
+  end
+
+  test "attachment placeholders resolve signed attachments and localize fallback captions" do
+    @creative.stub(:effective_description, '<action-text-attachment sgid="signed"></action-text-attachment>') do
+      GlobalID::Locator.stub(:locate_signed, Object.new) do
+        I18n.with_locale(:ko) { assert_equal "📷 이미지 첨부파일", text(export.last) }
+      end
+      GlobalID::Locator.stub(:locate_signed, nil) { assert_empty export }
+    end
+  end
+
+  test "paragraph boundaries and line breaks are preserved" do
+    @creative.stub(:effective_description, "<p>First<br>line</p><p>Second</p>") do
+      assert_equal "First\nline\nSecond", text(export.first)
+    end
+  end
+
+  private
+
+  def export
+    CollavreNotion::NotionCreativeExporter.new(@creative).export_blocks
+  end
+
+  def text(block)
+    block[:paragraph][:rich_text].map { |part| part[:text][:content] }.join
   end
 end
