@@ -7,12 +7,9 @@ import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
-import {
-  isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
-} from "./creative_tree_row_document_view";
+import { documentProgressStyle, isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick } from "./creative_tree_row_document_view";
 
 const BULLET_STARTING_LEVEL = 3;
-
 class CreativeTreeRow extends LitElement {
   static properties = {
     creativeId: { attribute: "creative-id" },
@@ -27,6 +24,7 @@ class CreativeTreeRow extends LitElement {
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
+    progressValue: { type: Number, attribute: "data-progress-value" },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
@@ -249,7 +247,7 @@ class CreativeTreeRow extends LitElement {
         data-level=${this.level ?? nothing}
         draggable=${rowDraggableAttr(this)}
       >
-        <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
+        <div class="creative-row level-${this.level}" style=${documentProgressStyle(this.progressValue)} data-creatives--select-mode-target="row">
           <div class="creative-row-start">
             ${this._renderCheckbox()}
             ${this._renderActionButton()}
@@ -274,7 +272,7 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? ""}
         data-dnd-disabled=${titleDndDisabledAttr(this)}
       >
-        <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
+        <div class="creative-row" style=${`background-color: transparent; ${documentProgressStyle(this.progressValue)}`} data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">
             ${this._renderActionButton()}
             <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>

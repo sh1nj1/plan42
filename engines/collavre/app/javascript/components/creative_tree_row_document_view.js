@@ -215,3 +215,9 @@ export function handleDocumentTitleClick(row, event) {
   if (!isDocumentView(row)) return;
   handleDocumentBodyClick(row, event);
 }
+
+// Keep the completed portion transparent and tint only the unfinished tail.
+export function documentProgressStyle(progress) {
+  const value = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 1;
+  return `--document-progress-width: ${(1 - value) * 100}%;`;
+}

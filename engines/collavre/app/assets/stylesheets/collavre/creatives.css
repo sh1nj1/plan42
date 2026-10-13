@@ -1911,6 +1911,10 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-document-view .creative-row {
+    background-image: linear-gradient(to right, transparent, color-mix(in srgb, var(--text-muted) 16%, transparent));
+    background-size: var(--document-progress-width, 0%) 100%;
+    background-position: right;
+    background-repeat: no-repeat;
     padding: 3px 0;
 }
 
