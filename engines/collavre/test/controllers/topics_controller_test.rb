@@ -291,6 +291,31 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  %i[main_topic system_topic].each do |reserved_method|
+    test "index revalidates #{reserved_method} deleted after materializing the active list" do
+      creative = reserved_method == :system_topic ? Collavre::Creative.inbox_for(@user) : @creative
+      deleted_topic = creative.public_send(reserved_method, fallback_user: @user)
+      association = creative.topics
+      relation = association.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at)
+      original_to_a = relation.method(:to_a)
+      materialize_then_delete = lambda do
+        rows = original_to_a.call
+        Collavre::Topics::TopicDestroy.new(topic: deleted_topic, source_creative: creative).call
+        rows
+      end
+      relation.stub(:to_a, materialize_then_delete) do
+        association.stub(:active, relation) do
+          snapshot = Collavre::Topics::ActiveTopicSnapshot.new(creative: creative, user: @user)
+          replacement = snapshot.public_send(reserved_method)
+          assert_not_equal deleted_topic.id, replacement.id
+          assert Collavre::Topic.exists?(replacement.id)
+          assert_includes snapshot.topics.map(&:id), replacement.id
+          assert_not_includes snapshot.topics.map(&:id), deleted_topic.id
+        end
+      end
+    end
+  end
+
   test "index keeps legacy archived Main out of the active snapshot" do
     main = @creative.main_topic(fallback_user: @user)
     main.update_column(:archived_at, Time.current)
