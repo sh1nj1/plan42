@@ -1918,6 +1918,9 @@ creative-tree-row.is-being-edited .creative-tree {
     margin-block: 0;
     border-radius: 0;
     padding: 3px 0;
+    /* Paint through the main gutter without shifting text or row controls. */
+    margin-right: calc(-1 * var(--main-inline-padding, 0px));
+    padding-right: var(--main-inline-padding, 0px);
 }
 
 /* Keep heading spacing inside the painted row so progress backgrounds join. */

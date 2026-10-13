@@ -149,6 +149,31 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     end
   end
 
+  test "document progress backgrounds reach the main edge on desktop and mobile" do
+    visit collavre.creative_path(@root, view: "document")
+    [ 1200, 600 ].each do |width|
+      page.current_window.resize_to(width, 900)
+      edges = page.evaluate_script(<<~JS)
+        (() => {
+          const main = document.querySelector('main');
+          const edge = main.getBoundingClientRect().right;
+          return Array.from(document.querySelectorAll('#creatives .creative-row')).map(row => {
+            const style = getComputedStyle(row);
+            return { right: row.getBoundingClientRect().right, edge,
+              padding: parseFloat(style.paddingRight), gutter: parseFloat(getComputedStyle(main).paddingRight),
+              overflow: document.documentElement.scrollWidth > window.innerWidth };
+          });
+        })()
+      JS
+      assert_not_empty edges
+      edges.each do |row|
+        assert_in_delta row["edge"], row["right"], 0.5
+        assert_in_delta row["gutter"], row["padding"], 0.5
+        assert_not row["overflow"]
+      end
+    end
+  end
+
   test "the document view stays on while moving through the tree and after a reload" do
     visit collavre.creative_path(@root)
     find("#document-view-btn").click
