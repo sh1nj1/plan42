@@ -64,12 +64,12 @@ module Collavre
 
       test "requires read on sources and write on destination" do
         other = users(:two)
-        secret = Creative.create!(user: other, description: "Other")
-        assert link(@a, secret)[:error]
+        source = Creative.create!(user: other, description: "Other")
+        assert link(@a, source)[:error]
         assert_empty @parent.children
         Current.set(user: other) { assert link(@a)[:error] }
-        CreativeShare.create!(creative: secret, user: @user, permission: :read)
-        assert link(secret)[:success]
+        CreativeShare.create!(creative: source, user: @user, permission: :read)
+        assert link(source)[:success]
       end
 
       test "does not reuse sources or parents placed in another user's private tree" do

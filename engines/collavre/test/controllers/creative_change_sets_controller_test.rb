@@ -440,6 +440,37 @@ module Collavre
       refute_includes @creative.reload.description, "Proposed"
     end
 
+    test "owner can inspect and approve root unlink draft after origin access is revoked" do
+      source = Creative.create!(user: users(:two), description: "Private source")
+      grant = CreativeShare.create!(creative: source, user: @user, permission: :read)
+      shell = Creative.create!(user: @user, origin: source, data: { "ai_write_policy" => "review" })
+      grant.update!(permission: :no_access)
+      result = Current.set(user: @user, mcp_request: true) do
+        Tools::CreativeUnlinkService.new.call(linked_creative_ids: [ shell.id ])
+      end
+      assert result[:pending_review], result.inspect
+      draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+
+      get creative_change_set_path(shell, draft)
+      assert_response :success
+      refute_includes response.body, "Private source"
+      get creative_change_set_path(shell, @change_set)
+      assert_response :forbidden
+
+      shell.update_column(:user_id, users(:two).id)
+      post creative_apply_change_set_path(shell, draft), params: { mode: "approve" }, as: :json
+      assert_response :forbidden
+      assert_equal "draft", draft.reload.status
+      assert Creative.exists?(shell.id)
+      shell.update_column(:user_id, @user.id)
+
+      post creative_apply_change_set_path(shell, draft), params: { mode: "approve" }, as: :json
+      assert_response :success
+      assert_equal "applied", draft.reload.status
+      refute Creative.exists?(shell.id)
+      assert Creative.exists?(source.id)
+    end
+
     private
 
     def build_review_draft(operations)
