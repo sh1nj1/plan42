@@ -34,10 +34,13 @@ module Collavre
       end
 
       test "linking after a creation revert creates an active shell" do
-        archived = Creative.find(link(@a)[:links].first[:id])
+        archived = Current.set(creative_history_context: nil, change_set: nil) do
+          Creative.find(link(@a)[:links].first[:id])
+        end
         change_set = CreativeChangeSet.joins(:creative_changes).find_by!(creative_changes: { creative_id: archived.id, operation: "create" })
         assert_equal :applied, Creatives::ChangeSetApplyService.new(source: change_set, user: @user, mode: :revert).call.status
         assert archived.reload.archived?
+        refute @a.reload.archived?
 
         result = link(@a)
         assert result[:success], result.inspect
@@ -62,6 +65,33 @@ module Collavre
         refute_equal archived.id, replacement.id
         assert archived.reload.archived?
         assert_equal replacement.origin_id, draft.creative_changes.find_by!(creative_id: replacement.id).after.fetch("origin_id")
+      end
+
+      test "linking archived effective origins rejects the whole list" do
+        shell = Creative.create!(user: @user, origin: @b)
+        @b.archive!
+
+        [ @b, shell ].each do |source|
+          assert_no_difference "Creative.count" do
+            assert link(@a, source)[:error]
+          end
+          assert_empty @parent.children.active
+        end
+      end
+
+      test "link approval rejects an origin archived while the draft is pending" do
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a, @b) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        @b.archive!
+
+        Current.set(creative_history_context: nil, change_set: nil) do
+          assert_no_difference "Creative.count" do
+            refute_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+          end
+        end
+        assert_equal "draft", draft.reload.status
+        assert_empty @parent.children.active
       end
 
       test "links resolve source and destination shells to origins" do

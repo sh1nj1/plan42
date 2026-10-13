@@ -52,7 +52,12 @@ module Collavre
         raise Creatives::Reorderer::PermissionError unless filter.all_readable?(sources.map(&:id))
 
         reorderer = Creatives::Reorderer.new(user: Current.user)
-        sources.each { |source| reorderer.validate_link!(origin: source.effective_origin, parent: parent) }
+        sources.each do |source|
+          origin = source.effective_origin
+          raise Creatives::Reorderer::Error if origin.archived?
+
+          reorderer.validate_link!(origin: origin, parent: parent)
+        end
         links = sources.map do |source|
           origin = source.effective_origin
           link = parent.children.active.find_by(origin_id: origin.id) ||
