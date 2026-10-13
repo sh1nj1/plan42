@@ -70,6 +70,31 @@ module Collavre
         end
       end
 
+      # Why #claim refused, so the caller can tell the one benign conflict from
+      # the ones that lose a real reply.
+      #
+      # ALREADY_COMPLETED is the sibling-session dedup this claim exists for:
+      # the dispatch WAS answered (by another session sharing this agent), so
+      # the reply being refused is a duplicate of one that already landed.
+      # Dropping it is correct. TaskReplyService claims, links and finalizes
+      # under the topic lock in one transaction, so a refused claim never
+      # observes a sibling's half-finished reply — `done` with the linked
+      # comment is the whole proof, with nothing to wait for.
+      #
+      # NOT_DELEGATED is everything else: a task moved out of the awaiting
+      # states without a reply — cancelled, failed, recovered by the stuck-task
+      # sweeper, or resumed under a newer execution generation while this turn
+      # was still composing. Nothing answered that dispatch, so the text the
+      # caller is holding is the only copy and the conflict has to surface.
+      CONFLICT_ALREADY_COMPLETED = "already_completed"
+      CONFLICT_NOT_DELEGATED = "not_delegated"
+
+      def conflict_reason(agent:, topic:, requested_task_id:)
+        task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
+        answered = task&.status == "done" && Comment.exists?(task_id: task.id)
+        answered ? CONFLICT_ALREADY_COMPLETED : CONFLICT_NOT_DELEGATED
+      end
+
       def link_reply(task:, comment:)
         comment.update_column(:task_id, task.id)
       end

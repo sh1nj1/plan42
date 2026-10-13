@@ -87,3 +87,35 @@ test("unacknowledged approvals keep reconnect tracking when replying to the curr
   assert.deepEqual(waiter.openIds(), ["another-turn"]);
   assert.deepEqual(coordinator.pendingIds(), ["another-turn"]);
 });
+
+test("a sibling's already_completed 409 concludes the turn without touching approvals", async t => {
+  const { waiter, coordinator, active, config } = state();
+  waiter.open("pending");
+  coordinator.add("pending");
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ error: "Task already completed or not delegated", reason: "already_completed" }, { status: 409 }));
+  const result = await replyWithApprovalHandoff(config, 42, "Duplicate", 7, "g1", waiter, coordinator, active);
+  assert.equal(result.handled, false);
+  assert.equal(active.taskId, null);
+  assert.equal(active.topicId, 1);
+  assert.deepEqual(waiter.openIds(), ["pending"]);
+  assert.deepEqual(coordinator.pendingIds(), ["pending"]);
+});
+
+test("a 409 for an unanswered task is raised and keeps the turn", async t => {
+  const { waiter, coordinator, active, config } = state();
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ error: "Task already completed or not delegated", reason: "not_delegated" }, { status: 409 }));
+  await assert.rejects(
+    replyWithApprovalHandoff(config, 42, "Only copy", 7, "g1", waiter, coordinator, active),
+    /Reply failed \(409\)/,
+  );
+  assert.equal(active.taskId, 7);
+});
+
+test("a successful reply reports handled with its comment id", async t => {
+  const { waiter, coordinator, active, config } = state();
+  t.mock.method(globalThis, "fetch", async () => Response.json({ comment_id: 9, pending_approval_ids: [] }));
+  const result = await replyWithApprovalHandoff(config, 42, "Done", 7, "g1", waiter, coordinator, active);
+  assert.deepEqual(result, { handled: true, comment_id: 9 });
+});

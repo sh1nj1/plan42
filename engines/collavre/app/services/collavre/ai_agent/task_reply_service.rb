@@ -39,7 +39,15 @@ module Collavre
 
         task = task_claimer.call(agent, topic, requested_task_id)
         if requested_task_id.present? && task.nil?
-          return result(:conflict, error: "Task already completed or not delegated")
+          # `reason` is the machine-readable half of this 409: only
+          # "already_completed" means the dispatch was answered and the refused
+          # reply is a duplicate. A client that suppresses every conflict as
+          # dedup silently drops a valid answer when the task was cancelled,
+          # failed, or recovered out of `delegated` mid-turn instead.
+          return result(:conflict, error: "Task already completed or not delegated",
+                                   reason: claim_service.conflict_reason(
+                                     agent: agent, topic: topic, requested_task_id: requested_task_id
+                                   ))
         end
 
         persist_reply(creative, agent, task)
