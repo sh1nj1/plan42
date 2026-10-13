@@ -54,6 +54,75 @@ describe('TopicsController#deleteTopic', () => {
     jest.clearAllMocks()
   })
 
+  test.each(['mainTopicId', 'systemTopicId'])('reloads a peer after deleting %s', (reservedId) => {
+    controller.mainTopicId = '1'
+    controller.systemTopicId = '2'
+    const deletedId = controller[reservedId]
+    controller.topics = [{ id: 1, name: 'Main' }, { id: 2, name: 'System' }]
+    controller.setOverrideTopicId(deletedId)
+    controller.dispatch = jest.fn()
+
+    controller.handleTopicMessage({ action: 'deleted', topic_id: Number(deletedId) })
+
+    expect(controller[reservedId]).toBeNull()
+    expect(controller.currentTopicId).toBe('')
+    expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+    expect(controller.dispatch).toHaveBeenCalledWith('change', expect.objectContaining({
+      detail: { topicId: '', mainTopicId: controller.mainTopicId },
+    }))
+  })
+
+  test.each(['mainTopicId', 'systemTopicId'])('receives the replacement ID and sidebar after deleting %s', async (reservedId) => {
+    controller.mainTopicId = '1'
+    controller.systemTopicId = '2'
+    const deletedId = controller[reservedId]
+    controller.setOverrideTopicId(deletedId)
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        topics: [{ id: 10, name: 'Main' }, { id: 20, name: 'System' }],
+        main_topic_id: 10,
+        system_topic_id: 20,
+        is_inbox: true,
+      }),
+    })
+    controller.loadTopics.mockImplementation(() => TopicsController.prototype.loadTopics.call(controller))
+
+    controller.handleTopicMessage({ action: 'deleted', topic_id: deletedId })
+    await controller.loadTopics.mock.results[0].value
+
+    expect(controller.mainTopicId).toBe('10')
+    expect(controller.systemTopicId).toBe('20')
+    expect(controller.currentTopicId).not.toBe(deletedId)
+    expect(controller.listTarget.querySelector('[data-id="10"]')).not.toBeNull()
+    expect(controller.listTarget.querySelector('[data-id="20"]')).not.toBeNull()
+  })
+
+  test('reloads an inactive reserved topic without changing the selected topic', () => {
+    controller.mainTopicId = '1'
+    controller.systemTopicId = '2'
+    controller.serverLastTopicId = '3'
+
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+
+    expect(controller.systemTopicId).toBeNull()
+    expect(controller.mainTopicId).toBe('1')
+    expect(controller.currentTopicId).toBe('3')
+    expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not reload for a regular topic deletion', () => {
+    controller.mainTopicId = '1'
+    controller.topics = [{ id: 3, name: 'Other' }]
+    controller.renderTopics = jest.fn()
+    controller.restoreSelection = jest.fn()
+
+    controller.handleTopicMessage({ action: 'deleted', topic_id: 3 })
+
+    expect(controller.loadTopics).not.toHaveBeenCalled()
+    expect(controller.mainTopicId).toBe('1')
+  })
+
   test('renders a working Main delete button while keeping archive unavailable', async () => {
     controller.mainTopicId = '1'
     controller.renderTopics([{ id: 1, name: 'Main' }], true)

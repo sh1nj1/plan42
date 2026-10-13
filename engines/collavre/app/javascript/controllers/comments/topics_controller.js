@@ -1,3 +1,4 @@
+import { reloadDeletedReservedTopic } from './topics/reserved_topic_deletion'
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
@@ -561,13 +562,10 @@ export default class extends Controller {
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
                         ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${cronBadge}${unreadBadge}`
 			if (canManage && !topic.read_only) {
-				if (!isMainTopic) {
-					s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
-				}
+				if (!isMainTopic) s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
 				s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
-            s += `</span>`
-            return s
+            return s + `</span>`
         }
 
         if (mainTopic) html += renderTopic(mainTopic)
@@ -2422,7 +2420,7 @@ export default class extends Controller {
     }
 
     removeTopic(topicId) {
-        if (!topicId) return
+        if (!topicId || reloadDeletedReservedTopic(this, topicId)) return
 
         // loadTopics clears its cache before awaiting the response. If a
         // deletion arrives in that window, the local filter has nothing to
