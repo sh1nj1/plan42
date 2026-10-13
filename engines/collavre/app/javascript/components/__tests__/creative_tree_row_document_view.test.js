@@ -819,3 +819,15 @@ describe("document progress background", () => {
     expect(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width")).toBe("0%");
   });
 });
+
+ test.each([false, true])("filtered progress drives the background for title=%s", async (isTitle) => {
+   const row = await mountRow({ creativeId: "8", isTitle, progressValue: 1, displayProgress: 0 }, page().tree);
+   expect(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width")).toBe("100%");
+   expect(row.progressValue).toBe(1);
+   row.dataset.displayProgress = "0.9";
+   await row.updateComplete;
+   expect(parseFloat(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width"))).toBeCloseTo(10);
+   row.removeAttribute("data-display-progress");
+   await row.updateComplete;
+   expect(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width")).toBe("0%");
+ });

@@ -27,6 +27,16 @@ class CreativesDocumentViewTest < ActionDispatch::IntegrationTest
     assert_select "#creatives[data-view-mode='document'][data-dnd-disabled]"
   end
 
+  test "title background receives filtered progress separately from editor progress" do
+    creative = Creative.create!(description: "Complete doc", user: @user, progress: 1)
+    get creatives_path(id: creative.id, view: "document", tags: [ "999999" ])
+    assert_response :success
+    assert_select "creative-tree-row[is-title][data-progress-value='1.0'][data-display-progress='0']"
+
+    get creatives_path(id: creative.id, view: "document")
+    assert_select "creative-tree-row[is-title][data-display-progress]", count: 0
+  end
+
   test "the remembered view follows the user into any creative" do
     creative = Creative.create!(description: "Parent doc", user: @user)
     child = Creative.create!(description: "Child doc", user: @user, parent: creative)

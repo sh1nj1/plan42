@@ -24,6 +24,7 @@ class CreativeTreeRow extends LitElement {
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
+    displayProgress: { type: Number, attribute: "data-display-progress" },
     progressValue: { type: Number, attribute: "data-progress-value" },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
@@ -247,7 +248,7 @@ class CreativeTreeRow extends LitElement {
         data-level=${this.level ?? nothing}
         draggable=${rowDraggableAttr(this)}
       >
-        <div class="creative-row level-${this.level}" style=${documentProgressStyle(this.progressValue)} data-creatives--select-mode-target="row">
+        <div class="creative-row level-${this.level}" style=${documentProgressStyle(this.displayProgress ?? this.progressValue)} data-creatives--select-mode-target="row">
           <div class="creative-row-start">
             ${this._renderCheckbox()}
             ${this._renderActionButton()}
@@ -272,7 +273,7 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? ""}
         data-dnd-disabled=${titleDndDisabledAttr(this)}
       >
-        <div class="creative-row" style=${`background-color: transparent; ${documentProgressStyle(this.progressValue)}`} data-creatives--select-mode-target="row">
+        <div class="creative-row" style=${`background-color: transparent; ${documentProgressStyle(this.displayProgress ?? this.progressValue)}`} data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">
             ${this._renderActionButton()}
             <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
