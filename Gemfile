@@ -55,6 +55,8 @@ gem "ruby-vips", "~> 2.0", require: false
 
 # Use AWS S3 for Active Storage
 gem "aws-sdk-s3", require: false
+# Invalidate CloudFront /public-assets/* when a public blob is removed
+gem "aws-sdk-cloudfront", require: false
 
 gem "closure_tree"
 gem "fcm"

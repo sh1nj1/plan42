@@ -240,7 +240,7 @@ module Collavre
 
         content = page.messages.first[:content]
         assert_includes content, "Image attachment 1: small.png (image/png,"
-        assert_match %r{/public-assets/blobs/[^/]+/small\.png}, content
+        assert_match %r{/rails/active_storage/blobs/proxy/[^/]+/small\.png}, content
       end
 
       test "an attached image is preserved alongside the message text" do

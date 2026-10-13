@@ -63,8 +63,8 @@ module Collavre
       # A /p/ page is client-rendered, so crawlers also need its assets, the
       # tree JSON it loads and the attachments in its body. The JSON endpoints
       # only ever return public content to an anonymous request, and attachment
-      # URLs are signed, so only ones linked from public content are
-      # discoverable.
+      # endpoints authorize every request (Collavre::BlobAccess), so a crawler
+      # only ever receives attachments of public content.
       <<~ROBOTS
         User-agent: *
         Allow: #{prefix}/p/

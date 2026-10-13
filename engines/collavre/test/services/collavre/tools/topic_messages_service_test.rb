@@ -416,7 +416,7 @@ module Collavre
         markdown = TopicMessagesService.new.call(topic_ids: @a.id)
 
         assert_includes entry_for(payload, @a)[:messages].first[:content], "Image attachment 1: small.png"
-        assert_match %r{/public-assets/blobs/[^/]+/small\.png}, markdown
+        assert_match %r{/rails/active_storage/blobs/proxy/[^/]+/small\.png}, markdown
       end
 
       test "an unreadable or unknown topic is reported beside the ones that worked" do

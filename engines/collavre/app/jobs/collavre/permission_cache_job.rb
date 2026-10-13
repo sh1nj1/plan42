@@ -17,9 +17,10 @@ class PermissionCacheJob < ApplicationJob
     when :update_owner
       update_owner(args[:creative_id], args[:old_user_id], args[:new_user_id])
     when :rebuild_for_creative
-      rebuild_for_creative(args[:creative_id])
+      rebuild_for_creative(args[:creative_id], flush_public_cdn: args.fetch(:flush_public_cdn, false))
     when :propagate_share
-      propagate_share(args[:creative_share_id], purge_stale: args.fetch(:purge_stale, false))
+      propagate_share(args[:creative_share_id], purge_stale: args.fetch(:purge_stale, false),
+                                                flush_public_cdn: args.fetch(:flush_public_cdn, false))
     when :remove_share
       remove_share(args[:creative_share_id], args[:creative_id], args[:user_id])
     when :rebuild_user_cache_for_subtree
@@ -43,13 +44,15 @@ class PermissionCacheJob < ApplicationJob
     Creatives::PermissionCacheBuilder.update_owner(creative, old_user_id, new_user_id)
   end
 
-  def rebuild_for_creative(creative_id)
+  # flush_public_cdn: the creative was publicly readable before a move, so its
+  # subtree may now be private; evict the CDN once the cache reflects that.
+  def rebuild_for_creative(creative_id, flush_public_cdn: false)
     creative = Creative.find_by(id: creative_id)
-    return unless creative
-    Creatives::PermissionCacheBuilder.rebuild_for_creative(creative)
+    Creatives::PermissionCacheBuilder.rebuild_for_creative(creative) if creative
+    CdnInvalidation.invalidate_all_public_assets if flush_public_cdn
   end
 
-  def propagate_share(creative_share_id, purge_stale: false)
+  def propagate_share(creative_share_id, purge_stale: false, flush_public_cdn: false)
     # A relocated/reassigned share leaves stale cache rows keyed to it at the old
     # location. When asked, delete them here — in this same job, immediately
     # before re-propagating — never as a separate job. Both the purge and the
@@ -62,15 +65,21 @@ class PermissionCacheJob < ApplicationJob
     # even if the share was destroyed after enqueue.
     purge_share_cache(creative_share_id) if purge_stale
     share = CreativeShare.find_by(id: creative_share_id)
-    return unless share
-    Creatives::PermissionCacheBuilder.propagate_share(share)
+    Creatives::PermissionCacheBuilder.propagate_share(share) if share
+    # A public share downgraded to no_access, or moved/reassigned away from the
+    # subtree it published (flush_public_cdn), unpublishes that subtree. Evict
+    # the CDN only now, after the cache reflects it, so a request racing the
+    # invalidation cannot re-cache the blob as public.
+    unpublished = share&.user_id.nil? && share&.no_access?
+    CdnInvalidation.invalidate_all_public_assets if flush_public_cdn || unpublished
   end
 
   def remove_share(creative_share_id, creative_id, user_id)
     CreativeSharesCache.where(source_share_id: creative_share_id).delete_all
     creative = Creative.find_by(id: creative_id)
-    return unless creative
-    Creatives::PermissionCacheBuilder.rebuild_from_ancestors_for_user(creative, user_id)
+    Creatives::PermissionCacheBuilder.rebuild_from_ancestors_for_user(creative, user_id) if creative
+    # Same ordering as propagate_share: evict after the public rows are gone.
+    CdnInvalidation.invalidate_all_public_assets if user_id.nil?
   end
 
   # Purge the stale cache rows a relocated/reassigned share left behind. Only

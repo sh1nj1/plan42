@@ -354,7 +354,7 @@ module Collavre
       def image_markers(comment)
         comment.images.map.with_index(1) do |image, index|
           "[Image attachment #{index}: #{image.filename.sanitized} " \
-            "(#{image.content_type}, #{image.byte_size} bytes) — #{public_asset_url(image.blob)}]"
+            "(#{image.content_type}, #{image.byte_size} bytes) — #{attachment_access_url(image.blob)}]"
         end.join("\n")
       end
 
