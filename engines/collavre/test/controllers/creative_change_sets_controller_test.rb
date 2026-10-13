@@ -471,6 +471,28 @@ module Collavre
       assert Creative.exists?(source.id)
     end
 
+    test "owner can reject root unlink draft after origin access is revoked" do
+      source = Creative.create!(user: users(:two), description: "Private source")
+      grant = CreativeShare.create!(creative: source, user: @user, permission: :read)
+      shell = Creative.create!(user: @user, origin: source, data: { "ai_write_policy" => "review" })
+      grant.update!(permission: :no_access)
+      result = Current.set(user: @user, mcp_request: true) do
+        Tools::CreativeUnlinkService.new.call(linked_creative_ids: [ shell.id ])
+      end
+      draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+      shell.update_column(:user_id, users(:two).id)
+      post creative_apply_change_set_path(shell, draft), params: { mode: "reject" }, as: :json
+      assert_response :forbidden
+      assert_equal "draft", draft.reload.status
+      shell.update_column(:user_id, @user.id)
+
+      post creative_apply_change_set_path(shell, draft), params: { mode: "reject" }, as: :json
+      assert_response :success
+      assert_equal "rejected", draft.reload.status
+      assert Creative.exists?(shell.id)
+      assert Creative.exists?(source.id)
+    end
+
     private
 
     def build_review_draft(operations)

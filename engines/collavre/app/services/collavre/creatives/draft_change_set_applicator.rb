@@ -16,6 +16,8 @@ module Collavre
         History.track(**history_context) do
           Current.change_set = @change_set
           @plan.each { |creative, snapshot, attribute, change| apply(creative, snapshot, attribute, change) }
+          # Keep a fully reused draft as an applied no-op instead of discarding it.
+          Current.change_set = nil unless @change_set.creative_changes.exists?
         end
         @change_set.update!(status: "applied", applied_at: Time.current)
         CreativeTreeInvalidationJob.perform_later(@change_set.creative_changes.pluck(:creative_id))
@@ -43,7 +45,7 @@ module Collavre
       end
 
       def apply(creative, snapshot, attribute, change)
-        return creative.destroy! if change.operation == "destroy" && creative&.origin_id.present?
+        return creative.reload.destroy! if change.operation == "destroy" && creative&.origin_id.present?
 
         remapped = remap_snapshot(snapshot)
         return apply_creation(remapped, change) unless creative
@@ -55,10 +57,25 @@ module Collavre
 
       def apply_creation(snapshot, virtual_change)
         parent = Creative.find_by(id: snapshot["parent_id"])
+        return if reuse_existing_link(parent, snapshot, virtual_change)
+
         creative = Creative.new(user: parent&.user || @change_set.user || @user, parent: parent)
         SnapshotAssignment.call(creative, snapshot)
         creative.save!
         remap_virtual_change!(virtual_change, creative)
+      end
+
+      def reuse_existing_link(parent, snapshot, virtual_change)
+        return false unless snapshot["origin_id"]
+
+        existing = parent&.children&.find_by(origin_id: snapshot["origin_id"])
+        return false unless existing
+
+        virtual_id = virtual_change.creative_id
+        @id_map[virtual_id] = existing.id
+        virtual_change.destroy!
+        remap_pending_references!(virtual_id, existing.id)
+        true
       end
 
       def remap_snapshot(snapshot)

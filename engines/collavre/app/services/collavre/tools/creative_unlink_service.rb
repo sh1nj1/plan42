@@ -39,8 +39,17 @@ module Collavre
         raise Creatives::Reorderer::Error unless links.size == ids.size
         raise Creatives::Reorderer::Error unless links.all? { |link| link.origin_id.present? && link.destroyable_by?(Current.user) }
 
-        links.each(&:destroy!)
+        selected = links.index_by(&:id)
+        links.sort_by { |link| -selected_origin_depth(link, selected) }.each { |link| link.reload.destroy! }
         { success: true, unlinked_ids: ids }
+      end
+
+      def selected_origin_depth(link, selected)
+        visited = Set.new
+        while link && visited.add?(link.id)
+          link = selected[link.origin_id]
+        end
+        visited.size
       end
 
       def error(key)

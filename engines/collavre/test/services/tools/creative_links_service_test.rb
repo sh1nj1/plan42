@@ -128,6 +128,26 @@ module Collavre
         assert_equal [ @a.id, @b.id ], @parent.children.order(:sequence).pluck(:origin_id)
       end
 
+      test "link approval reuses a shell created while the draft was pending" do
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        virtual_id = draft.creative_changes.find_by!(operation: "create").creative_id
+        existing = Creative.create!(user: @user, parent: @parent, origin: @a, sequence: 7)
+        before = Creatives::History.snapshot(existing)
+
+        assert_no_difference "Creative.count" do
+          Current.set(creative_history_context: nil, change_set: nil) do
+            assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+          end
+        end
+        assert_equal "applied", draft.reload.status
+        assert_equal before, Creatives::History.snapshot(existing.reload)
+        assert_equal [ existing.id ], @parent.children.where(origin_id: @a.id).pluck(:id)
+        refute draft.creative_changes.exists?(creative_id: virtual_id)
+        refute draft.creative_changes.exists?(creative_id: existing.id)
+      end
+
       test "link approval rechecks source read permission and cycles" do
         source = Creative.create!(user: users(:two), description: "Other")
         grant = CreativeShare.create!(creative: source, user: @user, permission: :read)
@@ -143,6 +163,43 @@ module Collavre
         applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
         assert_equal :skipped, applied.status
         assert_empty @parent.children
+      end
+
+      test "unlinking chained shells preserves downstream links" do
+        first = Creative.create!(user: @user, origin: @a)
+        second = Creative.create!(user: @user, origin: first)
+        downstream = Creative.create!(user: @user, origin: second)
+
+        result = @unlinker.call(linked_creative_ids: [ first.id, second.id ])
+        assert result[:success], result.inspect
+        refute Creative.exists?(first.id)
+        refute Creative.exists?(second.id)
+        assert_equal @a.id, downstream.reload.origin_id
+        assert Creative.exists?(@a.id)
+      end
+
+      test "approved chained unlink preserves downstream links" do
+        first = Creative.create!(user: @user, origin: @a, data: { "ai_write_policy" => "review" })
+        second = Creative.create!(user: @user, origin: first)
+        downstream = Creative.create!(user: @user, origin: second)
+        result = Current.set(mcp_request: true) { @unlinker.call(linked_creative_ids: [ first.id, second.id ]) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+
+        assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+        refute Creative.exists?(first.id)
+        refute Creative.exists?(second.id)
+        assert_equal @a.id, downstream.reload.origin_id
+      end
+
+      test "reused links remain untouched when newly approved links are reverted" do
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(@a, @b) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+        existing = Creative.create!(user: @user, parent: @parent, origin: @a)
+        assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call.status
+        assert_equal :applied, Creatives::ChangeSetApplyService.new(source: draft, user: @user).call.status
+        assert_nil existing.reload.archived_at
+        assert_equal 1, @parent.children.active.count
       end
 
       test "unlink review preserves the shell until approval and then removes only the shell" do
