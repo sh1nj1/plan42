@@ -38,7 +38,7 @@ module Collavre
         return true unless snapshot["origin_id"]
 
         origin = records[snapshot["origin_id"]]
-        return false unless origin && PermissionFilter.new(user: @user).all_readable?([ origin.id ])
+        return false unless origin && PermissionChecker.current_tree_allowed?(origin.id, @user)
 
         Reorderer.new(user: @user).validate_link!(origin: origin.effective_origin, parent: records[snapshot["parent_id"]])
         true

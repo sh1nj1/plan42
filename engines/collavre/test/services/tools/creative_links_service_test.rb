@@ -165,6 +165,26 @@ module Collavre
         assert_empty @parent.children
       end
 
+      test "link approval rejects revoked source access while the permission cache is stale" do
+        source = Creative.create!(user: users(:two), description: "Shared source")
+        grant = CreativeShare.create!(creative: source, user: @user, permission: :read)
+        @parent.update!(data: { "ai_write_policy" => "review" })
+        result = Current.set(mcp_request: true) { link(source) }
+        draft = CreativeChangeSet.find(result.fetch(:change_set_id))
+
+        # Keep the asynchronous cache at its old grant while revoking the share.
+        grant.update_column(:permission, CreativeShare.permissions.fetch("no_access"))
+        assert Creatives::PermissionFilter.new(user: @user).all_readable?([ source.id ])
+        refute Creatives::PermissionChecker.current_tree_allowed?(source.id, @user)
+
+        assert_no_difference "Creative.count" do
+          applied = Creatives::ChangeSetApplyService.new(source: draft, user: @user, mode: :draft).call
+          assert_equal :skipped, applied.status
+        end
+        assert_equal "draft", draft.reload.status
+        assert_empty @parent.children
+      end
+
       test "unlinking chained shells preserves downstream links" do
         first = Creative.create!(user: @user, origin: @a)
         second = Creative.create!(user: @user, origin: first)
