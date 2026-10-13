@@ -110,9 +110,11 @@ end
 
 ## Closure Tree Setup
 
-After fixture loading, rebuild the tree:
-```ruby
-setup do
-  Collavre::Creative.rebuild! if defined?(Collavre::Creative)
-end
-```
+`creative_hierarchies.yml` loads the closure rows alongside `creatives.yml`,
+so common setup does not rebuild the tree for every test. The host fixture
+directory is a symlink to the core engine fixtures. When changing the Creative
+fixture tree, update its closure rows too: include every self row at generation
+zero and every ancestor row with its distance to the descendant.
+Transactional tests restore these rows on rollback; nontransactional tests
+reload them through Rails fixture loading. Tests that bypass model callbacks
+when changing parent IDs must rebuild the tree explicitly.
