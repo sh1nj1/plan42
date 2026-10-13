@@ -34,6 +34,7 @@ module Collavre
         else
           parent = records[parent_id || anchor_id]
           return false unless parent && !parent.read_only_source? && writable_ids.include?(parent.id)
+          return false unless PermissionChecker.current_tree_allowed?(parent.id, @user, :write)
         end
         return true unless snapshot["origin_id"]
 
