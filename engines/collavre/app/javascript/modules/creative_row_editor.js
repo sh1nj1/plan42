@@ -1,9 +1,11 @@
+import { updateRemovalButtons, destroyedIdsForRemoval, promotesChildrenToRoot as removalPromotesChildren, shouldRefreshRemovalParent } from './creative_removal'
 import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
 import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
+import { finishDirectCreativeSave } from './direct_creative_save_effects'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
@@ -13,6 +15,7 @@ import { markdownCreativeCommandRange, openCreativeLinkPicker } from './creative
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
+import { restoreRowDraggable } from '../components/creative_tree_row_document_view'
 import { CreativeSaveQueue } from './creative_save_queue'
 import { isHtmlEmpty } from './html_content_empty'
 import {
@@ -25,10 +28,7 @@ import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
 import {
-  treeRowElement,
-  hasDatasetValue,
-  readRowLevel,
-  editorPaddingForLevel,
+  treeRowElement, hasDatasetValue, readRowLevel, editorPaddingForLevel,
 } from './creative_row_editor_helpers'
 import {
   creativeTreeElement,
@@ -590,6 +590,7 @@ function setupEditorSession() {
         const isArchived = targetRow?.hasAttribute('archived');
         archiveBtn.textContent = isArchived ? (archiveBtn.dataset.restoreLabel || 'Restore') : (archiveBtn.dataset.archiveLabel || 'Archive');
       }
+      updateRemovalButtons(deleteBtn, deleteWithChildrenBtn, Boolean(originalOriginId));
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
       if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
@@ -888,12 +889,7 @@ function setupEditorSession() {
               completionCascadePending = false;
             }
 
-            if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
-              const deletedIds = lexicalEditor.getDeletedAttachments();
-              if (deletedIds && deletedIds.length > 0) {
-                deletedIds.forEach(deleteAttachment);
-              }
-            }
+	    finishDirectCreativeSave({ lexicalEditor, deleteAttachment, persistProgress: shouldPersistProgress });
             updateActionButtonStates();
             // Only announce "saved" when the current buffer still matches what we
             // just persisted. Text edits during the in-flight save keep isDirty
@@ -972,7 +968,7 @@ function setupEditorSession() {
 
       currentTree = null;
       currentRowElement = null;
-      tree.draggable = true;
+      restoreRowDraggable(tree);
       updateActionButtonStates();
 
       // A failed save leaves the editor hidden and currentTree cleared, so the
@@ -1586,6 +1582,9 @@ function setupEditorSession() {
       if (!currentTree || !form.dataset.creativeId) return;
       const id = form.dataset.creativeId;
       const tree = currentTree;
+      // A link displays its origin's children, but removing it only deletes the shell.
+      const isLink = Boolean(inlinePayloadFromTree(tree)?.origin_id);
+      withChildren = withChildren && !isLink;
       const trees = Array.from(document.querySelectorAll('.creative-tree'));
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
@@ -1601,16 +1600,7 @@ function setupEditorSession() {
       }
 
       creativesApi.destroy(id, withChildren).then(() => {
-        const destroyedIds = [String(id)];
-        if (withChildren) {
-          const childrenContainer = document.getElementById("creative-children-" + id);
-          if (childrenContainer) {
-            childrenContainer.querySelectorAll('creative-tree-row').forEach(row => {
-              const cid = row.getAttribute('creative-id');
-              if (cid) destroyedIds.push(cid);
-            });
-          }
-        }
+        const destroyedIds = destroyedIdsForRemoval(id, withChildren);
         document.dispatchEvent(new CustomEvent('creative-destroyed', {
           detail: { creativeIds: destroyedIds }
         }));
@@ -1632,10 +1622,9 @@ function setupEditorSession() {
         // container would say "no children" for every tree the user never opened.
         // The container is still consulted as well, because a child inserted
         // client-side is in the DOM before any flag round-trips.
-        const promotesChildrenToRoot = !withChildren && !parentTree &&
-          (rowFlagHasChildren(treeRowElement(tree)) ||
-            !!childrenTree?.querySelector('creative-tree-row'));
-        if (!withChildren && childrenTree && parentTree) {
+        const promotesChildrenToRoot = removalPromotesChildren({ isLink, withChildren, parentTree,
+          hasChildren: rowFlagHasChildren(treeRowElement(tree)), childrenTree });
+        if (shouldRefreshRemovalParent(isLink, withChildren, childrenTree, parentTree)) {
           refreshChildren(parentTree).then(() => {
             if (parentTree) refreshRow(parentTree);
           });
@@ -2096,10 +2085,9 @@ function setupEditorSession() {
       });
     }
 
-    // Expose for testing
+    // Exposed for tests and for the document view (creative_tree_row_document_view.js)
     window.creativeRowEditor = {
       setUploadsPending: (pending) => {
-        uploadsPending = pending;
         if (pending) {
           uploadCompletionPromise = new Promise((resolve) => {
             resolveUploadCompletion = resolve;
@@ -2120,7 +2108,9 @@ function setupEditorSession() {
           handleUploadStateChange(false);
         }
       },
-      isUploadPending: () => uploadsPending
+      isUploadPending: () => uploadsPending,
+      // Closes the editor once its draft is on the server; false when the save failed.
+      flush: () => hideCurrent(undefined, { switching: true, waitForServer: true }).then((result) => result !== SAVE_FAILED)
     };
 
     if (linkBtn) {

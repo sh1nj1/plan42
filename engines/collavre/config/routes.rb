@@ -2,11 +2,7 @@ Collavre::Engine.routes.draw do
   # Landing page
   get "landing", to: "landing#show"
 
-  # Public feature guides — the long-form counterpart to the empty-chat feature
-  # cards. Keys come from Collavre::FeatureCardRegistry, which rejects a key this
-  # constraint could not route, so the two cannot drift apart.
-  get "features", to: "features#index", as: :features
-  get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
+  draw :public_creatives
 
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
@@ -84,7 +80,7 @@ Collavre::Engine.routes.draw do
   resources :creatives do
     resources :crons, only: %i[update destroy], param: :key
     draw :creative_history
-    resources :attachments, only: [ :create ], module: :creatives
+    resources :attachments, :file_drops, only: [ :create ], module: :creatives
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do

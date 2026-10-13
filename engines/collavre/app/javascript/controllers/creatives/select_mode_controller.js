@@ -2,6 +2,7 @@ import { Controller } from '@hotwired/stimulus'
 import csrfFetch from '../../lib/api/csrf_fetch'
 import { confirmDialog } from '../../lib/utils/confirm_dialog'
 import { removeTreeElement } from '../../modules/creative_tree_dom'
+import { isRowDragSource } from '../../components/creative_tree_row_document_view'
 
 export default class extends Controller {
   static targets = [
@@ -181,7 +182,7 @@ export default class extends Controller {
     if (event.target.closest('.select-creative-checkbox')) return
 
     const tree = row.closest('.creative-tree')
-    const isDraggable = tree && tree.getAttribute('draggable') !== 'false'
+    const isDraggable = tree && isRowDragSource(tree, event.target)
     const alreadySelected = row.classList.contains('selected')
 
     this.dragMode = event.altKey ? 'remove' : event.shiftKey ? 'add' : 'toggle'
@@ -234,6 +235,9 @@ export default class extends Controller {
     this.checkboxTargets.forEach((checkbox) => {
       checkbox.style.display = show ? '' : 'none'
     })
+
+    // Rows read this to stay out of the editor while selecting (document view).
+    this.element.toggleAttribute('data-select-mode-active', show)
 
     this.toggleElements('.add-creative-btn', !show)
     this.toggleElements('.creative-tags', !show)

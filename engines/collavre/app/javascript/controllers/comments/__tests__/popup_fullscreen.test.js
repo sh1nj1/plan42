@@ -73,6 +73,30 @@ describe('PopupFullscreen', () => {
     expect(listController.scrollToBottom).toHaveBeenCalledTimes(1)
   })
 
+  test.each(['ko', 'en', 'ja'])('preserves lang=%s through fullscreen entry and exit', lang => {
+    window.history.replaceState({}, '', `/creatives/42?lang=${lang}`)
+
+    manager.enter()
+
+    expect(window.location.pathname).toBe('/creatives/42/comments/fullscreen')
+    expect(new URLSearchParams(window.location.search).get('lang')).toBe(lang)
+
+    manager.exit()
+
+    expect(window.location.pathname).toBe('/creatives/42')
+    expect(new URLSearchParams(window.location.search).get('lang')).toBe(lang)
+  })
+
+  test.each(['exit', 'exitState'])('preserves lang when %s closes a direct fullscreen URL', method => {
+    window.history.replaceState({}, '', '/creatives/42/comments/fullscreen?lang=ko')
+    manager.enterImmediate()
+
+    manager[method]()
+
+    expect(window.location.pathname).toBe('/creatives/42')
+    expect(new URLSearchParams(window.location.search).get('lang')).toBe('ko')
+  })
+
   test('restores the mobile popup and keeps it open in the URL', () => {
     callbacks.isMobile.mockReturnValue(true)
     element.dataset.fullscreen = 'true'

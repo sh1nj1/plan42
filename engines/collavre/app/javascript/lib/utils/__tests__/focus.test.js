@@ -39,6 +39,37 @@ describe('focusWhenAvailable', () => {
       expect(document.activeElement).toBe(other.firstElementChild)
     })
 
+  test.each(['<button>Move</button>', '<a href="#">Move</a>', '<div tabindex="0">Move</div>', '<div tabindex="-1">Move</div>'])(
+    'protects keyboard navigation on %s', markup => {
+      document.body.insertAdjacentHTML('beforeend', markup)
+      const action = document.body.lastElementChild
+      focusWhenAvailable(target)
+      action.focus()
+      flush()
+      expect(document.activeElement).toBe(action)
+      focusWhenAvailable(target, { explicit: true })
+      expect(document.activeElement).toBe(target)
+    })
+
+  test.each([false, true])('initial autofocus respects focus changes after opening: %s', moved => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="opener">Chat</button><button id="move">Move</button>')
+    const openingControl = document.getElementById('opener')
+    openingControl.focus()
+    focusWhenAvailable(target, { openingControl })
+    if (moved) document.getElementById('move').focus()
+    flush()
+    expect(document.activeElement).toBe(moved ? document.getElementById('move') : target)
+  })
+
+  test('protects an open editor even when its opener is allowed', () => {
+    document.body.insertAdjacentHTML('beforeend', '<button id="opener">Chat</button><div id="inline-edit-form"></div>')
+    const openingControl = document.getElementById('opener')
+    openingControl.focus()
+    focusWhenAvailable(target, { openingControl })
+    flush()
+    expect(document.activeElement).toBe(openingControl)
+  })
+
   test('protects a focused descendant of a rich text editor', () => {
     document.body.insertAdjacentHTML('beforeend', '<div contenteditable="true"><span tabindex="0">text</span></div>')
     const span = document.querySelector('span')

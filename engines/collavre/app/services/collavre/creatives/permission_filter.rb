@@ -63,6 +63,19 @@ module Creatives
       end
     end
 
+    # True when the user may access every id at `min_permission`. On approval
+    # replay (Current.authoritative_permissions) each id is judged from current
+    # shares instead, so a grant or revocation the cache has not caught up with
+    # yet neither blocks nor permits the action.
+    def all_readable?(ids, min_permission: :read)
+      ids = ids.to_a.uniq
+      if Current.authoritative_permissions
+        return ids.all? { |id| PermissionChecker.current_tree_allowed?(id, user, min_permission) }
+      end
+
+      readable_ids(ids, min_permission: min_permission).size == ids.size
+    end
+
     # Returns { input_id => effective_permission_rank } for the ids the user has
     # ANY relationship to, mirroring single-item PermissionChecker: owner wins
     # (admin rank), else the user's own cache entry (INCLUDING a no_access deny,

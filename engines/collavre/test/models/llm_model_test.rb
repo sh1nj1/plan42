@@ -22,6 +22,9 @@ class LlmModelTest < ActiveSupport::TestCase
 
     Collavre::LlmModel.seed_default_suggestions!
 
+    assert Collavre::LlmModel.exists?(llm_vendor: "google", name: "gemini-3.5-flash-lite")
+    assert_equal "gemini-3.5-flash-lite", Collavre::User::SUPPORTED_LLM_MODELS.first
+
     suggestions = Collavre::LlmModel.where(llm_vendor: "cli_proxy").pluck(:name)
     assert_includes suggestions, "paperclip/codex_custom/anthropic/claude-sonnet-4.5"
     assert_includes suggestions, "paperclip/codex_custom/openai/gpt-5"

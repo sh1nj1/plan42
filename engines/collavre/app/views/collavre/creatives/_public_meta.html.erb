@@ -1,0 +1,16 @@
+<%# Server-rendered metadata for a public creative's /p/ page. The page body is
+    client-rendered, so this is what crawlers and link unfurlers see first. %>
+<% title = public_creative_title(creative) %>
+<% description = public_creative_description(creative).presence || title %>
+<% canonical_url = public_creative_url(public_id: creative.public_id, slug: creative.public_slug.presence) %>
+<% content_for :title, "#{title} — #{t('app.name')}" %>
+<% content_for :head do %>
+  <meta name="description" content="<%= description %>">
+  <link rel="canonical" href="<%= canonical_url %>">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="<%= t('app.name') %>">
+  <meta property="og:title" content="<%= title %>">
+  <meta property="og:description" content="<%= description %>">
+  <meta property="og:url" content="<%= canonical_url %>">
+  <meta name="twitter:card" content="summary">
+<% end %>

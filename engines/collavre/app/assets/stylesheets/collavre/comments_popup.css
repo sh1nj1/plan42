@@ -342,8 +342,15 @@ body.chat-fullscreen {
 }
 
 .comment-user-popup {
+    width: 240px;
     min-width: 240px;
     padding: var(--space-2);
+}
+
+.comment-user-popup .popup-menu-item {
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .comment-user-popup-header {
@@ -2433,14 +2440,36 @@ li:hover .topic-create-option {
 }
 
 .comment-agent-model-editor label,
-.comment-agent-model-editor input[type="text"] {
+.comment-agent-model-editor input[type="text"],
+.comment-agent-model-editor select {
     display: block;
     width: 100%;
     box-sizing: border-box;
 }
 
 .comment-agent-model-editor p {
+    overflow-wrap: anywhere;
     margin: var(--space-1) 0;
     color: var(--color-text-muted);
     font-size: var(--text-0);
+}
+
+/* Content extension controls share the existing action strip without adding a row. */
+.comment-content-action-controls {
+    position: absolute;
+    bottom: 0.2em;
+    left: 0.5em;
+    right: 0.2em;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+
+.comment-content-action-controls button {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

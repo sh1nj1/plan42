@@ -31,6 +31,7 @@ module Collavre
     def update
       @user = Collavre::User.find(params[:id])
       return head :forbidden unless @user == Current.user || Current.user.system_admin?
+      return head :forbidden unless adoptable_avatar?
       if @user.update(profile_params)
         redirect_to user_path(@user), notice: I18n.t("collavre.users.profile_updated")
       else
@@ -92,10 +93,21 @@ module Collavre
         :timezone,
         :locale,
         :justify_creative_descriptions,
-        :creative_workspace_enabled
+        :creative_workspace_enabled,
+        *Collavre::ProfilePreferences.attributes
       ).tap do |p|
         p[:locale] = normalize_supported_locale(p[:locale]) if p.key?(:locale)
       end
+    end
+
+    # An avatar is public, so a signed id may only name a blob the user can
+    # already read (their own upload); an uploaded file is always fresh.
+    def adoptable_avatar?
+      signed_id = params.dig(:user, :avatar)
+      return true unless signed_id.is_a?(String) && signed_id.present?
+
+      blob = ActiveStorage::Blob.find_signed(signed_id)
+      blob.nil? || BlobAccess.adoptable(Array(blob)).any?
     end
 
     def notification_settings_params

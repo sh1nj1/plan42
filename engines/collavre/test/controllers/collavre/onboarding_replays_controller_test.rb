@@ -111,9 +111,14 @@ module Collavre
     end
 
     test "other profiles including agents have no replay link" do
+      users(:ai_bot).update!(searchable: true)
       sign_in_as(@user, password: "password")
       [ users(:one), users(:ai_bot) ].each do |other|
         get collavre.user_path(other)
+        if other.ai_user?
+          assert_redirected_to collavre.edit_ai_user_path(other)
+          follow_redirect!
+        end
         assert_response :success
         assert_select "a[href=?]", collavre.onboarding_replay_path, count: 0
       end

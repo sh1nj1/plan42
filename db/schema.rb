@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_12_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -109,6 +109,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
     t.index ["user_id"], name: "index_agent_workspaces_on_user_id"
   end
 
+  create_table "blob_access_flags", force: :cascade do |t|
+    t.bigint "blob_id", null: false
+    t.boolean "public_asset", default: false, null: false
+    t.boolean "cdn_public", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["blob_id"], name: "index_blob_access_flags_on_blob_id", unique: true
+  end
+
   create_table "calendar_events", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.integer "creative_id"
@@ -143,6 +152,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
     t.index ["topic_id"], name: "index_channels_on_topic_id"
     t.index ["type", "topic_id", "repo_full_name", "pr_number"], name: "index_channels_on_type_topic_repo_pr", unique: true
     t.index ["type"], name: "index_channels_on_type"
+  end
+
+  create_table "collavre_translation_translations", force: :cascade do |t|
+    t.string "translatable_type", null: false
+    t.integer "translatable_id", null: false
+    t.string "target_locale", null: false
+    t.string "source_digest", null: false
+    t.string "source_lang"
+    t.string "status", default: "pending", null: false
+    t.text "content"
+    t.string "llm_vendor"
+    t.string "llm_model"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["translatable_type", "translatable_id", "target_locale", "source_digest"], name: "index_translations_on_source_and_locale", unique: true
   end
 
   create_table "comment_notification_deliveries", force: :cascade do |t|
@@ -369,9 +393,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
     t.integer "sequence", default: 0, null: false
     t.datetime "updated_at", null: false
     t.integer "user_id", null: false
+    t.string "public_id"
     t.index ["archived_at"], name: "index_creatives_on_archived_at", where: "archived_at IS NOT NULL"
     t.index ["origin_id"], name: "index_creatives_on_origin_id"
     t.index ["parent_id"], name: "index_creatives_on_parent_id"
+    t.index ["public_id"], name: "index_creatives_on_public_id", unique: true
     t.index ["user_id"], name: "index_creatives_on_user_id"
   end
 
@@ -1212,6 +1238,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_30_000000) do
     t.datetime "updated_at", null: false
     t.string "webauthn_id"
     t.boolean "system_agent", default: false, null: false
+    t.boolean "auto_translation_enabled", default: true, null: false
     t.index ["agent_gateway_id"], name: "index_users_on_agent_gateway_id"
     t.index ["created_at", "id"], name: "index_users_on_created_at_and_id"
     t.index ["desktop_preset_adapter"], name: "index_users_on_desktop_preset_adapter", unique: true, where: "desktop_preset_adapter IS NOT NULL"

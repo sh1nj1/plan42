@@ -21,6 +21,8 @@ ko:
         edit: 수정
         append_as_parent_creative: 상위에 추가
         append_below_creative: 아래에 추가
+        remove_link: "링크 제거"
+        are_you_sure_remove_link: "이 링크를 제거하시겠습니까? 원본 글과 하위 글은 유지됩니다."
         delete: 삭제
         archive: 아카이브
         archive_confirm: 이 항목과 모든 하위 항목을 아카이브할까요?
@@ -48,6 +50,7 @@ ko:
         breadcrumb: 계보
         root_breadcrumb: 최상위
         slide_view: 슬라이드 뷰
+        document_view: 문서 뷰
         recalculate_progress: 진행률 다시 계산
         recalculate_all_parent_progress: 모든 상위 진행률을 다시 계산하시겠습니까?
         no_creatives: 크리에이티브가 없습니다.
@@ -175,6 +178,9 @@ ko:
         public_invite: 공개
         inherited_from: "%{name}에서 상속"
         inherited_short: 상속
+        public_link: 공개 링크
+        copy_public_link: 복사
+        public_link_copied: 공개 링크를 복사했습니다.
         already_shared_in_parent: 크리에이티브가 상위 크리에이티브에 이미 공유되었습니다.
         can_not_share_by_no_access_in_parent: 상위 크리에이티브에 접근 금지가 있어서 공유할 수 없습니다.
         cannot_share_private_ai_agent: AI Agent 소유자만 공유할 수 있습니다.

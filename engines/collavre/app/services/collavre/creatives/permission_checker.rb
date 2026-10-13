@@ -11,10 +11,30 @@ module Collavre
         end
       end
 
-      def initialize(creative, user, current_shares: false)
+      # Authoritative check of a linked shell's PLACEMENT (the shell row in its
+      # tree, not its origin): the current-share counterpart of the placement
+      # gate PermissionFilter#readable_ids applies to shells.
+      def self.current_placement_allowed?(creative_id, user, required_permission = :read)
+        Creative.uncached do
+          creative = Creative.find_by(id: creative_id)
+          creative.present? && new(creative, user, current_shares: true, placement: true).allowed?(required_permission)
+        end
+      end
+
+      # Authoritative counterpart of PermissionFilter#readable_ids for one id:
+      # the origin grant and, for a linked shell, its placement grant.
+      def self.current_tree_allowed?(creative_id, user, required_permission = :read)
+        return false unless current_allowed?(creative_id, user, required_permission)
+
+        origin_id = Creative.uncached { Creative.where(id: creative_id).pick(:origin_id) }
+        origin_id.nil? || current_placement_allowed?(creative_id, user, required_permission)
+      end
+
+      def initialize(creative, user, current_shares: false, placement: false)
         @creative = creative
         @user = user
         @current_shares = current_shares
+        @placement = placement
       end
 
       def allowed?(required_permission = :read)
@@ -24,7 +44,7 @@ module Collavre
 
         return false unless Kollavy::AccessScope.allowed?(creative, user)
 
-        base = EffectiveCreativeResolution.effective_creative(creative)
+        base = @placement ? creative : EffectiveCreativeResolution.effective_creative(creative)
 
         # Owner always has admin permission (fallback for fixtures and missing cache entries)
         return true if base.user_id == user&.id

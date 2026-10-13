@@ -64,6 +64,15 @@ class CreativesController < ApplicationController
 end
 ```
 
+## Link Removal
+
+`Creative#destroyable_by?` permits the persisted owner of a linked shell
+(`user_id`, not the origin-resolving `user` association) to remove that shell,
+even without origin edit access. It retains the Kollavy access-scope gate and
+the existing admin deletion rule for other cases. This grants no origin
+permissions. The context menu labels linked-shell deletion as "Remove link";
+the origin tree is preserved for either deletion option.
+
 ## Creating Permissions
 
 ```ruby

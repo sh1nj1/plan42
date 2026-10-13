@@ -150,9 +150,10 @@ select option {
 }
 
 main {
+    --main-inline-padding: 1rem;
     max-width: var(--max-width);
     margin: 0rem auto;
-    padding: 0 1rem 4rem 1rem;
+    padding: 0 var(--main-inline-padding) 4rem;
     background: var(--color-section-bg);
     width: 100%;
     box-sizing: border-box;
@@ -160,7 +161,7 @@ main {
 
 @media (max-width: 768px) {
     main {
-        padding: 0 0.3rem 4rem 0.3rem;
+        --main-inline-padding: 0.3rem;
     }
 }
 

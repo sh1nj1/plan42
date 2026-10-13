@@ -100,6 +100,7 @@
     </div>
   <% end %>
   <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
+  <%= render_extension_slot(:comment_content_extensions, comment: comment, streaming: local_assigns.fetch(:streaming, false)) %>
   <% if comment.comment_versions_count > 0 %>
     <% version_count = comment.comment_versions_count %>
     <% selected_id = comment.selected_version_id %>

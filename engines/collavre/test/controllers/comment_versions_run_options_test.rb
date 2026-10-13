@@ -18,7 +18,7 @@ class CommentVersionsRunOptionsTest < ActionDispatch::IntegrationTest
 
   test "index pairs each version with its own escaped audit chip" do
     @old.update!(agent_run_options: { "model" => "<script>bad</script>", "reasoning_effort" => "low" })
-    get @url
+    get @url, headers: { "Accept" => "application/json" }
     assert_response :success
     versions = response.parsed_body.fetch("versions")
     assert_equal @old.agent_run_options, versions.first.fetch("agent_run_options")
@@ -63,7 +63,7 @@ class CommentVersionsRunOptionsTest < ActionDispatch::IntegrationTest
 
   test "legacy versions clear the newer audit metadata" do
     @old.update!(agent_run_options: nil)
-    get @url
+    get @url, headers: { "Accept" => "application/json" }
     assert_empty response.parsed_body.fetch("versions").first.fetch("run_options_html").strip
     post "#{@url}/#{@old.id}/select"
     assert_response :success

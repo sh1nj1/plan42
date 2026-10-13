@@ -3,6 +3,7 @@ module.exports = {
   extensionsToTreatAsEsm: [".jsx"],
   moduleFileExtensions: ["js", "jsx", "json"],
   transform: {},
+  moduleNameMapper: { "^collavre/(.*)$": "<rootDir>/engines/collavre/app/javascript/$1" },
   testMatch: ["**/__tests__/**/*.test.[jt]s?(x)"],
   roots: [
     "<rootDir>/app/javascript",

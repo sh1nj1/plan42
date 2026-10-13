@@ -17,6 +17,28 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert Contact.exists?(user: @owner, contact_user: @target_user)
   end
 
+  test "share modal shows the public link of a publicly shared creative" do
+    perform_enqueued_jobs { Collavre::CreativeShare.create!(creative: @creative, user: nil, permission: :read) }
+    sign_in_as(@owner, password: "password")
+
+    get collavre.creative_creative_shares_path(@creative)
+
+    public_id = @creative.reload.public_id
+    assert_response :success
+    assert_select "#share-public-url[value=?]",
+                  collavre.public_creative_url(public_id: public_id, slug: "t-shirt", host: "www.example.com")
+  end
+
+  test "share modal omits the public link for a private creative" do
+    sign_in_as(@owner, password: "password")
+
+    get collavre.creative_creative_shares_path(@creative)
+
+    assert_response :success
+    assert_select "#share-public-url", count: 0
+    assert_nil @creative.reload.public_id
+  end
+
   test "granting destination access keeps a moved topic pointer at its destination" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source", sequence: 811)
     topic = source.topics.create!(name: "Moved topic", user: @owner)

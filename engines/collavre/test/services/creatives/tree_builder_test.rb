@@ -95,6 +95,21 @@ module Creatives
       assert_nil payload[:origin_id]
     end
 
+    test "separates filtered display progress from raw editor progress" do
+      creative = Creative.create!(user: @user, progress: 1, description: "Filtered")
+      node = build_tree_builder(params: { tags: [ "tagged" ] }, progress_map: { creative.id.to_s => 0 }).build([ creative ]).first
+      assert_equal 0, node[:display_progress]
+      assert_equal 1, node.dig(:inline_editor_payload, :progress)
+      assert_nil build_tree_builder.build([ creative ]).first[:display_progress]
+    end
+
+    test "computes filtered display progress when no preloaded map is available" do
+      creative = Creative.create!(user: @user, progress: 1, description: "Unmatched")
+      node = build_tree_builder(params: { tags: [ "missing" ] }).build([ creative ]).first
+      assert_equal 0, node[:display_progress]
+      assert_equal 1, node.dig(:inline_editor_payload, :progress)
+    end
+
     test "includes cron badge details when the cron filter is active" do
       creative = Creative.create!(user: @user, progress: 0, description: "Scheduled")
       task = SolidQueue::RecurringTask.create!(
@@ -165,7 +180,7 @@ module Creatives
 
     private
 
-    def build_tree_builder(allowed_creative_ids: nil, params: {})
+    def build_tree_builder(allowed_creative_ids: nil, params: {}, progress_map: nil)
       Creatives::TreeBuilder.new(
         user: @user,
         params: ActionController::Parameters.new(params),
@@ -173,7 +188,8 @@ module Creatives
         expanded_state_map: {},
         select_mode: false,
         max_level: 6,
-        allowed_creative_ids: allowed_creative_ids
+        allowed_creative_ids: allowed_creative_ids,
+        progress_map: progress_map
       )
     end
   end

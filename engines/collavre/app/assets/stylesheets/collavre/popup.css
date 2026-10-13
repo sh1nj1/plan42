@@ -20,6 +20,21 @@
   overflow-y: auto;
 }
 
+#share-creative-modal .share-public-link {
+  margin-top: 1em;
+}
+
+#share-creative-modal .share-public-link-row {
+  display: flex;
+  gap: 0.5em;
+  margin-top: 0.25em;
+}
+
+#share-creative-modal .share-public-link-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 @media (max-width: 768px) {
   #share-creative-modal .popup-box {
     max-width: calc(100vw - 1em) !important;

@@ -1075,3 +1075,32 @@ test.each(['success', 'enqueue failure', 'server failure'])(
     expect(enqueue.mock.calls.at(-1)[0].deletedAttachmentIds).toBeNull()
   }
 )
+
+
+test.each([
+  [true, true, 1],
+  [true, false, 0],
+  [false, true, 0],
+])('direct inline progress save refreshes filtered presentation only after success (filtered: %s, success: %s)', async (filtered, success, count) => {
+  jest.useFakeTimers()
+  const { tree, rowComponent } = appendMarkdownRow('42', 'body')
+  if (filtered) rowComponent.dataset.displayProgress = '0'
+  openRow(tree)
+  selectType('Workflow')
+  const refetch = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  try {
+    save.mockImplementation(() => success ? response({ id: 42, progress: 1, creative_type: 'workflow' }) : Promise.resolve({
+      ok: false, clone: () => ({ json: async () => ({ errors: ['Denied'] }) }),
+    }))
+    const progress = document.getElementById('inline-creative-progress')
+    progress.checked = true
+    progress.dispatchEvent(new Event('change'))
+    await flushPromises()
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(enqueue).not.toHaveBeenCalled()
+    expect(refetch).toHaveBeenCalledTimes(count)
+  } finally {
+    document.removeEventListener('creative-sync:refetch', refetch)
+  }
+})

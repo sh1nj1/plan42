@@ -66,7 +66,7 @@ module Collavre
       end
 
       def run_options_html(version)
-        render_to_string(partial: "collavre/comments/run_options", locals: { run_options: version.agent_run_options })
+        render_to_string(partial: "collavre/comments/run_options", formats: [ :html ], locals: { run_options: version.agent_run_options })
       end
     end
   end

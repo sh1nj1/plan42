@@ -385,3 +385,30 @@ describe.each([
     }
   })
 })
+
+
+test.each(['paragraph', 'code'])('uses original sidebar labels when dropping into a %s', kind => {
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="creative-workspace-tree-row" data-creative-id="34">
+      <a class="creative-workspace-tree-link" data-original-label="Original &amp; title">번역 제목</a>
+    </div>`)
+  expect(getCreativeLabelFromDom('34')).toBe('Original & title')
+  if (kind === 'code') {
+    editor.update(() => {
+      const code = $createCodeNode('js')
+      $getRoot().clear().append(code)
+      code.selectEnd()
+    }, { discrete: true })
+  }
+  drag('drop', { ids: ['34'] })
+  expect(lexicalToMarkdown(editor)).toContain('[Original & title](/creatives/34)')
+  expect(lexicalToMarkdown(editor)).not.toContain('번역 제목')
+})
+
+test('falls back to visible sidebar text when the original label is empty', () => {
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="creative-workspace-tree-row" data-creative-id="34">
+      <a class="creative-workspace-tree-link" data-original-label="">Visible title</a>
+    </div>`)
+  expect(getCreativeLabelFromDom('34')).toBe('Visible title')
+})

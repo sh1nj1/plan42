@@ -1,4 +1,5 @@
 class ApplicationController < ActionController::Base
+  include Collavre::OriginVerification
   before_action :verify_cloudfront_origin!
   include Authentication
   include DynamicRateLimiting
@@ -48,22 +49,6 @@ class ApplicationController < ActionController::Base
     return if auth_provider_enabled?(key)
 
     redirect_to collavre.new_session_path, alert: I18n.t("users.sessions.new.provider_disabled")
-  end
-
-  def verify_cloudfront_origin!
-    return if skip_cloudfront_verification?
-
-    unless request.headers["X-Origin-Secret"] == Collavre::IntegrationSettings.fetch(:origin_shared_secret)
-      head :forbidden
-    end
-  end
-
-  def skip_cloudfront_verification?
-    return false if request.headers["X-Origin-Secret"].present?
-    return true if Collavre::IntegrationSettings.fetch(:origin_shared_secret).blank?
-
-    # health checks, internal callbacks, etc.
-    request.path.start_with?("/up") || request.path.start_with?("/health")
   end
 
   def extract_locale_from_accept_language_header

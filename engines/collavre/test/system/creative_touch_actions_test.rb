@@ -35,6 +35,7 @@ class CreativeTouchActionsTest < ApplicationSystemTestCase
       if width <= 768
         assert_equal "0px", find("#{row} .edit-inline-btn", visible: :all).style("max-width").fetch("max-width")
         tap("#{row} .creative-content", swipe: 80)
+        assert_selector "#{row} .creative-row.show-edit"
       end
       tap("#{row} .edit-inline-btn")
       assert_selector "#inline-edit-form-element", visible: :visible
@@ -80,6 +81,7 @@ class CreativeTouchActionsTest < ApplicationSystemTestCase
   def tap(selector, swipe: 0)
     element = find(selector)
     element.scroll_to(:center)
+    wait_for_touch_frame
     point = page.evaluate_script(<<~JS, element)
       ((element) => {
         const rect = element.getBoundingClientRect();
@@ -90,8 +92,18 @@ class CreativeTouchActionsTest < ApplicationSystemTestCase
     if swipe.positive?
       point["x"] += swipe
       page.driver.browser.execute_cdp("Input.dispatchTouchEvent", type: "touchMove", touchPoints: [ point ])
+      # Allow Chrome to process the move in a rendering frame before ending
+      # the gesture, rather than dispatching both in the same frame.
+      wait_for_touch_frame
     end
     page.driver.browser.execute_cdp("Input.dispatchTouchEvent", type: "touchEnd", touchPoints: [])
+  end
+
+  def wait_for_touch_frame
+    page.evaluate_async_script(<<~JS)
+      const done = arguments[0];
+      requestAnimationFrame(() => requestAnimationFrame(() => done()));
+    JS
   end
 
   def control_visibility

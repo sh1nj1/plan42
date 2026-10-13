@@ -15,7 +15,7 @@ module Collavre
         Current.user = nil
       end
 
-      test "attaches inline text content, embeds it, and returns public URLs" do
+      test "attaches inline text content, embeds it, and returns authorized URLs" do
         result = CreativeAttachFilesService.new.call(
           creative_id: @creative.id,
           files: [
@@ -27,7 +27,7 @@ module Collavre
         assert result[:success], result.inspect
         assert_equal 2, result[:attachments].length
         assert_equal "notes.md", result[:attachments][0][:filename]
-        assert_match %r{/public-assets/blobs/[^/]+/notes\.md\z}, result[:attachments][0][:url]
+        assert_match %r{\A/rails/active_storage/blobs/proxy/[^/]+/notes\.md\z}, result[:attachments][0][:url]
 
         @creative.reload
         result[:attachments].each do |a|

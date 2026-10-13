@@ -6,7 +6,7 @@ module Collavre
 
     def destroy
       parent = @creative.parent
-      unless @creative.has_permission?(Current.user, :admin)
+      unless @creative.destroyable_by?(Current.user)
         redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
       end
       Creatives::DestroyService.new(

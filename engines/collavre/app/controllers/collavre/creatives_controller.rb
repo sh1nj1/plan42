@@ -10,6 +10,7 @@ module Collavre
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
     include Collavre::CreativeDestroyable
+    include Collavre::PublicCreativeRedirectable, Collavre::PublicCreativePage
     include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
@@ -21,10 +22,11 @@ module Collavre
     # via enforce_creatives_login_policy below. A broader per-Creative role model
     # (beyond the read/feedback/write/admin share levels) is a product decision
     # tracked separately and intentionally deferred.
-    allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
-    before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
+    allow_unauthenticated_access only: %i[ index children export_markdown show slide_view public_page ]
+    before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view public_page ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
+    include Collavre::CreativesIndexTitle
     include Collavre::CreativeTypeEditable
     include Collavre::Concerns::CreativeHistoryTrackable
 
@@ -32,11 +34,10 @@ module Collavre
       respond_to do |format|
         format.html do
           visit_received_at = Time.current
-          # HTML only needs parent_creative for nav/title - skip expensive filtered queries
+          # HTML needs parent metadata and initial title progress; body rows load via JSON
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
-            creative = Creative.find_by(id: params[:id])
-            @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+            assign_index_creative_permissions
             if Current.user
               @last_visited_creative_client_id = last_visited_creative_client_id
               @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
@@ -52,7 +53,7 @@ module Collavre
             end
           end
           @creatives = []  # CSR will fetch via JSON
-          @shared_list = @parent_creative ? @parent_creative.all_shared_users : []
+    prepare_index_title
           if Current.user&.creative_workspace_enabled?
             @workspace_path_ids = Creatives::WorkspacePathResolver.new(
               creative: @parent_creative,
@@ -114,8 +115,7 @@ module Collavre
               allowed_creative_ids: @allowed_creative_ids,
               progress_map: @progress_map
             )
-            payload = { creatives: @creatives_tree_json }
-            payload[:pagination] = index_result.pagination if index_result.pagination
+            payload = view_context.filtered_tree_payload(@creatives_tree_json, @parent_creative, index_result.pagination)
             render json: payload
           end
         end
@@ -133,7 +133,7 @@ module Collavre
       end
 
       respond_to do |format|
-        redirect_options = params.permit(:comment_id, :open_comments, :topic_id).to_h.compact_blank.merge(id: @creative.id)
+        redirect_options = params.permit(:comment_id, :open_comments, :topic_id, :view).to_h.compact_blank.merge(id: @creative.id)
         format.html { redirect_to creatives_path(redirect_options) }
         format.json do
           # Use HTTP caching with ETag - must vary by user since response includes user-specific data
@@ -567,10 +567,6 @@ module Collavre
         nil
       end
 
-      def turbo_prefetch_request?
-        request.headers["X-Sec-Purpose"] == "prefetch"
-      end
-
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
           user: Current.user,
@@ -600,15 +596,6 @@ module Collavre
       # FilterPipeline. Passing an explicitly permitted hash (rather than
       # params.to_unsafe_h) keeps arbitrary client-supplied keys out of the
       # query layer while preserving every filter the index endpoint supports.
-      def index_query_params
-        params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron, :reaction_emoji,
-          :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
-          :assignee_id, :unassigned, :show_archived, :page, :per_page,
-          tags: []
-        ).to_h
-      end
-
       def workspace_tree_expanded_ids
         permitted = params.permit(expand: [])[:expand]
         Array(permitted).filter_map { |id| Integer(id, exception: false) }

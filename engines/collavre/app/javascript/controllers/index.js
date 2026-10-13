@@ -10,6 +10,7 @@ import CreativesImportController from "./creatives/import_controller"
 import CreativesSelectModeController from "./creatives/select_mode_controller"
 import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
+import CreativesDocumentViewController from "./creatives/document_view_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
@@ -72,6 +73,7 @@ export {
   CreativesSelectModeController,
   CreativesDragDropController,
   CreativesExpansionController,
+  CreativesDocumentViewController,
   CreativesRowEditorController,
   CreativesTreeController,
   CreativesSyncController,
@@ -133,6 +135,7 @@ function registerCreativeControllers(application) {
   application.register("creatives--select-mode", CreativesSelectModeController)
   application.register("creatives--drag-drop", CreativesDragDropController)
   application.register("creatives--expansion", CreativesExpansionController)
+  application.register("creatives--document-view", CreativesDocumentViewController)
   application.register("creatives--row-editor", CreativesRowEditorController)
   application.register("creatives--tree", CreativesTreeController)
   application.register("creatives--sync", CreativesSyncController)

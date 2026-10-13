@@ -23,6 +23,7 @@ const GEM_ENGINES = [
     { name: 'collavre_plan', mainEntry: 'collavre_plan.js' },
     { name: 'collavre_github', mainEntry: 'collavre_github.js' },
     { name: 'collavre_linear', mainEntry: 'collavre_linear.js' },
+    { name: 'collavre_translation', mainEntry: 'collavre_translation.js' },
     // Add more engines here as needed:
     // { name: 'another_engine', mainEntry: 'another_engine.js' },
 ];

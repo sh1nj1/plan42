@@ -36,7 +36,15 @@
       ) %>
 <% end %>
 
-<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor share-modal creative-image-lightbox"
+<%# A signed-out reader of a public share only gets the document view. %>
+<% document_view_locked = !authenticated? %>
+<% document_view = document_view_locked || (params[:view].presence || cookies[:creative_view]) == "document" %>
+<div data-controller="creatives--import creatives--select-mode creatives--drag-drop creatives--expansion creatives--row-editor creatives--document-view share-modal creative-image-lightbox"
+     class="<%= 'creative-document-view' if document_view %>"
+     data-creatives--document-view-active-value="<%= document_view %>"
+     data-creatives--document-view-locked-value="<%= document_view_locked %>"
+     data-drag-handle-hint="<%= t('collavre.dnd.document_drag_handle_hint') %>"
+     data-edit-label="<%= t('collavre.creatives.edit_title') %>"
      data-action="click->creative-image-lightbox#open:capture keydown->creative-image-lightbox#openFromKeyboard:capture"
      data-creative-image-lightbox-i18n-open-value="<%= t('collavre.comments.lightbox.open_image') %>"
      data-creative-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
@@ -50,6 +58,7 @@
      data-creatives--import-success-value="<%= t('collavre.creatives.index.import_success') %>"
      data-creatives--import-failed-value="<%= t('collavre.creatives.index.import_failed') %>"
      data-creatives--import-only-markdown-value="<%= t('collavre.creatives.index.only_markdown') %>"
+     data-creatives--drag-drop-file-failure-text-value="<%= t('collavre.creatives.file_drop.failed') %>"
      data-creatives--drag-drop-partial-failure-text-value="<%= t('collavre.creatives.drag_drop.partial_failure') %>"
      data-creatives--import-dragover-class="dragover">
   <% current_creative = @parent_creative || @creative %>
@@ -67,12 +76,12 @@
       <% end %>
       <a href="<%= creatives_path %>" class="creative-breadcrumb-link" data-turbo-action="advance"><%= t('collavre.creatives.index.root_breadcrumb', default: '최상위') %></a>
       <% if @parent_creative %>
-        <% @parent_creative.ancestors.reverse.each do |ancestor| %>
+        <% readable_breadcrumb_ancestors(@parent_creative).each do |ancestor| %>
           <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-turbo-action="advance" data-turbo-prefetch="false" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
+          <a href="<%= creative_path(ancestor) %>" class="creative-breadcrumb-link" data-translation-label data-creative-id="<%= ancestor.id %>" data-original-label="<%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %>" data-translation-length="20" data-turbo-action="advance" data-turbo-prefetch="false" title="<%= Collavre::HtmlText.label(ancestor.effective_description) %>"><%= Collavre::HtmlText.truncated_label(ancestor.effective_description, 20) %></a>
         <% end %>
         <span class="creative-breadcrumb-sep" aria-hidden="true">/</span>
-        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-turbo-action="replace" data-turbo-prefetch="false"><%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %></a>
+        <a href="<%= creative_path(@parent_creative) %>" class="creative-breadcrumb-link creative-breadcrumb-current" data-translation-label data-creative-id="<%= @parent_creative.id %>" data-original-label="<%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %>" data-translation-length="30" data-turbo-action="replace" data-turbo-prefetch="false"><%= Collavre::HtmlText.truncated_label(@parent_creative.effective_description, 30) %></a>
       <% end %>
     </div>
 
@@ -83,6 +92,13 @@
       <% end %>
       <%# Add button (always visible) %>
       <%= render 'add_button' if can_add %>
+
+      <%# Document view toggle — readers get it too, so it is not tied to can_add %>
+      <% unless document_view_locked %>
+        <button type="button" id="document-view-btn" class="creative-header-outline-btn" title="<%= t('.document_view') %>" aria-label="<%= t('.document_view') %>" aria-pressed="<%= document_view %>" data-action="click->creatives--document-view#toggle" data-creatives--document-view-target="toggle">
+          <span aria-hidden="true"><%= svg_tag 'document-view.svg', width: 14, height: 14 %></span>
+        </button>
+      <% end %>
 
       <%# Expand/collapse toggle (always visible) %>
       <button id="expand-all-btn" class="creative-header-outline-btn" title="<%= t('app.expand_all') %>" data-expand-text="<%= t('app.expand_all') %>" data-collapse-text="<%= t('app.collapse_all') %>" data-action="click->creatives--expansion#toggleAll" data-creatives--expansion-target="expand">
@@ -142,13 +158,14 @@
           <div class="creative-overflow-divider"></div>
           <%= render 'integrations_menu', creative: current_creative %>
         <% end %>
-        <% if current_creative&.has_permission?(Current.user, :admin) %>
+        <% removable_creative = current_creative || @removable_link %>
+        <% if removable_creative&.destroyable_by?(Current.user) %>
           <div class="creative-overflow-divider"></div>
-          <%= button_to creative_path(current_creative), method: :delete,
+          <%= button_to creative_path(removable_creative), method: :delete,
                 params: { delete_with_children: true },
                 id: 'delete-current-creative-btn', class: 'popup-menu-item danger-link',
-                form: { data: { turbo_frame: '_top', turbo_confirm: t('collavre.creatives.index.are_you_sure_delete_with_children') } } do %>
-            <span aria-hidden="true"><%= svg_tag 'trash-bold-outline.svg', width: 16, height: 16 %></span> <%= t('collavre.creatives.index.delete') %>
+                form: { data: { turbo_frame: '_top', turbo_confirm: t(removable_creative.origin_id.present? ? 'collavre.creatives.index.are_you_sure_remove_link' : 'collavre.creatives.index.are_you_sure_delete_with_children') } } do %>
+            <span aria-hidden="true"><%= svg_tag 'trash-bold-outline.svg', width: 16, height: 16 %></span> <%= t(removable_creative.origin_id.present? ? 'collavre.creatives.index.remove_link' : 'collavre.creatives.index.delete') %>
           <% end %>
         <% end %>
         <div class="creative-overflow-divider mobile-only"></div>
@@ -201,10 +218,22 @@
   <% end %>
 </div>
 
-<% if @parent_creative %>
+<%# A public creative's indexable address is its /p/ page; the app view of
+    any creative, public or not, stays out of search results. %>
+<% if @public_creative %>
+  <%= render "public_meta", creative: @public_creative %>
+<% else %>
   <% content_for :head do %>
-    <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
+    <meta name="robots" content="noindex">
   <% end %>
+<% end %>
+<% if @parent_creative %>
+  <% unless @public_creative %>
+    <% content_for :head do %>
+      <meta property="og:title" content="<%= Collavre::HtmlText.label(@parent_creative.effective_origin.description) %>">
+    <% end %>
+  <% end %>
+  <% title_progress = @parent_creative.filtered_progress = creative_progress_value(@parent_creative) %>
   <% title_templates = [
         content_tag(:template, data: { part: "description" }) { embed_youtube_iframe(@parent_creative.effective_description) },
         content_tag(:template, data: { part: "progress" }) { render_creative_progress(@parent_creative) }
@@ -237,10 +266,11 @@
         "dom-id": "creative-markdown-block",
         "creative-id": @parent_creative.id,
         "parent-id": @parent_creative.parent_id,
-        "can-write": title_can_write ? "true" : "false",
+        "can-write": (title_can_write ? "" : nil),
         "is-title": "",
         "data-description-raw-html": @parent_creative.description,
         "data-progress-value": @parent_creative.progress,
+        "data-display-progress": (title_progress if params[:tags].present?),
         "data-origin-id": @parent_creative.origin_id,
         "data-content-type": title_content_type,
         "data-markdown-source": title_markdown_source,
@@ -320,6 +350,9 @@
         'creatives--tree-loading-text-value': t('.loading_creatives'),
         'creatives--sync-root-id-value': @parent_creative&.effective_origin&.id,
         'creatives--sync-current-user-id-value': Current.user&.id,
+        'creatives--document-view-target': 'tree',
+        view_mode: (document_view ? 'document' : nil),
+        dnd_disabled: (document_view ? '' : nil),
         edit_icon_html: svg_tag("edit.svg", className: "icon-edit"),
         edit_off_icon_html: svg_tag("edit-off.svg", className: "icon-edit")
       }

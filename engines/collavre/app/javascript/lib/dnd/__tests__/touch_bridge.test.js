@@ -53,6 +53,19 @@ test.each([[10, 'up'], [50, 'child'], [90, 'down']])('touch uses shared directio
   expect(previews).toHaveBeenCalledWith(expect.objectContaining({ hit }))
 })
 
+test('a subtree that disabled dragging keeps the native long press for text selection', () => {
+  const wrapper = document.createElement('div')
+  wrapper.dataset.dndDisabled = ''
+  document.body.appendChild(wrapper)
+  wrapper.appendChild(source)
+  touch('touchstart')
+  const menu = new Event('contextmenu', { bubbles: true, cancelable: true })
+  source.dispatchEvent(menu)
+  jest.advanceTimersByTime(500)
+  expect(menu.defaultPrevented).toBe(false)
+  expect(document.querySelector('.touch-drag-proxy')).toBeNull()
+})
+
 test('ordinary touches are untouched and can scroll', () => {
   const event = touch('touchstart', 50, zone)
   expect(event.defaultPrevented).toBe(false)

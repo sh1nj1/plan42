@@ -18,6 +18,34 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  test "dragging an enlarged image pans it and reset restores the fit" do
+    visit collavre.creatives_path
+    find("#creative-#{@creative.id} img[alt='First']").click
+    find(".image-lightbox-zoom-in").click
+    image = find(".image-lightbox-image")
+    page.driver.browser.action.move_to(image.native).click_and_hold.move_by(70, 40).perform
+    assert_match "translate(70px, 40px) scale(1.25)", image[:style]
+    assert_match "grabbing", image[:style]
+    stage = find(".image-lightbox-stage")
+    assert_equal "grabbing", stage.style("cursor")["cursor"]
+    page.driver.browser.action.release.perform
+    assert_match "cursor: grab;", image[:style]
+    assert_equal "", page.evaluate_script("document.querySelector('.image-lightbox-stage').style.cursor")
+    find(".image-lightbox-zoom-reset").click
+    assert_match "translate(0px, 0px) scale(1)", image[:style]
+  end
+
+  test "double clicking toggles zoom back to fit after pointer capture" do
+    visit collavre.creatives_path
+    find("#creative-#{@creative.id} img[alt='First']").click
+    image = find(".image-lightbox-image")
+    image.double_click
+    assert_match "scale(2.5)", image[:style]
+    image.double_click
+    assert_match "translate(0px, 0px) scale(1)", image[:style]
+    assert_equal "", page.evaluate_script("document.querySelector('.image-lightbox-stage').style.cursor")
+  end
+
   test "the gallery navigates images across creative rows in list order" do
     sibling = Creative.create!(user: @user, description: "Another gallery")
     sibling.files.attach(@creative.files.first.blob)

@@ -52,10 +52,13 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
 
   # The reveal is a 0.12s fade, so sample until it settles rather than reading
   # the value mid-transition.
-  def assert_opacity(selector, expected, message)
+  def assert_opacity(selector, expected, message, hover: nil)
     deadline = Time.current + Capybara.default_max_wait_time
     actual = nil
     while Time.current < deadline
+      # Async layout changes can move the row away from the pointer after
+      # WebDriver's hover. Reposition the real pointer while waiting for CSS.
+      hover_row(hover) if hover && !page.evaluate_script("document.querySelector('#{row_selector(hover)}')?.matches(':hover')")
       actual = opacity(selector)
       break if actual.to_f.round(2) == expected
       sleep 0.05
@@ -97,7 +100,7 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
     assert_opacity checkbox, 1.0, "expected a resting incomplete row to show the checkbox"
 
     hover_row(@incomplete)
-    assert_opacity checkbox, 1.0, "expected row hover to keep the checkbox visible"
+    assert_opacity checkbox, 1.0, "expected row hover to keep the checkbox visible", hover: @incomplete
 
     unhover
     assert_opacity checkbox, 1.0, "expected the checkbox to remain visible once the pointer leaves"
@@ -110,8 +113,8 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
     assert_opacity checkbox, 0.0, "expected a resting completed row to hide the checkbox"
 
     hover_row(@complete)
-    assert_opacity checkbox, 1.0, "expected row hover to reveal the checked box"
-    assert_opacity mark, 0.0, "expected row hover to hide the completion mark"
+    assert_opacity checkbox, 1.0, "expected row hover to reveal the checked box", hover: @complete
+    assert_opacity mark, 0.0, "expected row hover to hide the completion mark", hover: @complete
   end
 
   test "keyboard focus reveals the checkbox without a pointer" do
@@ -121,6 +124,20 @@ class CreativeProgressToggleVisibilityTest < ApplicationSystemTestCase
     page.execute_script("document.querySelector('#{checkbox}').focus()")
 
     assert_opacity checkbox, 1.0, "expected keyboard focus to reveal the checkbox"
+  end
+
+  test "row hover follows a completed leaf after its layout moves" do
+    checkbox = "#{wrap_selector(@complete)} .progress-toggle-checkbox"
+    hover_row(@complete)
+    assert_opacity checkbox, 1.0, "expected the initial hover to reveal the checkbox", hover: @complete
+
+    page.execute_script("document.querySelector('#{row_selector(@complete)}').style.transform = 'translateY(100px)'")
+    # Moving an element does not reliably refresh Chrome's hover hit testing.
+    # Send real pointer input to establish the non-hovered state explicitly.
+    unhover
+    assert_opacity checkbox, 0.0, "expected the moved row to leave the pointer"
+
+    assert_opacity checkbox, 1.0, "expected hover to follow the moved row", hover: @complete
   end
 
   test "a touch device keeps the checkbox visible without hover" do

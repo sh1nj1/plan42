@@ -1,3 +1,4 @@
+import { initializePublicLink, showShareMessage } from "../lib/share_modal_links"
 import { Controller } from "@hotwired/stimulus"
 import { confirmDialog, alertDialog } from "../lib/utils/dialog"
 
@@ -121,6 +122,7 @@ export default class extends Controller {
     this.#initializePermissionSelects()
     this.#initializeDeleteButtons()
     this.#initializeInviteLink()
+    initializePublicLink()
   }
 
   #constrainModalHeight(modal) {
@@ -346,25 +348,7 @@ export default class extends Controller {
   }
 
   #showMessage(text, type) {
-    if (!text) return
-    const modal = document.getElementById("share-creative-modal")
-    if (!modal) return
-
-    const existing = modal.querySelector(".share-modal-message")
-    if (existing) existing.remove()
-
-    const msg = document.createElement("div")
-    msg.className = `share-modal-message share-modal-message-${type}`
-    msg.textContent = text
-
-    const title = modal.querySelector("h2")
-    if (title) {
-      title.insertAdjacentElement("afterend", msg)
-    } else {
-      modal.querySelector(".popup-box")?.prepend(msg)
-    }
-
-    setTimeout(() => msg.remove(), 4000)
+    showShareMessage(text, type)
   }
 
   #initializeInviteLink() {

@@ -51,7 +51,8 @@ Add to your `config/routes.rb`:
 Rails.application.routes.draw do
   mount Collavre::Engine => "/", as: "collavre"
 
-  # Or mount at a subpath
+  # Or mount at a subpath; delegate the origin-root crawler endpoint:
+  # get "/robots.txt", to: redirect("/collavre/robots.txt", status: 302)
   # mount Collavre::Engine => "/collavre", as: "collavre"
 end
 ```

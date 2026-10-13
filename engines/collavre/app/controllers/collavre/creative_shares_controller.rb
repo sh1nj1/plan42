@@ -16,6 +16,11 @@ module Collavre
                                        .where("expires_at > ?", Time.current)
                                        .order(created_at: :desc)
 
+      origin = @creative.effective_origin
+      if origin.publicly_readable?
+        @public_url = public_creative_url(public_id: origin.ensure_public_id!, slug: origin.public_slug.presence)
+      end
+
       render partial: "collavre/creatives/share_modal", layout: false
     end
 

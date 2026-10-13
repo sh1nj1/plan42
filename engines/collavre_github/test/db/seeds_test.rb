@@ -4,6 +4,16 @@ require "test_helper"
 require_relative "../../db/seeds"
 
 class CollavreGithub::SeedsTest < ActiveSupport::TestCase
+  test "uses the default model and respects an environment override" do
+    original = ENV["COLLAVRE_DEFAULT_LLM_MODEL"]
+    ENV.delete("COLLAVRE_DEFAULT_LLM_MODEL")
+    assert_equal "gemini-3.5-flash-lite", CollavreGithub::Seeds.call.llm_model
+    ENV["COLLAVRE_DEFAULT_LLM_MODEL"] = "custom-model"
+    assert_equal "custom-model", CollavreGithub::Seeds.call.llm_model
+  ensure
+    ENV["COLLAVRE_DEFAULT_LLM_MODEL"] = original
+  end
+
   test "creates GitHub PR Analyzer agent" do
     # Clean up any existing agent
     Collavre::User.find_by(email: CollavreGithub::Seeds::AGENT_EMAIL)&.destroy

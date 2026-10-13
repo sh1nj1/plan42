@@ -23,6 +23,7 @@ module Collavre
       creative_update_service
       creative_import_service
       creative_batch_service
+      creative_reorder_service
       topic_create
       topic_update
       cron_create
@@ -107,7 +108,7 @@ module Collavre
         {
           name: NAME,
           llm_vendor: ENV.fetch("COLLAVRE_DEFAULT_LLM_VENDOR", "gemini"),
-          llm_model: ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.1-flash-lite"),
+          llm_model: ENV.fetch("COLLAVRE_DEFAULT_LLM_MODEL", "gemini-3.5-flash-lite"),
           system_prompt: SYSTEM_PROMPT,
           agent_conf: AGENT_CONF,
           tools: TOOLS,
