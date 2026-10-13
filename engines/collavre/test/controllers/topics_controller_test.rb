@@ -262,6 +262,47 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       "active topics list must include the System topic so the sidebar can render it"
   end
 
+  %i[main_topic system_topic].each do |reserved_method|
+    test "index returns a matching #{reserved_method} when deletion commits before the active query" do
+      creative = reserved_method == :system_topic ? Collavre::Creative.inbox_for(@user) : @creative
+      deleted_topic = creative.public_send(reserved_method, fallback_user: @user)
+      history = creative.history_topic
+      association = creative.topics
+      original_active = association.method(:active)
+      delete_before_query = lambda do
+        Collavre::Topics::TopicDestroy.new(topic: deleted_topic, source_creative: creative).call
+        original_active.call
+      end
+
+      Collavre::Creative.stub(:find, creative) do
+        association.stub(:active, delete_before_query) do
+          get collavre.creative_topics_url(creative), as: :json
+        end
+      end
+
+      assert_response :success
+      json = response.parsed_body
+      replacement_id = json.fetch("#{reserved_method}_id")
+      assert_not_equal deleted_topic.id, replacement_id
+      assert_includes json.fetch("topics").pluck("id"), replacement_id
+      assert_not_includes json.fetch("topics").pluck("id"), deleted_topic.id
+      assert_equal replacement_id, creative.public_send(reserved_method).id
+      assert_equal history.id, json.fetch("topics").last.fetch("id")
+    end
+  end
+
+  test "index keeps legacy archived Main out of the active snapshot" do
+    main = @creative.main_topic(fallback_user: @user)
+    main.update_column(:archived_at, Time.current)
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    assert_equal main.id, response.parsed_body.fetch("main_topic_id")
+    assert_not_includes response.parsed_body.fetch("topics").pluck("id"), main.id
+    assert_includes response.parsed_body.fetch("archived_topics").pluck("id"), main.id
+  end
+
   test "should create topic and broadcast" do
     assert_difference("Topic.count") do
       post collavre.creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json

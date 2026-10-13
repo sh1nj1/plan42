@@ -21,20 +21,13 @@ module Collavre
       # need :admin.
       can_write = can_manage || @creative.has_permission?(Current.user, :write)
 
-      # Eagerly ensure Main (and System for inboxes) exist BEFORE loading
-      # active_topics. Otherwise the first inbox visit sees no System topic in
-      # the sidebar, and when a later notification creates it via
-      # find_or_create_by!, the unread badge appears but the user has no way to
-      # open the topic.
-      main_topic = @creative.main_topic(fallback_user: Current.user)
-      system_topic = @creative.inbox? ? @creative.system_topic(fallback_user: Current.user) : nil
-
-      active_topics = @creative.topics.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at)
+      snapshot = Topics::ActiveTopicSnapshot.new(creative: @creative, user: Current.user)
+      active_topics = snapshot.topics
       archived_topics = @creative.topics.archived.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at)
       unread_counts_by_topic = Creatives::CommentBadgeIndex.new(user: Current.user)
         .unread_counts_by_topic(@creative)
 
-      main_topic_id = main_topic.id
+      main_topic_id = snapshot.main_topic.id
       @cron_badge_decorator = Topics::CronBadgeDecorator.new(@creative, main_topic_id, can_write, view_context)
 
       render json: {
@@ -45,7 +38,7 @@ module Collavre
         can_set_primary_agent: can_write,
         **Topics::LastTopicPreferencePayload.new(creative: @creative, user: Current.user).call,
         is_inbox: @creative.inbox?,
-        system_topic_id: system_topic&.id,
+        system_topic_id: snapshot.system_topic&.id,
         main_topic_id: main_topic_id,
         effective_creative_id: @creative.id
       }
