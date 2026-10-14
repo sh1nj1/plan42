@@ -52,6 +52,54 @@ module Collavre
       ActiveJob::Base.queue_adapter = @original_adapter
     end
 
+    test "authorless System notification recovers its deleted destination without dispatch" do
+      stale = @inbox.system_topic
+      Topics::TopicDestroy.new(topic: Topic.find(stale.id), source_creative: @inbox).call
+      replacement = @inbox.system_topic
+
+      assert_no_enqueued_jobs(only: AiAgentJob) do
+        notice = Comment.create!(creative: @inbox, topic: stale, content: "Notification", user: nil, skip_default_user: true)
+        assert_equal replacement.id, notice.topic_id
+        assert_equal replacement, notice.topic
+        assert_nil notice.user_id
+      end
+    end
+
+    test "System notification retry exhaustion aborts without a partial comment" do
+      stale = @inbox.system_topic
+      Topics::TopicDestroy.new(topic: Topic.find(stale.id), source_creative: @inbox).call
+      attempts = 0
+      @inbox.stub(:system_topic, -> { attempts += 1; stale }) do
+        assert_no_difference "Comment.count" do
+          assert_raises(ActiveRecord::RecordNotSaved) do
+            Comment.create!(creative: @inbox, topic: stale, content: "Notification", user: nil, skip_default_user: true)
+          end
+        end
+      end
+      assert_equal 2, attempts
+    end
+
+    test "deleted ordinary inbox topics are not redirected to System" do
+      stale = @inbox.topics.create!(name: "Ordinary", user: @user)
+      Topics::TopicDestroy.new(topic: Topic.find(stale.id), source_creative: @inbox).call
+      assert_no_difference "Comment.count" do
+        assert_raises(ActiveRecord::RecordNotSaved) do
+          Comment.create!(creative: @inbox, topic: stale, content: "Notification", user: nil, skip_default_user: true)
+        end
+      end
+    end
+
+    test "deleted System from another creative is not redirected into this inbox" do
+      other = Creative.create!(description: "Other Inbox", data: { "kind" => "inbox" }, user: @user)
+      stale = other.system_topic
+      Topics::TopicDestroy.new(topic: Topic.find(stale.id), source_creative: other).call
+      assert_no_difference "Comment.count" do
+        assert_raises(ActiveRecord::RecordNotSaved) do
+          Comment.create!(creative: @inbox, topic: stale, content: "Notification", user: nil, skip_default_user: true)
+        end
+      end
+    end
+
     test "human comment in a registered Claude session topic dispatches to orchestration" do
       topic = @inbox.topics.create!(name: "Claude session-x", user: @user, session_id: "sess-x")
       topic.set_primary_agent!(@agent)

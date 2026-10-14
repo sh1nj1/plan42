@@ -76,7 +76,7 @@ module Collavre
       args = task.arguments || []
       if args.is_a?(Array) && args.first.is_a?(Hash)
         keyword_args = args.first.symbolize_keys
-        keyword_args = keyword_args.except(:once) if task.class_name == CronActionJob.name
+        keyword_args = cron_arguments(task, keyword_args) if task.class_name == CronActionJob.name
         job_class.perform_later(**keyword_args)
       elsif args.is_a?(Array)
         job_class.perform_later(*args)
@@ -91,8 +91,14 @@ module Collavre
       false
     end
 
+    def cron_arguments(task, arguments)
+      arguments.except(:once).merge(
+        recurring_task_id: run_once?(task) ? nil : task.id
+      )
+    end
+
     def dispatch_task(task)
-      return enqueue_task(task) unless run_once?(task)
+      return task.with_lock { enqueue_task(task) } unless run_once?(task)
 
       creative = once_task_creative(task)
       enqueued = task.with_lock do

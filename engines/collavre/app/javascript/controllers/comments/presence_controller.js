@@ -102,7 +102,7 @@ export default class extends Controller {
   handleTopicChange(event) {
     const topicId = event.detail?.topicId
     const nextSelectedTopicId = topicId || null
-    const nextMainTopicId = event.detail?.mainTopicId || this.mainTopicId
+    const nextMainTopicId = event.detail?.mainTopicId !== undefined ? event.detail.mainTopicId : this.mainTopicId
     const selectionChanged = String(nextSelectedTopicId || '') !== String(this.selectedTopicId || '')
 
     if (selectionChanged) {

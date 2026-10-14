@@ -121,7 +121,8 @@ module Collavre
       Crons::ChangeBroadcaster.stub(:call, ->(value) { changed_creative = value }) do
         assert_enqueued_with(
           job: Collavre::CronActionJob,
-          args: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test" } ]
+          args: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test",
+                    recurring_task_id: nil } ]
         ) do
           CronSchedulerJob.perform_now
         end
@@ -192,6 +193,95 @@ module Collavre
       def task.with_lock = raise(ActiveRecord::RecordNotFound)
 
       assert_equal false, CronSchedulerJob.new.send(:dispatch_task, task)
+    end
+
+    test "does not dispatch a materialized recurring task after Main cleanup" do
+      creative = creatives(:tshirt)
+      main = creative.main_topic
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_stale",
+        class_name: CronActionJob.name,
+        schedule: "*/5 * * * *",
+        static: false,
+        arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "stale" } ]
+      )
+      stale_task = SolidQueue::RecurringTask.find(task.id)
+      main.destroy!
+      Topics::OrphanedCronNotifier.new(
+        topic_id: main.id, topic_name: Creative::MAIN_TOPIC_NAME, creative_id: creative.id
+      ).call
+      replacement = creative.main_topic
+      assert_not_equal main.id, replacement.id
+      assert_not SolidQueue::RecurringTask.exists?(task.id)
+
+      assert_no_enqueued_jobs(only: CronActionJob) do
+        assert_equal false, CronSchedulerJob.new.send(:dispatch_task, stale_task)
+      end
+    end
+
+    test "a backfilled locked task cannot post into Main recreated before enqueue" do
+      creative = creatives(:tshirt)
+      main = creative.main_topic
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_locked", class_name: CronActionJob.name,
+        schedule: "* * * * *", static: false,
+        arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: users(:ai_bot).id, message: "stale locked" } ]
+      )
+      require Rails.root.join("engines/collavre/db/migrate/20261014000000_backfill_implicit_main_cron_topics")
+      BackfillImplicitMainCronTopics.new.up
+      task.reload
+      assert_equal main.id, task.arguments.first["topic_id"]
+      task.with_lock do
+        main.destroy!
+        travel 1.second
+        replacement = creative.main_topic
+        travel 1.second
+        assert CronSchedulerJob.new.send(:enqueue_task, task)
+        occurrence = enqueued_jobs.find { |job| job[:job] == CronActionJob }
+        assert_no_difference("Comment.count") do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Cancelled cron must not dispatch" }) do
+            ActiveJob::Base.deserialize(occurrence).perform_now
+          end
+        end
+        assert_empty replacement.comments
+      end
+    end
+
+    test "a queued recurring occurrence is cancelled when its task is deleted" do
+      creative = creatives(:tshirt)
+      topic = creative.main_topic
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_cancel", class_name: CronActionJob.name,
+        schedule: "* * * * *", static: false,
+        arguments: [ { creative_id: creative.id, topic_id: topic.id, agent_id: users(:ai_bot).id, message: "cancelled" } ]
+      )
+      assert CronSchedulerJob.new.send(:dispatch_task, task)
+      occurrence = enqueued_jobs.find { |job| job[:job] == CronActionJob }
+      task.destroy!
+      assert_no_difference("Comment.count") { ActiveJob::Base.deserialize(occurrence).perform_now }
+    end
+
+    test "live recurring and run-once occurrences still post to their original Main" do
+      creative = creatives(:tshirt)
+      main = creative.main_topic
+      main.update!(created_at: @now - 1.second)
+      [ false, true ].each do |once|
+        task = SolidQueue::RecurringTask.create!(
+          key: "cron_#{creative.id}_live_#{once}", class_name: CronActionJob.name,
+          schedule: "* * * * *", static: false,
+          arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: users(:ai_bot).id,
+                         message: "live #{once}", once: once } ]
+        )
+        clear_enqueued_jobs
+        assert CronSchedulerJob.new.send(:dispatch_task, task)
+        assert_equal !once, SolidQueue::RecurringTask.exists?(task.id)
+        occurrence = enqueued_jobs.find { |job| job[:job] == CronActionJob }
+        SystemEvents::Dispatcher.stub(:dispatch, []) do
+          assert_difference(-> { main.comments.where(content: "live #{once}").count }, 1) do
+            ActiveJob::Base.deserialize(occurrence).perform_now
+          end
+        end
+      end
     end
 
     test "treats malformed arguments as recurring" do

@@ -262,6 +262,72 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
       "active topics list must include the System topic so the sidebar can render it"
   end
 
+  %i[main_topic system_topic].each do |reserved_method|
+    test "index returns a matching #{reserved_method} when deletion commits before the active query" do
+      creative = reserved_method == :system_topic ? Collavre::Creative.inbox_for(@user) : @creative
+      deleted_topic = creative.public_send(reserved_method, fallback_user: @user)
+      history = creative.history_topic
+      association = creative.topics
+      original_active = association.method(:active)
+      delete_before_query = lambda do
+        Collavre::Topics::TopicDestroy.new(topic: deleted_topic, source_creative: creative).call
+        original_active.call
+      end
+
+      Collavre::Creative.stub(:find, creative) do
+        association.stub(:active, delete_before_query) do
+          get collavre.creative_topics_url(creative), as: :json
+        end
+      end
+
+      assert_response :success
+      json = response.parsed_body
+      replacement_id = json.fetch("#{reserved_method}_id")
+      assert_not_equal deleted_topic.id, replacement_id
+      assert_includes json.fetch("topics").pluck("id"), replacement_id
+      assert_not_includes json.fetch("topics").pluck("id"), deleted_topic.id
+      assert_equal replacement_id, creative.public_send(reserved_method).id
+      assert_equal history.id, json.fetch("topics").last.fetch("id")
+    end
+  end
+
+  %i[main_topic system_topic].each do |reserved_method|
+    test "index revalidates #{reserved_method} deleted after materializing the active list" do
+      creative = reserved_method == :system_topic ? Collavre::Creative.inbox_for(@user) : @creative
+      deleted_topic = creative.public_send(reserved_method, fallback_user: @user)
+      association = creative.topics
+      relation = association.active.includes(primary_agent: { avatar_attachment: :blob }).order(:created_at)
+      original_to_a = relation.method(:to_a)
+      materialize_then_delete = lambda do
+        rows = original_to_a.call
+        Collavre::Topics::TopicDestroy.new(topic: deleted_topic, source_creative: creative).call
+        rows
+      end
+      relation.stub(:to_a, materialize_then_delete) do
+        association.stub(:active, relation) do
+          snapshot = Collavre::Topics::ActiveTopicSnapshot.new(creative: creative, user: @user)
+          replacement = snapshot.public_send(reserved_method)
+          assert_not_equal deleted_topic.id, replacement.id
+          assert Collavre::Topic.exists?(replacement.id)
+          assert_includes snapshot.topics.map(&:id), replacement.id
+          assert_not_includes snapshot.topics.map(&:id), deleted_topic.id
+        end
+      end
+    end
+  end
+
+  test "index keeps legacy archived Main out of the active snapshot" do
+    main = @creative.main_topic(fallback_user: @user)
+    main.update_column(:archived_at, Time.current)
+
+    get collavre.creative_topics_url(@creative), as: :json
+
+    assert_response :success
+    assert_equal main.id, response.parsed_body.fetch("main_topic_id")
+    assert_not_includes response.parsed_body.fetch("topics").pluck("id"), main.id
+    assert_includes response.parsed_body.fetch("archived_topics").pluck("id"), main.id
+  end
+
   test "should create topic and broadcast" do
     assert_difference("Topic.count") do
       post collavre.creative_topics_url(@creative), params: { topic: { name: "New Strategy" } }, as: :json
@@ -861,6 +927,30 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_reserved_topic_mutations_rejected(inbox, system_topic)
   end
 
+  test "Main topic deletion removes messages and recreates an empty topic on index" do
+    assert_reserved_topic_deletion(@creative, @creative.main_topic(fallback_user: @user))
+  end
+
+  test "Main deletion removes recurring tasks with implicit Main targets" do
+    main = @creative.main_topic(fallback_user: @user)
+    cron = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob", schedule: "0 10 * * *", static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: nil, message: "Follow up" } ]
+    )
+
+    delete creative_topic_url(@creative, main), as: :json
+
+    assert_response :success
+    assert_not SolidQueue::RecurringTask.exists?(cron.id)
+    assert @creative.comments.where(user_id: nil).any? { |notice| notice.content.include?(cron.key) }
+  end
+
+  test "inbox System topic deletion removes messages and recreates an empty topic on index" do
+    inbox = Collavre::Creative.inbox_for(@user)
+    assert_reserved_topic_deletion(inbox, inbox.system_topic(fallback_user: @user))
+  end
+
   test "should replace existing primary agent" do
     old_agent = User.create!(
       email: "old@test.local", password: "password123", name: "OldAgent",
@@ -1209,6 +1299,27 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     agent
   end
 
+  def assert_reserved_topic_deletion(creative, topic)
+    comment = creative.comments.create!(topic: topic, user: @user, content: "Old message")
+    unrelated = creative.topics.create!(name: "Unrelated", user: @user)
+    retained = creative.comments.create!(topic: unrelated, user: @user, content: "Keep message")
+
+    delete collavre.creative_topic_url(creative, topic), as: :json
+
+    assert_response :no_content
+    assert_not Collavre::Topic.exists?(topic.id)
+    assert_not Collavre::Comment.exists?(comment.id)
+    assert Collavre::Comment.exists?(retained.id)
+
+    get collavre.creative_topics_url(creative), as: :json
+
+    assert_response :success
+    recreated = creative.topics.find_by!(name: topic.name)
+    assert_not_equal topic.id, recreated.id
+    assert_empty recreated.comments
+    assert_includes response.parsed_body["topics"].pluck("id"), recreated.id
+  end
+
   def assert_reserved_topic_mutations_rejected(creative, topic)
     patch collavre.creative_topic_url(creative, topic),
       params: { topic: { name: "Renamed reserved topic" } }, as: :json
@@ -1219,8 +1330,12 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_nil topic.reload.archived_at
 
-    delete collavre.creative_topic_url(creative, topic), as: :json
+    patch unarchive_creative_topic_url(creative, topic), as: :json
     assert_response :unprocessable_entity
-    assert topic.reload.persisted?
+
+    patch move_creative_topic_url(creative, topic),
+      params: { target_creative_id: creatives(:root_parent).id }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal creative.id, topic.reload.creative_id
   end
 end

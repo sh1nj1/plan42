@@ -1,3 +1,4 @@
+import { reloadDeletedReservedTopic, archivedTopicControls } from './topics/reserved_topic_deletion'
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
@@ -560,12 +561,11 @@ export default class extends Controller {
                           data-action="click->comments--topics#select" data-dnd-read-only="${!!topic.read_only}"
                           data-id="${topic.id}"${topic.source_topic_id ? ` data-source-topic-id="${topic.source_topic_id}"` : ''}>
                         ${agentAvatar}${branchIcon}#${topic.display_name || topic.name}${cronBadge}${unreadBadge}`
-            if (canManage && !isMainTopic && !topic.read_only) {
-                s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
-                s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
+			if (canManage && !topic.read_only) {
+				if (!isMainTopic) s += `<button class="archive-topic-btn" data-action="click->comments--topics#archiveTopic" data-id="${topic.id}" title="Archive">${ICON_ARCHIVE}</button>`
+				s += `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
             }
-            s += `</span>`
-            return s
+            return s + `</span>`
         }
 
         if (mainTopic) html += renderTopic(mainTopic)
@@ -595,7 +595,7 @@ export default class extends Controller {
                                    data-action="click->comments--topics#select"
                                    data-id="${topic.id}">
                               #${topic.name}${cronBadge}${unreadBadge}
-                              ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
+                              ${archivedTopicControls(this, topic, canManage, ICON_RESTORE)}
                              </span>`
                 })
             }
@@ -814,13 +814,10 @@ export default class extends Controller {
                 // but this local removal should still reveal All Messages.
                 // A newer wheel/touch gesture always wins, though.
                 if (deletingSelectedTopic
-                    && this._topicScrollInterruptionVersion === scrollInterruptionVersion) {
-                    this._topicScrollInterrupted = false
-                }
+					&& this._topicScrollInterruptionVersion === scrollInterruptionVersion) this._topicScrollInterrupted = false
+				if (reloadDeletedReservedTopic(this, topicId)) return
                 if (String(this.currentTopicId) === String(topicId)) {
-                    // Same deep-link hazard as the "deleted" broadcast: this
-                    // path reaches restoreSelection through loadTopics instead
-                    // of removeTopic, but the getter is the same one.
+					// Release deep links before loadTopics restores selection.
                     this.fallbackFromRemovedTopic(topicId)
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
@@ -1185,18 +1182,19 @@ export default class extends Controller {
         if (id) {
             this.clearNewMessageBadge(id)
         }
-        // Dispatch event
+        this.dispatch("change", { detail: this.changeDetail(id) })
+    }
+
+    changeDetail(id) {
         const topic = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
             .find(candidate => String(candidate.id) === String(id))
-        this.dispatch("change", {
-            detail: {
-                topicId: id,
-                isInbox: this.isInbox,
-                systemTopicId: this.systemTopicId,
-                mainTopicId: this.mainTopicId,
-                readOnly: topic?.read_only || false,
-            },
-        })
+        return {
+            topicId: id,
+            isInbox: this.isInbox,
+            systemTopicId: this.systemTopicId,
+            mainTopicId: this.mainTopicId,
+            readOnly: topic?.read_only || false,
+        }
     }
 
     showEditInput(topicEl, topicId) {
@@ -2420,7 +2418,7 @@ export default class extends Controller {
     }
 
     removeTopic(topicId) {
-        if (!topicId) return
+        if (!topicId || reloadDeletedReservedTopic(this, topicId)) return
 
         // loadTopics clears its cache before awaiting the response. If a
         // deletion arrives in that window, the local filter has nothing to

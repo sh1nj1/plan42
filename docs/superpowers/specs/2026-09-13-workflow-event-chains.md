@@ -1273,6 +1273,7 @@ validating the recipient origin Inbox and its active System topic, fixing all
 author/quote/action/task fields to nil and private to false. It writes timestamps
 and increments the counter only for the insert winner. Foreign keys protect
 scope deletion. Broadcasts run after the outer commit, separately from push.
-The supported UI/tool paths prohibit System topic movement and deletion; this
-is not a new database-level immutability guarantee. Ordinary Comment topic
+The supported UI/tool paths prohibit System topic movement. System topic
+deletion is allowed: it removes the topic and its messages, and the topic is
+recreated on demand. This is not a database-level immutability guarantee. Ordinary Comment topic
 membership locking is unchanged. No source-topic lock nests with a chain lock.

@@ -74,7 +74,7 @@ module Collavre
     include Publishable
     include Describable
     include RealtimeBroadcastable
-    include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy, CreationEvents
+    include HistoryTrackable, CreativeHistoryTopic, CreativeReservedTopics, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
@@ -129,20 +129,6 @@ module Collavre
     # from the neutral read-only behavior above).
     def github_markdown?
       source_type == "github_markdown"
-    end
-
-    # Find or create the "System" topic for this inbox creative.
-    # Re-creates it if the user deletes it.
-    def system_topic(fallback_user: user)
-      topics.find_or_create_by!(name: SYSTEM_TOPIC_NAME) do |topic|
-        topic.user = fallback_user
-      end
-    end
-
-    def main_topic(fallback_user: user)
-      topics.find_or_create_by!(name: MAIN_TOPIC_NAME) do |topic|
-        topic.user = fallback_user
-      end
     end
 
     def content_topic(fallback_user: user)

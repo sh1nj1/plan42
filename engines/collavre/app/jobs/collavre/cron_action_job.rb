@@ -10,7 +10,8 @@ module Collavre
   class CronActionJob < ApplicationJob
     queue_as :default
 
-    def perform(creative_id:, topic_id:, agent_id:, message:, usage_requester_attribution: {})
+    # Accept creation metadata from previously serialized jobs without using it.
+    def perform(creative_id:, topic_id:, agent_id:, message:, usage_requester_attribution: {}, recurring_task_id: nil, recurring_task_created_at: nil)
       creative = Creative.find_by(id: creative_id)&.effective_origin
       agent = User.find_by(id: agent_id)
 
@@ -21,7 +22,7 @@ module Collavre
         return
       end
 
-      topic = topic_id.present? ? Topic.find_by(id: topic_id) : creative.main_topic(fallback_user: agent)
+      topic = resolve_topic(creative, topic_id, agent, recurring_task_id)
       return unless usable_topic?(topic, topic_id)
 
       comment = create_comment(creative, topic, agent, message)
@@ -62,6 +63,17 @@ module Collavre
     end
 
     private
+
+    def resolve_topic(creative, topic_id, agent, recurring_task_id)
+      return if recurring_task_id && !SolidQueue::RecurringTask.exists?(recurring_task_id)
+
+      return Topic.find_by(id: topic_id) if topic_id.present?
+      cutoff = enqueued_at
+      return creative.main_topic(fallback_user: agent) unless cutoff
+
+      # Legacy queued occurrences must not recreate Main or target a replacement.
+      creative.topics.where("created_at <= ?", cutoff).find_by(name: Creative::MAIN_TOPIC_NAME)
+    end
 
     def usable_topic?(topic, topic_id)
       reason = topic ? "is read-only History" : "not found"
