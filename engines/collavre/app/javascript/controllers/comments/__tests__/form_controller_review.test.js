@@ -459,8 +459,12 @@ describe('FormController - Review Quote Chips', () => {
   })
 
   describe('sending a question quote', () => {
-    test('carries the selected agent run options and topic', async () => {
+    test.each([false, true])('carries run options and topic through question submission (retry=%s)', async (retry) => {
       const fetchMock = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') }))
+      if (retry) {
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 422 })
+          .mockResolvedValueOnce({ headers: new Headers({ 'X-CSRF-Token': 'question-fresh' }) })
+      }
       const originalFetch = global.fetch
       global.fetch = fetchMock
       const meta = document.createElement('meta')
@@ -485,6 +489,13 @@ describe('FormController - Review Quote Chips', () => {
         expect(body.get('comment[agent_run_options][model]')).toBeNull()
         expect(body.get('comment[quoted_text]')).toBeNull()
         await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(fetchMock).toHaveBeenCalledTimes(retry ? 3 : 1)
+        if (retry) {
+          expect(fetchMock.mock.calls[2][1].body).toBe(body)
+          expect(fetchMock.mock.calls[2][1].headers['X-CSRF-Token']).toBe('question-fresh')
+        }
+        expect(controller._hasRetried).toBe(false)
+        expect(controller.sending).toBe(false)
       } finally {
         global.fetch = originalFetch
         meta.remove()
