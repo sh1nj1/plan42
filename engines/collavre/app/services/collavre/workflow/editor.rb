@@ -61,7 +61,7 @@ module Collavre
       def visible_agents
         owned_or_searchable = User.accessible_ai_agents_for(@user)
         shared = User.mentionable_for(@creative).ai_agents
-        owned_or_searchable.or(shared).order(:name, :id)
+        owned_or_searchable.or(shared).chat_capable.order(:name, :id)
       end
 
       def rule_warnings(rule)

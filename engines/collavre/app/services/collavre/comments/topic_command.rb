@@ -72,11 +72,7 @@ module Collavre
         rejection = primary_agent &&
           Topic.primary_agent_rejection(creative, primary_agent, topic: existing_topic)
         if rejection
-          key = if rejection == :session_agent_outside_session_topic
-                  "collavre.comments.topic_command.session_agent_not_assignable"
-          else
-                  "collavre.comments.topic_command.agent_no_creative_access"
-          end
+          key = "collavre.comments.topic_command.#{Topics::PinRejection.locale_key(rejection)}"
           return I18n.t(key, agent: primary_agent.display_name)
         end
 
