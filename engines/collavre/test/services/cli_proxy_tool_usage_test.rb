@@ -11,7 +11,7 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
   def stream_chunk(*events, content: nil)
     delta = { "reasoning_content" => "trace\n", "x_cli_events" => events }
     delta["content"] = content if content
-    RubyLLM::Providers::OpenAI.allocate.send(:build_chunk, "choices" => [ { "delta" => delta } ])
+    RubyLLM::Protocols::ChatCompletions.allocate.send(:build_chunk, "choices" => [ { "delta" => delta } ])
   end
 
   # Streams the given chunks and answers "Answer"; #ask answers without
@@ -26,7 +26,7 @@ class CliProxyToolUsageTest < ActiveSupport::TestCase
       @messages = []
     end
 
-    def with_params(**params)
+    def with_provider_options(**params)
       @params = params
       self
     end

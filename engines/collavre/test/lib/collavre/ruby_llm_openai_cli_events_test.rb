@@ -10,7 +10,7 @@ module Collavre
     EVENT = { "id" => "t1", "phase" => "result", "name" => "Bash", "output" => "a.txt", "ok" => true }.freeze
 
     def provider
-      RubyLLM::Providers::OpenAI.allocate
+      RubyLLM::Protocols::ChatCompletions.allocate
     end
 
     test "build_chunk keeps streamed x_cli_events next to reasoning_content" do
@@ -28,16 +28,16 @@ module Collavre
       assert_equal [], provider.send(:build_chunk, "choices" => [ { "delta" => { "x_cli_events" => EVENT } } ]).cli_events
     end
 
-    test "parse_completion_response keeps x_cli_events of a non-streaming message" do
+    test "parse_completion_body keeps x_cli_events of a non-streaming message" do
       body = { "choices" => [ { "message" => { "role" => "assistant", "content" => "done", "x_cli_events" => [ EVENT ] } } ] }
-      message = provider.send(:parse_completion_response, OpenStruct.new(body: body))
+      message = provider.send(:parse_completion_body, body, raw: nil)
 
       assert_equal "done", message.content
       assert_equal [ EVENT ], message.cli_events
 
       plain = { "choices" => [ { "message" => { "role" => "assistant", "content" => "done" } } ] }
-      assert_equal [], provider.send(:parse_completion_response, OpenStruct.new(body: plain)).cli_events
-      assert_nil provider.send(:parse_completion_response, OpenStruct.new(body: {}))
+      assert_equal [], provider.send(:parse_completion_body, plain, raw: nil).cli_events
+      assert_raises(RubyLLM::Error) { provider.send(:parse_completion_body, {}, raw: nil) }
     end
 
     test "messages from other providers report no cli_events" do

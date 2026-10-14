@@ -14,7 +14,7 @@ module Collavre
       end
 
       def install_tool_boundary(chat)
-        chat.on_tool_call do |tool_call|
+        chat.before_tool_call do |tool_call|
           # Cancellation ahead of the approval gate: a turn that already
           # reached a terminal status or its deadline must end, not park
           # itself as pending approval for a tool it will never run. Force this

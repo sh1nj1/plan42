@@ -70,7 +70,7 @@ gem "omniauth-rails_csrf_protection"
 gem "omniauth-github"
 gem "httparty"
 gem "octokit"
-gem "ruby_llm"
+gem "ruby_llm", "~> 2.1.0"
 gem "liquid"
 
 # :desktop too — config/boot.rb requires "dotenv" unconditionally, and the
@@ -108,11 +108,8 @@ end
 
 gem "doorkeeper", "~> 5.9"
 
-if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
-  gem "rails_mcp_engine", "~> 0.4.2", path: "../rails_mcp_engine"
-else
-  gem "rails_mcp_engine", "~> 0.4.2"
-end
+# Released MCP tool factory with RubyLLM 2.x support.
+gem "rails_mcp_engine", "~> 0.5.0"
 
 # Load all local engines found in ./engines
 # Set USE_COLLAVRE_GEM=true to use installed gem instead of local path

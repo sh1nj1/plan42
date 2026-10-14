@@ -24,7 +24,7 @@ class QuotaExceededErrorTest < ActiveSupport::TestCase
     assert_nil classify(message: "Please check billing and credit balance")
     assert_nil Collavre::Quota::ExceededError.from_response(StandardError.new("insufficient_quota"))
     [ "not json", "[]", "null", { "error" => "insufficient_quota" } ].each do |body|
-      assert_nil Collavre::Quota::ExceededError.from_response(RubyLLM::Error.new(Faraday::Response.new(body: body)))
+      assert_nil Collavre::Quota::ExceededError.from_response(RubyLLM::Error.new(response: Faraday::Response.new(body: body)))
     end
   end
 
@@ -33,6 +33,6 @@ class QuotaExceededErrorTest < ActiveSupport::TestCase
   def classify(headers: {}, status: 429, code: "insufficient_quota", message: "Usage limit reached")
     response = Faraday::Response.new(status: status, response_headers: headers,
                                     body: { "error" => { "code" => code, "message" => message } }.to_json)
-    Collavre::Quota::ExceededError.from_response(RubyLLM::Error.new(response))
+    Collavre::Quota::ExceededError.from_response(RubyLLM::Error.new(response: response))
   end
 end

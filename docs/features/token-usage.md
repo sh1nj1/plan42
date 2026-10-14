@@ -19,9 +19,10 @@ cache reads/writes, provider/model, task/creative/topic, source comment IDs,
 execution UUID, occurrence time, and a normalization version. Input includes
 cache reads and writes, so **do not add cache columns to input again**.
 
-RubyLLM 1.16 exposes uncached input for the supported native providers and
-OpenAI-compatible gateways. Normalization v1 reconstructs inclusive input from
-those fields. Provider usage is retained when RubyLLM exposes it; streaming
+RubyLLM 2.1 exposes usage through `response.tokens` (`input`, `output`,
+`cache_read`, and `cache_write`). Normalization v1 reconstructs inclusive input
+from uncached input and cache fields for native providers and OpenAI-compatible
+gateways. Provider usage is retained when RubyLLM exposes it; streaming
 responses can omit the original provider envelope, in which case the RubyLLM
 fields and their semantics remain in `raw_usage`. No prompts or credentials are
 copied into usage records. An OpenAI cache-write zero synthesized by the library

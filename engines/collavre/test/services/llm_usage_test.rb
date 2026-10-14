@@ -21,7 +21,7 @@ class LlmUsageTest < ActiveSupport::TestCase
 
   def response(**options)
     RubyLLM::Message.new({ role: :assistant, content: "done", input_tokens: 10, output_tokens: 4,
-      cached_tokens: 50, cache_creation_tokens: 20 }.merge(options))
+      cache_read_tokens: 50, cache_write_tokens: 20 }.merge(options))
   end
 
   test "auxiliary usage preserves joint and unknown requester attribution" do
@@ -74,8 +74,8 @@ class LlmUsageTest < ActiveSupport::TestCase
 
   test "interrupted streams preserve reported usage and missing values stay nil" do
     collector = recorder
-    collector.observe(OpenStruct.new(input_tokens: 12, cached_tokens: 0))
-    collector.observe(OpenStruct.new(output_tokens: 3))
+    collector.observe(RubyLLM::Message.new(role: :assistant, content: nil, input_tokens: 12, cache_read_tokens: 0))
+    collector.observe(RubyLLM::Message.new(role: :assistant, content: nil, output_tokens: 3))
     collector.finish
     row = Collavre::LlmUsage.last
     assert_equal 12, row.input_tokens

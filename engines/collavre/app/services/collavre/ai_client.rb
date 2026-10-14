@@ -1,7 +1,7 @@
 module Collavre
   class AiClient
     include ErrorHandling
-    include AiUsageTracking, ApprovalGate, CliToolEvents
+    include AiUsageTracking, AiApprovalSummary, ApprovalGate, CliToolEvents
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -164,14 +164,8 @@ module Collavre
           @handed_off = true
         end
 
-        # Extract token usage directly from response object (RubyLLM style)
-        if response.respond_to?(:input_tokens)
-          input_tokens = response.input_tokens
-        end
-
-        if response.respond_to?(:output_tokens)
-          output_tokens = response.output_tokens
-        end
+        input_tokens = response.tokens&.input
+        output_tokens = response.tokens&.output
       end
 
       response_content.presence
@@ -195,31 +189,6 @@ module Collavre
       nil
     ensure
       finalize_chat_usage(response, contents, response_content, error_message, input_tokens, output_tokens)
-    end
-
-    # Ask a follow-up question using the existing conversation context.
-    # Used to generate approval summaries with full conversation history.
-    # Returns the response content string, or nil on failure.
-    def ask(prompt)
-      return nil unless @conversation
-
-      start_usage_tracking
-      refresh_turn_boundary!(@conversation)
-      # Disable tool calls for summary generation to avoid recursive approval
-      @conversation.with_tools(replace: true)
-      response = @conversation.ask(prompt)
-      refresh_turn_boundary!(@conversation)
-      response&.content&.strip.presence
-    rescue CancelledError
-      raise
-    rescue StandardError => e
-      # A provider timeout at the turn boundary must become the deadline that
-      # caused it, not a missing summary followed by pending_approval.
-      refresh_turn_boundary!(@conversation)
-      Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
-      nil
-    ensure
-      finish_usage_tracking(response) if @conversation
     end
 
     private
@@ -284,10 +253,7 @@ module Collavre
         proc { |config| config.gemini_api_key = api_key }
       end
 
-      provider = VENDOR_TO_PROVIDER[normalized_vendor]
-      chat_opts = { model: model }
-      chat_opts[:provider] = provider if provider
-      chat_opts[:assume_model_exists] = true if provider
+      chat_opts = conversation_options(normalized_vendor)
 
       # RubyLLM::Context duplicates the global config. Set the timeout on that
       # per-client copy so concurrent agent threads cannot overwrite one
@@ -312,9 +278,18 @@ module Collavre
         if tools.any?
           # Resolve tool names to classes using the gem's helper
           tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tools)
-          chat.with_tools(*tool_classes, replace: true)
+          chat.with_tools(*tool_classes)
         end
       end
+    end
+
+    def conversation_options(normalized_vendor)
+      provider = VENDOR_TO_PROVIDER[normalized_vendor]
+      options = { model: model }
+      options[:provider] = provider if provider
+      options[:protocol] = :chat_completions if provider == :openai
+      options[:assume_model_exists] = true if provider
+      options
     end
 
     def refresh_turn_boundary!(conversation)
@@ -389,14 +364,9 @@ module Collavre
 
         next if text.blank? && image_sources.empty?
 
-        if image_sources.any?
-          content = RubyLLM::Content.new(text.presence, image_sources)
-          conversation.add_message(role:, content: content)
-        else
-          next if text.blank?
-
-          conversation.add_message(role:, content: text)
-        end
+        attributes = { role: role, content: text.presence }
+        attributes[:attachments] = image_sources if image_sources.any?
+        conversation.add_message(**attributes)
       end
     end
 
@@ -421,7 +391,7 @@ module Collavre
 
     def extract_message_text(message)
       parts = message[:parts] || message["parts"]
-      return message[:text] || message["text"] if parts.nil?
+      return message[:text] || message["text"] || message[:content] || message["content"] if parts.nil?
 
       Array(parts).map { |part| part[:text] || part["text"] }.compact.join("\n")
     end

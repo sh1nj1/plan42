@@ -31,7 +31,7 @@ module Collavre
       def install_cli_tool_events(chat)
         return unless vendor == "cli_proxy"
 
-        # with_params replaces rather than merges, so the run's reasoning effort
+        # with_provider_options replaces rather than merges, so the run's reasoning effort
         # rides on this one call.
         effort = cli_reasoning_effort
         @cli_run_options = {
@@ -39,7 +39,7 @@ module Collavre
           reasoning_source: effort ? "request" : "local_default",
           codex_fast_mode_configured: !!(context&.dig(:user)&.codex_fast_mode? && CliProxy::RunOptions.fast_mode_supported?(model))
         }
-        chat.with_params(**REQUEST_PARAMS, **(effort ? { reasoning_effort: effort } : {}))
+        chat.with_provider_options(**REQUEST_PARAMS, **(effort ? { reasoning_effort: effort } : {}))
         # Non-streaming responses (#ask) carry their events on the final message.
         # A streamed message is rebuilt by RubyLLM without them, so the events
         # seen per chunk are never dispatched twice.

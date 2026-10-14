@@ -28,7 +28,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "bcrypt"                 # Password hashing for users
 
   # AI/LLM features
-  spec.add_dependency "ruby_llm"               # LLM integration for AI agents
+  spec.add_dependency "ruby_llm", "~> 2.1.0"               # LLM integration for AI agents
   spec.add_dependency "liquid"                 # Liquid templates for AI system prompts
 
   # Markdown rendering
