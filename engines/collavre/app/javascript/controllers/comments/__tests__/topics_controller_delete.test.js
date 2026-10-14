@@ -158,6 +158,35 @@ describe('TopicsController#deleteTopic', () => {
     expect(controller.loadTopics).toHaveBeenCalledTimes(broadcastFirst ? 2 : 1)
   })
 
+  test.each([
+    ['broadcast', ''], ['broadcast', '3'],
+    ['http', ''], ['http', '3'],
+  ])('notifies consumers of inactive Main deletion via %s with selection %s', async (source, selectedId) => {
+    controller.mainTopicId = '1'
+    controller.serverLastTopicId = selectedId
+    controller.dispatch = jest.fn()
+    controller.loadTopics = jest.fn(() => {
+      expect(controller.dispatch).toHaveBeenCalledWith('change', {
+        detail: { topicId: selectedId, mainTopicId: null },
+      })
+    })
+
+    if (source === 'broadcast') {
+      controller.handleTopicMessage({ action: 'deleted', topic_id: 1 })
+    } else {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true })
+      confirmDialog.mockResolvedValue(true)
+      const button = document.createElement('button')
+      button.dataset.id = '1'
+      await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+    }
+
+    expect(controller.mainTopicId).toBeNull()
+    expect(controller.currentTopicId).toBe(selectedId)
+    expect(controller.dispatch).toHaveBeenCalledTimes(1)
+    expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+  })
+
   test('keeps reserved IDs when deletion fails', async () => {
     controller.mainTopicId = '1'
     controller.setOverrideTopicId('1')

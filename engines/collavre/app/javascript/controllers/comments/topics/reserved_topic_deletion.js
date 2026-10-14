@@ -6,9 +6,10 @@ export function reloadDeletedReservedTopic(controller, topicId) {
     // Index recreates reserved topics and returns their replacement IDs.
     // Clear the old ID before notifying the message list or restoring a selection.
     controller[idKey] = null
-    if (String(controller.currentTopicId) === String(topicId)) {
-        controller.fallbackFromRemovedTopic(topicId)
-        controller.dispatch("change", { detail: { topicId: "", mainTopicId: controller.mainTopicId } })
+    const wasSelected = String(controller.currentTopicId) === String(topicId)
+    if (wasSelected) controller.fallbackFromRemovedTopic(topicId)
+    if (wasSelected || idKey === 'mainTopicId') {
+        controller.dispatch("change", { detail: { topicId: controller.currentTopicId, mainTopicId: controller.mainTopicId } })
     }
     controller.loadTopics()
     return true
