@@ -7,13 +7,13 @@ module Collavre
       # with string keys. Errors propagate so callers cannot mistake a failure for DONE.
       def judge(input, questions:)
         definitions = DecisionQuestions.new(questions)
-        if self.class.supports?(vendor, :judge)
+        if self.class.supports?(vendor, :judge, model: model.to_s)
           native_decision(input, definitions)
         else
           chat_decision(input, definitions)
         end
       rescue RubyLLM::Error => e
-        raise unless self.class.supports?(vendor, :judge) && self.class.supports?(vendor, :chat) &&
+        raise unless self.class.supports?(vendor, :judge, model: model.to_s) && self.class.supports?(vendor, :chat) &&
           [ 404, 405, 501 ].include?(e.response&.status)
 
         chat_decision(input, definitions)
@@ -54,6 +54,7 @@ module Collavre
         start_usage_tracking
         @conversation = build_conversation
         install_usage_tracking(@conversation)
+        install_cli_tool_events(@conversation)
         @conversation.with_schema(definitions.schema) if structured
         prompt = decision_prompt(input, definitions)
         response = @conversation.ask(prompt)

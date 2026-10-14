@@ -6,7 +6,7 @@ module Collavre
       extend ActiveSupport::Concern
 
       def supports?(capability)
-        ai_user? && AiClient.supports?(llm_vendor, capability)
+        ai_user? && AiClient.supports?(llm_vendor, capability, model: llm_model.to_s)
       end
 
       class_methods do

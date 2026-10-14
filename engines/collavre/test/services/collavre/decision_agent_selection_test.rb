@@ -49,10 +49,23 @@ module Collavre
     end
 
     test "native verifier prefers another native agent over self" do
-      @chat.update!(llm_vendor: "openai")
+      @chat.update!(llm_vendor: "openai", llm_model: "gpt-6-luna")
       assert_equal @judge, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @chat.id)
       @judge_share.update!(permission: :read)
       assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @chat.id)
+    end
+
+    test "OpenAI chat agents are not preferred as native verifiers" do
+      @chat.update!(llm_vendor: "openai", llm_model: "gpt-4o")
+      assert @chat.supports?(:chat)
+      assert_not @chat.supports?(:judge)
+      assert_equal @judge, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @child)
+      assert_equal @judge, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @judge.id)
+
+      @judge_share.update!(permission: :read)
+      assert_nil @child.find_ai_agent(:feedback, capability: :judge)
+      assert_equal @chat, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @child)
+      assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @judge.id)
     end
 
     test "trigger execution ignores judgment-only agents with write permission" do

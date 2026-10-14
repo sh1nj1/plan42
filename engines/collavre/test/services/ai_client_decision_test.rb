@@ -78,14 +78,46 @@ module Collavre
       assert_equal 8, client.last_input_tokens
     end
 
+    test "ordinary OpenAI models judge through structured chat without calling Decisions" do
+      %w[gpt-4 gpt-4o gpt-5 unknown-model].each do |model|
+        client = AiClient.new(vendor: "openai", model: model, system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Chat model must not call Decisions" }) do
+          client.stub(:build_conversation, fake_chat(response("CONTINUE", "Work remains"))) do
+            result = client.judge("Task", questions: QUESTIONS)
+            assert_equal "chat", result["source"]
+            assert_equal "CONTINUE", result.dig("answers", "status", "choice")
+          end
+        end
+      end
+    end
+
+    test "OpenAI judgment models use the native decision path" do
+      client = AiClient.new(vendor: "openai", model: "gpt-6-luna", system_prompt: nil)
+      client.stub(:native_decision, ->(*) { "native verdict" }) do
+        client.stub(:chat_decision, ->(*) { flunk "Judgment model must use Decisions" }) do
+          assert_equal "native verdict", client.judge("Task", questions: QUESTIONS)
+        end
+      end
+    end
+
+    test "native judgment support is model-specific for OpenAI" do
+      assert AiClient.supports?(" OpenAI ", :judge, model: "gpt-6-luna")
+      %w[gpt-4 gpt-4o gpt-5 unknown-model].each do |model|
+        assert_not AiClient.supports?("openai", :judge, model: model)
+        assert AiClient.supports?("openai", :chat, model: model)
+      end
+      assert_not AiClient.supports?("openai", :judge, model: "")
+      assert AiClient.supports?("typesafe", :judge, model: "jev-latest")
+    end
+
     test "missing decisions endpoint falls back to chat but authentication failure does not" do
-      client = AiClient.new(vendor: "openai", model: "test", system_prompt: nil)
-      [ 404, 401, 429, 500 ].each do |status|
+      client = AiClient.new(vendor: "openai", model: "gpt-6-luna", system_prompt: nil)
+      [ 404, 405, 501, 400, 401, 429, 500 ].each do |status|
         failure = RubyLLM::Error.new("Unavailable", response: OpenStruct.new(status: status))
         native = ->(*) { raise failure }
         client.stub(:native_decision, native) do
           client.stub(:chat_decision, ->(*) { "chat fallback" }) do
-            if status == 404
+            if [ 404, 405, 501 ].include?(status)
               assert_equal "chat fallback", client.judge("Task", questions: QUESTIONS)
             else
               assert_raises(RubyLLM::Error) { client.judge("Task", questions: QUESTIONS) }

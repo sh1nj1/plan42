@@ -19,7 +19,10 @@ client.judge("Task instructions and evidence", questions: {
 
 ## Vendors and credentials
 
-- OpenAI supports chat and the native `/decisions` operation. It uses the
+- OpenAI supports chat; native `/decisions` is selected only when RubyLLM
+  declares the configured model judgment-capable (currently `gpt-6-luna`).
+  Other models, including unknown gateway model names, use structured chat
+  directly and are not preferred as native verifier agents. It uses the
   existing OpenAI agent key, model, and optional gateway URL. A compatible
   gateway returning HTTP 404, 405, or 501 falls back to chat. Authentication,
   rate-limit, and server failures propagate.

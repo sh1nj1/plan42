@@ -77,8 +77,13 @@ module Collavre
         @vendor_capabilities ||= { "openai" => %i[chat judge], "typesafe" => %i[judge] }
       end
 
-      def supports?(vendor, capability)
-        vendor_capabilities.fetch(vendor.to_s.strip.downcase, %i[chat]).include?(capability.to_sym)
+      def supports?(vendor, capability, model: nil)
+        vendor = vendor.to_s.strip.downcase
+        capability = capability.to_sym
+        return false unless vendor_capabilities.fetch(vendor, %i[chat]).include?(capability)
+        return true unless vendor == "openai" && capability == :judge && !model.nil?
+
+        RubyLLM::Providers::OpenAI::Capabilities.augment([], model_id: model).include?("judgment")
       end
 
       def vendor_options
