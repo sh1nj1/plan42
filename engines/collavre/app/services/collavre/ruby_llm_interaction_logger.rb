@@ -27,7 +27,17 @@ module Collavre
       private
 
       def safe_json(value)
-        JSON.parse(value.to_json)
+        JSON.parse(serialize(value).to_json)
+      end
+
+      def serialize(value)
+        case value
+        when RubyLLM::Message then value.to_h
+        when RubyLLM::Tool then { name: value.name, description: value.description, parameters: value.parameters_schema }
+        when Array then value.map { |item| serialize(item) }
+        when Hash then value.transform_values { |item| serialize(item) }
+        else value
+        end
       end
     end
   end

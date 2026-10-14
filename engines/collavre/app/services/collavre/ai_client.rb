@@ -164,14 +164,8 @@ module Collavre
           @handed_off = true
         end
 
-        # Extract token usage directly from response object (RubyLLM style)
-        if response.respond_to?(:input_tokens)
-          input_tokens = response.input_tokens
-        end
-
-        if response.respond_to?(:output_tokens)
-          output_tokens = response.output_tokens
-        end
+        input_tokens = response.tokens&.input
+        output_tokens = response.tokens&.output
       end
 
       response_content.presence
@@ -206,7 +200,7 @@ module Collavre
       start_usage_tracking
       refresh_turn_boundary!(@conversation)
       # Disable tool calls for summary generation to avoid recursive approval
-      @conversation.with_tools(replace: true)
+      @conversation.with_tools(nil)
       response = @conversation.ask(prompt)
       refresh_turn_boundary!(@conversation)
       response&.content&.strip.presence
@@ -287,6 +281,7 @@ module Collavre
       provider = VENDOR_TO_PROVIDER[normalized_vendor]
       chat_opts = { model: model }
       chat_opts[:provider] = provider if provider
+      chat_opts[:protocol] = :chat_completions if provider == :openai
       chat_opts[:assume_model_exists] = true if provider
 
       # RubyLLM::Context duplicates the global config. Set the timeout on that
@@ -312,7 +307,7 @@ module Collavre
         if tools.any?
           # Resolve tool names to classes using the gem's helper
           tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tools)
-          chat.with_tools(*tool_classes, replace: true)
+          chat.with_tools(*tool_classes)
         end
       end
     end
@@ -389,14 +384,9 @@ module Collavre
 
         next if text.blank? && image_sources.empty?
 
-        if image_sources.any?
-          content = RubyLLM::Content.new(text.presence, image_sources)
-          conversation.add_message(role:, content: content)
-        else
-          next if text.blank?
-
-          conversation.add_message(role:, content: text)
-        end
+        attributes = { role: role, content: text.presence }
+        attributes[:attachments] = image_sources if image_sources.any?
+        conversation.add_message(**attributes)
       end
     end
 
@@ -421,7 +411,7 @@ module Collavre
 
     def extract_message_text(message)
       parts = message[:parts] || message["parts"]
-      return message[:text] || message["text"] if parts.nil?
+      return message[:text] || message["text"] || message[:content] || message["content"] if parts.nil?
 
       Array(parts).map { |part| part[:text] || part["text"] }.compact.join("\n")
     end

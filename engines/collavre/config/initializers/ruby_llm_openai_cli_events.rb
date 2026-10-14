@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-return unless defined?(RubyLLM::Providers::OpenAI)
+return unless defined?(RubyLLM::Protocols::ChatCompletions)
 
 module Collavre
   module RubyLlmPatches
@@ -10,7 +10,7 @@ module Collavre
     # `message.x_cli_events` on a non-streaming response. Each event is
     # `{ id, phase: "call"|"result", name, input, output, exitCode, ok, parentId }`.
     #
-    # RubyLLM (through 1.16.0) knows nothing of the key and drops it while
+    # RubyLLM (through 2.1.1) knows nothing of the key and drops it while
     # building the Chunk / Message, so this patch carries the raw events over as
     # `#cli_events` (always an Array of Hashes, empty when absent).
     module MessageCliEvents
@@ -32,9 +32,9 @@ module Collavre
         chunk
       end
 
-      def parse_completion_response(response)
+      def parse_completion_body(body, raw:)
         message = super
-        message&.cli_events = OpenAICliEvents.extract(response.body.dig("choices", 0, "message", "x_cli_events"))
+        message&.cli_events = OpenAICliEvents.extract(body.dig("choices", 0, "message", "x_cli_events"))
         message
       end
     end
@@ -42,4 +42,4 @@ module Collavre
 end
 
 RubyLLM::Message.include(Collavre::RubyLlmPatches::MessageCliEvents)
-RubyLLM::Providers::OpenAI.prepend(Collavre::RubyLlmPatches::OpenAICliEvents)
+RubyLLM::Protocols::ChatCompletions.prepend(Collavre::RubyLlmPatches::OpenAICliEvents)

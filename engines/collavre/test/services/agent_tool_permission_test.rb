@@ -116,7 +116,7 @@ class AgentToolPermissionTest < ActiveSupport::TestCase
     client.define_singleton_method(:check_tool_approval!) { |_call| raise "Approval must not run" }
     boundary = nil
     chat = Object.new
-    chat.define_singleton_method(:on_tool_call) { |&block| boundary = block }
+    chat.define_singleton_method(:before_tool_call) { |&block| boundary = block }
     chat.define_singleton_method(:after_tool_result) { |&block| }
     client.send(:install_tool_boundary, chat)
     Collavre::User.find(@agent.id).update!(tools: [ "meta_tool" ])

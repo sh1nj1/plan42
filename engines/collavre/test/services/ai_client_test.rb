@@ -33,7 +33,7 @@ class AiClientTest < ActiveSupport::TestCase
       self
     end
 
-    def on_tool_call(&block)
+    def before_tool_call(&block)
     end
 
     def after_tool_result(&block)
@@ -49,9 +49,9 @@ class AiClientTest < ActiveSupport::TestCase
       OpenStruct.new(content: "Summary: #{prompt.truncate(50)}")
     end
 
-    def add_message(role:, content:)
-      if content.is_a?(RubyLLM::Content)
-        @messages_added << { "role" => role.to_s, "content" => content }
+    def add_message(role:, content:, attachments: [])
+      if attachments.any?
+        @messages_added << { "role" => role.to_s, "content" => content, "attachments" => RubyLLM::Attachment.wrap(attachments) }
       else
         @messages_added << { "role" => role.to_s, "parts" => [ { "text" => content } ] }
       end
@@ -67,7 +67,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     def complete
       yield OpenStruct.new(content: "chunk") if block_given?
-      OpenStruct.new(content: @response_content, input_tokens: 10, output_tokens: 20)
+      OpenStruct.new(content: @response_content, tokens: RubyLLM::Tokens.new(input: 10, output: 20))
     end
   end
 
@@ -423,9 +423,8 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal 1, conversation.messages_added.size
     msg = conversation.messages_added.first
     assert_equal "user", msg["role"]
-    assert_instance_of RubyLLM::Content, msg["content"]
-    assert_equal "What is this?", msg["content"].text
-    assert_equal 1, msg["content"].attachments.size
+    assert_equal "What is this?", msg["content"]
+    assert_equal 1, msg["attachments"].size
   ensure
     tempfile&.close
     tempfile&.unlink
@@ -459,11 +458,10 @@ class AiClientTest < ActiveSupport::TestCase
     assert_equal "user", msg["role"]
 
     content = msg["content"]
-    assert_instance_of RubyLLM::Content, content
-    assert_equal "Describe this image", content.text
-    assert_equal 1, content.attachments.size
+    assert_equal "Describe this image", content
+    assert_equal 1, msg["attachments"].size
 
-    attachment = content.attachments.first
+    attachment = msg["attachments"].first
     assert_instance_of RubyLLM::Attachment, attachment
     assert attachment.active_storage?, "Attachment should recognize ActiveStorage blob"
     assert_equal "image/png", attachment.mime_type
@@ -589,9 +587,10 @@ class AiClientTest < ActiveSupport::TestCase
     fake_chat = FakeConversation.new
     context_config = RubyLLM.config.dup
     mock_context = Object.new
-    mock_context.define_singleton_method(:chat) do |model:, provider:, assume_model_exists:|
+    mock_context.define_singleton_method(:chat) do |model:, provider:, assume_model_exists:, protocol:|
       raise "wrong model" unless model == "paperclip/claude_local"
       raise "wrong provider" unless provider == :openai && assume_model_exists
+      raise "wrong protocol" unless protocol == :chat_completions
 
       fake_chat
     end
@@ -906,7 +905,7 @@ class AiClientTest < ActiveSupport::TestCase
     response = OpenStruct.new(status: 400, body: raw_body)
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|
-      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+      raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: response)
     end
 
     client = AiClient.new(
@@ -940,7 +939,7 @@ class AiClientTest < ActiveSupport::TestCase
     response = OpenStruct.new(status: 400, body: raw_body)
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|
-      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+      raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: response)
     end
 
     client = AiClient.new(
@@ -973,7 +972,7 @@ class AiClientTest < ActiveSupport::TestCase
     response = OpenStruct.new(status: 400, body: binary_body)
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|
-      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+      raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: response)
     end
 
     client = AiClient.new(
@@ -1002,7 +1001,7 @@ class AiClientTest < ActiveSupport::TestCase
     response = OpenStruct.new(status: 400, body: { "input" => secret }.to_json)
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|
-      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+      raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: response)
     end
 
     client = AiClient.new(
@@ -1034,7 +1033,7 @@ class AiClientTest < ActiveSupport::TestCase
     response.define_singleton_method(:body) { raise "cannot read body" }
     conversation = FakeConversation.new
     conversation.define_singleton_method(:complete) do |&_block|
-      raise RubyLLM::BadRequestError.new(response, "Invalid request - please check your input")
+      raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: response)
     end
 
     client = AiClient.new(
@@ -1311,7 +1310,7 @@ class AiClientTest < ActiveSupport::TestCase
   # A tool-only turn never reaches the caller's streaming block: tool-call
   # chunks carry no content, and #chat skips empty deltas above the yield —
   # so the terminal-status/deadline check AiAgentService runs there never
-  # runs. RubyLLM fires on_tool_call before every tool execution on every
+  # runs. RubyLLM fires before_tool_call before every tool execution on every
   # iteration of the request->tools->request loop, so that boundary is the
   # one a tool-only turn is guaranteed to keep crossing. The injected check
   # runs there, ahead of the approval gate: a turn that already ended must
@@ -1331,11 +1330,11 @@ class AiClientTest < ActiveSupport::TestCase
 
     fake_chat = FakeConversation.new
     tool_boundary = nil
-    fake_chat.define_singleton_method(:on_tool_call) { |&block| tool_boundary = block }
+    fake_chat.define_singleton_method(:before_tool_call) { |&block| tool_boundary = block }
     fake_chat.define_singleton_method(:complete) do |&block|
       block.call(OpenStruct.new(content: nil))
       tool_boundary.call(OpenStruct.new(name: "creative_read", arguments: {}))
-      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+      OpenStruct.new(content: "done", tokens: RubyLLM::Tokens.new(input: 1, output: 1))
     end
 
     mock_context = Object.new
@@ -1364,7 +1363,7 @@ class AiClientTest < ActiveSupport::TestCase
 
     fake_chat = FakeConversation.new
     tool_boundary = nil
-    fake_chat.define_singleton_method(:on_tool_call) { |&block| tool_boundary = block }
+    fake_chat.define_singleton_method(:before_tool_call) { |&block| tool_boundary = block }
     fake_chat.define_singleton_method(:complete) do |&block|
       block.call(OpenStruct.new(content: nil))
       tool_boundary.call(OpenStruct.new(name: "creative_read", arguments: {}))
@@ -1392,7 +1391,7 @@ class AiClientTest < ActiveSupport::TestCase
     client.define_singleton_method(:check_tool_approval!) { |_tool_call| }
     fake_chat = FakeConversation.new
     callbacks = {}
-    fake_chat.define_singleton_method(:on_tool_call) { |&block| callbacks[:call] = block }
+    fake_chat.define_singleton_method(:before_tool_call) { |&block| callbacks[:call] = block }
     fake_chat.define_singleton_method(:after_tool_result) { |&block| callbacks[:result] = block }
     mock_context = Object.new
     mock_context.define_singleton_method(:chat) { |**| fake_chat }
@@ -1413,7 +1412,7 @@ class AiClientTest < ActiveSupport::TestCase
       callbacks[:result].call({ ok: "result not stored" })
       callbacks[:call].call(OpenStruct.new(name: "cron_list", arguments: {}))
       callbacks[:result].call({ error: "Creative not found" })
-      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+      OpenStruct.new(content: "done", tokens: RubyLLM::Tokens.new(input: 1, output: 1))
     end
 
     assert_equal "done", run_tool_loop(client, context_stub)
@@ -1449,7 +1448,7 @@ class AiClientTest < ActiveSupport::TestCase
     chat.after_tool_result { |result| fired << [ :first, result ] }
     chat.after_tool_result { |result| fired << [ :second, result ] }
 
-    chat.send(:run_callbacks, :after_tool_result, :tool_result, "r")
+    chat.send(:run_callbacks, :after_tool_result, "r")
 
     assert_equal [ [ :first, "r" ], [ :second, "r" ] ], fired
   end
@@ -1463,7 +1462,7 @@ class AiClientTest < ActiveSupport::TestCase
     fake_chat = FakeConversation.new
     on_call = nil
     after_results = []
-    fake_chat.define_singleton_method(:on_tool_call) { |&block| on_call = block }
+    fake_chat.define_singleton_method(:before_tool_call) { |&block| on_call = block }
     fake_chat.define_singleton_method(:after_tool_result) { |&block| after_results << block }
     fake_chat.define_singleton_method(:complete) do |&block|
       block.call(OpenStruct.new(content: nil))
@@ -1471,7 +1470,7 @@ class AiClientTest < ActiveSupport::TestCase
       after_results.each { |callback| callback.call({ ok: true }) }
       on_call.call(OpenStruct.new(name: "cron_list", arguments: {}))
       after_results.each { |callback| callback.call({ ok: true }) }
-      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+      OpenStruct.new(content: "done", tokens: RubyLLM::Tokens.new(input: 1, output: 1))
     end
     mock_context = Object.new
     mock_context.define_singleton_method(:chat) { |**| fake_chat }
@@ -1492,7 +1491,7 @@ class AiClientTest < ActiveSupport::TestCase
       block.call(OpenStruct.new(content: nil))
       callbacks[:call].call(OpenStruct.new(name: "creative_read", arguments: {}))
       callbacks[:result].call("ok")
-      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+      OpenStruct.new(content: "done", tokens: RubyLLM::Tokens.new(input: 1, output: 1))
     end
     assert_equal "done", run_tool_loop(client, context_stub)
     assert_equal 0, Collavre::ToolUsage.count
@@ -1502,7 +1501,7 @@ class AiClientTest < ActiveSupport::TestCase
       block.call(OpenStruct.new(content: nil))
       callbacks[:call].call(OpenStruct.new(name: "creative_read", arguments: {}))
       callbacks[:result].call("ok")
-      OpenStruct.new(content: "done", input_tokens: 1, output_tokens: 1)
+      OpenStruct.new(content: "done", tokens: RubyLLM::Tokens.new(input: 1, output: 1))
     end
     Collavre::ToolUsage::Recorder.stub(:new, ->(**) { raise "db down" }) do
       assert_equal "done", run_tool_loop(client, context_stub)

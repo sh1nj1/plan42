@@ -9,14 +9,14 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
   test "classifies structured HTTP and SSE errors and rejects unrelated or malformed errors" do
     [ @body, @body.to_json ].each do |body|
       response = Struct.new(:status, :body).new(401, body)
-      error = Collavre::CliProxy::EngineUnauthenticatedError.from_response(RubyLLM::UnauthorizedError.new(response), workspace: @workspace)
+      error = Collavre::CliProxy::EngineUnauthenticatedError.from_response(RubyLLM::UnauthorizedError.new(response: response), workspace: @workspace)
       assert_equal "codex", error.engine
       assert_equal @workspace, error.workspace
     end
     [ "bad json", [], { "error" => "Login required" }, { "error" => { "code" => "invalid_api_key" } },
       { "error" => { "code" => "engine_unauthenticated", "engine" => "../../bad" } } ].each do |body|
       response = Struct.new(:body).new(body)
-      assert_nil Collavre::CliProxy::EngineUnauthenticatedError.from_response(RubyLLM::Error.new(response), workspace: @workspace)
+      assert_nil Collavre::CliProxy::EngineUnauthenticatedError.from_response(RubyLLM::Error.new(response: response), workspace: @workspace)
     end
     assert_nil Collavre::CliProxy::EngineUnauthenticatedError.from_response(StandardError.new("Login required"), workspace: @workspace)
   end
@@ -25,7 +25,8 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
     config = RubyLLM.config.dup
     config.openai_api_key = "test-key"
     provider = RubyLLM::Providers::OpenAI.new(config)
-    handler = provider.send(:handle_stream) { flunk "error must not be a completion chunk" }
+    protocol = RubyLLM::Protocols::ChatCompletions.new(provider, model: nil)
+    handler = protocol.send(:handle_stream) { flunk "error must not be a completion chunk" }
     env = Faraday::Env.from(status: 200)
     stream = "data: #{@body.to_json}\n\n"
     error = assert_raises(RubyLLM::BadRequestError) do
@@ -41,9 +42,9 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
     secret = "sensitive-provider-message"
     response = Struct.new(:status, :body).new(401, @body)
     conversation = Object.new
-    conversation.define_singleton_method(:with_params) { |**_params| conversation }
+    conversation.define_singleton_method(:with_provider_options) { |**_params| conversation }
     conversation.define_singleton_method(:after_message) { |&_callback| conversation }
-    conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new(response, secret) }
+    conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new(secret, response: response) }
     client = Collavre::AiClient.new(vendor: "cli_proxy", model: "paperclip/codex_local", system_prompt: "", log_interactions: false)
     client.instance_variable_set(:@cli_proxy_identity, { workspace: @workspace })
     messages = []
@@ -66,9 +67,9 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
   test "AiClient raises login requirement only for a configured CLI proxy and keeps handoff evidence" do
     response = Struct.new(:status, :body).new(401, @body)
     conversation = Object.new
-    conversation.define_singleton_method(:with_params) { |**_params| conversation }
+    conversation.define_singleton_method(:with_provider_options) { |**_params| conversation }
     conversation.define_singleton_method(:after_message) { |&_callback| conversation }
-    conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new(response, "Login required") }
+    conversation.define_singleton_method(:complete) { raise RubyLLM::UnauthorizedError.new("Login required", response: response) }
     [ "cli_proxy", "openai" ].each do |vendor|
       client = Collavre::AiClient.new(vendor: vendor, model: "paperclip/codex_local", system_prompt: "", log_interactions: false)
       client.instance_variable_set(:@cli_proxy_identity, { workspace: @workspace })

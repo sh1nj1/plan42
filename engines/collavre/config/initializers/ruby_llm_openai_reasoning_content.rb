@@ -2,14 +2,14 @@
 
 require "uri"
 
-return unless defined?(RubyLLM::Providers::OpenAI)
+return unless defined?(RubyLLM::Protocols::ChatCompletions)
 
 module Collavre
   module RubyLlmPatches
-    # RubyLLM (through the current 1.16.0) serializes a replayed assistant
+    # RubyLLM (through 2.1.1) serializes a replayed assistant
     # "thinking" block into BOTH `reasoning` and `reasoning_content` on the
     # OpenAI-format request payload — see
-    # RubyLLM::Providers::OpenAI::Chat#format_thinking, which sets the two keys
+    # RubyLLM::Protocols::ChatCompletions::Chat#format_thinking, which sets the two keys
     # to the same value for cross-vendor compatibility (DeepSeek reads
     # `reasoning_content`; others read `reasoning`).
     #
@@ -31,7 +31,7 @@ module Collavre
     # target — hosted OpenAI, DeepSeek, Ollama/LM Studio, and unknown gateways —
     # keeps `reasoning_content` untouched.
     #
-    # Upstream has no fix as of 1.16.0; revisit and remove this patch if a later
+    # Upstream has no fix as of 2.1.1; revisit and remove this patch if a later
     # ruby_llm release makes the second key gateway-aware.
     module OpenAIDropReasoningContent
       # OpenAI-compatible gateway hosts whose chat-completions schema rejects the
@@ -56,6 +56,8 @@ module Collavre
       # key is preserved — the safe default, since dropping it breaks gateways
       # (e.g. DeepSeek) that require it.
       def gateway_rejects_reasoning_content?
+        return false unless provider.slug == "openai"
+
         host = openai_base_host
         return false if host.nil?
 
@@ -74,4 +76,4 @@ module Collavre
   end
 end
 
-RubyLLM::Providers::OpenAI.prepend(Collavre::RubyLlmPatches::OpenAIDropReasoningContent)
+RubyLLM::Protocols::ChatCompletions.prepend(Collavre::RubyLlmPatches::OpenAIDropReasoningContent)

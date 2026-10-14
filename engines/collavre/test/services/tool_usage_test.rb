@@ -111,7 +111,7 @@ class ToolUsageTest < ActiveSupport::TestCase
     Collavre::Current.set(user: @requester) do
       result, = Mcp::CronList.new.call_with_schema_validation!(creative_id: 0)
       assert_equal "Creative not found", result[:error]
-      Tools::CronList.new.call({})
+      Tools::CronList.new.call
     end
     row = Collavre::ToolUsage.sole
     assert_equal [ "mcp", "cron_list", false ], [ row.source, row.tool_name, row.succeeded ]

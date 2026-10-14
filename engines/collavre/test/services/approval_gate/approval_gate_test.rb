@@ -163,7 +163,7 @@ class ApprovalGateTest < ActiveSupport::TestCase
         @client.instance_variable_set(:@llm_api_key, "test")
         chat = @client.send(:build_conversation, [ tool_name ])
         rounds = 0
-        completion = lambda do |&block|
+        completion = lambda do |**_options, &block|
           rounds += 1
           if rounds == 2
             result = chat.messages.last
@@ -205,7 +205,7 @@ class ApprovalGateTest < ActiveSupport::TestCase
   test "snapshot retains completed results and marks remaining batch calls unexecuted" do
     previous = RubyLLM::ToolCall.new(id: "previous", name: "write", arguments: {})
     later = RubyLLM::ToolCall.new(id: "later", name: "write", arguments: {})
-    @chat.reset_messages!
+    @chat.messages = []
     @chat.add_message(role: :assistant, content: "Plan", thinking: RubyLLM::Thinking.new(text: "Thought", signature: "signature"),
       tool_calls: { previous.id => previous, @call.id => @call, later.id => later })
     @chat.add_message(role: :tool, tool_call_id: previous.id, content: "Already done")
@@ -284,7 +284,7 @@ class ApprovalGateTest < ActiveSupport::TestCase
     @chat.define_singleton_method(:complete) do |&block|
       raise "missing original result" unless messages.last.tool_call_id == "gate-1"
       block.call(OpenStruct.new(content: "Resumed"))
-      OpenStruct.new(content: "Resumed", input_tokens: 1, output_tokens: 1)
+      OpenStruct.new(content: "Resumed", tokens: RubyLLM::Tokens.new(input: 1, output: 1))
     end
     @client.stub(:build_conversation, @chat) do
       assert_equal "Resumed", @client.chat([ { role: "user", content: "Should not replace original history" } ])
@@ -308,14 +308,29 @@ class ApprovalGateTest < ActiveSupport::TestCase
   end
 
   test "snapshot round trips image input" do
-    content = RubyLLM::Content.new("Image", [ Rails.root.join("engines/collavre/test/fixtures/files/small.png") ])
-    @chat.add_message(role: :user, content: content)
+    message = @chat.add_message(role: :user, content: "Image", attachments: [ Rails.root.join("engines/collavre/test/fixtures/files/small.png") ])
     dumped = Collavre::AiAgent::ApprovalConversation.dump(@chat.messages)
     Collavre::AiAgent::ApprovalConversation.restore(@chat, {
       "messages" => dumped, "tool_call_id" => @call.id, "decision" => { "decision" => "approved" }
     })
-    restored = @chat.messages[2].content
-    assert_equal "Image", restored.text
-    assert_equal content.attachments.first.encoded, restored.attachments.first.encoded
+    restored = @chat.messages[2]
+    assert_equal "Image", restored.content
+    assert_equal message.attachments.first.encoded, restored.attachments.first.encoded
+  end
+  test "restores pre-upgrade image snapshots and tool thought signatures" do
+    encoded = Base64.strict_encode64(File.binread(Rails.root.join("engines/collavre/test/fixtures/files/small.png")))
+    snapshot = [
+      { "role" => "user", "content" => { "text" => "Legacy image", "attachments" => [ { "data" => encoded, "filename" => "small.png" } ] } },
+      { "role" => "assistant", "content" => nil, "thinking" => "Plan", "thinking_signature" => "message-signature",
+        "tool_calls" => { @call.id => @call.to_h.stringify_keys.merge("thought_signature" => "tool-signature") } }
+    ]
+    Collavre::AiAgent::ApprovalConversation.restore(@chat, {
+      "messages" => snapshot, "tool_call_id" => @call.id, "decision" => { "decision" => "approved" }
+    })
+    assert_equal "Legacy image", @chat.messages.first.content
+    assert_equal encoded, @chat.messages.first.attachments.first.encoded
+    assert_equal "message-signature", @chat.messages[1].thinking.signature
+    assert_equal "tool-signature", @chat.messages[1].tool_calls.fetch(@call.id).thought_signature
+    assert_equal @call.id, @chat.messages.last.tool_call_id
   end
 end

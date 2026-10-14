@@ -3,12 +3,13 @@
 module Collavre
   class LlmUsage
     class TokenNormalizer
-      FIELDS = { input_tokens: :input_tokens, output_tokens: :output_tokens,
-                 cache_read_tokens: :cached_tokens, cache_write_tokens: :cache_creation_tokens }.freeze
+      FIELDS = { input_tokens: :input, output_tokens: :output,
+                 cache_read_tokens: :cache_read, cache_write_tokens: :cache_write }.freeze
 
       def self.parts(response)
+        tokens = response.tokens if response.respond_to?(:tokens)
         FIELDS.to_h do |key, method|
-          value = response.public_send(method) if response.respond_to?(method)
+          value = tokens.public_send(method) if tokens.respond_to?(method)
           [ key, value.is_a?(Integer) && value >= 0 ? value : nil ]
         end
       end
