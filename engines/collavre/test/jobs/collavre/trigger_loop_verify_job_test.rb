@@ -26,6 +26,7 @@ module Collavre
       )
       Creative.where(id: @child.id).update_all(parent_id: @parent.id)
       @child.reload
+      Creative.rebuild!
 
       @topic = @child.topics.create!(name: "Drop Trigger", user: @human)
 
@@ -71,7 +72,7 @@ module Collavre
       factory = ->(**options) {
         LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
         client = Object.new
-        client.define_singleton_method(:chat) { |*, &block| block.call("VERIFIED") }
+        client.define_singleton_method(:judge) { |*, **| { "answers" => { "status" => { "choice" => "VERIFIED" } } } }
         client
       }
       job = TriggerLoopVerifyJob.new
@@ -116,10 +117,10 @@ module Collavre
       assert_equal 2, @child.data.dig("trigger", "loop", "current_iteration")
     end
 
-    test "accepts DONE when LLM call fails (graceful degradation)" do
+    test "continues when LLM verification fails" do
       error_client = ->(**opts) {
         obj = Object.new
-        obj.define_singleton_method(:chat) { |messages, &block| raise StandardError, "LLM API error" }
+        obj.define_singleton_method(:judge) { |*, **| raise StandardError, "LLM API error" }
         obj
       }
 
@@ -128,7 +129,7 @@ module Collavre
       end
 
       @child.reload
-      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
     end
 
     test "skips when loop state is not pending_verification" do
@@ -203,9 +204,8 @@ module Collavre
 
     def mock_ai_client(response_text)
       obj = Object.new
-      obj.define_singleton_method(:chat) do |messages, &block|
-        block&.call(response_text)
-        response_text
+      obj.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => response_text.split(":").first } }, "reason" => response_text }
       end
       obj
     end

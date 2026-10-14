@@ -6,6 +6,24 @@ module Collavre
 
     private
 
+    def decision_agent(creative, task_agent_id = nil)
+      native = creative.find_ai_agent(:feedback, capability: :judge, excluding: task_agent_id)
+      native ||= creative.find_ai_agent(:feedback, capability: :judge)
+      return native if native
+
+      agents = creative.all_shared_users(:feedback).map(&:user).compact.select { |agent| agent.supports?(:chat) }
+      agents.find { |agent| agent.id != task_agent_id } || agents.first
+    end
+
+    def decision_client(verifier, task, system_prompt)
+      AiClient.new(
+        vendor: verifier.llm_vendor, model: verifier.llm_model, system_prompt: system_prompt,
+        llm_api_key: verifier.llm_api_key.presence || verifier.creator&.llm_api_key,
+        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
+        context: { user: verifier, usage_source_task: task, creative: task.creative, topic_id: task.topic_id }
+      )
+    end
+
     # Resolve the task's current topic while excluding unrelated conversations.
     def trigger_completion_topic(task, loop_config)
       id = loop_config["trigger_topic_id"]

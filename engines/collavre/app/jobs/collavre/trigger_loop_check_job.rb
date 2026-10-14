@@ -199,9 +199,7 @@ module Collavre
     end
 
     def find_trigger_agent(creative)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
+      creative.find_ai_agent(:write, capability: :chat)
     end
 
     # LLM fallback: when the agent doesn't use [STATUS: ...] tags,
@@ -219,7 +217,7 @@ module Collavre
     PROMPT
 
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
-      verifier = pick_fallback_agent(parent_creative)
+      verifier = pick_fallback_agent(child_creative)
 
       unless verifier
         # No AI agent available for fallback — default to continue
@@ -240,28 +238,14 @@ module Collavre
         Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
       PROMPT
 
-      client = AiClient.new(
-        vendor: verifier.llm_vendor,
-        model: verifier.llm_model,
-        system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
-        llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
-        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { user: verifier, usage_source_task: task }
-      )
-
-      response_text = +""
-      client.chat([ { role: "user", text: prompt } ]) do |delta|
-        response_text << delta
-      end
-
-      cleaned = response_text.strip.upcase
-      case cleaned
-      when /\ADONE\b/
-        :done
-      when /\ABLOCKED\b/
-        :awaiting_user
-      else
-        :continue
+      result = decision_client(verifier, task, LLM_FALLBACK_SYSTEM_PROMPT).judge(prompt, questions: {
+        status: { type: :choice, instructions: "Determine the current task status.",
+                  options: { DONE: "All required actions executed", CONTINUE: "Work remains", BLOCKED: "External help needed" } }
+      })
+      case result.dig("answers", "status", "choice")
+      when "DONE" then :done
+      when "BLOCKED" then :awaiting_user
+      else :continue
       end
     rescue StandardError => e
       Rails.logger.error("[TriggerLoopCheckJob] LLM fallback failed: #{e.class} #{e.message}")
@@ -272,16 +256,7 @@ module Collavre
     # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
     # fall back to the trigger agent itself.
     def pick_fallback_agent(creative)
-      ai_agents = creative.all_shared_users(:feedback)
-                          .map(&:user)
-                          .select(&:ai_user?)
-
-      return ai_agents.first if ai_agents.any?
-
-      # Fall back to write-permission agents (the trigger agent)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
+      decision_agent(creative)
     end
 
     # Collect instructions from context creatives for LLM evaluation

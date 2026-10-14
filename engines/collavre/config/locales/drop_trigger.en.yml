@@ -9,6 +9,8 @@ en:
       toggle_on: "Drop Trigger enabled"
       toggle_off: "Drop Trigger disabled"
     trigger_loop:
+      incomplete_reason: "Required actions remain incomplete."
+      verification_error: "Completion verification failed. Please check the remaining work."
       instructions: |
         ---
         [LOOP INSTRUCTIONS]

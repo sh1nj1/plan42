@@ -9,6 +9,8 @@ ko:
       toggle_on: "드롭 트리거 활성화됨"
       toggle_off: "드롭 트리거 비활성화됨"
     trigger_loop:
+      incomplete_reason: "아직 실행하지 않은 작업이 있습니다."
+      verification_error: "완료 검증에 실패했습니다. 남은 작업을 확인해 주세요."
       instructions: |
         ---
         [LOOP INSTRUCTIONS]

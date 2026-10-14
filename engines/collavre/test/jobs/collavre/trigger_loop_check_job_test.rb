@@ -29,6 +29,7 @@ module Collavre
       )
       Creative.where(id: @child.id).update_all(parent_id: @parent.id)
       @child.reload
+      Creative.rebuild!
 
       @topic = @child.topics.create!(name: "Drop Trigger", user: @human)
 
@@ -72,7 +73,7 @@ module Collavre
       factory = ->(**options) {
         LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
         client = Object.new
-        client.define_singleton_method(:chat) { |*, &block| block.call("DONE") }
+        client.define_singleton_method(:judge) { |*, **| { "answers" => { "status" => { "choice" => "DONE" } } } }
         client
       }
       job = TriggerLoopCheckJob.new
@@ -906,8 +907,8 @@ module Collavre
 
       # Stub AiClient with a fake that yields "DONE" to the block
       fake_client = Object.new
-      fake_client.define_singleton_method(:chat) do |_messages, &block|
-        block.call("DONE") if block
+      fake_client.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => "DONE" } } }
       end
 
       TriggerLoopVerifyJob.stub(:perform_later, ->(task_id) { }) do
@@ -929,8 +930,8 @@ module Collavre
       )
 
       fake_client = Object.new
-      fake_client.define_singleton_method(:chat) do |_messages, &block|
-        block.call("CONTINUE") if block
+      fake_client.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => "CONTINUE" } } }
       end
 
       AiClient.stub(:new, ->(*_args) { fake_client }) do
@@ -951,8 +952,8 @@ module Collavre
       )
 
       fake_client = Object.new
-      fake_client.define_singleton_method(:chat) do |_messages, &block|
-        block.call("BLOCKED") if block
+      fake_client.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => "BLOCKED" } } }
       end
 
       AiClient.stub(:new, ->(*_args) { fake_client }) do

@@ -121,7 +121,7 @@ module Collavre
 
       def trigger_context
         parent = creative.parent
-        [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write) ]
+        [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write, capability: :chat) ]
       end
 
       def create_trigger_comment(topic, content, skip_dispatch:)

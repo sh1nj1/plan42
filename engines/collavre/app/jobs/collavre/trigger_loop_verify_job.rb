@@ -36,7 +36,7 @@ module Collavre
       return unless last_agent_comment
 
       instructions = collect_instructions(child_creative, parent_creative)
-      verifier = pick_verifier_agent(parent_creative, task.agent_id)
+      verifier = pick_verifier_agent(child_creative, task.agent_id)
 
       unless verifier
         # No verifier available — accept DONE as-is
@@ -108,15 +108,7 @@ module Collavre
     # is NOT the original task agent. Fall back to the task agent only if
     # no other AI agent exists.
     def pick_verifier_agent(creative, task_agent_id)
-      ai_agents = creative.all_shared_users(:feedback)
-                          .map(&:user)
-                          .select(&:ai_user?)
-
-      return nil if ai_agents.empty?
-
-      # Prefer a different agent
-      other = ai_agents.find { |a| a.id != task_agent_id }
-      other || ai_agents.first
+      decision_agent(creative, task_agent_id)
     end
 
     VERIFY_SYSTEM_PROMPT = <<~PROMPT.freeze
@@ -146,33 +138,34 @@ module Collavre
         - INCOMPLETE: [list the unexecuted actions]
       PROMPT
 
-      client = AiClient.new(
-        vendor: verifier.llm_vendor,
-        model: verifier.llm_model,
-        system_prompt: VERIFY_SYSTEM_PROMPT,
-        llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
-        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { user: verifier, usage_source_task: task }
-      )
-
-      response_text = +""
-      client.chat([ { role: "user", text: prompt } ]) do |delta|
-        response_text << delta
-      end
-
-      cleaned = response_text.strip
-      if cleaned.blank? || cleaned.start_with?("VERIFIED")
-        :verified
-      elsif cleaned.start_with?("AWAITING_USER")
-        :awaiting_user
+      result = decision_client(verifier, task, VERIFY_SYSTEM_PROMPT).judge(prompt, questions: {
+        status: { type: :choice, instructions: "Were all required actions actually executed?",
+                  options: { VERIFIED: "All actions executed", AWAITING_USER: "Correctly waiting for human action",
+                             INCOMPLETE: "Required actions remain" } }
+      })
+      case result.dig("answers", "status", "choice")
+      when "VERIFIED" then :verified
+      when "AWAITING_USER" then :awaiting_user
       else
-        # Extract the incomplete reason for the feedback message
-        cleaned
+        incomplete_reason(result, prompt, task)
       end
     rescue StandardError => e
       Rails.logger.error("[TriggerLoopVerifyJob] LLM verification failed: #{e.class} #{e.message}")
-      # On LLM failure, accept DONE to avoid blocking
-      :verified
+      I18n.t("collavre.trigger_loop.verification_error")
+    end
+
+    def incomplete_reason(result, prompt, task)
+      return result["reason"] if result["reason"].present?
+
+      agent = task.creative.find_ai_agent(:feedback, capability: :chat)
+      if result["source"] == "judge" && agent
+        explanation = decision_client(agent, task, VERIFY_SYSTEM_PROMPT).chat([
+          { role: "user", text: "#{prompt}\nThe decision is INCOMPLETE. List only the unexecuted actions as a short explanation." }
+        ])
+      end
+      explanation.presence || I18n.t("collavre.trigger_loop.incomplete_reason")
+    rescue StandardError
+      I18n.t("collavre.trigger_loop.incomplete_reason")
     end
 
     def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)

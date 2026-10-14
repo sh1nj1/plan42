@@ -3,7 +3,7 @@ module Collavre
     self.table_name = "users"
 
     include HasInboxCreative
-    include AgentLiveness, AgentRunOptions, SystemAgentIdentity
+    include AgentLiveness, AgentRunOptions, SystemAgentIdentity, AiCapabilities
 
     has_many :user_themes, class_name: "Collavre::UserTheme", dependent: :destroy
 
@@ -231,13 +231,13 @@ module Collavre
     end
 
     def self.mentionable_for(creative)
-      scope = where(searchable: true)
+      scope = where(searchable: true).chat_capable
       return scope unless creative
 
       origin = creative.effective_origin
       permitted_users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
       permitted_ids = permitted_users.compact.map(&:id)
-      permitted_ids.any? ? scope.or(where(id: permitted_ids)) : scope
+      permitted_ids.any? ? scope.or(where(id: permitted_ids).chat_capable) : scope
     end
 
     normalizes :email, with: ->(e) { e.strip.downcase }

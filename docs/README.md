@@ -35,6 +35,9 @@ thin agent entry point that indexes into this directory.
 
 ## Integrations
 
+- [decision_adapter.md](decision_adapter.md) — native judgments, chat fallback,
+  agent capabilities, and trigger-loop verification.
+
 - [github_integration.md](github_integration.md)
 - [notion_integration.md](notion_integration.md)
 - [google-auth.md](google-auth.md)

@@ -606,7 +606,7 @@ module Collavre
       parent = creative.parent
       return unless parent&.drop_trigger_enabled?
 
-      agent = parent.find_ai_agent(:write)
+      agent = parent.find_ai_agent(:write, capability: :chat)
       return unless agent
 
       creative.comments.create!(

@@ -33,6 +33,8 @@ module Collavre
       end
 
       def self.prepare_waiting_task!(task)
+        return false unless task.agent.supports?(:chat)
+
         if task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
           return false unless task.creative&.has_permission?(task.agent, :feedback)
         end
@@ -146,7 +148,7 @@ module Collavre
         # All agents need feedback permission on the creative to respond
         # searchable only affects discoverability, not response permission
         creative = matched_creative
-        return false unless creative
+        return false unless creative && agent.supports?(:chat)
 
         creative.has_permission?(agent, :feedback)
       end
