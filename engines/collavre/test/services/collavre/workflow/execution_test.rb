@@ -915,6 +915,60 @@ module Collavre
         assert_equal 1, Execution.count
       end
 
+      test "human handoff recreates System when deletion wins before notice locking" do
+        handler!("human")
+        inbox = Creative.inbox_for(@owner)
+        topic = inbox.system_topic(fallback_user: @owner)
+        lookup = Creative.instance_method(:system_topic)
+        first = true
+        Creative.define_method(:system_topic) do |**kwargs|
+          row = lookup.bind_call(self, **kwargs)
+          if first && id == inbox.id
+            first = false
+            Topics::TopicDestroy.new(topic: row, source_creative: self).call
+          end
+          row
+        end
+        outcome = dispatch
+        execution = Execution.find(outcome.workflow_execution_id)
+        notice = Comment.find(CommentNotificationDelivery.find_by!(workflow_execution_id: execution.id).inbox_comment_id)
+        assert_equal "human_handoff", execution.reload.reason
+        assert_not_equal topic.id, notice.topic_id
+        assert_equal inbox.system_topic.id, notice.topic_id
+      ensure
+        Creative.define_method(:system_topic, lookup) if lookup
+      end
+
+      test "notice persistence locks System against deletion before inserting" do
+        inbox = Creative.inbox_for(@owner)
+        topic = inbox.system_topic(fallback_user: @owner)
+        reload_topic = topic.method(:reload)
+        locks = []
+        topic.stub(:reload, ->(**options) { locks << options[:lock]; reload_topic.call(**options) }) do
+          inbox.stub(:system_topic, topic) do
+            notice = InboxNotice.persist!(inbox: inbox, owner: @owner, key: "locked-notice", content: "Generic notice")
+            assert_equal topic.id, notice.topic_id
+          end
+        end
+        assert_includes locks, "FOR KEY SHARE"
+      end
+
+      test "repeated System disappearance stops without persisting a partial notice" do
+        inbox = Creative.inbox_for(@owner)
+        topic = inbox.system_topic(fallback_user: @owner)
+        attempts = 0
+        inbox.stub(:system_topic, topic) do
+          topic.stub(:reload, ->(**) { attempts += 1; raise ActiveRecord::RecordNotFound }) do
+            assert_no_difference "Comment.count" do
+              assert_raises(ActiveRecord::RecordNotFound) do
+                InboxNotice.persist!(inbox: inbox, owner: @owner, key: "unstable-notice", content: "Generic notice")
+              end
+            end
+          end
+        end
+        assert_equal 3, attempts
+      end
+
       test "inbox integrity failure rolls back and broadcast failure cannot erase the notice" do
         inbox = Creative.inbox_for(@owner)
         topic = inbox.system_topic(fallback_user: @owner)
