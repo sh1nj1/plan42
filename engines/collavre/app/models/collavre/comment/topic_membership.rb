@@ -29,8 +29,28 @@ module Collavre
         self.topic_assigned_at = Time.current
       end
 
+      # Notifications retain their resolved System object if DELETE wins before
+      # insertion. Retry only this reserved destination; ordinary stale topics
+      # must still fail. The lock is held by the enclosing comment transaction.
+      def lock_destination_topic
+        return Topic.where(id: topic_id).lock.first unless system_notification_destination?
+
+        3.times do |attempt|
+          locked = Topic.where(id: topic_id).lock("FOR KEY SHARE").first
+          return locked if locked
+
+          self.topic = creative.system_topic if attempt < 2
+        end
+        nil
+      end
+
+      def system_notification_destination?
+        user_id.nil? && creative&.inbox? && topic&.creative_id == creative_id &&
+          topic.name == Creative::SYSTEM_TOPIC_NAME
+      end
+
       def lock_matching_topic
-        locked_topic = Topic.where(id: topic_id).lock.first
+        locked_topic = lock_destination_topic
         return if locked_topic&.creative_id == creative_id
 
         errors.add(:topic, I18n.t("collavre.comments.invalid_topic"))
