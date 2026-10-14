@@ -1,27 +1,10 @@
-import CommonPopupController from './common_popup_controller'
+import { escapeHtmlText } from '../lib/html_escape'
+import SearchableListController from './searchable_list_controller'
 
 const ICON_ARCHIVE = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`
 
-export default class extends CommonPopupController {
+export default class extends SearchableListController {
     static targets = ['input', 'list', 'close']
-
-    connect() {
-        super.connect()
-        this._allItems = []
-        this._onInputBound = this._onInput.bind(this)
-        this._onKeydownBound = this.handleInputKeydown.bind(this)
-        this._onCloseBound = () => this.close()
-        this.inputTarget.addEventListener('input', this._onInputBound)
-        this.inputTarget.addEventListener('keydown', this._onKeydownBound)
-        this.closeTarget.addEventListener('click', this._onCloseBound)
-    }
-
-    disconnect() {
-        this.inputTarget?.removeEventListener('input', this._onInputBound)
-        this.inputTarget?.removeEventListener('keydown', this._onKeydownBound)
-        this.closeTarget?.removeEventListener('click', this._onCloseBound)
-        super.disconnect()
-    }
 
     openForTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }, anchorRect, onSelectCallback, boundsElement = null) {
         this.onSelectCallback = onSelectCallback
@@ -39,13 +22,7 @@ export default class extends CommonPopupController {
     }
 
     updateTopics({ topics = [], archivedTopics = [], mainTopicId = null, allMessagesLabel = 'All Messages' }) {
-        const activeItem = this.popup.items[this.popup.activeIndex]
-        this._allItems = this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel })
-        this._onInput()
-        if (!activeItem) return
-
-        const activeIndex = this.popup.items.findIndex(item => String(item.id) === String(activeItem.id))
-        if (activeIndex >= 0) this.popup.setActiveIndex(activeIndex)
+        this.updateListItems(this._buildItems({ topics, archivedTopics, mainTopicId, allMessagesLabel }))
     }
 
     isMobile() {
@@ -95,10 +72,7 @@ export default class extends CommonPopupController {
     }
 
     renderItem(item) {
-        const escaped = String(item.label || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
+        const escaped = escapeHtmlText(String(item.label || ''))
         const unreadBadge = item.unreadCount > 0
             ? `<span class="topic-unread-badge">${item.unreadCount}</span>`
             : ''

@@ -1,4 +1,5 @@
-import CommonPopupController from './common_popup_controller'
+import { escapeHtmlDoubleQuoted } from '../lib/html_escape'
+import SearchableListController from './searchable_list_controller'
 
 // Icons are keyed, never injected as raw markup by callers: an entity label can
 // come from user input, so the only HTML this popup emits is picked from here.
@@ -11,20 +12,13 @@ const ICONS = {
 // Searchable vertical popup over a list of already-built items. The topic bar has
 // its own controller because topic items carry topic-specific ordering and unread
 // rules; contexts and participants share this one.
-export default class extends CommonPopupController {
+export default class extends SearchableListController {
     static targets = ['input', 'list', 'close']
 
     connect() {
         super.connect()
-        this._allItems = []
         this._configureAccessibility()
         this.popup.onActiveChange = () => this._syncActiveDescendant()
-        this._onInputBound = this._onInput.bind(this)
-        this._onKeydownBound = this.handleInputKeydown.bind(this)
-        this._onCloseBound = () => this.close()
-        this.inputTarget.addEventListener('input', this._onInputBound)
-        this.inputTarget.addEventListener('keydown', this._onKeydownBound)
-        this.closeTarget.addEventListener('click', this._onCloseBound)
     }
 
     _configureAccessibility() {
@@ -40,13 +34,6 @@ export default class extends CommonPopupController {
         }
         const closeLabel = this.element.dataset.closeLabel
         if (closeLabel) this.closeTarget.setAttribute('aria-label', closeLabel)
-    }
-
-    disconnect() {
-        this.inputTarget?.removeEventListener('input', this._onInputBound)
-        this.inputTarget?.removeEventListener('keydown', this._onKeydownBound)
-        this.closeTarget?.removeEventListener('click', this._onCloseBound)
-        super.disconnect()
     }
 
     // onSelectCallback may return true to keep the popup open (toggling several
@@ -68,13 +55,7 @@ export default class extends CommonPopupController {
     }
 
     updateItems(items = []) {
-        const activeItem = this.popup.items[this.popup.activeIndex]
-        this._allItems = items
-        this._onInput()
-        if (!activeItem) return
-
-        const activeIndex = this.popup.items.findIndex(item => String(item.id) === String(activeItem.id))
-        if (activeIndex >= 0) this.popup.setActiveIndex(activeIndex)
+        this.updateListItems(items)
     }
 
     setItems(items) {
@@ -154,11 +135,7 @@ export default class extends CommonPopupController {
     }
 
     _escape(value) {
-        return String(value == null ? '' : value)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
+        return escapeHtmlDoubleQuoted(String(value == null ? '' : value))
     }
 
     dispatchClose(reason) {

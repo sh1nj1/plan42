@@ -1,3 +1,4 @@
+import { entityListPopup, closeEntityListPopup, toggleEntityListPopup } from '../../lib/entity_list_popup'
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { Controller } from '@hotwired/stimulus'
@@ -652,15 +653,11 @@ export default class extends Controller {
   }
 
   _participantListPopup() {
-    const modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
-    return modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
+    return entityListPopup(this, PARTICIPANT_LIST_MODAL_ID)
   }
 
   _closeParticipantListPopup() {
-    const modal = this.element.querySelector(`#${PARTICIPANT_LIST_MODAL_ID}`)
-    const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
-    popup?.close()
-    modal?.remove()
+    closeEntityListPopup(this, PARTICIPANT_LIST_MODAL_ID)
     this._participantListToggleGuard?.cancel()
     this.setParticipantListButtonExpanded(false)
   }
@@ -680,39 +677,12 @@ export default class extends Controller {
       this.setParticipantListButtonExpanded(true)
     }
 
-    let modal = document.getElementById(PARTICIPANT_LIST_MODAL_ID)
-    if (modal) {
-      const popup = this._participantListPopup()
-      if (popup?.popup?.isOpen()) {
-        popup.close()
-        this.setParticipantListButtonExpanded(false)
-      } else if (popup) {
-        openWith(popup)
-      }
-      return
-    }
-
-    modal = document.createElement('div')
-    modal.id = PARTICIPANT_LIST_MODAL_ID
-    modal.className = 'common-popup'
-    modal.style.display = 'none'
-    modal.dataset.controller = 'entity-list'
-    modal.dataset.closeLabel = this.element.dataset.closeLabel || ''
-    modal.innerHTML = `
-      <button type="button" class="popup-close-btn" data-entity-list-target="close">&times;</button>
-      <input type="text" class="shared-input-surface" style="width:100%;margin-bottom:0.5em;"
-        data-entity-list-target="input">
-      <ul class="common-popup-list" data-popup-list data-entity-list-target="list"></ul>
-    `
-    modal.querySelector('input').placeholder =
-      this.element.dataset.participantSearchPlaceholderText || 'Search users...'
-    // Caged inside the chat box, like the topic list popup.
-    this.element.appendChild(modal)
-
-    requestAnimationFrame(() => {
-      const popup = this.application.getControllerForElementAndIdentifier(modal, 'entity-list')
-      if (popup) openWith(popup)
-      else console.error('entity-list controller not found after creation')
+    toggleEntityListPopup({
+      owner: this,
+      id: PARTICIPANT_LIST_MODAL_ID,
+      placeholder: this.element.dataset.participantSearchPlaceholderText || 'Search users...',
+      open: openWith,
+      setExpanded: (expanded) => this.setParticipantListButtonExpanded(expanded)
     })
   }
 
