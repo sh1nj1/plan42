@@ -3,10 +3,6 @@ import { Controller } from '@hotwired/stimulus'
 export default class extends Controller {
   static targets = ['textarea']
 
-  onPopupOpened() {}
-
-  onPopupClosed() {}
-
   insertMention(user) {
     const textarea = this.textareaTarget
     if (!textarea) return

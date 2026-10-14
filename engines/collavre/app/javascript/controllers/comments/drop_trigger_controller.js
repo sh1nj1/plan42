@@ -37,7 +37,6 @@ export default class extends Controller {
     connect() {
         this.enabled = false
         this.canWrite = false
-        this._cachedData = null
         this._role = "none" // "container" | "task" | "none"
         this._loopState = null
         this._onCreativeUpdated = this._handleCreativeUpdated.bind(this)
@@ -56,7 +55,6 @@ export default class extends Controller {
         this._creativeId = creativeId
         this.enabled = false
         this.canWrite = false
-        this._cachedData = null
         this._role = "none"
         this._loopState = null
         this._hideAll()
@@ -67,7 +65,6 @@ export default class extends Controller {
         this._creativeId = null
         this.enabled = false
         this.canWrite = false
-        this._cachedData = null
         this._role = "none"
         this._loopState = null
         this._hideAll()
@@ -159,11 +156,11 @@ export default class extends Controller {
             const response = await fetch(`/creatives/${creativeId}.json`, { cache: 'no-store' })
             if (response.ok) {
                 const json = await response.json()
-                this._cachedData = json.data || {}
+                const data = json.data || {}
                 this.canWrite = json.can_edit || false
 
                 const triggerLoop = json.trigger_loop || null
-                const trigger = this._cachedData.trigger || {}
+                const trigger = data.trigger || {}
                 const isTriggerTask = json.is_trigger_task === true
 
                 if (isTriggerTask || (triggerLoop && triggerLoop.state)) {
@@ -183,8 +180,6 @@ export default class extends Controller {
                 }
 
                 this._updateUI()
-            } else {
-
             }
         } catch (e) {
             console.error("Failed to load trigger state", e)

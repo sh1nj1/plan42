@@ -212,10 +212,6 @@ export default class extends Controller {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--presence')
   }
 
-  get mentionMenuController() {
-    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--mention-menu')
-  }
-
   get topicsController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--topics')
   }
@@ -495,9 +491,6 @@ export default class extends Controller {
     if (this.presenceController) {
       this.presenceController.onPopupOpened({ creativeId })
     }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId })
-    }
     if (this.contextsController) {
       this.contextsController.onPopupOpened({ creativeId })
     }
@@ -544,7 +537,6 @@ export default class extends Controller {
     this.presenceController?.onPopupClosed()
     this.formController?.onPopupClosed()
     this.listController?.onPopupClosed()
-    this.mentionMenuController?.onPopupClosed()
     this.topicsController?.onPopupClosed()
     this.contextsController?.onPopupClosed()
     this.dropTriggerController?.onPopupClosed()

@@ -20,10 +20,10 @@ describe('FeatureCardsController', () => {
         </div>
       </template>
       <div class="feature-card-grid" data-comments--feature-cards-target="grid">
-        <div class="feature-card" data-key="slash_command" data-comments--feature-cards-target="card">
+        <div class="feature-card" data-key="slash_command">
           <button type="button" class="feature-card-dismiss" data-action="click->comments--feature-cards#dismiss" data-key="slash_command">&times;</button>
         </div>
-        <div class="feature-card" data-key="add_user" data-comments--feature-cards-target="card">
+        <div class="feature-card" data-key="add_user">
           <button type="button" class="feature-card-dismiss" data-action="click->comments--feature-cards#dismiss" data-key="add_user">&times;</button>
         </div>
       </div>

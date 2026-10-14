@@ -1,6 +1,5 @@
 module Collavre
   class CommentsController < ApplicationController
-    LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
     include Collavre::Comments::CommentScoping
     include Collavre::Comments::ApprovalActions
     include Collavre::Comments::Conversion

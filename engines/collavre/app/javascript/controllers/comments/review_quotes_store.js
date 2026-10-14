@@ -74,11 +74,6 @@ export default class ReviewQuotesStore {
     return removed
   }
 
-  setFeedback(quoteId, feedback) {
-    const quote = this._quotes.find(q => q.id === quoteId)
-    if (quote) quote.feedback = feedback.trim()
-  }
-
   saveActiveFeedback(textareaValue) {
     if (!this._activeId) return
     const quote = this._quotes.find(q => q.id === this._activeId)
