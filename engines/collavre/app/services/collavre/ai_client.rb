@@ -81,6 +81,7 @@ module Collavre
         vendor = vendor.to_s.strip.downcase
         capability = capability.to_sym
         return false unless vendor_capabilities.fetch(vendor, %i[chat]).include?(capability)
+        return false if capability == :judge && !VENDOR_TO_PROVIDER.key?(vendor)
         return true unless vendor == "openai" && capability == :judge && !model.nil?
 
         RubyLLM::Providers::OpenAI::Capabilities.augment([], model_id: model).include?("judgment")

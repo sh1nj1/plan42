@@ -36,7 +36,11 @@ client.judge("Task instructions and evidence", questions: {
 Extensions declare capabilities with
 `AiClient.register_vendor_capabilities(vendor, capabilities: %i[chat judge])`.
 `AiClient.supports?(vendor, capability)` and `User#supports?` expose the registry.
-Native-only agents are excluded from mentions and chat execution.
+Native judgment support also requires a built-in RubyLLM provider mapping.
+Declaring `judge` alone does not supply that mapping: unmapped vendors are not
+native verifier candidates. Vendors that also declare `chat` use their chat
+adapter for decisions instead. Native-only agents are excluded from mentions
+and chat execution.
 
 Chat probability values are uncalibrated model estimates. The adapter does not
 silently convert a probability question to a categorical question or imply

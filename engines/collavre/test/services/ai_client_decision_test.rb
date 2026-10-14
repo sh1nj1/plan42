@@ -225,10 +225,23 @@ module Collavre
     test "extension capabilities can be declared explicitly" do
       previous = AiClient.vendor_capabilities.dup
       AiClient.register_vendor_capabilities("TEST-EXTENSION", capabilities: [ :judge ])
-      assert AiClient.supports?("test-extension", :judge)
+      assert_not AiClient.supports?("test-extension", :judge)
       assert_not AiClient.supports?("test-extension", :chat)
     ensure
       AiClient.instance_variable_set(:@vendor_capabilities, previous)
+    end
+
+    test "unmapped judgment vendors with chat support use their chat adapter" do
+      capabilities = AiClient.vendor_capabilities.merge("acme" => %i[chat judge])
+      client = AiClient.new(vendor: "acme", model: "test", system_prompt: "Evaluate", llm_api_key: "test", context: { user: @agent })
+      AiClient.stub(:vendor_capabilities, capabilities) do
+        assert_not AiClient.supports?("acme", :judge)
+        client.stub(:chat, ->(*) { response.content.to_json }) do
+          result = client.judge("Task", questions: QUESTIONS)
+          assert_equal "DONE", result.dig("answers", "status", "choice")
+          assert_equal "chat", result["source"]
+        end
+      end
     end
 
     test "decision questions validate probability and score bounds" do

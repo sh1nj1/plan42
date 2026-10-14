@@ -39,6 +39,8 @@ module Collavre
         @judge.update!(llm_vendor: "acme", creator: @human)
         assert_not_includes AiClient.vendor_options.map(&:last), "acme"
         assert_not @judge.supports?(:chat)
+        assert_not @judge.supports?(:judge)
+        assert_nil @child.find_ai_agent(:feedback, capability: :judge)
         assert_not_includes User.chat_capable, @judge
         assert_not_includes User.mentionable_for(@child), @judge
         editor = Workflow::Editor.new(@parent, @human)
