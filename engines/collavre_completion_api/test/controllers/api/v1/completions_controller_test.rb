@@ -49,6 +49,21 @@ module CollavreCompletionApi
           assert_match(/Invalid model/, body.dig("error", "message"))
         end
 
+        test "rejects judgment-only agents for both model ID formats and streaming modes" do
+          @ai_bot.update!(llm_vendor: "typesafe", llm_model: "jev-latest", searchable: true)
+          Collavre::AiClient.stub(:new, ->(**) { flunk "Rejected agent must not create a chat client" }) do
+            [ "bot", "collavre/#{@ai_bot.id}" ].product([ false, true ]).each do |model, stream|
+              post "/api/v1/chat/completions",
+                   params: { model: model, stream: stream,
+                             messages: [ { role: "user", content: "hi" } ] }.to_json,
+                   headers: auth_headers
+
+              assert_response :bad_request
+              assert_equal "Invalid model", JSON.parse(response.body).dig("error", "message")
+            end
+          end
+        end
+
         test "returns 400 with external model name" do
           post "/api/v1/chat/completions",
                params: { model: "gpt-4", messages: [ { role: "user", content: "hi" } ] }.to_json,

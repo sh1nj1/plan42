@@ -77,7 +77,7 @@ module CollavreCompletionApi
             Collavre::User.where("email LIKE ?", "#{sanitized}@%").first
           end
 
-          return nil unless agent&.ai_user?
+          return nil unless agent&.supports?(:chat)
           return nil unless agent.created_by_id == current_user.id || agent.searchable?
 
           agent
