@@ -15,6 +15,23 @@ module Collavre
       @judge_share = CreativeShare.create!(creative: @parent, user: @judge, permission: :feedback)
     end
 
+    test "chat job resolver skips judgment-only pins policies and shared agents" do
+      topic = @child.topics.create!(name: "Summary", user: @human, primary_agent: @judge)
+      resolver = Object.new.extend(AiAgentResolvable)
+      policy = Struct.new(:arbitration_config).new({ "primary_agent_id" => @judge.id })
+      shares = [ @judge_share, CreativeShare.find_by!(creative: @parent, user: @chat) ]
+      Orchestration::PolicyResolver.stub(:new, policy) do
+        @child.effective_origin.stub(:all_shared_users, shares) do
+          assert_equal @chat, resolver.send(:resolve_ai_agent, @child, topic.id)
+          topic.update!(primary_agent: nil)
+          assert_equal @chat, resolver.send(:resolve_ai_agent, @child, topic.id)
+          topic.update!(primary_agent: @chat)
+          assert_equal @chat, resolver.send(:resolve_ai_agent, @child, topic.id)
+          assert_equal @chat, resolver.send(:resolve_ai_agent, @child, nil)
+        end
+      end
+    end
+
     test "capability-only vendors are excluded from chat assignment surfaces" do
       capabilities = AiClient.vendor_capabilities.dup
       AiClient.stub(:vendor_capabilities, capabilities) do
