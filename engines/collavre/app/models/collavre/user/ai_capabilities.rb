@@ -11,7 +11,7 @@ module Collavre
 
       class_methods do
         def chat_capable
-          vendors = AiClient.vendor_options.map(&:last).reject { |vendor| AiClient.supports?(vendor, :chat) }
+          vendors = AiClient.vendor_capabilities.keys.reject { |vendor| AiClient.supports?(vendor, :chat) }
           vendors.empty? ? all : where("llm_vendor IS NULL OR llm_vendor NOT IN (?)", vendors)
         end
       end

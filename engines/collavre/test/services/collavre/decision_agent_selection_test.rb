@@ -15,6 +15,29 @@ module Collavre
       @judge_share = CreativeShare.create!(creative: @parent, user: @judge, permission: :feedback)
     end
 
+    test "capability-only vendors are excluded from chat assignment surfaces" do
+      capabilities = AiClient.vendor_capabilities.dup
+      AiClient.stub(:vendor_capabilities, capabilities) do
+        AiClient.register_vendor_capabilities("acme", capabilities: [ :judge ])
+        @judge.update!(llm_vendor: "acme", creator: @human)
+        assert_not_includes AiClient.vendor_options.map(&:last), "acme"
+        assert_not @judge.supports?(:chat)
+        assert_not_includes User.chat_capable, @judge
+        assert_not_includes User.mentionable_for(@child), @judge
+        editor = Workflow::Editor.new(@parent, @human)
+        assert_not_includes editor.as_json[:agents].pluck(:id), @judge.id
+        assert_includes User.chat_capable, @chat
+      end
+    end
+
+    test "missing-agent translations require chat support and write permission" do
+      en = I18n.t("collavre.drop_trigger.no_agent", locale: :en, parent_description: "Stage")
+      ko = I18n.t("collavre.drop_trigger.no_agent", locale: :ko, parent_description: "Stage")
+      assert_includes en, "chat-capable AI agent with write permission"
+      assert_includes ko, "대화 가능한 AI 에이전트"
+      assert_includes ko, "쓰기 권한"
+    end
+
     test "native decisions are preferred and feedback permission includes write" do
       job = TriggerLoopCheckJob.new
       assert_equal @judge, job.send(:pick_fallback_agent, @child)
