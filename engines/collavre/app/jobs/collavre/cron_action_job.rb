@@ -21,7 +21,7 @@ module Collavre
         return
       end
 
-      topic = topic_id.present? ? Topic.find_by(id: topic_id) : creative.main_topic(fallback_user: agent)
+      topic = resolve_topic(creative, topic_id, agent)
       return unless usable_topic?(topic, topic_id)
 
       comment = create_comment(creative, topic, agent, message)
@@ -62,6 +62,15 @@ module Collavre
     end
 
     private
+
+    def resolve_topic(creative, topic_id, agent)
+      return Topic.find_by(id: topic_id) if topic_id.present?
+      return creative.main_topic(fallback_user: agent) unless enqueued_at
+
+      # Legacy queued occurrences have no explicit Main ID or recurring-task key.
+      # Never let them create Main or target a replacement born after enqueueing.
+      creative.topics.where("created_at <= ?", enqueued_at).find_by(name: Creative::MAIN_TOPIC_NAME)
+    end
 
     def usable_topic?(topic, topic_id)
       reason = topic ? "is read-only History" : "not found"
