@@ -69,4 +69,34 @@ class CommentVersionsRunOptionsTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_nil @comment.reload.agent_run_options
   end
+  test "read-only viewers can list versions but cannot select or destroy them" do
+    viewer = users(:two)
+    Collavre::CreativeShare.create!(creative: @creative, user: viewer, shared_by: @user, permission: :read)
+    sign_in_as viewer, password: "password"
+    get @url, as: :json
+    assert_response :success
+    assert_equal 2, response.parsed_body["total"]
+
+    post "#{@url}/#{@old.id}/select", as: :json
+    assert_response :forbidden
+    assert_equal I18n.t("collavre.comments.not_owner"), response.parsed_body["error"]
+    assert_equal @latest.id, @comment.reload.selected_version_id
+    assert_no_difference("Collavre::CommentVersion.count") do
+      delete "#{@url}/#{@old.id}", as: :json
+    end
+    assert_response :forbidden
+    assert_equal I18n.t("collavre.comments.not_owner"), response.parsed_body["error"]
+  end
+
+  test "creative admins can change another user's versions" do
+    admin = users(:two)
+    Collavre::CreativeShare.create!(creative: @creative, user: admin, shared_by: @user, permission: :admin)
+    sign_in_as admin, password: "password"
+    post "#{@url}/#{@old.id}/select", as: :json
+    assert_response :success
+    assert_equal @old.id, @comment.reload.selected_version_id
+    delete "#{@url}/#{@latest.id}", as: :json
+    assert_response :success
+    assert_equal 1, @comment.comment_versions.count
+  end
 end

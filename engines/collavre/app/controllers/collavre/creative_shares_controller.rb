@@ -1,5 +1,6 @@
 module Collavre
   class CreativeSharesController < ApplicationController
+    include Collavre::PermissionUpdateResponse
     def index
       @creative = Creative.find(params[:creative_id])
       unless @creative.has_permission?(Current.user, :admin)
@@ -114,17 +115,7 @@ module Collavre
     def update
       @creative_share = find_admin_creative_share(params[:id])
 
-      if @creative_share.update(permission: params[:permission])
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, notice: t("collavre.creatives.share.permission_updated") }
-          format.json { render json: { permission: @creative_share.permission }, status: :ok }
-        end
-      else
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, alert: @creative_share.errors.full_messages.to_sentence }
-          format.json { render json: { error: @creative_share.errors.full_messages.to_sentence }, status: :unprocessable_entity }
-        end
-      end
+      update_permission_response(@creative_share)
     end
 
     def destroy
