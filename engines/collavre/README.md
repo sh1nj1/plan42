@@ -199,6 +199,15 @@ user.update(
 
 System prompts support Liquid templates with access to context variables.
 
+Collavre uses RubyLLM `~> 2.1.0` with in-memory conversations, without RubyLLM's
+`acts_as` persistence. Collavre owns approval snapshots and token-usage records;
+approval snapshots saved before RubyLLM 2.x can still be restored. OpenAI and
+OpenAI-compatible CLI gateways explicitly use the Chat Completions protocol.
+
+The host Gemfile pins `rails_mcp_engine` to Git revision
+`0afe735b16238ac9935d27d7e6da35c1ee0967c0` for RubyLLM 2.x tool compatibility
+until its gem release is published (see [upstream PR #18](https://github.com/vrerv/rails_mcp_engine/pull/18)).
+
 ## Development
 
 ### Running Tests
