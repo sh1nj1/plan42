@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import csrfFetch from "../lib/api/csrf_fetch"
 import { renderCommentMarkdown, renderMermaidDiagrams } from "../lib/utils/markdown"
 import { confirmDialog } from "../lib/utils/dialog"
 
@@ -62,9 +63,9 @@ export default class extends Controller {
     const version = versions[this.currentIndex - 1]
     if (!version || version.id === this.selectedVersionId) return
 
-    const response = await fetch(
+    const response = await csrfFetch(
       `${this.versionsUrlValue}/${version.id}/select`,
-      { method: "POST", headers: { "X-CSRF-Token": this.csrfToken } }
+      { method: "POST" }
     )
 
     if (response.ok) {
@@ -83,9 +84,9 @@ export default class extends Controller {
 
     if (!(await confirmDialog(this.deleteBtnTarget.dataset.confirmMessage || "Are you sure?", { danger: true }))) return
 
-    const response = await fetch(
+    const response = await csrfFetch(
       `${this.versionsUrlValue}/${version.id}`,
-      { method: "DELETE", headers: { "X-CSRF-Token": this.csrfToken } }
+      { method: "DELETE" }
     )
 
     if (response.ok) {
@@ -168,7 +169,4 @@ export default class extends Controller {
     return version && version.id === this.selectedVersionId
   }
 
-  get csrfToken() {
-    return document.querySelector('meta[name="csrf-token"]')?.content || ""
-  }
 }

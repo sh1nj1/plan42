@@ -52,7 +52,6 @@ export default class extends Controller {
     this.currentPresentIds = []
     this.typingUsers = {}
     this.typingTimers = {}
-    this.manualTypingMessage = null
     this.presenceSubscription = null
     this.typingTimeoutHandle = null
     this.activeAgentTasks = {} // { agentId: [taskId, ...] } - ordered, last is most recent
@@ -242,7 +241,6 @@ export default class extends Controller {
     this.creativeId = null
     this.resetParticipantState()
     this.resetAgentActivity()
-    this.clearManualTypingMessage()
     this.renderParticipants([])
     this.renderTypingIndicator()
     this.element.style.bottom = ''
@@ -255,18 +253,6 @@ export default class extends Controller {
     this.currentPresentIds = []
     this.canShare = false
     this.renderParticipants([])
-  }
-
-  setManualTypingMessage(message) {
-    this.manualTypingMessage = message || null
-    this.renderTypingIndicator()
-  }
-
-  clearManualTypingMessage() {
-    if (this.manualTypingMessage !== null) {
-      this.manualTypingMessage = null
-      this.renderTypingIndicator()
-    }
   }
 
   typing() {
@@ -744,14 +730,6 @@ export default class extends Controller {
 
     this.typingIndicatorTarget.innerHTML = ''
 
-    if (this.manualTypingMessage) {
-      const message = document.createElement('span')
-      message.textContent = this.manualTypingMessage
-      this.typingIndicatorTarget.style.opacity = '1'
-      this.typingIndicatorTarget.appendChild(message)
-      return
-    }
-
     const ids = Object.keys(this.typingUsers)
     if (ids.length === 0) {
       this.typingIndicatorTarget.style.opacity = '0'
@@ -1035,7 +1013,6 @@ export default class extends Controller {
   }
 
   handleInput() {
-    this.clearManualTypingMessage()
     this.typing()
   }
 

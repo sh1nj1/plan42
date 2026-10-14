@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import csrfFetch from "../lib/api/csrf_fetch"
 
 export default class extends Controller {
   static targets = ["result"]
@@ -11,9 +12,9 @@ export default class extends Controller {
     result.textContent = this.checkingValue
 
     try {
-      const response = await fetch(event.params.url, {
+      const response = await csrfFetch(event.params.url, {
         method: "POST",
-        headers: { "X-CSRF-Token": this.csrfToken, Accept: "application/json" }
+        headers: { Accept: "application/json" }
       })
       const data = await response.json()
       if (data.ok && data.identity_verified === false) {
@@ -30,7 +31,4 @@ export default class extends Controller {
     }
   }
 
-  get csrfToken() {
-    return document.querySelector("meta[name='csrf-token']")?.content || ""
-  }
 }
