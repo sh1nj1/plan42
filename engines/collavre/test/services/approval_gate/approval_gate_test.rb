@@ -317,17 +317,17 @@ class ApprovalGateTest < ActiveSupport::TestCase
     assert_equal "Image", restored.content
     assert_equal message.attachments.first.encoded, restored.attachments.first.encoded
   end
-  test "restores pre-upgrade image snapshots and tool thought signatures" do
+  test "restores current image snapshots and tool thought signatures" do
     encoded = Base64.strict_encode64(File.binread(Rails.root.join("engines/collavre/test/fixtures/files/small.png")))
     snapshot = [
-      { "role" => "user", "content" => { "text" => "Legacy image", "attachments" => [ { "data" => encoded, "filename" => "small.png" } ] } },
+      { "role" => "user", "content" => "Image", "attachments" => [ { "data" => encoded, "filename" => "small.png" } ] },
       { "role" => "assistant", "content" => nil, "thinking" => "Plan", "thinking_signature" => "message-signature",
         "tool_calls" => { @call.id => @call.to_h.stringify_keys.merge("thought_signature" => "tool-signature") } }
     ]
     Collavre::AiAgent::ApprovalConversation.restore(@chat, {
       "messages" => snapshot, "tool_call_id" => @call.id, "decision" => { "decision" => "approved" }
     })
-    assert_equal "Legacy image", @chat.messages.first.content
+    assert_equal "Image", @chat.messages.first.content
     assert_equal encoded, @chat.messages.first.attachments.first.encoded
     assert_equal "message-signature", @chat.messages[1].thinking.signature
     assert_equal "tool-signature", @chat.messages[1].tool_calls.fetch(@call.id).thought_signature

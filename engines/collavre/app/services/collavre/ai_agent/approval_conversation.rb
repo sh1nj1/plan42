@@ -36,12 +36,6 @@ module Collavre
       end
 
       def self.restore_attachments!(attrs)
-        # Accept snapshots stored before RubyLLM 2.x split text and attachments.
-        if attrs[:content].is_a?(Hash)
-          content = attrs[:content]
-          attrs[:attachments] = content.fetch("attachments")
-          attrs[:content] = content["text"]
-        end
         attrs[:attachments] = Array(attrs[:attachments]).map do |file|
           RubyLLM::Attachment.new(StringIO.new(Base64.strict_decode64(file.fetch("data"))), filename: file["filename"])
         end

@@ -35,8 +35,8 @@ module Collavre
     # approval conversation is restored by #ask, including on provider failure.
     def close_summary_tool_round
       messages = @conversation.messages
-      answered = messages.filter_map { |message| message.tool_call_id if message.respond_to?(:tool_call_id) }
-      calls = messages.flat_map { |message| message.respond_to?(:tool_calls) ? (message.tool_calls&.values || []) : [] }
+      answered = messages.filter_map(&:tool_call_id)
+      calls = messages.flat_map { |message| message.tool_calls&.values || [] }
       pending = calls.reject { |call| answered.include?(call.id) }
       return if pending.empty?
 

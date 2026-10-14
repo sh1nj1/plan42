@@ -2,8 +2,6 @@
 
 require "uri"
 
-return unless defined?(RubyLLM::Protocols::ChatCompletions)
-
 module Collavre
   module RubyLlmPatches
     # RubyLLM (through 2.1.1) serializes a replayed assistant

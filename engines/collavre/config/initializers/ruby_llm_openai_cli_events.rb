@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-return unless defined?(RubyLLM::Protocols::ChatCompletions)
-
 module Collavre
   module RubyLlmPatches
     # cli-openai-proxy runs every tool inside the CLI (Claude Code / Codex) and,

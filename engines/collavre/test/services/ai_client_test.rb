@@ -58,7 +58,15 @@ class AiClientTest < ActiveSupport::TestCase
     end
 
     def messages
-      @messages_added
+      @messages_added.map do |message|
+        RubyLLM::Message.new(role: message.fetch("role").to_sym,
+                            content: message["content"] || message.dig("parts", 0, "text"),
+                            attachments: message["attachments"])
+      end
+    end
+
+    def after_message(&_callback)
+      self
     end
 
     def tools
@@ -391,7 +399,7 @@ class AiClientTest < ActiveSupport::TestCase
     log_data = log_entry.log
     assert_equal "google", log_data["vendor"]
     assert_equal "gemini-pro", log_data["model"]
-    assert_equal conversation.messages_added, log_data["messages"]
+    assert_equal conversation.messages.map(&:to_h).as_json, log_data["messages"]
     assert_equal [], log_data["tools"]
     assert_equal "full response", log_data["response_content"]
     assert_nil log_data["error_message"]

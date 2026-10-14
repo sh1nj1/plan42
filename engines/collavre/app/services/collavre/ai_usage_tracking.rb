@@ -56,7 +56,7 @@ module Collavre
     end
 
     def install_usage_tracking(chat)
-      chat.after_message { |response| record_usage_response(response) } if chat.respond_to?(:after_message)
+      chat.after_message { |response| record_usage_response(response) }
     end
 
     def record_usage_response(response)
