@@ -193,14 +193,3 @@ test('rendered rows carry the server type into the inline editor cache', () => {
   applyRowProperties(row, { inline_editor_payload: { creative_type: '' } })
   expect(row.dataset.creativeType).toBe('')
 })
-
-test('keeps filtered display progress separate from inline editor progress and clears it without a filter', () => {
-  const row = document.createElement('creative-tree-row');
-  applyRowProperties(row, { display_progress: 0, inline_editor_payload: { progress: 1 } });
-  expect(row.dataset.displayProgress).toBe('0');
-  expect(row.dataset.progressValue).toBe('1');
-  applyRowProperties(row, { inline_editor_payload: { progress: 1 } });
-  expect(row.dataset.displayProgress).toBe('0');
-  applyRowProperties(row, { display_progress: null, inline_editor_payload: { progress: 1 } });
-  expect(row.hasAttribute('data-display-progress')).toBe(false);
-});

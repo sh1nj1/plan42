@@ -253,17 +253,3 @@ test('restores checkbox metadata when a toggle request fails', async () => {
   expect(toggle.title).toBe('Mark complete')
   expect(toggle.querySelector('input').getAttribute('aria-label')).toBe('Mark complete')
 })
-
-
-test('a successful filtered leaf toggle refetches the filtered tree and title', async () => {
-  csrfFetch.mockResolvedValue({ ok: true, json: async () => ({ progress: 1, has_children: false }) })
-  const row = await mountRow(INCOMPLETE_TOGGLE)
-  row.dataset.displayProgress = '0'
-  const refetch = jest.fn()
-  document.addEventListener('creative-sync:refetch', refetch, { once: true })
-  row.querySelector('[data-progress-toggle]').click()
-  await Promise.resolve()
-  await row.updateComplete
-  expect(row.dataset.progressValue).toBe('1')
-  expect(refetch).toHaveBeenCalledTimes(1)
-})

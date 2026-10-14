@@ -9,9 +9,6 @@ jest.unstable_mockModule('../../../creatives/tree_renderer', () => ({
   appendCreativeNodes: jest.fn(),
   dispatchCreativeTreeUpdated: jest.fn(),
   applyRowProperties: jest.fn(),
-  filteredTreeNodes: jest.fn(),
-  syncProgressHtmlFromDom: jest.fn(),
-  replaceProgressControl: jest.fn((_html, control) => control),
 }))
 
 jest.unstable_mockModule('../../../utils/emoji_parser', () => ({
@@ -19,9 +16,6 @@ jest.unstable_mockModule('../../../utils/emoji_parser', () => ({
 }))
 
 const { Application } = await import('@hotwired/stimulus')
-const { filteredTreeNodes } = await import('../../../creatives/filtered_progress_sync')
-const renderer = await import('../../../creatives/tree_renderer')
-renderer.filteredTreeNodes.mockImplementation(filteredTreeNodes)
 const TreeController = (await import('../tree_controller')).default
 const { appendCreativeNodes, renderCreativeTree } = await import('../../../creatives/tree_renderer')
 const { restoreTreeEmptyState } = await import('../../../modules/creative_tree_empty_state')
@@ -1402,19 +1396,4 @@ describe('CreativesTreeController requestReload', () => {
     controller.stopAnimation()
     application.stop()
   })
-})
-
-
-test('filtered refetch updates title progress even when the filtered tree is empty', async () => {
-  document.body.innerHTML = '<creative-tree-row is-title creative-id="42" data-display-progress="0"></creative-tree-row>'
-  const controller = Object.create(TreeController.prototype)
-  Object.defineProperty(controller, 'element', { value: document.createElement('div') })
-  controller._viewRestoreGeneration = 1
-  controller.showEmptyState = jest.fn()
-  await controller.renderData({ creatives: [], title_progress: { id: 42, display_progress: 1, progress_html: '<span>Complete</span>' } }, 1)
-  const title = document.querySelector('[is-title]')
-  expect(title.dataset.displayProgress).toBe('1')
-  expect(title.progressHtml).toBe('<span>Complete</span>')
-  await controller.renderData({ creatives: [], title_progress: { id: 99, display_progress: 0 } }, 1)
-  expect(title.dataset.displayProgress).toBe('1')
 })

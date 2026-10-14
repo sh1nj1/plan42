@@ -1911,25 +1911,15 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-document-view .creative-row {
-    background-image: linear-gradient(to right, transparent, color-mix(in srgb, var(--text-muted) 16%, transparent));
-    background-size: var(--document-progress-width, 0%) 100%;
-    background-position: right;
-    background-repeat: no-repeat;
-    margin-block: 0;
-    border-radius: 0;
     padding: 3px 0;
-    /* Paint through the main gutter without shifting text or row controls. */
-    margin-right: calc(-1 * var(--main-inline-padding, 0px));
-    padding-right: var(--main-inline-padding, 0px);
 }
 
-/* Keep heading spacing inside the painted row so progress backgrounds join. */
 .creative-document-view .creative-row.level-1 {
-    padding-top: calc(1.4em + 3px);
+    margin-top: 1.4em;
 }
 
 .creative-document-view .creative-row.level-2 {
-    padding-top: calc(0.8em + 3px);
+    margin-top: 0.8em;
 }
 
 /* The text takes the whole row: the tree's cap leaves room for the row end,
