@@ -1182,18 +1182,19 @@ export default class extends Controller {
         if (id) {
             this.clearNewMessageBadge(id)
         }
-        // Dispatch event
+        this.dispatch("change", { detail: this.changeDetail(id) })
+    }
+
+    changeDetail(id) {
         const topic = [ ...(this.topics || []), ...(this.archivedTopics || []) ]
             .find(candidate => String(candidate.id) === String(id))
-        this.dispatch("change", {
-            detail: {
-                topicId: id,
-                isInbox: this.isInbox,
-                systemTopicId: this.systemTopicId,
-                mainTopicId: this.mainTopicId,
-                readOnly: topic?.read_only || false,
-            },
-        })
+        return {
+            topicId: id,
+            isInbox: this.isInbox,
+            systemTopicId: this.systemTopicId,
+            mainTopicId: this.mainTopicId,
+            readOnly: topic?.read_only || false,
+        }
     }
 
     showEditInput(topicEl, topicId) {

@@ -9,7 +9,7 @@ export function reloadDeletedReservedTopic(controller, topicId) {
     const wasSelected = String(controller.currentTopicId) === String(topicId)
     if (wasSelected) controller.fallbackFromRemovedTopic(topicId)
     if (wasSelected || idKey === 'mainTopicId') {
-        controller.dispatch("change", { detail: { topicId: controller.currentTopicId, mainTopicId: controller.mainTopicId } })
+        controller.dispatch("change", { detail: controller.changeDetail(controller.currentTopicId) })
     }
     controller.loadTopics()
     return true

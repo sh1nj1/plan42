@@ -68,7 +68,7 @@ describe('TopicsController#deleteTopic', () => {
     expect(controller.currentTopicId).toBe('')
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
     expect(controller.dispatch).toHaveBeenCalledWith('change', expect.objectContaining({
-      detail: { topicId: '', mainTopicId: controller.mainTopicId },
+      detail: controller.changeDetail(''),
     }))
   })
 
@@ -129,7 +129,7 @@ describe('TopicsController#deleteTopic', () => {
     expect(states).toEqual([null, null])
     expect(controller.currentTopicId).toBe('')
     expect(controller.dispatch).toHaveBeenCalledWith('change', {
-      detail: { topicId: '', mainTopicId: controller.mainTopicId },
+      detail: controller.changeDetail(''),
     })
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
   })
@@ -167,7 +167,7 @@ describe('TopicsController#deleteTopic', () => {
     controller.dispatch = jest.fn()
     controller.loadTopics = jest.fn(() => {
       expect(controller.dispatch).toHaveBeenCalledWith('change', {
-        detail: { topicId: selectedId, mainTopicId: null },
+        detail: controller.changeDetail(selectedId),
       })
     })
 
@@ -184,6 +184,43 @@ describe('TopicsController#deleteTopic', () => {
     expect(controller.mainTopicId).toBeNull()
     expect(controller.currentTopicId).toBe(selectedId)
     expect(controller.dispatch).toHaveBeenCalledTimes(1)
+    expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([
+    ['http', 'History', '3', true],
+    ['broadcast', 'History', '3', true],
+    ['http', 'System', '2', false],
+    ['broadcast', 'System', '2', false],
+  ])('preserves %s deletion consumers while viewing %s', async (source, name, selectedId, readOnly) => {
+    controller.mainTopicId = '1'
+    controller.systemTopicId = '2'
+    controller.isInbox = true
+    controller.serverLastTopicId = selectedId
+    controller.topics = [{ id: Number(selectedId), name, read_only: readOnly }]
+    controller.dispatch = jest.fn()
+    const expectedDetail = {
+      topicId: selectedId, mainTopicId: null, systemTopicId: '2',
+      isInbox: true, readOnly,
+    }
+    const dispatchedAtReload = []
+    controller.loadTopics = jest.fn(() => {
+      dispatchedAtReload.push(controller.dispatch.mock.calls.at(-1)?.[1]?.detail)
+    })
+
+    if (source === 'broadcast') {
+      controller.handleTopicMessage({ action: 'deleted', topic_id: 1 })
+    } else {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true })
+      confirmDialog.mockResolvedValue(true)
+      const button = document.createElement('button')
+      button.dataset.id = '1'
+      await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+    }
+
+    expect(controller.currentTopicId).toBe(selectedId)
+    expect(controller.dispatch).toHaveBeenCalledWith('change', { detail: expectedDetail })
+    expect(dispatchedAtReload).toEqual([expectedDetail])
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
   })
 
