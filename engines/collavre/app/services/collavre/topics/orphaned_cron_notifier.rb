@@ -39,7 +39,8 @@ module Collavre
       end
 
       def implicit_main_task?(task, args)
-        return false unless @topic_name == "Main" && @creative_id.present?
+        return false unless task.class_name == "Collavre::CronActionJob"
+        return false unless @topic_name == Creative::MAIN_TOPIC_NAME && @creative_id.present?
 
         creative_id = args["creative_id"] || parse_creative_id_from_key(task.key)
         Creative.find_by(id: creative_id)&.effective_origin&.id == @creative_id.to_i

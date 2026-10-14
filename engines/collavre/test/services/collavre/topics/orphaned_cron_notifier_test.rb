@@ -188,6 +188,18 @@ module Collavre
         [ unrelated, other_topic, static ].each { |task| assert SolidQueue::RecurringTask.exists?(task.id) }
       end
 
+      test "Main deletion preserves unrelated dynamic job classes with blank targets" do
+        main = @creative.main_topic
+        task = create_cron(creative_id: @creative.id, topic_id: nil)
+        task.update!(class_name: "Collavre::CommentNotificationJob")
+        main.destroy!
+
+        assert_no_difference -> { Collavre::Comment.count } do
+          OrphanedCronNotifier.new(topic_id: main.id, topic_name: main.name, creative_id: @creative.id).call
+        end
+        assert SolidQueue::RecurringTask.exists?(task.id)
+      end
+
       test "System deletion preserves implicit Main tasks" do
         system = @creative.topics.create!(name: "System", user: @user)
         cron = create_cron(creative_id: @creative.id, topic_id: nil)
