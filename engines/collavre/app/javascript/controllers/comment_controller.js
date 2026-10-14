@@ -222,7 +222,6 @@ export default class extends Controller {
     const url = new URL(`/creatives/${creativeId}/comments/${commentId}/reactions`, window.location.origin)
     const method = reacted ? 'DELETE' : 'POST'
     const headers = {
-      'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content || '',
       'Accept': 'application/json'
     }
     const options = { method, headers }
@@ -235,7 +234,7 @@ export default class extends Controller {
     }
 
     try {
-      const response = await fetch(url.toString(), options)
+      const response = await csrfFetch(url.toString(), options)
       if (!response.ok) {
         throw new Error('Failed to update reaction')
       }
@@ -498,10 +497,9 @@ export default class extends Controller {
 
     button.disabled = true
     try {
-      const response = await fetch(`/creatives/${creativeId}/comments/snapshots/${snapshotId}/restore`, {
+      const response = await csrfFetch(`/creatives/${creativeId}/comments/snapshots/${snapshotId}/restore`, {
         method: 'POST',
         headers: {
-          'X-CSRF-Token': document.querySelector('meta[name=csrf-token]')?.content,
           'Content-Type': 'application/json',
         },
       })

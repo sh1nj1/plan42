@@ -162,7 +162,6 @@ export default class extends Controller {
 
     this.resetState()
     this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
-    this.presenceController?.clearManualTypingMessage()
     this.loadInitialComments()
   }
 

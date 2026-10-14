@@ -297,7 +297,6 @@ export default class extends Controller {
     this.submitTarget.classList.remove('review-submit-btn')
     this.submitTarget.classList.remove('inbox-reply-btn')
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
-    this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
     this.textareaTarget.placeholder = this._defaultPlaceholder()
@@ -667,7 +666,6 @@ export default class extends Controller {
   handleSearch(event) {
     event.preventDefault()
     const query = this.textareaTarget.value.trim()
-    this.presenceController?.clearManualTypingMessage()
     this.listController?.applySearchQuery(query || null)
   }
 

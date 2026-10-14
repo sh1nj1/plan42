@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import csrfFetch from "../lib/api/csrf_fetch"
 import { setupImagePan } from "../lib/image_lightbox_pan"
 import imageLightboxValues from "./image_lightbox_values"
 import { confirmDialog } from "../lib/utils/dialog"
@@ -315,13 +316,11 @@ export default class extends Controller {
     if (!(await confirmDialog(this.i18nDeleteConfirmValue, { danger: true }))) return
 
     const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
-    const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
 
     try {
-      const resp = await fetch(url, {
+      const resp = await csrfFetch(url, {
         method: "DELETE",
-        credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrfToken }
+        credentials: "same-origin"
       })
       if (!resp.ok) return
 
