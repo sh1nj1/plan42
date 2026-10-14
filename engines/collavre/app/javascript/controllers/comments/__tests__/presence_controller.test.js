@@ -338,6 +338,35 @@ describe('CommentsPresenceController', () => {
     expect(controller.typingUsers).toEqual({})
   })
 
+  test.each(['1', null])('clears deleted Main typing fallback from selection %s', (selectedTopicId) => {
+    const perform = jest.fn()
+    controller.presenceSubscription = { perform }
+    controller.mainTopicId = '1'
+    controller.selectedTopicId = selectedTopicId
+
+    controller.handleTopicChange({ detail: { topicId: '', mainTopicId: null } })
+
+    expect(controller.mainTopicId).toBeNull()
+    expect(controller.typingTopicId).toBeNull()
+    perform.mockClear()
+    controller.typing()
+    controller.stoppedTyping()
+    expect(perform).not.toHaveBeenCalled()
+
+    controller.handleTopicChange({ detail: { topicId: '', mainTopicId: '2' } })
+    controller.typing()
+    controller.stoppedTyping()
+    expect(perform).toHaveBeenCalledWith('typing', { topic_id: '2' })
+    expect(perform).toHaveBeenCalledWith('stopped_typing', { topic_id: '2' })
+  })
+
+  test('preserves Main typing fallback when the change omits mainTopicId', () => {
+    controller.mainTopicId = '1'
+    controller.handleTopicChange({ detail: { topicId: '' } })
+    expect(controller.mainTopicId).toBe('1')
+    expect(controller.typingTopicId).toBe('1')
+  })
+
   test('clears typing and agent state immediately when switching topics', () => {
     const perform = jest.fn()
     controller.presenceSubscription = { perform }
