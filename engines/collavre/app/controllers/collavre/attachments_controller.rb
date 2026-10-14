@@ -24,11 +24,8 @@ module Collavre
     # purging unconditionally could delete a blob another creative still
     # references, 404-ing its description. Only purge a true orphan.
     def purge_unless_referenced(blob)
-      signed_id = blob.signed_id
-      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
-
-      return if Creative.where("description LIKE ?", pattern).exists?
-      return if ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+      return if description_references(blob).exists?
+      return if attachment_reference?(blob)
 
       blob.purge
     end
@@ -47,10 +44,16 @@ module Collavre
     # writable reference and would otherwise 403, stranding the blob. Safe: any
     # in-use blob still fails this check. Mirrors purge_unless_referenced.
     def orphan_blob?(blob)
-      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(blob.signed_id)}%"
+      !attachment_reference?(blob) && !description_references(blob).exists?
+    end
 
-      !ActiveStorage::Attachment.where(blob_id: blob.id).exists? &&
-        !Creative.where("description LIKE ?", pattern).exists?
+    def attachment_reference?(blob)
+      ActiveStorage::Attachment.where(blob_id: blob.id).exists?
+    end
+
+    def description_references(blob)
+      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(blob.signed_id)}%"
+      Creative.where("description LIKE ?", pattern)
     end
 
     def attachment_owned_by_current_user?(blob)
@@ -61,10 +64,7 @@ module Collavre
     end
 
     def editable_creative_reference?(blob)
-      signed_id = blob.signed_id
-      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(signed_id)}%"
-
-      creatives = Creative.where("description LIKE ?", pattern).includes(:origin)
+      creatives = description_references(blob).includes(:origin)
       return false if creatives.empty?
 
       # Permission is evaluated on the origin for linked creatives. Resolve every

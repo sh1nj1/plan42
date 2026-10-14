@@ -5,6 +5,8 @@ module Collavre
   # navigated to the local server. The secret is generated per launch by Tauri
   # and exists only in this child process environment.
   class DesktopSidecarHealthController < ActionController::API
+    include Collavre::LoopbackRequest
+
     def show
       return unless require_loopback!
 
@@ -16,20 +18,6 @@ module Collavre
       render plain: Base64.urlsafe_encode64(digest, padding: false), content_type: "text/plain"
     rescue ActionController::ParameterMissing
       head :bad_request
-    end
-
-    private
-
-    def require_loopback!
-      addr = IPAddr.new(request.remote_addr.to_s)
-      addr = addr.native if addr.respond_to?(:ipv4_mapped?) && addr.ipv4_mapped?
-      return true if addr.loopback?
-
-      head :forbidden
-      false
-    rescue IPAddr::InvalidAddressError
-      head :forbidden
-      false
     end
   end
 end

@@ -1,6 +1,7 @@
 module Collavre
   module UsersController::Registration
     extend ActiveSupport::Concern
+    include Collavre::LoopbackRequest
 
     included do
       allow_unauthenticated_access only: %i[new create exists]
@@ -82,19 +83,6 @@ module Collavre
     end
 
     private
-
-    # Whether the request originates from the local machine. Uses remote_addr
-    # (the socket peer) rather than remote_ip: remote_ip trusts X-Forwarded-For
-    # from private-range proxies, so a LAN attacker at e.g. 192.168.x could spoof
-    # `XFF: 127.0.0.1` and forge a loopback origin. The socket peer cannot be
-    # spoofed by headers.
-    def request_from_loopback?
-      addr = IPAddr.new(request.remote_addr.to_s)
-      addr = addr.native if addr.respond_to?(:ipv4_mapped?) && addr.ipv4_mapped?
-      addr.loopback?
-    rescue IPAddr::InvalidAddressError
-      false
-    end
 
     def user_params
       params.require(:user).permit(:email, :password, :password_confirmation, :name)
