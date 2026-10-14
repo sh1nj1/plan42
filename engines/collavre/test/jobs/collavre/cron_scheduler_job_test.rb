@@ -194,6 +194,30 @@ module Collavre
       assert_equal false, CronSchedulerJob.new.send(:dispatch_task, task)
     end
 
+    test "does not dispatch a materialized recurring task after Main cleanup" do
+      creative = creatives(:tshirt)
+      main = creative.main_topic
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_stale",
+        class_name: CronActionJob.name,
+        schedule: "*/5 * * * *",
+        static: false,
+        arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "stale" } ]
+      )
+      stale_task = SolidQueue::RecurringTask.find(task.id)
+      main.destroy!
+      Topics::OrphanedCronNotifier.new(
+        topic_id: main.id, topic_name: Creative::MAIN_TOPIC_NAME, creative_id: creative.id
+      ).call
+      replacement = creative.main_topic
+      assert_not_equal main.id, replacement.id
+      assert_not SolidQueue::RecurringTask.exists?(task.id)
+
+      assert_no_enqueued_jobs(only: CronActionJob) do
+        assert_equal false, CronSchedulerJob.new.send(:dispatch_task, stale_task)
+      end
+    end
+
     test "treats malformed arguments as recurring" do
       task = Struct.new(:class_name, :arguments).new(CronActionJob.name, nil)
 

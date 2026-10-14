@@ -92,7 +92,7 @@ module Collavre
     end
 
     def dispatch_task(task)
-      return enqueue_task(task) unless run_once?(task)
+      return task.with_lock { enqueue_task(task) } unless run_once?(task)
 
       creative = once_task_creative(task)
       enqueued = task.with_lock do
