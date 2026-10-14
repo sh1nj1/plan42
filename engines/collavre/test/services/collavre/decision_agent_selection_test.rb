@@ -30,6 +30,46 @@ module Collavre
       end
     end
 
+    test "chat assignment scopes normalize stored vendor names" do
+      [ "Typesafe", " typesafe " ].each do |vendor|
+        @judge.update!(llm_vendor: vendor, creator: @human)
+        assert_not @judge.supports?(:chat)
+        assert_not_includes User.chat_capable, @judge
+        assert_not_includes User.mentionable_for(@child), @judge
+        assert_not_includes Workflow::Editor.new(@parent, @human).as_json[:agents].pluck(:id), @judge.id
+      end
+    end
+
+    test "changing to a judgment-only vendor releases all primary pins" do
+      topics = [ @parent, @child ].map do |creative|
+        creative.topics.create!(name: "Pinned", user: @human, primary_agent: @chat)
+      end
+      other_topic = @parent.topics.create!(name: "Other", user: @human, primary_agent: @judge)
+      @chat.update!(llm_vendor: "google")
+      topics.each { |topic| assert_equal @chat.id, topic.reload.primary_agent_id }
+      @chat.update!(llm_vendor: " Typesafe ")
+      topics.each { |topic| assert_nil topic.reload.primary_agent_id }
+      assert_equal @judge.id, other_topic.reload.primary_agent_id
+    end
+
+    test "released primary pin allows ambient routing to another chat agent" do
+      other = users(:three)
+      other.update!(llm_vendor: "google", routing_expression: 'event_name == "comment_created"')
+      CreativeShare.create!(creative: @child, user: other, permission: :feedback)
+      topic = @child.topics.create!(name: "Pinned", user: @human, primary_agent: @chat)
+      context = { "event_name" => "comment_created", "creative" => { "id" => @child.id },
+                  "topic" => { "id" => topic.id } }
+      assert_equal [ @chat ], Orchestration::Matcher.new(context).match
+      @chat.update!(llm_vendor: "typesafe")
+      assert_includes Orchestration::Matcher.new(context).match, other
+    end
+
+    test "failed vendor updates preserve primary pins" do
+      topic = @child.topics.create!(name: "Pinned", user: @human, primary_agent: @chat)
+      assert_not @chat.update(llm_vendor: "typesafe", email: nil)
+      assert_equal @chat.id, topic.reload.primary_agent_id
+    end
+
     test "missing-agent translations require chat support and write permission" do
       en = I18n.t("collavre.drop_trigger.no_agent", locale: :en, parent_description: "Stage")
       ko = I18n.t("collavre.drop_trigger.no_agent", locale: :ko, parent_description: "Stage")
