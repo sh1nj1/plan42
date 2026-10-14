@@ -207,6 +207,57 @@ module Collavre
       assert_equal "max_reached", @child.data.dig("trigger", "loop", "state")
     end
 
+    test "verification adapter follows JSON contract for completed and awaiting work" do
+      job = TriggerLoopVerifyJob.new
+      %w[VERIFIED AWAITING_USER INCOMPLETE].each do |verdict|
+        client = AiClient.new(vendor: "external-adapter", model: "test",
+          system_prompt: TriggerLoopVerifyJob::VERIFY_SYSTEM_PROMPT)
+        adapter = lambda do |messages, &block|
+          prompt = JSON.parse(messages.first[:text])
+          refute_match(/Respond with exactly one of|INCOMPLETE: \[list/i, prompt.fetch("input"))
+          assert_includes prompt.fetch("instruction"), "Return only JSON"
+          block.call({ answers: { status: { choice: verdict } }, reason: "PR not created" }.to_json)
+          nil
+        end
+        client.stub(:chat, adapter) do
+          job.stub(:decision_client, client) do
+            expected = { "VERIFIED" => :verified, "AWAITING_USER" => :awaiting_user,
+                         "INCOMPLETE" => "PR not created" }.fetch(verdict)
+            assert_equal expected, job.send(:verify_completion, @ai_bot, "Create a PR", "Task evaluated", @task)
+          end
+        end
+      end
+    end
+
+    test "verification schema rejection preserves JSON contract" do
+      job = TriggerLoopVerifyJob.new
+      client = AiClient.new(vendor: "google", model: "test",
+        system_prompt: TriggerLoopVerifyJob::VERIFY_SYSTEM_PROMPT)
+      rejected = Object.new
+      rejected.define_singleton_method(:with_schema) { |*| }
+      rejected.define_singleton_method(:ask) { |*| raise RubyLLM::BadRequestError, "response_format unsupported" }
+      fallback = Object.new
+      fallback.define_singleton_method(:ask) do |prompt|
+        input = JSON.parse(prompt)
+        raise "Conflicting format" if input.fetch("input").match?(/Respond with exactly one of|INCOMPLETE: \[list/i)
+        raise "Missing JSON contract" unless input.fetch("instruction").include?("Return only JSON")
+
+        Struct.new(:content, :tokens).new({ answers: { status: { choice: "VERIFIED" } } }.to_json, nil)
+      end
+      [ rejected, fallback ].each do |chat|
+        chat.define_singleton_method(:messages) { [] }
+        chat.define_singleton_method(:tools) { [] }
+        chat.define_singleton_method(:after_message) { |*| }
+      end
+      chats = [ rejected, fallback ]
+      client.stub(:build_conversation, -> { chats.shift }) do
+        job.stub(:decision_client, client) do
+          assert_equal :verified, job.send(:verify_completion, @ai_bot, "Create a PR", "PR created", @task)
+        end
+      end
+      assert_empty chats
+    end
+
     private
 
     def mock_ai_client(response_text)

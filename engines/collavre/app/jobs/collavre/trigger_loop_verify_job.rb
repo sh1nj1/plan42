@@ -132,10 +132,6 @@ module Collavre
 
         ## Question:
         Did the agent actually execute ALL required actions in the instructions?
-        Respond with exactly one of:
-        - VERIFIED — all actions were executed
-        - AWAITING_USER — the agent correctly paused to wait for user approval/input/action
-        - INCOMPLETE: [list the unexecuted actions]
       PROMPT
 
       result = decision_client(verifier, task, VERIFY_SYSTEM_PROMPT).judge(prompt, questions: {
