@@ -102,6 +102,13 @@ module Collavre
       assert_equal "completed", @child.data.dig("trigger", "loop", "state")
     end
 
+    test "native or chat AWAITING_USER verdict pauses the loop" do
+      AiClient.stub(:new, mock_ai_client("AWAITING_USER")) do
+        TriggerLoopVerifyJob.perform_now(@task.id)
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "continues loop when verification returns INCOMPLETE" do
       mock_client = mock_ai_client("INCOMPLETE: creative not moved to review")
 

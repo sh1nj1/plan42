@@ -13,7 +13,8 @@ module Collavre
           chat_decision(input, definitions)
         end
       rescue RubyLLM::Error => e
-        raise unless self.class.supports?(vendor, :chat) && [ 404, 405, 501 ].include?(e.response&.status)
+        raise unless self.class.supports?(vendor, :judge) && self.class.supports?(vendor, :chat) &&
+          [ 404, 405, 501 ].include?(e.response&.status)
 
         chat_decision(input, definitions)
       end

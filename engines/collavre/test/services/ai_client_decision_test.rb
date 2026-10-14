@@ -160,6 +160,19 @@ module Collavre
       end
     end
 
+    test "chat endpoint failures do not repeat a chat decision" do
+      calls = 0
+      chat = fake_chat
+      chat.define_singleton_method(:ask) do |*|
+        calls += 1
+        raise RubyLLM::Error.new("Not found", response: OpenStruct.new(status: 404))
+      end
+      @client.stub(:build_conversation, chat) do
+        assert_raises(RubyLLM::Error) { @client.judge("Task", questions: QUESTIONS) }
+      end
+      assert_equal 1, calls
+    end
+
     test "non-schema bad requests do not retry" do
       chat = fake_chat
       chat.define_singleton_method(:ask) { |*| raise RubyLLM::BadRequestError, "Invalid API parameter" }

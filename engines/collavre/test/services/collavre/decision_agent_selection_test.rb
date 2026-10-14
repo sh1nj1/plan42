@@ -85,6 +85,41 @@ module Collavre
       end
     end
 
+    test "native explanation failure keeps the incomplete verdict" do
+      task = Task.new(creative: @child, agent: @chat)
+      client = Object.new
+      client.define_singleton_method(:chat) { |*| raise "Explanation unavailable" }
+      AiClient.stub(:new, client) do
+        assert_equal I18n.t("collavre.trigger_loop.incomplete_reason"),
+          TriggerLoopVerifyJob.new.send(:incomplete_reason, { "source" => "judge" }, "Task", task)
+      end
+    end
+
+    test "missing-agent notice requires a writable chat agent" do
+      CreativeShare.where(creative: @parent, user: @chat).destroy_all
+      @judge_share.update!(permission: :write)
+      assert_difference -> { @parent.comments.count }, 1 do
+        Creatives::DropTriggerMissingAgentNotifier.new(creative: @parent).call
+      end
+    end
+
+    test "manual restart context selects chat rather than judgment-only agent" do
+      @judge_share.update!(permission: :write)
+      command = Creatives::TriggerActionCommand.new(creative: @child, user: @human, action: "resume")
+      assert_equal @chat, command.send(:trigger_context).last
+    end
+
+    test "human reply resumes loop with a chat agent" do
+      @parent.update!(data: { "trigger" => { "on_child_enter" => true } })
+      @judge_share.update!(permission: :write)
+      topic = @child.topics.create!(name: "Drop Trigger", user: @human)
+      @child.update!(data: { "trigger" => { "loop" => { "state" => "awaiting_user", "trigger_topic_id" => topic.id } } })
+      reply = @child.comments.create!(content: "Continue", user: @human, topic: topic, skip_dispatch: true)
+      SystemEvents::Dispatcher.stub(:dispatch, []) { reply.send(:resume_trigger_loop_if_awaiting) }
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      assert_includes @child.comments.order(:id).last.content, "@#{@chat.name}:"
+    end
+
     test "chat reason avoids a second call and missing chat reason is localized" do
       task = Task.new(creative: @child, agent: @chat)
       job = TriggerLoopVerifyJob.new
