@@ -931,6 +931,21 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     assert_reserved_topic_deletion(@creative, @creative.main_topic(fallback_user: @user))
   end
 
+  test "Main deletion removes recurring tasks with implicit Main targets" do
+    main = @creative.main_topic(fallback_user: @user)
+    cron = SolidQueue::RecurringTask.create!(
+      key: "cron_#{@creative.id}_#{SecureRandom.hex(4)}",
+      class_name: "Collavre::CronActionJob", schedule: "0 10 * * *", static: false,
+      arguments: [ { creative_id: @creative.id, topic_id: nil, message: "Follow up" } ]
+    )
+
+    delete creative_topic_url(@creative, main), as: :json
+
+    assert_response :success
+    assert_not SolidQueue::RecurringTask.exists?(cron.id)
+    assert @creative.comments.where(user_id: nil).any? { |notice| notice.content.include?(cron.key) }
+  end
+
   test "inbox System topic deletion removes messages and recreates an empty topic on index" do
     inbox = Collavre::Creative.inbox_for(@user)
     assert_reserved_topic_deletion(inbox, inbox.system_topic(fallback_user: @user))

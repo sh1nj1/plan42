@@ -120,7 +120,8 @@ module Collavre
       begin
         Collavre::Topics::OrphanedCronNotifier.new(
           topic_id: topic_id,
-          topic_name: topic_name
+          topic_name: topic_name,
+          creative_id: @creative.id
         ).call
       rescue StandardError => e
         Rails.logger.error(
