@@ -2,6 +2,7 @@
 
 module Collavre
   class InlineAgentLoginsController < ApplicationController
+    include Collavre::ProxyErrorResponse
     before_action :set_login
     before_action :require_manager, except: :show
     before_action :require_mutable_session, only: [ :create_session, :show_session, :submit, :cancel ]
@@ -73,11 +74,6 @@ module Collavre
 
     def check_session
       @login.check_session!(params[:session_id])
-    end
-
-    def render_proxy_error(error)
-      render json: { error: { code: error.code, message: error.message } },
-             status: error.status.to_i.between?(400, 599) ? error.status : :bad_gateway
     end
   end
 end

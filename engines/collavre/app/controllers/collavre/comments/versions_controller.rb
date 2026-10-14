@@ -7,6 +7,7 @@ module Collavre
 
       before_action :set_creative
       before_action :set_comment
+      before_action :authorize_version_change!, only: [ :select, :destroy ]
 
       def index
         versions = @comment.comment_versions.order(:version_number).map do |v|
@@ -28,10 +29,6 @@ module Collavre
       end
 
       def select
-        unless @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
-          render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
-        end
-
         version = @comment.comment_versions.find(params[:id])
         @comment.update!(version.comment_attributes)
 
@@ -39,10 +36,6 @@ module Collavre
       end
 
       def destroy
-        unless @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
-          render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden and return
-        end
-
         version = @comment.comment_versions.find(params[:id])
         @comment.with_lock do
           restore_remaining_version(version) if @comment.selected_version_id == version.id
@@ -59,6 +52,12 @@ module Collavre
       end
 
       private
+
+      def authorize_version_change!
+        return if @comment.user == Current.user || @creative.has_permission?(Current.user, :admin)
+
+        render json: { error: I18n.t("collavre.comments.not_owner") }, status: :forbidden
+      end
 
       def restore_remaining_version(version)
         latest = @comment.comment_versions.where.not(id: version.id).order(:version_number).last

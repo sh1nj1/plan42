@@ -2,20 +2,11 @@
 
 module Collavre
   class CreativeInvitationsController < ApplicationController
+    include Collavre::PermissionUpdateResponse
     before_action :set_invitation
 
     def update
-      if @invitation.update(permission: params[:permission])
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, notice: t("collavre.creatives.share.permission_updated") }
-          format.json { render json: { permission: @invitation.permission }, status: :ok }
-        end
-      else
-        respond_to do |format|
-          format.html { redirect_back fallback_location: main_app.root_path, alert: @invitation.errors.full_messages.to_sentence }
-          format.json { render json: { error: @invitation.errors.full_messages.to_sentence }, status: :unprocessable_entity }
-        end
-      end
+      update_permission_response(@invitation)
     end
 
     def destroy

@@ -319,4 +319,24 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal I18n.t("collavre.creatives.share.shared"), flash[:notice]
   end
+  test "permission updates preserve JSON responses and HTML notices and validation errors" do
+    sign_in_as(@owner, password: "password")
+    share = Collavre::CreativeShare.create!(creative: @creative, user: @target_user, permission: :read, shared_by: @owner)
+    url = collavre.creative_creative_share_path(@creative, share)
+    patch url, params: { permission: :write }, as: :json
+    assert_response :ok
+    assert_equal({ "permission" => "write" }, response.parsed_body)
+    patch url, params: { permission: nil }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "write", share.reload.permission
+    assert response.parsed_body.fetch("error").present?
+
+    patch url, params: { permission: :read }
+    assert_redirected_to root_path
+    assert_equal I18n.t("collavre.creatives.share.permission_updated"), flash[:notice]
+    patch url, params: { permission: nil }
+    assert_redirected_to root_path
+    assert flash[:alert].present?
+    assert_equal "read", share.reload.permission
+  end
 end
