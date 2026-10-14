@@ -1,4 +1,5 @@
 import { initializePublicLink, showShareMessage } from "../lib/share_modal_links"
+import { updatePermission } from "../lib/permission_update"
 import { Controller } from "@hotwired/stimulus"
 import { confirmDialog, alertDialog } from "../lib/utils/dialog"
 
@@ -42,15 +43,8 @@ export default class extends Controller {
 
     this.currentSharesUrl = sharesUrl
 
-    fetch(sharesUrl, {
-      headers: { "Accept": "text/html" }
-    })
-      .then(r => r.text())
-      .then(html => {
-        this.container.innerHTML = html
-        this.#initializeModal()
-        this.#dispatchEvent("share-modal:opened")
-      })
+    return this.#loadModal(sharesUrl)
+      .then(() => this.#dispatchEvent("share-modal:opened"))
       .catch(err => {
         console.error("share-modal: Failed to load modal", err)
       })
@@ -245,27 +239,9 @@ export default class extends Controller {
     const selects = modal.querySelectorAll(".share-modal-permission-select:not([disabled])")
     selects.forEach(select => {
       select.addEventListener("change", () => {
-        const url = select.dataset.updateUrl
-        const permission = select.value
-        const originalClass = select.className
-
-        // Update visual class immediately
-        select.className = select.className.replace(/org-chart-permission-\w+/g, "")
-        select.classList.add("org-chart-permission-select", "share-modal-permission-select", `org-chart-permission-${permission}`)
-
-        fetch(url, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
-            "Accept": "application/json"
-          },
-          body: JSON.stringify({ permission })
-        }).then(response => {
-          if (!response.ok) throw new Error("Failed")
-        }).catch(() => {
-          select.className = originalClass
-          this.#showMessage(this.#errorFallbackMessage, "error")
+        updatePermission(select, {
+          classes: ["share-modal-permission-select"],
+          onFailure: () => this.#showMessage(this.#errorFallbackMessage, "error")
         })
       })
     })
@@ -334,16 +310,18 @@ export default class extends Controller {
   #refreshModal() {
     if (!this.currentSharesUrl) return
 
-    fetch(this.currentSharesUrl, {
-      headers: { "Accept": "text/html" }
-    })
-      .then(r => r.text())
+    return this.#loadModal(this.currentSharesUrl)
+      .catch(err => {
+        console.error("share-modal: Failed to refresh modal", err)
+      })
+  }
+
+  #loadModal(url) {
+    return fetch(url, { headers: { "Accept": "text/html" } })
+      .then(response => response.text())
       .then(html => {
         this.container.innerHTML = html
         this.#initializeModal()
-      })
-      .catch(err => {
-        console.error("share-modal: Failed to refresh modal", err)
       })
   }
 
