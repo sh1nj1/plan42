@@ -278,11 +278,7 @@ module Collavre
         proc { |config| config.gemini_api_key = api_key }
       end
 
-      provider = VENDOR_TO_PROVIDER[normalized_vendor]
-      chat_opts = { model: model }
-      chat_opts[:provider] = provider if provider
-      chat_opts[:protocol] = :chat_completions if provider == :openai
-      chat_opts[:assume_model_exists] = true if provider
+      chat_opts = conversation_options(normalized_vendor)
 
       # RubyLLM::Context duplicates the global config. Set the timeout on that
       # per-client copy so concurrent agent threads cannot overwrite one
@@ -310,6 +306,15 @@ module Collavre
           chat.with_tools(*tool_classes)
         end
       end
+    end
+
+    def conversation_options(normalized_vendor)
+      provider = VENDOR_TO_PROVIDER[normalized_vendor]
+      options = { model: model }
+      options[:provider] = provider if provider
+      options[:protocol] = :chat_completions if provider == :openai
+      options[:assume_model_exists] = true if provider
+      options
     end
 
     def refresh_turn_boundary!(conversation)
