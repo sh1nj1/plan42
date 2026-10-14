@@ -122,7 +122,7 @@ module Collavre
         assert_enqueued_with(
           job: Collavre::CronActionJob,
           args: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test",
-                    recurring_task_id: nil, recurring_task_created_at: task.created_at } ]
+                    recurring_task_id: nil } ]
         ) do
           CronSchedulerJob.perform_now
         end
@@ -219,7 +219,7 @@ module Collavre
       end
     end
 
-    test "a locked legacy task cannot post into Main recreated before enqueue" do
+    test "a backfilled locked task cannot post into Main recreated before enqueue" do
       creative = creatives(:tshirt)
       main = creative.main_topic
       task = SolidQueue::RecurringTask.create!(
@@ -227,6 +227,10 @@ module Collavre
         schedule: "* * * * *", static: false,
         arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: users(:ai_bot).id, message: "stale locked" } ]
       )
+      require Rails.root.join("engines/collavre/db/migrate/20261014000000_backfill_implicit_main_cron_topics")
+      BackfillImplicitMainCronTopics.new.up
+      task.reload
+      assert_equal main.id, task.arguments.first["topic_id"]
       task.with_lock do
         main.destroy!
         travel 1.second

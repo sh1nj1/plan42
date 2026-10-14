@@ -10,6 +10,7 @@ module Collavre
   class CronActionJob < ApplicationJob
     queue_as :default
 
+    # Accept creation metadata from previously serialized jobs without using it.
     def perform(creative_id:, topic_id:, agent_id:, message:, usage_requester_attribution: {}, recurring_task_id: nil, recurring_task_created_at: nil)
       creative = Creative.find_by(id: creative_id)&.effective_origin
       agent = User.find_by(id: agent_id)
@@ -21,7 +22,7 @@ module Collavre
         return
       end
 
-      topic = resolve_topic(creative, topic_id, agent, recurring_task_created_at, recurring_task_id)
+      topic = resolve_topic(creative, topic_id, agent, recurring_task_id)
       return unless usable_topic?(topic, topic_id)
 
       comment = create_comment(creative, topic, agent, message)
@@ -63,16 +64,14 @@ module Collavre
 
     private
 
-    def resolve_topic(creative, topic_id, agent, recurring_task_created_at, recurring_task_id)
+    def resolve_topic(creative, topic_id, agent, recurring_task_id)
       return if recurring_task_id && !SolidQueue::RecurringTask.exists?(recurring_task_id)
 
       return Topic.find_by(id: topic_id) if topic_id.present?
-      cutoff = recurring_task_created_at || enqueued_at
+      cutoff = enqueued_at
       return creative.main_topic(fallback_user: agent) unless cutoff
 
-      # Scheduled occurrences must target Main from before task creation, even if
-      # deletion cleanup is still waiting for the scheduler lock. Older queued
-      # jobs without task metadata retain their enqueue-time cutoff.
+      # Legacy queued occurrences must not recreate Main or target a replacement.
       creative.topics.where("created_at <= ?", cutoff).find_by(name: Creative::MAIN_TOPIC_NAME)
     end
 

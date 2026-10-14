@@ -93,8 +93,7 @@ module Collavre
 
     def cron_arguments(task, arguments)
       arguments.except(:once).merge(
-        recurring_task_id: run_once?(task) ? nil : task.id,
-        recurring_task_created_at: task.created_at
+        recurring_task_id: run_once?(task) ? nil : task.id
       )
     end
 
