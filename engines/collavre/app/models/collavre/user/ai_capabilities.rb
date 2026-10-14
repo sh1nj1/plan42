@@ -18,7 +18,7 @@ module Collavre
       def release_non_chat_primary_pins
         return if supports?(:chat)
 
-        Topic.where(primary_agent_id: id).update_all(primary_agent_id: nil, updated_at: Time.current)
+        Topic.where(primary_agent_id: id, session_id: nil).update_all(primary_agent_id: nil, updated_at: Time.current)
       end
 
       class_methods do

@@ -59,7 +59,22 @@ module Collavre
       end
     end
 
-    test "changing to a judgment-only vendor releases all primary pins" do
+    test "changing to a judgment-only vendor preserves session identity while releasing routing pins" do
+      session = @parent.topics.create!(name: "Session", user: @human, primary_agent: @chat, session_id: "resume-session")
+      pin = @parent.topics.create!(name: "Routing pin", user: @human, primary_agent: @chat)
+
+      @chat.update!(llm_vendor: "typesafe")
+
+      assert_nil pin.reload.primary_agent_id
+      assert_equal @chat.id, session.reload.primary_agent_id
+      assert_equal session, @parent.topics.find_by(primary_agent_id: @chat.id, session_id: "resume-session")
+      assert_no_difference -> { @parent.topics.count } do
+        resumed = AiAgent::SessionProvisioner.new(@human).find_or_create_topic(@parent, @chat, "resume-session", "Resume")
+        assert_equal session, resumed
+      end
+    end
+
+    test "changing to a judgment-only vendor releases ordinary primary pins" do
       topics = [ @parent, @child ].map do |creative|
         creative.topics.create!(name: "Pinned", user: @human, primary_agent: @chat)
       end
