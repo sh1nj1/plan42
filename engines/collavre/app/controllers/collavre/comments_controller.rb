@@ -67,8 +67,7 @@ module Collavre
         InboxReplyService.call(@comment)
 
         # Dispatch is handled by Comment#after_create_commit callback
-        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-        render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
+        render_comment_response(status: :created)
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
       end
@@ -84,8 +83,7 @@ module Collavre
         validate_topic_id!(safe_params[:topic_id]) or return
 
         if update_comment(safe_params)
-          @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-          render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
+          render_comment_response
         else
           render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
         end
@@ -261,6 +259,11 @@ module Collavre
       return permitted unless permitted.key?(:agent_run_options)
 
       permitted.merge(agent_run_options: CliProxy::RunOptions.sanitize_message_options(permitted[:agent_run_options]))
+    end
+
+    def render_comment_response(status: :ok)
+      @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
+      render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: status
     end
 
     def current_topic_context
