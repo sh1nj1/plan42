@@ -213,7 +213,6 @@ module Collavre
       - CONTINUE: The agent made progress but explicitly mentions remaining work it intends to do.
       - BLOCKED: The agent cannot proceed without external help (missing permissions, unclear requirements, dependency on others).
 
-      Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
     PROMPT
 
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
@@ -235,7 +234,6 @@ module Collavre
 
         ## Question:
         Based on the agent's response, is the task DONE, should it CONTINUE, or is it BLOCKED?
-        Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
       PROMPT
 
       result = decision_client(verifier, task, LLM_FALLBACK_SYSTEM_PROMPT).judge(prompt, questions: {

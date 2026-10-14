@@ -896,6 +896,57 @@ module Collavre
 
     # --- LLM fallback tests ---
 
+    test "LLM fallback adapter follows JSON contract for completed and blocked work" do
+      job = TriggerLoopCheckJob.new
+      comment = Struct.new(:content).new("The task has been evaluated")
+      %w[DONE BLOCKED].each do |verdict|
+        client = AiClient.new(vendor: "external-adapter", model: "test",
+          system_prompt: TriggerLoopCheckJob::LLM_FALLBACK_SYSTEM_PROMPT)
+        adapter = lambda do |messages, &block|
+          prompt = JSON.parse(messages.first[:text])
+          refute_match(/exactly one word/i, client.send(:system_prompt))
+          refute_match(/exactly one word/i, prompt.fetch("input"))
+          assert_includes prompt.fetch("instruction"), "Return only JSON"
+          block.call({ answers: { status: { choice: verdict } } }.to_json)
+          nil
+        end
+        client.stub(:chat, adapter) do
+          job.stub(:decision_client, client) do
+            expected = verdict == "DONE" ? :done : :awaiting_user
+            assert_equal expected, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+          end
+        end
+      end
+    end
+
+    test "LLM fallback schema rejection preserves JSON contract" do
+      job = TriggerLoopCheckJob.new
+      comment = Struct.new(:content).new("The task is complete")
+      client = AiClient.new(vendor: "google", model: "test",
+        system_prompt: TriggerLoopCheckJob::LLM_FALLBACK_SYSTEM_PROMPT)
+      rejected = Object.new
+      rejected.define_singleton_method(:with_schema) { |*| }
+      rejected.define_singleton_method(:ask) { |*| raise RubyLLM::BadRequestError, "response_format unsupported" }
+      fallback = Object.new
+      fallback.define_singleton_method(:ask) do |prompt|
+        raise "Conflicting format" if JSON.parse(prompt).fetch("input").match?(/exactly one word/i)
+
+        Struct.new(:content, :tokens).new({ answers: { status: { choice: "DONE" } } }.to_json, nil)
+      end
+      [ rejected, fallback ].each do |chat|
+        chat.define_singleton_method(:messages) { [] }
+        chat.define_singleton_method(:tools) { [] }
+        chat.define_singleton_method(:after_message) { |*| }
+      end
+      chats = [ rejected, fallback ]
+      client.stub(:build_conversation, -> { chats.shift }) do
+        job.stub(:decision_client, client) do
+          assert_equal :done, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+        end
+      end
+      assert_empty chats
+    end
+
     test "LLM fallback: transitions to pending_verification when LLM says DONE" do
       # Agent response without [STATUS: ...] tag
       @child.comments.create!(
