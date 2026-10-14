@@ -683,6 +683,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_000001) do
     t.index ["page_id"], name: "index_notion_page_links_on_page_id", unique: true
   end
 
+  create_table "notion_page_nodes", force: :cascade do |t|
+    t.integer "notion_page_link_id", null: false
+    t.bigint "creative_id", null: false
+    t.string "page_id", null: false
+    t.string "parent_page_id", null: false
+    t.string "content_hash"
+    t.json "body_block_ids", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["notion_page_link_id", "creative_id"], name: "index_notion_nodes_on_export_and_creative", unique: true
+    t.index ["notion_page_link_id"], name: "index_notion_page_nodes_on_notion_page_link_id"
+    t.index ["page_id"], name: "index_notion_page_nodes_on_page_id", unique: true
+  end
+
   create_table "oauth_access_grants", force: :cascade do |t|
     t.integer "application_id", null: false
     t.datetime "created_at", null: false
@@ -1371,6 +1385,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_12_000001) do
   add_foreign_key "notion_block_links", "notion_page_links"
   add_foreign_key "notion_page_links", "creatives"
   add_foreign_key "notion_page_links", "notion_accounts"
+  add_foreign_key "notion_page_nodes", "notion_page_links"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
   add_foreign_key "oauth_access_tokens", "oauth_applications", column: "application_id"
   add_foreign_key "openclaw_pending_callbacks", "users"

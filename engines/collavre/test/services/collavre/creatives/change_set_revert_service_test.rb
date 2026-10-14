@@ -349,7 +349,56 @@ module Collavre
         assert_equal "Before", @child.reload.description
       end
 
+      test "reverts legacy linked shell snapshots without origin ids" do
+        linked, source = recorded_link_reorder(legacy: true)
+
+        result = ChangeSetRevertService.new(change_set: source, user: @user).call
+
+        assert_equal :applied, result.status
+        assert_equal 0, linked.reload.sequence
+        assert_equal @child.id, linked.origin_id
+      end
+
+      test "approves legacy linked shell drafts without origin ids" do
+        linked, source = recorded_link_reorder(legacy: true)
+        linked.update_column(:sequence, 0)
+        source.update!(status: "draft")
+
+        result = ChangeSetApplyService.new(source: source, user: @user, mode: :draft).call
+
+        assert_equal :applied, result.status
+        assert_equal 10, linked.reload.sequence
+        assert_equal @child.id, linked.origin_id
+      end
+
+      test "detects changed origins in current linked shell snapshots" do
+        linked, source = recorded_link_reorder(legacy: false)
+        replacement = Creative.create!(description: "Replacement", user: @user)
+        Creative.where(id: linked.id).update_all(origin_id: replacement.id)
+
+        assert_equal :conflict, ChangeSetRevertService.new(change_set: source, user: @user).call.status
+        linked.update_column(:sequence, 0)
+        source.update!(status: "draft")
+        assert_equal :conflict, ChangeSetApplyService.new(source: source, user: @user, mode: :draft).call.status
+        assert_equal replacement.id, linked.reload.origin_id
+      end
+
       private
+
+      def recorded_link_reorder(legacy:)
+        linked = Creative.create!(user: @user, origin: @child, parent: @root, sequence: 0)
+        source = nil
+        History.track(actor: @user, origin: :tool, anchor: @root) do
+          linked.update!(sequence: 10)
+          source = Current.change_set
+        end
+        Current.reset
+        if legacy
+          change = source.creative_changes.find_by!(creative_id: linked.id)
+          change.update!(before: change.before.except("origin_id"), after: change.after.except("origin_id"))
+        end
+        [ linked, source ]
+      end
 
       def recorded_creation
         created = nil
