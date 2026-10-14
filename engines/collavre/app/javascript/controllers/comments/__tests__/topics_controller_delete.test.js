@@ -111,6 +111,68 @@ describe('TopicsController#deleteTopic', () => {
     expect(controller.loadTopics).toHaveBeenCalledTimes(1)
   })
 
+  test.each(['mainTopicId', 'systemTopicId'])('clears %s before local deletion dispatch and reload', async (reservedId) => {
+    controller.mainTopicId = '1'
+    controller.systemTopicId = '2'
+    const deletedId = controller[reservedId]
+    controller.setOverrideTopicId(deletedId)
+    const states = []
+    controller.dispatch = jest.fn(() => states.push(controller[reservedId]))
+    controller.loadTopics = jest.fn(() => states.push(controller[reservedId]))
+    global.fetch = jest.fn().mockResolvedValue({ ok: true })
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = deletedId
+
+    await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+
+    expect(states).toEqual([null, null])
+    expect(controller.currentTopicId).toBe('')
+    expect(controller.dispatch).toHaveBeenCalledWith('change', {
+      detail: { topicId: '', mainTopicId: controller.mainTopicId },
+    })
+    expect(controller.loadTopics).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([false, true])('clears an inactive reserved ID with broadcast first=%s', async (broadcastFirst) => {
+    controller.mainTopicId = '1'
+    controller.systemTopicId = '2'
+    controller.serverLastTopicId = '3'
+    controller.dispatch = jest.fn()
+    let resolveDelete
+    global.fetch = jest.fn(() => new Promise(resolve => { resolveDelete = resolve }))
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '2'
+
+    const deletion = controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+    await Promise.resolve()
+    if (broadcastFirst) controller.handleTopicMessage({ action: 'deleted', topic_id: 2 })
+    resolveDelete({ ok: true })
+    await deletion
+
+    expect(controller.systemTopicId).toBeNull()
+    expect(controller.mainTopicId).toBe('1')
+    expect(controller.currentTopicId).toBe('3')
+    expect(controller.dispatch).not.toHaveBeenCalled()
+    expect(controller.loadTopics).toHaveBeenCalledTimes(broadcastFirst ? 2 : 1)
+  })
+
+  test('keeps reserved IDs when deletion fails', async () => {
+    controller.mainTopicId = '1'
+    controller.setOverrideTopicId('1')
+    global.fetch = jest.fn().mockResolvedValue({ ok: false })
+    confirmDialog.mockResolvedValue(true)
+    const button = document.createElement('button')
+    button.dataset.id = '1'
+
+    await controller.deleteTopic({ stopPropagation: jest.fn(), currentTarget: button })
+
+    expect(controller.mainTopicId).toBe('1')
+    expect(controller.currentTopicId).toBe('1')
+    expect(controller.loadTopics).not.toHaveBeenCalled()
+  })
+
   test('does not reload for a regular topic deletion', () => {
     controller.mainTopicId = '1'
     controller.topics = [{ id: 3, name: 'Other' }]

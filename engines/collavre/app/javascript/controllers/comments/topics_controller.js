@@ -814,13 +814,10 @@ export default class extends Controller {
                 // but this local removal should still reveal All Messages.
                 // A newer wheel/touch gesture always wins, though.
                 if (deletingSelectedTopic
-                    && this._topicScrollInterruptionVersion === scrollInterruptionVersion) {
-                    this._topicScrollInterrupted = false
-                }
+					&& this._topicScrollInterruptionVersion === scrollInterruptionVersion) this._topicScrollInterrupted = false
+				if (reloadDeletedReservedTopic(this, topicId)) return
                 if (String(this.currentTopicId) === String(topicId)) {
-                    // Same deep-link hazard as the "deleted" broadcast: this
-                    // path reaches restoreSelection through loadTopics instead
-                    // of removeTopic, but the getter is the same one.
+					// Release deep links before loadTopics restores selection.
                     this.fallbackFromRemovedTopic(topicId)
                     this.dispatch("change", { detail: { topicId: "", mainTopicId: this.mainTopicId } })
                 }
