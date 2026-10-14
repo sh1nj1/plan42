@@ -1519,4 +1519,41 @@ class AiClientTest < ActiveSupport::TestCase
     end
     assert_empty chat.tools
   end
+  test "approval summary closes pending calls temporarily without executing or changing the saved conversation" do
+    client = Collavre::AiClient.new(vendor: "openai", model: "gpt-4.1", system_prompt: nil, llm_api_key: "test")
+    chat = client.send(:build_conversation, [ "meta_tool" ])
+    client.instance_variable_set(:@conversation, chat)
+    chat.add_message(role: :user, content: "Update the creative")
+    calls = %w[completed pending skipped].to_h do |id|
+      [ id, RubyLLM::ToolCall.new(id: id, name: "meta_tool", arguments: { action: id }) ]
+    end
+    chat.add_message(role: :assistant, content: nil, tool_calls: calls)
+    chat.add_message(role: :tool, tool_call_id: "completed", content: "Already done")
+    original = chat.messages.dup
+    snapshot = Collavre::AiAgent::ApprovalConversation.dump(chat.messages)
+    response = RubyLLM::Message.new(role: :assistant, content: "Summary", input_tokens: 10, output_tokens: 2)
+    provider = lambda do |**_options, &_block|
+      assert_empty chat.tools
+      assert_equal %w[completed pending skipped], chat.messages.filter_map(&:tool_call_id)
+      assert_equal "Already done", chat.messages.find { |m| m.tool_call_id == "completed" }.content
+      %w[pending skipped].each do |id|
+        assert_includes chat.messages.find { |m| m.tool_call_id == id }.content, "not executed"
+      end
+      response
+    end
+    assert_difference "Collavre::LlmUsage.count", 1 do
+      chat.stub(:provider_completion, provider) { assert_equal "Summary", client.ask("Summarize") }
+    end
+    assert_equal 10, Collavre::LlmUsage.last.input_tokens
+    assert_equal original, chat.messages
+    assert_equal snapshot, Collavre::AiAgent::ApprovalConversation.dump(chat.messages)
+    chat.stub(:provider_completion, ->(**) { raise Faraday::TimeoutError, "timeout" }) do
+      assert_nil client.ask("Summarize again")
+    end
+    assert_equal original, chat.messages
+    chat.stub(:provider_completion, ->(**) { raise Collavre::CancelledError, "Stopped" }) do
+      assert_raises(Collavre::CancelledError) { client.ask("Summarize again") }
+    end
+    assert_equal original, chat.messages
+  end
 end

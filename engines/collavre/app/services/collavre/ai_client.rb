@@ -197,6 +197,7 @@ module Collavre
     def ask(prompt)
       return nil unless @conversation
 
+      original_messages = close_summary_tool_round
       start_usage_tracking
       refresh_turn_boundary!(@conversation)
       # Disable tool calls for summary generation to avoid recursive approval
@@ -214,9 +215,27 @@ module Collavre
       nil
     ensure
       finish_usage_tracking(response) if @conversation
+      @conversation.messages.replace(original_messages) if original_messages
     end
 
     private
+
+    # Complete the summary transcript without executing pending tools. The original
+    # approval conversation is restored by #ask, including on provider failure.
+    def close_summary_tool_round
+      messages = @conversation.messages
+      answered = messages.filter_map { |message| message.tool_call_id if message.respond_to?(:tool_call_id) }
+      calls = messages.flat_map { |message| message.respond_to?(:tool_calls) ? (message.tool_calls&.values || []) : [] }
+      pending = calls.reject { |call| answered.include?(call.id) }
+      return if pending.empty?
+
+      original_messages = messages.dup
+      pending.each do |call|
+        @conversation.add_message(role: :tool, tool_call_id: call.id,
+                                  content: "Awaiting human approval; not executed.")
+      end
+      original_messages
+    end
 
     attr_reader :vendor, :model, :system_prompt, :llm_api_key, :gateway_url, :context
 
