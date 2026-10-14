@@ -124,10 +124,6 @@ export default class extends Controller {
     this.element.removeEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
   }
 
-  isColumnReverse() {
-    return false // Force false now
-  }
-
   get popupController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--popup')
   }
@@ -1107,23 +1103,6 @@ export default class extends Controller {
   }
 
   // API Methods
-
-  async deleteComment(button) {
-    if (!(await confirmDialog(this.element.dataset.deleteConfirmText, { danger: true }))) return
-    const commentId = button.getAttribute('data-comment-id')
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}`, {
-      method: 'DELETE',
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-    }).then((response) => {
-      if (response.ok) {
-        // If deleted, remove from DOM
-        const el = document.getElementById(`comment_${commentId}`)
-        if (el) el.remove()
-        this.selection.delete(commentId)
-        this.notifySelectionChange()
-      }
-    })
-  }
 
   async convertComment(button) {
     // ... (Existing logic) ...

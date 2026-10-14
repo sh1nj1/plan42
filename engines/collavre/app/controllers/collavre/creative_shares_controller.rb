@@ -152,10 +152,6 @@ module Collavre
         share
       end
 
-      def all_descendants(creative)
-        creative.children.flat_map { |child| [ child ] + all_descendants(child) }
-      end
-
       # Returns inherited shares from ancestor creatives.
       # Each entry is a hash with :share, :source_creative keys.
       # Only includes the closest (most specific) share per user.
