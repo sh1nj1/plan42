@@ -1508,4 +1508,15 @@ class AiClientTest < ActiveSupport::TestCase
     end
     assert_equal 0, Collavre::ToolUsage.count
   end
+  test "summary generation clears real RubyLLM tools before requesting the response" do
+    client = Collavre::AiClient.new(vendor: "openai", model: "gpt-4.1", system_prompt: nil, llm_api_key: "test", log_interactions: false)
+    chat = client.send(:build_conversation, [ "meta_tool" ])
+    client.instance_variable_set(:@conversation, chat)
+    refute_empty chat.tools
+    response = RubyLLM::Message.new(role: :assistant, content: "Summary")
+    chat.stub(:provider_completion, ->(**_options, &_) { response }) do
+      assert_equal "Summary", client.ask("Summarize")
+    end
+    assert_empty chat.tools
+  end
 end

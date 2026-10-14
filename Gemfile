@@ -109,7 +109,7 @@ end
 gem "doorkeeper", "~> 5.9"
 
 # Pin the RubyLLM 2.x-compatible tool factory until its gem release is published.
-gem "rails_mcp_engine", git: "https://github.com/vrerv/rails_mcp_engine.git", ref: "88af8ee23b3215545fa144c850d6930f6d6234b4"
+gem "rails_mcp_engine", git: "https://github.com/vrerv/rails_mcp_engine.git", ref: "0afe735b16238ac9935d27d7e6da35c1ee0967c0"
 
 # Load all local engines found in ./engines
 # Set USE_COLLAVRE_GEM=true to use installed gem instead of local path
