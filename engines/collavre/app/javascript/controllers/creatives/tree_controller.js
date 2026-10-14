@@ -1,6 +1,6 @@
 import { hasPendingCreativeSaves, applyPendingCreativeSyncData } from '../../modules/pending_creative_sync'
 import { Controller } from '@hotwired/stimulus'
-import { renderCreativeTree, appendCreativeNodes, dispatchCreativeTreeUpdated, filteredTreeNodes } from '../../creatives/tree_renderer'
+import { renderCreativeTree, appendCreativeNodes, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { parseEmojis } from '../../utils/emoji_parser'
 import {
   hideTreeEmptyState,
@@ -271,7 +271,7 @@ export default class extends Controller {
   }
 
   async renderData(data, viewRestoreGeneration = this._viewRestoreGeneration) {
-    const nodes = filteredTreeNodes(data)
+    const nodes = Array.isArray(data?.creatives) ? data.creatives : []
     const viewState = this._pendingViewState
     const cronMessageDrafts = this._pendingCronMessageDrafts
     const isCurrent = () => viewRestoreGeneration === this._viewRestoreGeneration
