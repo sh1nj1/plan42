@@ -14,3 +14,12 @@ export function reloadDeletedReservedTopic(controller, topicId) {
     controller.loadTopics()
     return true
 }
+
+export function archivedTopicControls(controller, topic, canManage, restoreIcon) {
+    if (!canManage || topic.read_only) return ''
+    const reserved = ['mainTopicId', 'systemTopicId'].some(key =>
+        controller[key] && String(controller[key]) === String(topic.id))
+    return reserved
+        ? `<button class="delete-topic-btn" data-action="click->comments--topics#deleteTopic" data-id="${topic.id}">&times;</button>`
+        : `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${restoreIcon}</button>`
+}

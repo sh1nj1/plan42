@@ -1,4 +1,4 @@
-import { reloadDeletedReservedTopic } from './topics/reserved_topic_deletion'
+import { reloadDeletedReservedTopic, archivedTopicControls } from './topics/reserved_topic_deletion'
 import { createDragDropRegistry } from '../../lib/dnd/registry'
 import { getDragKind, readDragData, writeDragData } from '../../lib/dnd/envelope'
 import { previewDrop, horizontalHit } from '../../lib/dnd/preview'
@@ -595,7 +595,7 @@ export default class extends Controller {
                                    data-action="click->comments--topics#select"
                                    data-id="${topic.id}">
                               #${topic.name}${cronBadge}${unreadBadge}
-                              ${canManage ? `<button class="unarchive-topic-btn" data-action="click->comments--topics#unarchiveTopic" data-id="${topic.id}" title="Restore">${ICON_RESTORE}</button>` : ''}
+                              ${archivedTopicControls(this, topic, canManage, ICON_RESTORE)}
                              </span>`
                 })
             }
