@@ -83,6 +83,7 @@ describe('FormController - double submit on slow API', () => {
   afterEach(() => {
     application.stop()
     document.body.removeChild(container)
+    document.querySelectorAll('meta[name="csrf-token"]').forEach((meta) => meta.remove())
   })
 
   const pressEnter = (textarea) => {
@@ -155,6 +156,29 @@ describe('FormController - double submit on slow API', () => {
     controller.textareaTarget.value = 'second'
     pressEnter(controller.textareaTarget)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  test('refreshes a stale token once and retries the identical comment body', async () => {
+    controller.creativeId = 'http-retry-characterization'
+    const headers = new Headers({ 'X-CSRF-Token': 'fresh-token' })
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 422 })
+      .mockResolvedValueOnce({ headers })
+      .mockResolvedValueOnce({ ok: true, text: () => Promise.resolve('') })
+    controller.textareaTarget.value = 'retry me'
+    pressEnter(controller.textareaTarget)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(global.fetch).toHaveBeenCalledTimes(3)
+    const first = global.fetch.mock.calls[0]
+    const refresh = global.fetch.mock.calls[1]
+    const retry = global.fetch.mock.calls[2]
+    expect(first[1].headers['X-CSRF-Token']).toBe('test-token')
+    expect(refresh[1].method).toBe('HEAD')
+    expect(retry[0]).toBe(first[0])
+    expect(retry[1].body).toBe(first[1].body)
+    expect(retry[1].headers['X-CSRF-Token']).toBe('fresh-token')
+    expect(controller._hasRetried).toBe(false)
   })
 
   test('hides the composer while a read-only History topic is selected', () => {
