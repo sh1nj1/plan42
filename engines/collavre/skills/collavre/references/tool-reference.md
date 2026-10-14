@@ -57,6 +57,48 @@ Update an existing Creative.
 - Parent progress auto-calculates from children.
 - Circular parent references are rejected.
 
+## creative_link_service
+
+Link Creatives below a destination parent without copying their content.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parent_id` | Integer | **Yes** | Destination parent Creative ID |
+| `creative_ids` | Array | **Yes** | Nonempty list of unique positive source IDs |
+
+Requires read access to every source and write access to the destination.
+Source and destination links resolve to their effective origins. New shells are
+appended in input order; existing links to the same origin retain their positions.
+The list is atomic: one invalid or unauthorized source rolls back all changes.
+
+```json
+{"action":"run","tool_name":"creative_link_service","arguments":{"parent_id":123,"creative_ids":[124,125]}}
+```
+
+**Returns:** `{ success, parent_id, links: [{ id, origin_id, parent_id }] }` or
+`{ error }`. Use returned shell IDs for unlinking.
+
+## creative_unlink_service
+
+Remove linked shells while preserving their origins, origin children and other links.
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `linked_creative_ids` | Array | **Yes** | Nonempty list of unique positive linked-shell IDs |
+
+Uses the UI's linked-shell removal permissions and callbacks. Ordinary Creative
+IDs are rejected, and the entire list rolls back if any removal fails.
+
+```json
+{"action":"run","tool_name":"creative_unlink_service","arguments":{"linked_creative_ids":[201,202]}}
+```
+
+**Returns:** `{ success, unlinked_ids }` or `{ error }`.
+
+For both tools, inherited AI review policy stores a History draft instead of
+changing the live tree. Approval rechecks permissions and link-cycle constraints.
+Approved hard deletion of a linked shell cannot be reverted through History.
+
 ## creative_batch_service
 
 Execute multiple operations atomically. **Requires approval.**

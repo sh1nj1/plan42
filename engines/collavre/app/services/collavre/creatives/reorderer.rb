@@ -72,7 +72,7 @@ module Creatives
       authorize_link_drop!(dragged, target, direction)
 
       origin = dragged.effective_origin
-      new_parent = direction == "child" ? target : target.parent
+      new_parent = (direction == "child" ? target : target.parent)&.effective_origin
       validate_link_placement!(origin, new_parent)
 
       new_creative = insert_link_shell!(origin, target, new_parent, direction)
@@ -80,6 +80,10 @@ module Creatives
       LinkDropResult.new(new_creative: new_creative, parent: new_parent, direction: direction)
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotSaved => e
       raise Error, e.message
+    end
+
+    def validate_link!(origin:, parent:)
+      validate_link_placement!(origin, parent)
     end
 
     private

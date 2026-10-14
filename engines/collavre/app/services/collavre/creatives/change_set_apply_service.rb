@@ -61,6 +61,7 @@ module Collavre
         retain_authorized_targets(records, writable_ids)
         @conflict_skipped_change_ids = Set.new
         @resolved_change_ids = Set.new
+        @draft_progress = DraftLinkProgressReconciliation.new(@mode, @targets, records, writable_ids, @user, @source_record.anchor_creative_id)
         buckets = @targets.each_with_object([ [], [], [] ]) do |(change, snapshot), result|
           classify_target(change, snapshot, records, writable_ids, result)
         end
@@ -69,7 +70,7 @@ module Collavre
       end
 
       def locked_records
-        target_ids = @targets.keys.map(&:creative_id)
+        target_ids = @targets.keys.map(&:creative_id) + @targets.values.filter_map { |snapshot| snapshot["origin_id"] }
         parent_ids = @targets.values.filter_map { |snapshot| snapshot["parent_id"] }
         anchor_ids = @mode == :draft ? [ @source_record.anchor_creative_id ] : []
         Creative.unscoped.where(id: [ *target_ids, *parent_ids, *anchor_ids ]).order(:id).lock.index_by(&:id)
@@ -78,6 +79,7 @@ module Collavre
       def classify_target(change, snapshot, records, writable_ids, buckets)
         plan, conflicts, skipped = buckets
         creative = records[change.creative_id]
+        return @resolved_change_ids << change.id if @draft_progress.resolved?(change, creative)
         return classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped) if draft_creation?(change, creative)
         if propagated_target?(change) && !target_writable?(creative, snapshot, records, writable_ids, change)
           return classify_propagated_target(change, creative, snapshot, plan)
@@ -98,15 +100,10 @@ module Collavre
       end
 
       def classify_draft_creation(change, snapshot, records, writable_ids, plan, skipped)
-        parent_id = snapshot["parent_id"]
-        writable = if parent_id.nil?
-                     writable_parent?(records[@source_record.anchor_creative_id], writable_ids)
-        elsif parent_id.negative?
-                     virtual_creation_ids.include?(parent_id)
-        else
-                     parent = records[parent_id]
-                     parent && writable_parent?(parent, writable_ids)
-        end
+        writable = DraftLinkAuthorization.new(user: @user).creation_allowed?(
+          snapshot, records, writable_ids: writable_ids,
+          virtual_ids: virtual_creation_ids, anchor_id: @source_record.anchor_creative_id
+        )
         writable ? plan << [ nil, snapshot, nil, change ] : skipped << change.creative_id
       end
 
@@ -141,12 +138,17 @@ module Collavre
       end
 
       def target_writable?(creative, snapshot, records, writable_ids, change)
+        if @mode == :draft && change.operation == "destroy"
+          return DraftLinkAuthorization.new(user: @user).removal_allowed?(creative)
+        end
+
         creative && (!creative.read_only_source? || change.archive_propagation_only?) && writable_ids.include?(creative.id) &&
           (@authorization_only || target_parent_writable?(creative, snapshot, records, writable_ids))
       end
 
       def revertible?(source)
-        return false if source.origin == "sync" || @targets.keys.any? { |change| change.operation == "destroy" }
+        return false if source.origin == "sync"
+        return false unless DraftLinkAuthorization.supported_changes?(@targets.keys, @mode)
 
         return source.status == "draft" if @mode == :draft
 
@@ -171,11 +173,11 @@ module Collavre
       end
 
       def current_conflict?(creative, change)
-        return History.snapshot(creative) != change.before if @mode == :draft
+        return SnapshotComparison.conflict?(creative, change.before) if @mode == :draft
         return false if @mode == :restore
         return true if change.before.empty? && @creation_revert_policy.conflict?(creative)
 
-        History.snapshot(creative) != change.after
+        SnapshotComparison.conflict?(creative, change.after)
       end
 
       def resolution(change)
@@ -232,9 +234,8 @@ module Collavre
       def apply_draft(source, plan, skipped)
         return result(:skipped, skipped: skipped) unless @complete && only_conflicts_skipped?(skipped)
 
-        DraftChangeSetApplicator.new(
-          change_set: source, user: @user, plan: plan, skipped_change_ids: @draft_discard_change_ids
-        ).call
+        DraftChangeSetApplicator.new(change_set: source, user: @user, plan: plan, skipped_change_ids: @draft_discard_change_ids,
+                                     recomputed_change_ids: @draft_progress.ids & (@resolved_change_ids | plan.map { |entry| entry.last.id }.to_set)).call
         status = skipped.empty? ? :applied : :partial
         result(status, change_set: source, skipped: skipped)
       end

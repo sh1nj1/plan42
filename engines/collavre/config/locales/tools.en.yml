@@ -1,6 +1,13 @@
 en:
   collavre:
     tools:
+      creative_links:
+        link_reference: "Linked Creative [%{id}]"
+        errors:
+          current_user_required: Current.user is required.
+          invalid_ids: IDs must be a nonempty array of unique positive integers.
+          not_found: Creative not found.
+          failed: Cannot link or unlink these Creatives. Nothing was changed.
       creative_reorder:
         errors:
           current_user_required: Current.user is required.

@@ -1,6 +1,13 @@
 ko:
   collavre:
     tools:
+      creative_links:
+        link_reference: "연결된 크리에이티브 [%{id}]"
+        errors:
+          current_user_required: Current.user가 필요합니다.
+          invalid_ids: ID는 중복 없는 양의 정수 배열이어야 하며 비어 있을 수 없습니다.
+          not_found: 크리에이티브를 찾을 수 없습니다.
+          failed: 크리에이티브를 연결하거나 해제할 수 없습니다. 변경된 내용은 없습니다.
       creative_reorder:
         errors:
           current_user_required: Current.user가 필요합니다.

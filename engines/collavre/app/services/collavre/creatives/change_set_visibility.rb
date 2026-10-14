@@ -16,6 +16,7 @@ module Collavre
         changes = changes.to_a
         existing_ids = Creative.unscoped.where(id: changes.map(&:creative_id)).pluck(:id).to_set
         visible_ids = readable_ids(existing_ids)
+        visible_ids.merge(DraftLinkAuthorization.new(user: user).visible_removal_ids(changes))
         missing = changes.reject { |change| existing_ids.include?(change.creative_id) }
           .select { |change| historical_snapshot_visible?(change) }
         readable_parents = readable_ids(missing.filter_map { |change| historical_parent_id(change) })
