@@ -121,7 +121,8 @@ module Collavre
       Crons::ChangeBroadcaster.stub(:call, ->(value) { changed_creative = value }) do
         assert_enqueued_with(
           job: Collavre::CronActionJob,
-          args: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test" } ]
+          args: [ { creative_id: creative.id, topic_id: nil, agent_id: 1, message: "test",
+                    recurring_task_id: nil, recurring_task_created_at: task.created_at } ]
         ) do
           CronSchedulerJob.perform_now
         end
@@ -215,6 +216,67 @@ module Collavre
 
       assert_no_enqueued_jobs(only: CronActionJob) do
         assert_equal false, CronSchedulerJob.new.send(:dispatch_task, stale_task)
+      end
+    end
+
+    test "a locked legacy task cannot post into Main recreated before enqueue" do
+      creative = creatives(:tshirt)
+      main = creative.main_topic
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_locked", class_name: CronActionJob.name,
+        schedule: "* * * * *", static: false,
+        arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: users(:ai_bot).id, message: "stale locked" } ]
+      )
+      task.with_lock do
+        main.destroy!
+        travel 1.second
+        replacement = creative.main_topic
+        travel 1.second
+        assert CronSchedulerJob.new.send(:enqueue_task, task)
+        occurrence = enqueued_jobs.find { |job| job[:job] == CronActionJob }
+        assert_no_difference("Comment.count") do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Cancelled cron must not dispatch" }) do
+            ActiveJob::Base.deserialize(occurrence).perform_now
+          end
+        end
+        assert_empty replacement.comments
+      end
+    end
+
+    test "a queued recurring occurrence is cancelled when its task is deleted" do
+      creative = creatives(:tshirt)
+      topic = creative.main_topic
+      task = SolidQueue::RecurringTask.create!(
+        key: "cron_#{creative.id}_cancel", class_name: CronActionJob.name,
+        schedule: "* * * * *", static: false,
+        arguments: [ { creative_id: creative.id, topic_id: topic.id, agent_id: users(:ai_bot).id, message: "cancelled" } ]
+      )
+      assert CronSchedulerJob.new.send(:dispatch_task, task)
+      occurrence = enqueued_jobs.find { |job| job[:job] == CronActionJob }
+      task.destroy!
+      assert_no_difference("Comment.count") { ActiveJob::Base.deserialize(occurrence).perform_now }
+    end
+
+    test "live recurring and run-once occurrences still post to their original Main" do
+      creative = creatives(:tshirt)
+      main = creative.main_topic
+      main.update!(created_at: @now - 1.second)
+      [ false, true ].each do |once|
+        task = SolidQueue::RecurringTask.create!(
+          key: "cron_#{creative.id}_live_#{once}", class_name: CronActionJob.name,
+          schedule: "* * * * *", static: false,
+          arguments: [ { creative_id: creative.id, topic_id: nil, agent_id: users(:ai_bot).id,
+                         message: "live #{once}", once: once } ]
+        )
+        clear_enqueued_jobs
+        assert CronSchedulerJob.new.send(:dispatch_task, task)
+        assert_equal !once, SolidQueue::RecurringTask.exists?(task.id)
+        occurrence = enqueued_jobs.find { |job| job[:job] == CronActionJob }
+        SystemEvents::Dispatcher.stub(:dispatch, []) do
+          assert_difference(-> { main.comments.where(content: "live #{once}").count }, 1) do
+            ActiveJob::Base.deserialize(occurrence).perform_now
+          end
+        end
       end
     end
 

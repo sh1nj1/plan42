@@ -76,7 +76,7 @@ module Collavre
       args = task.arguments || []
       if args.is_a?(Array) && args.first.is_a?(Hash)
         keyword_args = args.first.symbolize_keys
-        keyword_args = keyword_args.except(:once) if task.class_name == CronActionJob.name
+        keyword_args = cron_arguments(task, keyword_args) if task.class_name == CronActionJob.name
         job_class.perform_later(**keyword_args)
       elsif args.is_a?(Array)
         job_class.perform_later(*args)
@@ -89,6 +89,13 @@ module Collavre
     rescue StandardError => e
       Rails.logger.error("[CronScheduler] Failed to enqueue #{task.key}: #{e.message}")
       false
+    end
+
+    def cron_arguments(task, arguments)
+      arguments.except(:once).merge(
+        recurring_task_id: run_once?(task) ? nil : task.id,
+        recurring_task_created_at: task.created_at
+      )
     end
 
     def dispatch_task(task)
