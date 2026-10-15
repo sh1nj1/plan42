@@ -98,6 +98,7 @@ Collavre stylesheets are automatically available via Propshaft. Import them in y
 @import "collavre/slide_view";
 @import "collavre/user_menu";
 @import "collavre/actiontext";
+@import "collavre/attachment_card";
 @import "collavre/tables";
 @import "collavre/activity_logs";
 @import "collavre/print";
