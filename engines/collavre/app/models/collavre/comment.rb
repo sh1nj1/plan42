@@ -165,7 +165,7 @@ module Collavre
     include Broadcastable
     include Notifiable
     include Approvable
-    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction
+    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction, BulkFollowUpJobs
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
