@@ -1,3 +1,6 @@
+<% content_for :head do %>
+  <%= tag.meta name: "ppt-preview-url-template", content: collavre.ppt_preview_path("PPT_BLOB_ID") %>
+<% end %>
 <% creative_index_content = capture do %>
 <% if creative_workspace? %>
   <%= tag.div id: "workspace-navigation-state-#{@parent_creative&.id || 'root'}",

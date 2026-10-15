@@ -11,6 +11,22 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "display pages expose request-aware preview routes under an engine prefix" do
+    Rails.application.routes.draw do
+      mount Collavre::Engine => "/collavre", as: "collavre"
+      get "/rails/active_storage/blobs/redirect/:signed_id/*filename", to: "active_storage/blobs/redirect#show", as: :rails_service_blob
+      post "/rails/active_storage/direct_uploads", to: "active_storage/direct_uploads#create", as: :rails_direct_uploads
+      get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
+    end
+    [ "/collavre/creatives?id=#{@creative.id}", "/collavre/creatives/#{@creative.id}/slide_view" ].each do |path|
+      get path
+      assert_response :success
+      assert_select 'meta[name="ppt-preview-url-template"][content="/collavre/ppt_previews/PPT_BLOB_ID"]'
+    end
+  ensure
+    Rails.application.reload_routes!
+  end
+
   test "owner can view cached slides without creating creatives" do
     Collavre::PptPreview.stub :slides, [ '<div class="ppt-slide">First</div>', '<div class="ppt-slide">Second</div>' ] do
       assert_no_difference "Creative.count" do

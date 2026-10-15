@@ -14,7 +14,7 @@ const YOUTUBE_EMBED_SRC =
 DOMPurify.addHook('uponSanitizeElement', (node, data) => {
   if (data.tagName !== 'iframe') return
   const src = node.getAttribute && node.getAttribute('src')
-  if (!src || !(YOUTUBE_EMBED_SRC.test(src) || /^\/ppt_previews\/[A-Za-z0-9%_=.-]+$/.test(src))) {
+  if (!src || !(YOUTUBE_EMBED_SRC.test(src) || /^\/(?:[A-Za-z0-9%_.~-]+\/)*ppt_previews\/[A-Za-z0-9%_=.-]+$/.test(src))) {
     node.parentNode && node.parentNode.removeChild(node)
   }
 })
