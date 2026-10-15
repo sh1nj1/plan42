@@ -18,7 +18,13 @@ module Collavre
       def release_non_chat_primary_pins
         return if supports?(:chat)
 
-        Topic.where(primary_agent_id: id, session_id: nil).update_all(primary_agent_id: nil, updated_at: Time.current)
+        topics = Topic.where(primary_agent_id: id, session_id: nil).lock.to_a
+        topics.each { |topic| topic.update!(primary_agent: nil) }
+        ActiveRecord.after_all_transactions_commit do
+          topics.each do |topic|
+            TopicsChannel.broadcast_to(topic.creative, action: "updated", topic: Topics::Serializer.with_agent(topic, nil))
+          end
+        end
       end
 
       class_methods do
