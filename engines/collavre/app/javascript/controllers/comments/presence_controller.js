@@ -825,10 +825,10 @@ export default class extends Controller {
         img.height = 20
         img.className = 'avatar comment-presence-avatar'
         img.style.borderRadius = '50%'
-        if (!user.default_avatar) wrapper.appendChild(img)
+        wrapper.appendChild(img)
         if (user.default_avatar) {
           const span = document.createElement('span')
-          span.className = 'avatar-initial avatar comment-presence-avatar'
+          span.className = 'avatar-initial'
           span.textContent = user.initial
           span.style.fontSize = `${Math.round(20 / 2)}px`
           wrapper.appendChild(span)

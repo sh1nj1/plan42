@@ -113,8 +113,6 @@ describe('createUserMenu', () => {
     })
 
     expect(menu.querySelectorAll('.avatar-initial')).toHaveLength(2)
-    expect(menu.querySelectorAll('img')).toHaveLength(0)
-    expect(menu.querySelector('.avatar-initial[data-user-id]')).not.toBeNull()
     expect(menu.querySelector('.comment-user-popup-email').textContent).toBe('')
     expect(menu.querySelector('.comment-presence-avatar').classList.contains('inactive')).toBe(true)
     expect(menu.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(false)

@@ -2,10 +2,6 @@
 
 module Collavre
   module ActivityLogsHelper
-    def activity_log_name(activity)
-      t("collavre.comments.activity_logs.names.#{activity}", default: t("collavre.comments.activity_logs.names.other"))
-    end
-
     def inline_task_execution_time(task)
       seconds = TaskExecutionTime.seconds(task) if task
       format_execution_time(seconds) if seconds

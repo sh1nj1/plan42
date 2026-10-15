@@ -5,16 +5,6 @@ require "test_helper"
 class Collavre::ActivityLogsHelperTest < ActionView::TestCase
   include Collavre::ActivityLogsHelper
 
-  test "localizes known activities and unknown keys in both languages" do
-    { en: [ "Model request", "Tool execution", "Agent activity" ], ko: [ "모델 요청", "도구 실행", "에이전트 활동" ] }.each do |locale, labels|
-      I18n.with_locale(locale) do
-        %w[llm_query tool_execution future_event].zip(labels).each do |key, label|
-          assert_equal label, activity_log_name(key)
-        end
-      end
-    end
-  end
-
   test "formats English durations with seconds minutes and hours" do
     I18n.with_locale(:en) do
       { 0 => "0s", 0.1 => "0s", 0.6 => "1s", 59.5 => "1m", 60 => "1m", 83 => "1m 23s",

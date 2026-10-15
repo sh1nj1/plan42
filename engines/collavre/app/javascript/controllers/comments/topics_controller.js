@@ -2609,7 +2609,7 @@ export default class extends Controller {
             ? ` data-action="click->comments--topics#clearTopicPrimaryAgent" data-id="${this.escapeAttr(String(topicId))}" role="button"`
             : ''
         let html = `<span class="avatar-wrapper topic-agent-avatar-wrapper${releasable ? ' topic-agent-avatar-releasable' : ''}"${releaseAttrs} style="width:${size}px;height:${size}px;" title="${this.escapeAttr(title)}">`
-        if (!agent.default_avatar) html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
+        html += `<img src="${this.escapeAttr(agent.avatar_url)}" alt="" width="${size}" height="${size}" class="topic-agent-avatar" style="border-radius:50%;vertical-align:middle;">`
         if (agent.default_avatar) {
             html += `<span class="avatar-initial">${this.escapeAttr(agent.initial)}</span>`
         }
