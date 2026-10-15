@@ -156,6 +156,26 @@ module Collavre
       end
     end
 
+    test "HTTP 422 schema rejections retry but unrelated errors propagate" do
+      [ [ "response_format unsupported", true ], [ "Invalid API parameter", false ] ].each do |detail, retries|
+        failure = RubyLLM::Error.new("Invalid request - please check your input",
+          response: OpenStruct.new(status: 422, body: { detail: detail }.to_json))
+        first = fake_chat
+        first.define_singleton_method(:ask) { |*| raise failure }
+        second = fake_chat
+        second.define_singleton_method(:with_schema) { |*| flunk "fallback must not request a schema" }
+        chats = [ first, second ]
+        @client.stub(:build_conversation, -> { chats.shift }) do
+          if retries
+            assert_equal "DONE", @client.judge("Task", questions: QUESTIONS).dig("answers", "status", "choice")
+          else
+            assert_same failure, assert_raises(RubyLLM::Error) { @client.judge("Task", questions: QUESTIONS) }
+          end
+        end
+        assert_equal(retries ? [] : [ second ], chats)
+      end
+    end
+
     test "masked unrelated or malformed error bodies do not retry" do
       [ '{"detail":"Invalid API parameter"}', '<html>schema gateway error</html>', nil ].each do |body|
         chat = fake_chat

@@ -44,7 +44,7 @@ module Collavre
         return adapter_decision(input, definitions) unless VENDOR_TO_PROVIDER.key?(vendor)
 
         perform_chat_decision(input, definitions, structured: true)
-      rescue RubyLLM::BadRequestError => e
+      rescue RubyLLM::Error => e
         raise unless schema_rejection?(e)
 
         perform_chat_decision(input, definitions, structured: false)
