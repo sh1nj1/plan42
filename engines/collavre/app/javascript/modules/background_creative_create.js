@@ -1,5 +1,7 @@
 import { applyCreativeSaveResponse } from './creative_save_state'
 import { cacheSavedMarkdownSource } from './queued_creative_row'
+import { siblingTreeRow, creativeIdFrom } from './creative_tree_dom'
+import { treeRowElement } from './creative_row_editor_helpers'
 
 // Enter on a brand-new creative POSTs it in the background so the next row
 // opens at once. Until that POST returns there is no id to position the next
@@ -9,7 +11,6 @@ const creates = new WeakMap()
 const anchors = new WeakMap()
 const failedDrafts = new WeakMap()
 const chains = new WeakMap()
-const dependents = new WeakMap()
 const retryDeletes = new WeakMap()
 const holds = new WeakMap()
 const releases = new WeakMap()
@@ -39,6 +40,15 @@ export async function cannotEdit(tree) {
 
 const saved = (row) => row.isConnected && row.dataset.id
 
+// The id of the first sibling row below this one that has been saved, read
+// from the tree as it is now, whatever was added or removed around the row
+// since it failed.
+function savedIdBelow(tree) {
+  let row = siblingTreeRow(treeRowElement(tree), 'next')
+  while (row && !creativeIdFrom(row)) row = siblingTreeRow(row, 'next')
+  return row ? creativeIdFrom(row) : ''
+}
+
 // Hands over the draft of a row whose background create failed, so the editor
 // can reopen it as a new creative and retry the create: in front of the first
 // saved row below it, else after the nearest saved row of its failed chain
@@ -48,10 +58,9 @@ export function takeFailedDraft(tree) {
   const draft = failedDrafts.get(tree)
   failedDrafts.delete(tree)
   if (!draft) return draft
-  const { predecessors, successors = [] } = chains.get(tree)
-  const next = successors.find(saved)
-  const previous = predecessors.findLast(saved)
-  if (next) Object.assign(draft, { afterId: '', beforeId: next.dataset.id })
+  const next = savedIdBelow(tree)
+  const previous = chains.get(tree).predecessors.findLast(saved)
+  if (next) Object.assign(draft, { afterId: '', beforeId: next })
   else if (previous) Object.assign(draft, { afterId: previous.dataset.id, beforeId: '' })
   return draft
 }
@@ -95,14 +104,13 @@ export function takeRetryDeletedIds(tree) {
   return ids
 }
 
-// A row that takes over the slot of failed rows above it records them, so
-// once it is created they retry in front of it rather than in the old slot,
-// which the server would now place after it when that slot is a before_id.
-// Until that create settles, the failed rows hold off reopening.
+// A row that takes over the slot of failed rows above it records them: until
+// its create settles they hold off reopening, since once it is created they
+// must retry in front of it rather than in the old slot, which the server
+// would now place after it when that slot is a before_id.
 function adoptAnchor(tree, anchor) {
   const failedTrees = anchor.failedTrees
   if (!failedTrees) return anchor
-  dependents.set(tree, failedTrees)
   const settled = new Promise((resolve) => releases.set(tree, () => {
     failedTrees.forEach((failedTree) => holds.get(failedTree) === settled && holds.delete(failedTree))
     resolve()
@@ -118,16 +126,9 @@ export function releaseFailedRows(tree) {
   releases.delete(tree)
 }
 
-// Each failed row keeps the rows below it in screen order, from the first
-// row created after it, and retries in front of the first one that still has
-// an id by then, so failed rows retried in any order land in the order shown.
-export function retargetFailedDrafts(tree) {
-  const failedTrees = dependents.get(tree) || []
-  failedTrees.forEach((failedTree, index) => {
-    const chain = chains.get(failedTree)
-    if (chain && !chain.successors) chain.successors = [...failedTrees.slice(index + 1), tree]
-  })
-  dependents.delete(tree)
+// A created row drops its failed chain; failed rows around it find it in the
+// tree when they retry.
+export function forgetFailedChain(tree) {
   chains.delete(tree)
 }
 

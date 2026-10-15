@@ -415,8 +415,31 @@ describe('Enter on a new creative saves it in the background', () => {
     await flush()
 
     await retryFailedRow(second)
-    second.remove()
+    second.closest('creative-tree-row').remove()
     expect(sentField(await retryFailedRow(first), 'before_id')).toBe('82')
+  })
+
+  test('a failed row retries in front of a saved row added below it after its successor was removed', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(80)))
+      .mockImplementationOnce(() => Promise.resolve(created(81)))
+      .mockImplementation(() => Promise.resolve(created(82)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-before-id').value = '6'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    type('third creative')
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(sentField(saveMock.mock.calls[2], 'after_id')).toBe('80')
+
+    second.closest('creative-tree-row').remove()
+    const retry = await retryFailedRow(first)
+
+    expect(sentField(retry, 'after_id')).toBe('')
+    expect(sentField(retry, 'before_id')).toBe('81')
   })
 
   test('a failed chain with no saved row below it retries in screen order', async () => {

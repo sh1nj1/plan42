@@ -1,5 +1,5 @@
 import { treeRowElement } from './creative_row_editor_helpers'
-import { retargetFailedDrafts } from './background_creative_create'
+import { forgetFailedChain } from './background_creative_create'
 
 // Points a just-created tree, and its row component, at its new server id.
 export function bindPersistedTree(tree, data, parentId, fallbackRow) {
@@ -10,7 +10,7 @@ export function bindPersistedTree(tree, data, parentId, fallbackRow) {
   const rowEl = treeRowElement(tree) || fallbackRow
   if (rowEl) bindRowComponent(rowEl, data.id, tree.dataset.level, parentId)
   insertRow(tree, data)
-  retargetFailedDrafts(tree)
+  forgetFailedChain(tree)
 }
 
 function bindRowComponent(rowEl, id, levelValue, parentId) {
