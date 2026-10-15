@@ -23,6 +23,7 @@ class PptViewerTest < ApplicationSystemTestCase
   test "inline viewer navigates and uses native fullscreen" do
     visit collavre.creatives_path(id: @creative.id)
     assert_selector "iframe.ppt-attachment-preview"
+    assert_preview_fills_container
     within_frame(find("iframe.ppt-attachment-preview")) do
       assert_equal "0", page.evaluate_script("getComputedStyle(document.querySelector('#slide-controls')).opacity")
       find(".ppt-viewer").hover
@@ -47,6 +48,7 @@ class PptViewerTest < ApplicationSystemTestCase
     find("#creative-#{@creative.id} .edit-inline-btn").click
     assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
     editor = find("[data-lexical-editor-root][data-editor-ready='true']")
+    assert_preview_fills_container
     original_src = editor.find("iframe")["src"]
     @creative.files.first.blob.open do |file|
       Tempfile.create([ "uploaded", ".pptx" ]) do |upload|
@@ -66,5 +68,28 @@ class PptViewerTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable"
     assert_selector "#creative-#{@creative.id} iframe.ppt-attachment-preview", count: 2
     assert_equal original_src, first("#creative-#{@creative.id} iframe.ppt-attachment-preview")["src"]
+  end
+
+  private
+
+  def assert_preview_fills_container
+    dimensions = page.evaluate_script(<<~JS, first("iframe.ppt-attachment-preview"))
+      ((frame) => {
+        const container = frame.closest('.lexical-content-editable') || frame.parentElement;
+        const style = getComputedStyle(container);
+        return {
+          width: frame.getBoundingClientRect().width,
+          available: container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          height: frame.getBoundingClientRect().height
+        };
+      })(arguments[0])
+    JS
+    assert_in_delta dimensions["available"], dimensions["width"], 2
+    assert_in_delta dimensions["width"] * 9 / 16, dimensions["height"], 2
+    within_frame(first("iframe.ppt-attachment-preview")) do
+      assert_selector ".ppt-slide"
+      slide_width = page.evaluate_script("document.querySelector('.ppt-slide').getBoundingClientRect().width")
+      assert_in_delta dimensions["width"], slide_width, 2
+    end
   end
 end

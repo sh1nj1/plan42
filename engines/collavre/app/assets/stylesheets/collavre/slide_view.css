@@ -156,6 +156,7 @@
 
 /* Overlay controls keep the inline preview focused on the slide. */
 .ppt-viewer #slide-view {
+  --slide-view-height: 100dvh;
   --slide-padding: 0px;
   --slide-controls-space: 0px;
 }

@@ -2046,6 +2046,13 @@ creative-tree-row.is-being-edited .creative-tree {
 .ppt-attachment-preview {
   display: block;
   width: 100%;
-  height: min(70vh, 640px);
+  height: auto;
+  aspect-ratio: 16 / 9;
   border: 0;
+}
+
+/* Lexical decorator wrappers must not constrain presentation previews. */
+.lexical-content-editable span:has(> .ppt-attachment-preview) {
+  display: block;
+  width: 100%;
 }
