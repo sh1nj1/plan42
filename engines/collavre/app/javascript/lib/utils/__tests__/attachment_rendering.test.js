@@ -31,7 +31,8 @@ describe('attachment rendering parity', () => {
 
   test('formats sizes consistently and escapes filenames', () => {
     const link = render('<a href="/file" download="&lt;img onerror=alert(1)&gt;" data-filesize="1048576">file</a>').querySelector('a')
-    expect(link.querySelector('.attachment-link-size').textContent).toBe('(1 MB)')
+    expect(link.querySelector('.attachment-link-size').dataset.filesizeLabel).toBe('1 MB')
+    expect(link.textContent).toBe('<img onerror=alert(1)>')
     expect(link.querySelector('.attachment-link-name').textContent).toBe('<img onerror=alert(1)>')
     expect(link.querySelector('img')).toBeNull()
   })
@@ -40,6 +41,27 @@ describe('attachment rendering parity', () => {
     const once = sanitizeDescriptionHtml('<a download href="/file">report.pdf</a>')
     expect(sanitizeDescriptionHtml(once)).toBe(once)
     expect(render(once).querySelector('.attachment-link-name').textContent).toBe('report.pdf')
+  })
+
+  test('keeps labels and imported filenames free of decoration', () => {
+    const link = render('<a download href="/file" data-filesize="2048">report.pdf</a>').querySelector('a')
+    expect(link.textContent).toBe('report.pdf')
+    const editor = createEditor({nodes: [AttachmentNode]})
+    editor.update(() => {
+      const imported = AttachmentNode.importDOM().a(link).conversion(link).node
+      expect(imported.getFilename()).toBe('report.pdf')
+      expect(imported.exportDOM().element.textContent).toBe('report.pdf')
+    }, {discrete: true})
+  })
+
+  test('imports previously decorated HTML using the filename span', () => {
+    const container = document.createElement('div')
+    container.innerHTML = '<a download href="/file"><span>📎</span><span class="attachment-link-name">report.pdf</span><span>(2 KB)</span></a>'
+    const link = container.firstChild
+    const editor = createEditor({nodes: [AttachmentNode]})
+    editor.update(() => {
+      expect(AttachmentNode.importDOM().a(link).conversion(link).node.getFilename()).toBe('report.pdf')
+    }, {discrete: true})
   })
 
   test('is idempotent and preserves link metadata', () => {

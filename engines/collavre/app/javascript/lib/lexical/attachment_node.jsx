@@ -104,8 +104,8 @@ export class AttachmentNode extends DecoratorNode {
             download: this.__filename,
             className: "attachment-link",
             onClick: (event) => event.stopPropagation(),
-        }, ...attachmentLinkParts(this.__filename, this.__filesize).map(({className, text}, index) =>
-            createElement("span", {className, key: index}, text)
+        }, ...attachmentLinkParts(this.__filename, this.__filesize).map(({className, text, sizeLabel}, index) =>
+            createElement("span", {className, key: index, "data-filesize-label": sizeLabel}, text)
         ))
     }
 }
@@ -113,7 +113,8 @@ export class AttachmentNode extends DecoratorNode {
 function convertAttachmentElement(domNode) {
     if (domNode instanceof HTMLAnchorElement && domNode.hasAttribute("download")) {
         const src = domNode.getAttribute("href")
-        const filename = domNode.getAttribute("download") || domNode.textContent
+        const filename = domNode.getAttribute("download") ||
+            domNode.querySelector(".attachment-link-name")?.textContent || domNode.textContent
         const filesize = domNode.getAttribute("data-filesize")
         const node = $createAttachmentNode({
             src,

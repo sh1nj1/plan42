@@ -1010,7 +1010,8 @@ a.attachment-link {
     font-size: 0.9em;
 }
 
-.attachment-link-icon {
+.attachment-link-icon::before {
+    content: "📎";
     font-size: 1.2em;
 }
 
@@ -1023,4 +1024,8 @@ a.attachment-link {
     flex-shrink: 0;
     color: var(--color-muted);
     font-size: 0.85em;
+}
+
+.attachment-link-size::after {
+    content: "(" attr(data-filesize-label) ")";
 }
