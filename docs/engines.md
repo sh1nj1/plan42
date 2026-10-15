@@ -28,6 +28,7 @@ The main application engine containing:
 - `Collavre::SessionsController` - Login/logout
 - `Collavre::UsersController` - User management
 - `Collavre::CreativesController` - CRUD + tree operations
+- `Collavre::Creatives::PptPreviewsController` - Shared editor and Creative `.pptx` attachment previews using the slide layout; saved files require read permission on an attachment-owning origin, and unattached uploads require uploader access.
 - `Collavre::SeoController` - `/sitemap.xml` and dynamic `/robots.txt`; sitemap lists active, unlinked root creatives with an explicit public read grant and anonymous read access. Responses advertise a one-hour public cache lifetime; more than 10,000 entries produce a sitemap index with `?page=` links. When `creatives_login_required` is enabled, the sitemap is empty and robots disallows all crawling.
 - `Collavre::CommentsController` - Comment management
 - `Collavre::TasksController` - Task management
@@ -39,6 +40,8 @@ The main application engine containing:
 - `Collavre::Creatives::TreeBuilder` - Builds creative tree structure
 - `Collavre::MarkdownConverter` - Convert markdown content
 - `Collavre::MarkdownImporter` - Import from markdown
+- `Collavre::PptRenderer` - Render PowerPoint slides to HTML without creating creatives; shared by attachment previews and `PptImporter`.
+- `Collavre::PptPreview` - Cache rendered attachment slides by blob key and locale for seven days.
 - `Collavre::Creatives::FilterPipeline` - Filtering creatives
 - `Collavre::AiAgentService` - AI agent coordination
 - `Collavre::McpService` - MCP tool management

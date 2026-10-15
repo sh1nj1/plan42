@@ -1,3 +1,4 @@
+import { pptAttachmentProps } from "./ppt_attachment"
 import { createElement } from "react"
 import { attachmentLinkLabel, attachmentLinkParts } from "./attachment_presentation"
 
@@ -99,6 +100,11 @@ export class AttachmentNode extends DecoratorNode {
     }
 
     decorate() {
+        const preview = pptAttachmentProps(this.__src, this.__filename)
+        if (preview) return createElement("iframe", {
+            ...preview,
+            onClick: (event) => event.stopPropagation(),
+        })
         return createElement("a", {
             href: this.__src,
             download: this.__filename,

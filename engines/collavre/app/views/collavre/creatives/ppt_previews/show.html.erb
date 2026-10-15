@@ -1,0 +1,18 @@
+<div class="ppt-viewer" tabindex="0" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+  <div id="slide-view">
+    <div id="slide-content">
+      <% @slides.each_with_index do |slide, index| %>
+        <div class="ppt-viewer-slide" <%= 'hidden' unless index.zero? %>><%= slide.html_safe %></div>
+      <% end %>
+    </div>
+  </div>
+  <nav id="slide-controls" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+    <button type="button" data-ppt-previous aria-label="<%= t('collavre.ppt_viewer.previous') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+    <%= link_to t("collavre.ppt_viewer.download"), main_app.rails_storage_proxy_path(@blob, disposition: "attachment"), download: @blob.filename, class: "ppt-viewer-download" %>
+    <span data-ppt-counter aria-live="polite"></span>
+    <button type="button" data-ppt-next aria-label="<%= t('collavre.ppt_viewer.next') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+    <button type="button" data-ppt-fullscreen><%= t('collavre.ppt_viewer.fullscreen') %></button>
+    <button type="button" data-ppt-close aria-label="<%= t('collavre.ppt_viewer.close') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    <span data-ppt-error hidden role="alert"><%= t('collavre.ppt_viewer.fullscreen_error') %></span>
+  </nav>
+</div>

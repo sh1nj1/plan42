@@ -19,3 +19,15 @@ test('decorates the server-rendered first slide without fetching it', () => {
   expect(fetchMock).not.toHaveBeenCalled()
   fetchMock.mockRestore()
 })
+
+
+test('shared initializer leaves attachment viewer initialization to its module', () => {
+  document.body.innerHTML = '<div id="slide-view"><div id="slide-content">PPT attachment</div></div>'
+  const errors = []
+  const listener = event => { errors.push(event.error); event.preventDefault() }
+  window.addEventListener('error', listener)
+  document.dispatchEvent(new window.Event('DOMContentLoaded'))
+  window.removeEventListener('error', listener)
+  expect(errors).toEqual([])
+  expect(document.querySelector('#slide-content').textContent).toBe('PPT attachment')
+})

@@ -147,3 +147,83 @@
 #slide-content .ppt-slide-notes {
   display: none;
 }
+
+.ppt-viewer { background: var(--surface-bg); }
+.ppt-viewer:fullscreen { width: 100%; height: 100%; }
+.ppt-viewer-slide[hidden] { display: none; }
+.ppt-viewer .ppt-slide-notes { display: none; }
+.ppt-viewer #slide-content { width: 100%; }
+
+/* Overlay controls keep the inline preview focused on the slide. */
+.ppt-viewer #slide-view {
+  --slide-view-height: 100dvh;
+  --slide-padding: 0px;
+  --slide-controls-space: 0px;
+}
+.ppt-viewer #slide-controls {
+  position: absolute;
+  inset: 0;
+  transform: none;
+  background: transparent;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.ppt-viewer { position: relative; cursor: zoom-in; }
+.ppt-viewer:fullscreen { cursor: default; }
+.ppt-viewer #slide-controls :is(button, a) {
+  pointer-events: none;
+  position: absolute;
+  background: transparent;
+  border: 0;
+  color: white;
+  filter: drop-shadow(0 1px 2px black);
+  padding: 12px;
+  cursor: pointer;
+}
+.ppt-viewer #slide-controls svg {
+  width: 32px;
+  height: 32px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.ppt-viewer #slide-controls [data-ppt-previous],
+.ppt-viewer #slide-controls [data-ppt-next] {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.ppt-viewer [data-ppt-previous] { left: 0; }
+.ppt-viewer [data-ppt-next] { right: 0; }
+.ppt-viewer .ppt-viewer-download { top: 0; right: 56px; }
+.ppt-viewer [data-ppt-close] { top: 0; right: 0; }
+.ppt-viewer [data-ppt-fullscreen] { bottom: 0; right: 0; }
+.ppt-viewer [data-ppt-counter] {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  text-shadow: 0 1px 2px black;
+}
+.ppt-viewer [data-ppt-error] { position: absolute; bottom: 48px; }
+.ppt-viewer:not(:fullscreen) [data-ppt-close],
+.ppt-viewer:fullscreen [data-ppt-fullscreen] { display: none; }
+@media (hover: hover) {
+  .ppt-viewer:not(:fullscreen):hover #slide-controls,
+  .ppt-viewer:not(:fullscreen):focus-visible #slide-controls,
+  .ppt-viewer:not(:fullscreen) #slide-controls:focus-within { opacity: 1; }
+  .ppt-viewer:not(:fullscreen):hover #slide-controls :is(button, a),
+  .ppt-viewer:not(:fullscreen):focus-visible #slide-controls :is(button, a),
+  .ppt-viewer:not(:fullscreen) #slide-controls:focus-within :is(button, a) { pointer-events: auto; }
+  .ppt-viewer [data-ppt-fullscreen] { display: none; }
+}
+.ppt-viewer.ppt-controls-visible #slide-controls,
+.ppt-viewer #slide-controls:has(:focus-visible) { opacity: 1; }
+.ppt-viewer.ppt-controls-visible #slide-controls :is(button, a),
+.ppt-viewer #slide-controls:has(:focus-visible) :is(button, a) { pointer-events: auto; }
+
+/* Inline slides follow their frame width; fullscreen still fits both axes. */
+.ppt-viewer:not(:fullscreen) #slide-view .ppt-slide {
+  width: 100%;
+}

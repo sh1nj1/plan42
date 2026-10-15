@@ -12,8 +12,47 @@ function render(html) {
 }
 
 describe('attachment rendering parity', () => {
+  beforeEach(() => {
+    globalThis.HTMLAnchorElement = window.HTMLAnchorElement
+    Object.defineProperty(window.HTMLIFrameElement.prototype, 'allow', {
+      configurable: true,
+      get() { return this.getAttribute('allow') },
+      set(value) { this.setAttribute('allow', value) },
+    })
+    document.head.innerHTML = '<meta name="ppt-preview-url-template" content="/ppt_previews/PPT_BLOB_ID">'
+  })
+
+  test.each(['/rails/active_storage/blobs/redirect/signed/deck.pptx', '/collavre/public-assets/blobs/signed/deck.pptx'])(
+    'preserves the server-provided engine mount path in both display paths: %s', src => {
+      document.querySelector('meta[name="ppt-preview-url-template"]').content = '/collavre/ppt_previews/PPT_BLOB_ID'
+      const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
+      editor.update(() => {
+	const node = $createAttachmentNode({src, filename: 'deck.pptx'})
+	const saved = render(node.exportDOM().element.outerHTML).querySelector('iframe')
+	const editing = document.createElement('div')
+	editing.innerHTML = renderToStaticMarkup(node.decorate())
+	expect(saved.getAttribute('src')).toBe('/collavre/ppt_previews/signed')
+	expect(sanitizeDescriptionHtml(saved.outerHTML)).toContain('/collavre/ppt_previews/signed')
+	expect(editing.firstChild.getAttribute('src')).toBe(saved.getAttribute('src'))
+      }, {discrete: true})
+    }
+  )
+
+  test.each(['/\\evil.example/ppt_previews/signed', '/\n/evil.example/ppt_previews/signed'])(
+    'rejects iframe URLs that browsers normalize to external origins: %s', src => {
+      const frame = document.createElement('iframe')
+      frame.setAttribute('src', src)
+      expect(render(frame.outerHTML).querySelector('iframe')).toBeNull()
+    }
+  )
+
+  test('keeps a download link when the server route template is unavailable', () => {
+    document.head.innerHTML = ''
+    expect(render('<a download="deck.pptx" href="/public-assets/blobs/signed/deck.pptx">deck.pptx</a>').querySelector('iframe')).toBeNull()
+  })
+
   test('renders the same attachment contents and class as the editor', () => {
-    const editor = createEditor({nodes: [AttachmentNode]})
+    const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
     editor.update(() => {
       const node = $createAttachmentNode({src: '/file', filename: 'slides.pptx', filesize: 2048})
       const saved = render(node.exportDOM().element.outerHTML).querySelector('a')
@@ -30,9 +69,37 @@ describe('attachment rendering parity', () => {
     }, {discrete: true})
   })
 
+  test.each([
+    '/rails/active_storage/blobs/redirect/signed/deck.pptx',
+    '/rails/active_storage/blobs/proxy/signed/deck.pptx',
+    '/public-assets/blobs/signed/deck.pptx',
+    'https://assets.example.com/public-assets/blobs/signed/deck.pptx',
+  ])('PPT previews match in editor and saved descriptions: %s', src => {
+    const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
+    editor.update(() => {
+      const node = $createAttachmentNode({src, filename: 'deck.PPTX', filesize: 2048})
+      const saved = render(node.exportDOM().element.outerHTML).querySelector('iframe')
+      const editing = document.createElement('div')
+      const decoration = node.decorate()
+      let stopped = false
+      decoration.props.onClick({ stopPropagation: () => { stopped = true } })
+      expect(stopped).toBe(true)
+      editing.innerHTML = renderToStaticMarkup(decoration)
+      expect(saved.getAttribute('src')).toBe('/ppt_previews/signed')
+      expect(saved.getAttribute('src')).toBe(editing.firstChild.getAttribute('src'))
+      expect(saved.title).toBe('deck.PPTX')
+      expect(saved.hasAttribute('allowfullscreen')).toBe(true)
+      expect(saved.getAttribute('allow')).toBe('fullscreen')
+      expect(saved.className).toBe(editing.firstChild.className)
+      expect(sanitizeDescriptionHtml(saved.outerHTML)).toContain('/ppt_previews/signed')
+      expect(node.exportDOM().element.tagName).toBe('A')
+      expect(AttachmentNode.importDOM().a(node.exportDOM().element).conversion(node.exportDOM().element).node.getSrc()).toBe(src)
+    }, {discrete: true})
+  })
+
   test.each([null, '', '0', '-1', 'invalid'])('omits missing or invalid size %s', size => {
     expect(attachmentLinkParts('file', size)).toHaveLength(2)
-    const editor = createEditor({nodes: [AttachmentNode]})
+    const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
     editor.update(() => {
       const node = $createAttachmentNode({src: '/file', filename: 'file', filesize: size})
       const saved = render(node.exportDOM().element.outerHTML).querySelector('a')
@@ -60,7 +127,7 @@ describe('attachment rendering parity', () => {
   test('keeps labels and imported filenames free of decoration', () => {
     const link = render('<a download href="/file" data-filesize="2048">report.pdf</a>').querySelector('a')
     expect(link.textContent).toBe('report.pdf')
-    const editor = createEditor({nodes: [AttachmentNode]})
+    const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
     editor.update(() => {
       const imported = AttachmentNode.importDOM().a(link).conversion(link).node
       expect(imported.getFilename()).toBe('report.pdf')
@@ -72,7 +139,7 @@ describe('attachment rendering parity', () => {
     const container = document.createElement('div')
     container.innerHTML = '<a download href="/file"><span>📎</span><span class="attachment-link-name">report.pdf</span><span>(2 KB)</span></a>'
     const link = container.firstChild
-    const editor = createEditor({nodes: [AttachmentNode]})
+    const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
     editor.update(() => {
       expect(AttachmentNode.importDOM().a(link).conversion(link).node.getFilename()).toBe('report.pdf')
     }, {discrete: true})
