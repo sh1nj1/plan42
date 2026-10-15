@@ -284,7 +284,8 @@ body.chat-fullscreen {
 }
 
 #new-comment-form textarea {
-    width: 96%;
+    box-sizing: border-box;
+    width: 100%;
     resize: none;
     font-size: var(--text-1);
     overflow-y: auto;
