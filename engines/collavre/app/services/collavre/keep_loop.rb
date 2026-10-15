@@ -17,7 +17,7 @@ module Collavre
       payload = task.trigger_event_payload || {}
       ids = [ payload.dig("comment", "id") ] + Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
         Array(payload[Orchestration::DeliveryRecord::DROPPED_KEY])
-      return false if comment_id && !ids.compact.map(&:to_i).include?(comment_id)
+      return false unless comment_id && ids.compact.map(&:to_i).include?(comment_id)
 
       generation = payload.dig(Orchestration::KeepDispatchRestoration::KEY, comment_id.to_s) ||
         payload.dig("comment", "keep_loop_generation")
