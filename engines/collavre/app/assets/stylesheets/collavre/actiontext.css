@@ -994,3 +994,33 @@
   border-radius: var(--radius-2);
   box-shadow: var(--shadow-3);
 }
+
+/* Shared attachment cards in the rich editor and read-only descriptions. */
+a.attachment-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    max-width: 100%;
+    padding: 0.5em 0.75em;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    text-decoration: none;
+    color: var(--color-text);
+    font-size: 0.9em;
+}
+
+.attachment-link-icon {
+    font-size: 1.2em;
+}
+
+.attachment-link-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.attachment-link-size {
+    flex-shrink: 0;
+    color: var(--color-muted);
+    font-size: 0.85em;
+}

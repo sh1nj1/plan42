@@ -1,3 +1,6 @@
+import { createElement } from "react"
+import { attachmentLinkParts } from "./attachment_presentation"
+
 import {
     $applyNodeReplacement,
     DecoratorNode,
@@ -96,47 +99,14 @@ export class AttachmentNode extends DecoratorNode {
     }
 
     decorate() {
-        const formatFileSize = (bytes) => {
-            if (!bytes) return ""
-            if (bytes < 1024) return `${bytes} B`
-            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-        }
-
-        const handleClick = (e) => {
-            // Stop propagation to prevent creative-row navigation
-            // and prevent default to stop parent link navigation
-            e.stopPropagation()
-            // Don't prevent default - we want the download to work
-        }
-
-        return (
-            <a
-                href={this.__src}
-                download={this.__filename}
-                onClick={handleClick}
-                style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.5em",
-                    padding: "0.5em 0.75em",
-                    background: "var(--color-bg)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "4px",
-                    textDecoration: "none",
-                    color: "var(--color-text)",
-                    fontSize: "0.9em",
-                }}
-            >
-                <span style={{ fontSize: "1.2em" }}>📎</span>
-                <span>{this.__filename}</span>
-                {this.__filesize && (
-                    <span style={{ color: "var(--color-muted)", fontSize: "0.85em" }}>
-                        ({formatFileSize(this.__filesize)})
-                    </span>
-                )}
-            </a>
-        )
+        return createElement("a", {
+            href: this.__src,
+            download: this.__filename,
+            className: "attachment-link",
+            onClick: (event) => event.stopPropagation(),
+        }, ...attachmentLinkParts(this.__filename, this.__filesize).map(({className, text}, index) =>
+            createElement("span", {className, key: index}, text)
+        ))
     }
 }
 
