@@ -168,7 +168,7 @@ module Collavre
       PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1 } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       @child.comments.create!(content: "Work needs input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       selected = []
       client = Object.new
@@ -260,7 +260,7 @@ module Collavre
     test "keep fallback evaluates with the authorized child-only task agent" do
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "agent_id" => @ai_bot.id } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999, "agent_id" => @ai_bot.id } }))
       @child.comments.create!(content: "Work needs your input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       selected = []
       client = Object.new
@@ -277,7 +277,7 @@ module Collavre
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       job = TriggerLoopCheckJob.new
       assert_nil job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1 } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       other = users(:two)
       other.update_columns(llm_vendor: "google", llm_model: "test")
@@ -327,7 +327,7 @@ module Collavre
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read), "Cached grant must remain stale for this regression"
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "Private keep goal")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Private keep goal")
       @child.update!(data: data)
       job = TriggerLoopCheckJob.new
       AiClient.stub(:new, ->(*) { flunk "Denied verifier received loop content" }) do
@@ -353,7 +353,7 @@ module Collavre
       @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, hidden.id ]))
       data = @child.data.deep_dup
       data["context_ids"] = [ visible.id, revoked.id ]
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "Keep goal")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Keep goal")
       @child.update!(data: data)
       @child.comments.create!(content: "Finished work", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       client = Object.new
@@ -379,7 +379,7 @@ module Collavre
     test "rejected continuation enqueue restores the accepted keep turn" do
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "agent_id" => @ai_bot.id,
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "agent_id" => @ai_bot.id,
         "current_comment_id" => 999, "start_comment_id" => 999)
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
@@ -731,7 +731,7 @@ module Collavre
     test "keep retains its authorized selected agent on continuation" do
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
-        @topic.id, source: "keep", agent_id: @ai_bot.id
+        @topic.id, source: "keep", current_comment_id: 999, agent_id: @ai_bot.id
       ) } })
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
@@ -760,7 +760,7 @@ module Collavre
       [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |content|
         [ @ai_bot.id, -1 ].each do |agent_id|
           @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
-            @topic.id, source: "keep", agent_id: agent_id
+            @topic.id, source: "keep", current_comment_id: 999, agent_id: agent_id
           ) } })
           CreativeShare.where(creative: @parent, user: @ai_bot).update_all(permission: :read)
           @child.comments.create!(content: content, user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
@@ -778,7 +778,7 @@ module Collavre
       job = TriggerLoopCheckJob.new
       job.stub(:evaluate_response, ->(*) {
         data = @child.reload.data.deep_dup
-        data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "start_comment_id" => 1000)
+        data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "start_comment_id" => 1000)
         @child.update!(data: data)
         :continue
       }) { job.perform(@task.id) }
@@ -789,7 +789,7 @@ module Collavre
       job = TriggerLoopCheckJob.new
       job.send(:trigger_completion_topic, @task, @child.data.dig("trigger", "loop"))
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "start_comment_id" => 1000)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "start_comment_id" => 1000)
       @child.update!(data: data)
       assert_raises(TriggerLoopHelpers::StaleLoopError) do
         job.send(:update_loop_data, @child, state: "completed")
@@ -801,7 +801,7 @@ module Collavre
       Creative.where(id: @child.id).update_all(parent_id: nil)
       @child.reload
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "Deliver the feature")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Deliver the feature")
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
 
@@ -816,7 +816,7 @@ module Collavre
 
     test "keep completion uses the shared verification job" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       @parent.update!(data: {})
       @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
