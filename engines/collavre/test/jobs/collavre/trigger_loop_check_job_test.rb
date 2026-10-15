@@ -137,6 +137,26 @@ module Collavre
       assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
     end
 
+    test "keep advances a covering task only when its dispatch was dropped" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      @child.update!(data: data)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      @task.reload
+      payload = { "comment" => { "id" => 998 }, Orchestration::DeliveryRecord::KEY => [ 999 ] }
+      @task.update!(trigger_event_payload: payload)
+      assert_not @child.trigger_loop_task?(@task), "history alone must not claim the loop turn"
+      assert_not @task.send(:trigger_loop_completion_eligible?)
+
+      @task.update!(trigger_event_payload: payload.merge(Orchestration::DeliveryRecord::DROPPED_KEY => [ "999" ]))
+      assert @task.reload.send(:trigger_loop_completion_eligible?)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+      assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
+    end
+
     test "new continuation invalidates an evaluator before any state change" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)

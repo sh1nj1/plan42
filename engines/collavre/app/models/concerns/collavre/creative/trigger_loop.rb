@@ -25,7 +25,8 @@ module Collavre
         loop_data = data&.dig("trigger", "loop") || {}
         if loop_data.key?("current_comment_id")
           payload = task.trigger_event_payload || {}
-          ids = [ payload.dig("comment", "id") ] + Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY])
+          ids = [ payload.dig("comment", "id") ] + Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
+            Array(payload[Orchestration::DeliveryRecord::DROPPED_KEY])
           return loop_data["current_comment_id"].present? && ids.compact.map(&:to_i).include?(loop_data["current_comment_id"])
         end
 
