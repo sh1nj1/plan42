@@ -9,6 +9,7 @@ import { treeRowElement } from './creative_row_editor_helpers'
 // the { afterId, beforeId } its own create must send.
 const creates = new WeakMap()
 const anchors = new WeakMap()
+const takenAnchors = new WeakMap()
 const failedDrafts = new WeakMap()
 // Rows whose create failed, until one succeeds: reopening a row takes its
 // draft out of failedDrafts, but the draft is still unsaved in the editor.
@@ -128,7 +129,8 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     if (!chains.has(tree)) chains.set(tree, { predecessors: fallback.failedTrees || [] })
     retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
     failed(error)
-    return { ...fallback, failedTrees: [...(fallback.failedTrees || []), tree] }
+    // The chain, not the request, carries the failed rows above a retry.
+    return { ...fallback, failedTrees: [...chains.get(tree).predecessors.filter((row) => failedRows.has(row)), tree] }
   } finally {
     releaseFailedRows(tree)
   }
@@ -201,16 +203,24 @@ export function deferRowAnchor(tree, afterId, afterInput) {
 
 // A row moved to another parent or slot before its first save is placed by
 // its new siblings; the row it was opened after no longer applies.
+// That holds for an anchor already taken by a save still waiting on it.
 export function dropDeferredAnchor(tree) {
   anchors.delete(tree)
+  takenAnchors.delete(tree)
 }
 
-// Hands the deferred anchor to the first save that needs it.
+// Hands the deferred anchor to the first save that needs it; it resolves
+// empty when the row was moved while the save waited.
 export function takeDeferredAnchor(tree) {
   const anchor = tree ? anchors.get(tree) : undefined
   if (!anchor) return undefined
   anchors.delete(tree)
-  return anchor.then((resolved) => adoptAnchor(tree, resolved))
+  takenAnchors.set(tree, anchor)
+  return anchor.then((resolved) => {
+    if (takenAnchors.get(tree) !== anchor) return undefined
+    takenAnchors.delete(tree)
+    return adoptAnchor(tree, resolved)
+  })
 }
 
 // Markdown authored in the source textarea reopens there; anything else

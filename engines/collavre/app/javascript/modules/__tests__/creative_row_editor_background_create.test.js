@@ -247,6 +247,30 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(sentField(saveMock.mock.calls[1], 'before_id')).toBe('')
   })
 
+  test('a row moved up a level while its save waits for the row above is placed where it now sits', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementation(() => Promise.resolve(created(78)))
+    const first = await startNewRow('nested creative')
+    appendExistingRow(5)
+    first.dataset.parentId = '5'
+    document.getElementById('inline-parent-id').value = '5'
+    await pressEnter()
+    type('second creative')
+    const progress = document.getElementById('inline-creative-progress')
+    progress.checked = true
+    progress.dispatchEvent(new Event('change'))
+    await flush()
+
+    document.getElementById('inline-level-up').click()
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(sentField(saveMock.mock.calls[1], 'creative[parent_id]')).toBe('')
+    expect(sentField(saveMock.mock.calls[1], 'after_id')).toBe('5')
+    expect(sentField(saveMock.mock.calls[1], 'before_id')).toBe('')
+  })
+
   test('a failed create keeps the text, says so, and the next row takes its slot', async () => {
     saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
       .mockImplementationOnce(() => Promise.resolve(created(80)))
@@ -534,6 +558,42 @@ describe('Enter on a new creative saves it in the background', () => {
     const retry = await retryFailedRow(second)
     expect(sentField(retry, 'after_id')).toBe('90')
     expect(sentField(retry, 'before_id')).toBe('')
+  })
+
+  test('a failed row above a retry that fails again waits for the row opened after that retry', async () => {
+    const thirdPost = deferred()
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => thirdPost.promise)
+      .mockImplementation(() => Promise.resolve(created(92)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    clickRow(second)
+    await flush()
+    await pressEnter()
+    await flush()
+    type('third creative')
+    await pressEnter()
+    await flush()
+    expect(sentField(saveMock.mock.calls[3], 'creative[description]')).toContain('third creative')
+
+    clickRow(first)
+    await flush()
+    expect(saveMock).toHaveBeenCalledTimes(4)
+
+    thirdPost.resolve(created(91))
+    await flush()
+    const retry = await retryFailedRow(first)
+    expect(sentField(retry, 'creative[description]')).toContain('first creative')
+    expect(sentField(retry, 'before_id')).toBe('91')
+    expect(sentField(retry, 'after_id')).toBe('')
   })
 
   test('a failed row whose Enter retry fails again still retries in front of the row that took its slot', async () => {

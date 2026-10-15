@@ -884,10 +884,10 @@ function setupEditorSession() {
     }
 
     function applyDeferredAnchor(tree) {
-      return takeDeferredAnchor(tree)?.then(({ afterId, beforeId }) => {
-        if (form.dataset.creativeId) return;
-        afterInput.value = afterId;
-        beforeInput.value = beforeId;
+      return takeDeferredAnchor(tree)?.then((anchor) => {
+        if (!anchor || form.dataset.creativeId) return;
+        afterInput.value = anchor.afterId;
+        beforeInput.value = anchor.beforeId;
       });
     }
 
