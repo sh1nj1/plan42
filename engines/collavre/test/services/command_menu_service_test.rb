@@ -17,7 +17,9 @@ module Collavre
           schema = CommandMenuService.new(user: users(:one)).send(:keep_item)[:input_schema]
           assert_equal %w[max agent_name goal], schema.map { |param| param[:name] }
           assert_equal "integer", schema.first[:type]
-          assert_equal "mention", schema.second[:format]
+          assert_equal "keep_agent", schema.second[:format]
+          assert_equal 1, schema.first[:minimum]
+          assert_equal 50, schema.first[:maximum]
           schema.zip(%w[max agent goal]).each do |param, key|
             assert_not param[:required]
             assert_equal I18n.t("collavre.comments.keep_command.#{key}_hint", raise: true), param[:description]

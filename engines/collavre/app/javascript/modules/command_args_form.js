@@ -204,7 +204,7 @@ export default class CommandArgsForm {
     wrapper.appendChild(label)
 
     let input
-    if (param.format === 'mention') {
+    if (['mention', 'keep_agent'].includes(param.format)) {
       input = this._buildMentionField(param, wrapper)
       wrapper.appendChild(input)
       return wrapper
@@ -243,7 +243,9 @@ export default class CommandArgsForm {
       input = document.createElement('input')
       input.type = 'number'
       input.className = 'modal-dialog-input'
-      if (param.type === 'float') input.step = 'any'
+      input.step = param.type === 'float' ? 'any' : '1'
+      if (param.minimum != null) input.min = param.minimum
+      if (param.maximum != null) input.max = param.maximum
     } else {
       input = document.createElement('textarea')
       input.className = 'modal-dialog-input'
@@ -302,7 +304,7 @@ export default class CommandArgsForm {
 
       input.classList.remove('modal-dialog-error')
 
-      if (required && !val) {
+      if ((required && !val) || (input.type === 'number' && !input.checkValidity())) {
         input.classList.add('modal-dialog-error')
         valid = false
         return
@@ -325,7 +327,7 @@ export default class CommandArgsForm {
 
   _castValue(val, type) {
     switch (type) {
-      case 'integer': return parseInt(val, 10)
+      case 'integer': return Number(val)
       case 'float': return parseFloat(val)
       case 'boolean': return val === 'true'
       default: return val
@@ -345,7 +347,7 @@ export default class CommandArgsForm {
       calendar: this._buildCalendarText, topic: this._buildTopicText,
       keep: this._buildKeepText, compress: this._buildCompressText
     }
-    if (Object.hasOwn(builders, command.name)) return builders[command.name](command, values)
+    if (Object.hasOwn(builders, command.name)) return builders[command.name].call(this, command, values)
 
     // MCP commands: always use JSON to preserve values with spaces
     return `${command.label} ${JSON.stringify(values)}`
@@ -409,7 +411,7 @@ export default class CommandArgsForm {
       }
       clearTimeout(this._mentionTimer)
       this._mentionTimer = setTimeout(() => {
-        this._fetchMentions(q).then((users) => {
+        this._fetchMentions(q, param.format).then((users) => {
           this._renderMentionDropdown(dropdown, input, users)
         })
       }, MENTION_DEBOUNCE_MS)
@@ -458,9 +460,10 @@ export default class CommandArgsForm {
     return fieldContainer
   }
 
-  _fetchMentions(query) {
+  _fetchMentions(query, format) {
     const url = new URL('/users/search', window.location.origin)
     url.searchParams.set('q', query)
+    if (format === 'keep_agent') url.searchParams.set('scope', 'keep_agents')
     const creativeId = this._creativeIdFn()
     if (creativeId) {
       url.searchParams.set('creative_id', creativeId)

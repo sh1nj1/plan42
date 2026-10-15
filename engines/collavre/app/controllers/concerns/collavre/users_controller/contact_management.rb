@@ -28,12 +28,21 @@ module Collavre
         users = users.where("LOWER(users.email) LIKE :term OR LOWER(users.name) LIKE :term", term: "#{term}%")
       end
 
+      users = keep_agent_scope(users, creative) if params[:scope] == "keep_agents"
+
       user_ids = users.distinct.order(:name, :id).limit(search_limit(creative, term)).pluck(:id, :name).map(&:first)
       users = Collavre::User.where(id: user_ids).includes(avatar_attachment: :blob).order(:name, :id)
       render json: users.map { |u| { id: u.id, name: u.display_name, email: u.email, avatar_url: view_context.user_avatar_url(u, size: 20) } }
     end
 
     private
+
+    def keep_agent_scope(scope, creative)
+      return scope.none unless creative
+
+      eligible_ids = scope.ai_agents.select { |agent| creative.has_permission?(agent, :feedback) }.map(&:id)
+      scope.where(id: eligible_ids)
+    end
 
     def empty_global_search?(term, creative)
       term.blank? && params[:scope] != "contacts" && creative.nil?
