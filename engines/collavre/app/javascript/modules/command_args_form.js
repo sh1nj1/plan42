@@ -368,11 +368,8 @@ export default class CommandArgsForm {
   }
 
   _buildKeepText(command, values) {
-    const parts = [command.label]
-    if (values.max != null) parts.push(`--max ${values.max}`)
-    if (values.agent_name) parts.push(values.agent_name)
-    if (values.goal) parts.push(values.goal)
-    return parts.join(' ')
+    return [command.label, values.max != null ? `--max ${values.max}` : null,
+      values.agent_name, values.goal].filter(Boolean).join(' ')
   }
 
   _buildCompressText(command, values) {
