@@ -93,3 +93,7 @@ Deleting the topic used by a keep loop clears that loop configuration, allowing
 a new `/keep` in another topic. Other trigger settings and loops referencing
 other topics are preserved. No-agent notices are posted after the creative
 state-update lock is released.
+
+Status evaluation and completion verification use the accepted task's linked
+reply. Later responses from the same agent in the topic cannot replace that
+result; a missing linked reply does not fall back to unrelated comments.

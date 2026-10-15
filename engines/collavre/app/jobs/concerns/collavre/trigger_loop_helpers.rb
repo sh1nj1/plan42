@@ -43,14 +43,9 @@ module Collavre
       end
     end
 
-    # Find the last comment by the task's agent in the trigger topic,
-    # scoped to comments created after the task was dispatched.
+    # Evaluate only the accepted task's reply, never another same-agent turn.
     def find_last_agent_comment(creative, topic, task)
-      creative.comments
-              .where(topic_id: topic.id, user_id: task.agent_id)
-              .where("comments.created_at >= ?", task.created_at)
-              .order(created_at: :desc)
-              .first
+      creative.comments.find_by(task_id: task.id, topic_id: topic.id, user_id: task.agent_id)
     end
 
     # Single method to update loop state — avoids multiple DB writes per Job execution.

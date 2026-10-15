@@ -57,10 +57,23 @@ module Collavre
       @agent_comment = @child.comments.create!(
         content: "I have completed all tasks. PR created and creative moved. [STATUS: DONE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         skip_dispatch: true,
         created_at: @task.created_at + 1.second
       )
+    end
+
+    test "verification uses the task reply instead of a newer same-agent comment" do
+      @child.comments.create!(content: "Unrelated [STATUS: DONE]", topic: @topic, user: @ai_bot, skip_dispatch: true)
+      job = TriggerLoopVerifyJob.new
+      job.stub(:pick_verifier_agent, @ai_bot) do
+        job.stub(:verify_completion, ->(_verifier, _instructions, response, task) {
+          assert_equal @task, task
+          assert_equal @agent_comment.content, response
+          :verified
+        }) { job.perform(@task.id) }
+      end
+      assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
     end
 
     test "pause after failed verification transition prevents the next turn" do

@@ -62,11 +62,31 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "status evaluation uses the accepted task reply despite newer same-agent responses" do
+      reply = @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic,
+                                      task: @task, skip_dispatch: true)
+      [ "[STATUS: DONE]", "[STATUS: BLOCKED]", "Connection timed out" ].each do |content|
+        @child.comments.create!(content: content, user: @ai_bot, topic: @topic, skip_dispatch: true)
+        assert_equal reply, TriggerLoopCheckJob.new.send(:find_last_agent_comment, @child, @topic, @task)
+      end
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      @child.update!(data: data)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "status evaluation does not substitute an unrelated response when the task reply is missing" do
+      @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      assert_nil TriggerLoopCheckJob.new.send(:find_last_agent_comment, @child, @topic, @task)
+    end
+
     test "pause after transition prevents continuation and infrastructure retry dispatch" do
       [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |response|
         [ false, true ].each do |resume|
           @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(@topic.id) } })
-          @child.comments.create!(content: response, user: @ai_bot, topic: @topic, skip_dispatch: true)
+          @child.comments.create!(content: response, user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
           job = TriggerLoopCheckJob.new
           original = job.method(:continuation_agent)
           resuming = false
@@ -92,7 +112,7 @@ module Collavre
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 999)
       @child.update!(data: data)
-      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       unrelated = Task.create!(name: "Unrelated", status: "running", created_at: @task.created_at, agent: @ai_bot, creative: @child, topic_id: @topic.id,
                                trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000 } })
       TriggerLoopCheckJob.perform_now(unrelated.id)
@@ -112,7 +132,7 @@ module Collavre
       data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
       @child.update!(data: data)
       @task.update!(trigger_event_payload: { "comment" => { "id" => 1000 }, "merged_comment_ids" => [ 999 ] })
-      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
       assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
     end
@@ -135,7 +155,7 @@ module Collavre
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
       @child.update!(data: data)
-      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       job = TriggerLoopCheckJob.new
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
         job.stub(:evaluate_response, ->(*) { TriggerLoopCheckJob.perform_now(@task.id); :continue }) do
@@ -150,7 +170,7 @@ module Collavre
       @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
         @topic.id, source: "keep", agent_id: @ai_bot.id
       ) } })
-      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
       assert_match(/\A@#{Regexp.escape(@ai_bot.name)}:/, @child.comments.order(:id).last.content)
@@ -159,7 +179,7 @@ module Collavre
     test "fallback evaluation cannot undo pause or pause then resume" do
       [ false, true ].each do |resume|
         @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(@topic.id) } })
-        @child.comments.create!(content: "Still working", user: @ai_bot, topic: @topic, skip_dispatch: true)
+        @child.comments.create!(content: "Still working", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
         job = TriggerLoopCheckJob.new
         job.stub(:llm_fallback_evaluate, ->(*) {
           Creatives::TriggerActionCommand.new(creative: @child.reload, user: @human, action: "pause").call
@@ -180,7 +200,7 @@ module Collavre
             @topic.id, source: "keep", agent_id: agent_id
           ) } })
           CreativeShare.where(creative: @parent, user: @ai_bot).update_all(permission: :read)
-          @child.comments.create!(content: content, user: @ai_bot, topic: @topic, skip_dispatch: true)
+          @child.comments.create!(content: content, user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
           TriggerLoopCheckJob.perform_now(@task.id)
           assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
           notice = @child.comments.order(:id).last
@@ -191,7 +211,7 @@ module Collavre
     end
 
     test "check abandons a superseded loop during evaluation" do
-      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       job = TriggerLoopCheckJob.new
       job.stub(:evaluate_response, ->(*) {
         data = @child.reload.data.deep_dup
@@ -220,7 +240,7 @@ module Collavre
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Deliver the feature")
       @child.update!(data: data)
-      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
 
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
 
@@ -236,7 +256,7 @@ module Collavre
       data["trigger"]["loop"]["source"] = "keep"
       @child.update!(data: data)
       @parent.update!(data: {})
-      @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
 
       TriggerLoopVerifyJob.stub(:perform_later, ->(id) { assert_equal @task.id, id }) do
         TriggerLoopCheckJob.perform_now(@task.id)
@@ -249,7 +269,7 @@ module Collavre
       verifier.update!(llm_vendor: "google", llm_model: "test", created_by_id: users(:three).id)
       CreativeShare.create!(creative: @parent, user: verifier, permission: :feedback)
       @task.update!(usage_attribution: { "requester_ids" => [ @human.id ], "owner_id" => @human.id })
-      @child.comments.create!(content: "Finished the work", topic: @topic, user: @ai_bot,
+      @child.comments.create!(content: "Finished the work", topic: @topic, user: @ai_bot, task: @task,
         skip_dispatch: true, created_at: @task.created_at + 1.second)
       factory = ->(**options) {
         LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
@@ -483,7 +503,7 @@ module Collavre
       replay = @task.dup
       replay.assign_attributes(status: "running", trigger_event_payload: { "inline_login_task_id" => @task.id })
       replay.save!
-      quoted = @child.comments.create!(content: "Draft", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      quoted = @child.comments.create!(content: "Draft", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       source = @child.comments.create!(content: "Review", user: @human, topic: @topic, quoted_comment: quoted, skip_dispatch: true)
       placeholder = @child.comments.create!(content: "Thinking...", user: @ai_bot, topic: @topic, task: replay, skip_dispatch: true)
       source.stub(:review_message?, true) do
@@ -775,7 +795,7 @@ module Collavre
       @child.comments.create!(
         content: "All done! [STATUS: DONE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -792,7 +812,7 @@ module Collavre
       @child.comments.create!(
         content: "Cannot proceed [STATUS: BLOCKED need credentials]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -811,7 +831,7 @@ module Collavre
       @child.comments.create!(
         content: "Working on it [STATUS: CONTINUE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -837,7 +857,7 @@ module Collavre
       @child.comments.create!(
         content: "Still working [STATUS: CONTINUE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -861,7 +881,7 @@ module Collavre
       @child.comments.create!(
         content: "I have pr created successfully",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -879,7 +899,7 @@ module Collavre
       @child.comments.create!(
         content: "OpenClaw Error: OpenClaw request timed out after 3 attempts",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -901,7 +921,7 @@ module Collavre
       @child.comments.create!(
         content: "OpenClaw Error: connection refused",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -923,7 +943,7 @@ module Collavre
       @child.comments.create!(
         content: "OpenClaw Error: server timed out",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -945,7 +965,7 @@ module Collavre
       @child.comments.create!(
         content: "Making progress [STATUS: CONTINUE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -962,7 +982,7 @@ module Collavre
       @child.comments.create!(
         content: "Updated Creative #10504 successfully [STATUS: CONTINUE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -980,7 +1000,7 @@ module Collavre
       @child.comments.create!(
         content: "I need help with this",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -996,7 +1016,7 @@ module Collavre
       @child.comments.create!(
         content: "I made some changes to the codebase",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -1016,7 +1036,7 @@ module Collavre
       @child.comments.create!(
         content: "Some response [STATUS: CONTINUE]",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -1049,7 +1069,7 @@ module Collavre
       @child.comments.create!(
         content: "Some work done [STATUS: DONE]",
         topic_id: other_topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: other_task,
         created_at: other_task.created_at + 1.second
       )
 
@@ -1082,7 +1102,7 @@ module Collavre
       @child.comments.create!(
         content: "I've created PR #42 and moved the creative. Everything is complete.",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -1106,7 +1126,7 @@ module Collavre
       @child.comments.create!(
         content: "I've made some progress but still need to create the PR.",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -1128,7 +1148,7 @@ module Collavre
       @child.comments.create!(
         content: "I can't proceed because I don't have permission to access the repo.",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -1149,7 +1169,7 @@ module Collavre
       @child.comments.create!(
         content: "Some work done without status tags.",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
@@ -1171,7 +1191,7 @@ module Collavre
       @child.comments.create!(
         content: "Work done but no status tag.",
         topic_id: @topic.id,
-        user: @ai_bot,
+        user: @ai_bot, task: @task,
         created_at: @task.created_at + 1.second
       )
 
