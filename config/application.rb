@@ -61,9 +61,10 @@ module Collavre
     # complexity_ratchet.rb and its directory back bin/complexity_check, a
     # CI-only lint tool. They have no business being eager loaded into a booted
     # app, and bin/ runs them outside Rails anyway. js_complexity is the same
-    # tool's JavaScript half and holds no Ruby at all.
+    # tool's JavaScript half and holds no Ruby at all. perf/ is the load-test
+    # harness that script/perf/ requires explicitly.
     config.autoload_lib(
-      ignore: %w[assets tasks middleware omniauth complexity_ratchet complexity_ratchet.rb js_complexity]
+      ignore: %w[assets tasks middleware omniauth complexity_ratchet complexity_ratchet.rb js_complexity perf]
     )
 
     config.app_version = Collavre::VERSION
