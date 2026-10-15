@@ -42,14 +42,12 @@ module Collavre
       test "acknowledged check enqueue with cooldown #{cooldown} keeps ownership" do
         @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "cooldown_seconds" => cooldown } }))
         before = @creative.data.dig("trigger", "loop").deep_dup
-        previous_adapter = TriggerLoopCheckJob.queue_adapter
         adapter = ActiveJob::QueueAdapters::TestAdapter.new
-        TriggerLoopCheckJob.queue_adapter = adapter
-        @task.done!
-        assert_equal [ [ @task.id ] ], adapter.enqueued_jobs.map { |job| job[:args] }
-        assert_equal before, @creative.reload.data.dig("trigger", "loop")
-      ensure
-        TriggerLoopCheckJob.queue_adapter = previous_adapter
+        TriggerLoopCheckJob.stub(:queue_adapter, adapter) do
+          @task.done!
+          assert_equal [ [ @task.id ] ], adapter.enqueued_jobs.map { |job| job[:args] }
+          assert_equal before, @creative.reload.data.dig("trigger", "loop")
+        end
       end
     end
 
