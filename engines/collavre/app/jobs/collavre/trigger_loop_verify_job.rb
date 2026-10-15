@@ -174,7 +174,7 @@ module Collavre
     end
 
     def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)
-      task_agent = child_creative.trigger_loop_agent if child_creative.keep_loop?
+      task_agent = continuation_agent(child_creative, topic) if child_creative.keep_loop?
       return unless task_agent || child_creative.keep_loop?
 
       content = "#{"@#{task_agent.name}: " if task_agent}#{I18n.t(

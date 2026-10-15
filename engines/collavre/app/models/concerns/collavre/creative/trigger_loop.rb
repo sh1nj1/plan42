@@ -8,9 +8,17 @@ module Collavre
       end
 
       def trigger_loop_agent
-        return Collavre.user_class.find_by(id: data.dig("trigger", "loop", "agent_id")) if keep_loop?
+        if keep_loop?
+          agent = Collavre.user_class.find_by(id: data.dig("trigger", "loop", "agent_id"))
+          return agent if agent&.ai_user? && Creatives::PermissionChecker.current_allowed?(id, agent, :feedback)
+          return nil
+        end
 
         parent&.find_ai_agent(:write)
+      end
+
+      def keep_loop_agent_unavailable?
+        keep_loop? && data.dig("trigger", "loop", "agent_id").present? && trigger_loop_agent.nil?
       end
 
       def trigger_loop_task?(task)

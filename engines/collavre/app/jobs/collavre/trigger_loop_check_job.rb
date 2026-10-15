@@ -162,7 +162,7 @@ module Collavre
     end
 
     def post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
-      agent = child_creative.trigger_loop_agent
+      agent = continuation_agent(child_creative, topic)
       return if !agent && !child_creative.keep_loop?
 
       content = "#{"@#{agent.name}: " if agent}#{I18n.t(
@@ -181,7 +181,7 @@ module Collavre
     end
 
     def post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
-      agent = child_creative.trigger_loop_agent
+      agent = continuation_agent(child_creative, topic)
       return if !agent && !child_creative.keep_loop?
 
       content = "#{"@#{agent.name}: " if agent}#{I18n.t(

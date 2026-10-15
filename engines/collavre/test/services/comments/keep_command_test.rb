@@ -222,8 +222,19 @@ module Collavre
         assert_nil @creative.reload.data&.dig("trigger", "loop")
       end
 
+      test "human reply does not reroute a blocked keep with a missing agent" do
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user", agent_id: -1
+        ) } })
+        assert_no_difference -> { @creative.comments.count } do
+          command("Proceed").send(:resume_trigger_loop_if_awaiting)
+        end
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
       test "blocked keep resumes with the explicitly selected agent" do
         agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
         @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
           @topic.id, source: "keep", state: "awaiting_user", agent_id: agent.id
         ) } })

@@ -62,6 +62,51 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "keep retains its authorized selected agent on continuation" do
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+        @topic.id, source: "keep", agent_id: @ai_bot.id
+      ) } })
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      SystemEvents::Dispatcher.stub(:dispatch, []) { TriggerLoopCheckJob.perform_now(@task.id) }
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      assert_match(/\A@#{Regexp.escape(@ai_bot.name)}:/, @child.comments.order(:id).last.content)
+    end
+
+    test "fallback evaluation cannot undo pause or pause then resume" do
+      [ false, true ].each do |resume|
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(@topic.id) } })
+        @child.comments.create!(content: "Still working", user: @ai_bot, topic: @topic, skip_dispatch: true)
+        job = TriggerLoopCheckJob.new
+        job.stub(:llm_fallback_evaluate, ->(*) {
+          Creatives::TriggerActionCommand.new(creative: @child.reload, user: @human, action: "pause").call
+          if resume
+            Creatives::TriggerActionCommand.new(creative: @child.reload, user: @human, action: "resume").call
+          end
+          :continue
+        }) { job.perform(@task.id) }
+        assert_equal(resume ? "running" : "paused", @child.reload.data.dig("trigger", "loop", "state"))
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+      end
+    end
+
+    test "keep continuation and infrastructure retry await user when selected agent is unavailable" do
+      [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |content|
+        [ @ai_bot.id, -1 ].each do |agent_id|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @topic.id, source: "keep", agent_id: agent_id
+          ) } })
+          CreativeShare.where(creative: @parent, user: @ai_bot).update_all(permission: :read)
+          @child.comments.create!(content: content, user: @ai_bot, topic: @topic, skip_dispatch: true)
+          TriggerLoopCheckJob.perform_now(@task.id)
+          assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+          notice = @child.comments.order(:id).last
+          assert_nil notice.user_id
+          assert_equal I18n.t("collavre.comments.keep_command.agent_not_authorized"), notice.content
+        end
+      end
+    end
+
     test "check abandons a superseded loop during evaluation" do
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
       job = TriggerLoopCheckJob.new

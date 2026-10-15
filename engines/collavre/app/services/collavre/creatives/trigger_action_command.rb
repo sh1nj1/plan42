@@ -26,6 +26,10 @@ module Collavre
         return failure(:unprocessable_entity, "collavre.drop_trigger.unknown_action") unless ACTIONS.include?(action)
         return failure(:forbidden, "collavre.creatives.errors.no_permission") unless target.has_permission?(user, :write)
 
+        if %w[resume restart].include?(action) && creative.keep_loop_agent_unavailable?
+          return failure(:unprocessable_entity, "collavre.comments.keep_command.agent_not_authorized")
+        end
+
         @transitioned_loop_data = nil
         outcome = send(action)
         outcome.is_a?(Result) ? outcome : Result.new
@@ -81,6 +85,7 @@ module Collavre
           return unless loop_data && allowed_states.include?(loop_data["state"])
 
           yield loop_data
+          loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1
           creative.update!(data: data)
           @transitioned_loop_data = loop_data
         end

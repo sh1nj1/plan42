@@ -26,6 +26,29 @@ module Collavre
       Current.reset
     end
 
+    test "replacement drop uses a fresh comment and retries that generation" do
+      dispatched = []
+      dispatcher = ->(_event, payload, **) { dispatched << payload.deep_stringify_keys.dig("comment", "id"); dispatch_outcome([ @ai_bot ]) }
+      SystemEvents::Dispatcher.stub(:dispatch_with_outcome, dispatcher) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+        old = @child.comments.order(:id).last
+        Task.create!(name: "Old drop", status: "done", creative: @child, topic_id: old.topic_id,
+                     agent: @ai_bot, trigger_event_payload: { "comment" => { "id" => old.id } })
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: "completed"
+        ) } })
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+        fresh = @child.comments.order(:id).last
+        refute_equal old.id, fresh.id
+        assert_equal fresh.id, @child.reload.data.dig("trigger", "loop", "start_comment_id")
+        assert_equal fresh.id, dispatched.last.to_i
+        assert_no_difference -> { @child.comments.count } do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+        assert_equal fresh.id, dispatched.last.to_i
+      end
+    end
+
     test "drop startup replaces inactive keep state and stays idempotent" do
       %w[completed max_reached stuck paused awaiting_user idle].each do |state|
         @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(

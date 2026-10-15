@@ -585,6 +585,7 @@ module Collavre
       creative.with_lock do
         loop_data = creative.data&.dig("trigger", "loop")
         return unless loop_data && loop_data["state"] == "awaiting_user"
+        return if creative.keep_loop_agent_unavailable?
 
         # Only resume if this comment is in the trigger topic
         trigger_topic_id = loop_data["trigger_topic_id"]

@@ -63,6 +63,38 @@ module Collavre
       )
     end
 
+    test "verification results cannot overwrite a user pause" do
+      [ :verified, :awaiting_user, "INCOMPLETE" ].each do |result|
+        data = @child.reload.data.deep_dup
+        data["trigger"]["loop"]["state"] = "pending_verification"
+        @child.update!(data: data)
+        job = TriggerLoopVerifyJob.new
+        job.stub(:pick_verifier_agent, @ai_bot) do
+          job.stub(:verify_completion, ->(*) {
+            Creatives::TriggerActionCommand.new(creative: @child.reload, user: @human, action: "pause").call
+            result
+          }) do
+            assert_no_difference -> { @child.comments.count } do
+              job.perform(@task.id)
+            end
+          end
+        end
+        assert_equal "paused", @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
+    test "failed verification does not reroute an unavailable selected agent" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "agent_id" => -1)
+      @child.update!(data: data)
+      job = TriggerLoopVerifyJob.new
+      job.stub(:pick_verifier_agent, @ai_bot) do
+        job.stub(:verify_completion, "INCOMPLETE") { job.perform(@task.id) }
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+      assert_nil @child.comments.order(:id).last.user_id
+    end
+
     test "verification abandons a superseded generation" do
       job = TriggerLoopVerifyJob.new
       job.stub(:pick_verifier_agent, @ai_bot) do

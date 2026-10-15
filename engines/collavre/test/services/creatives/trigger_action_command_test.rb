@@ -17,7 +17,19 @@ module Collavre
         clear_enqueued_jobs
       end
 
-      test "drop resume keeps targeting the container agent" do
+      test "keep resume and restart reject a missing selected agent" do
+      { "resume" => "paused", "restart" => "completed" }.each do |action, state|
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", agent_id: -1, state: state
+        ) } })
+        assert_no_difference -> { @child.comments.count } do
+          refute command(action: action).call.success?
+        end
+        assert_equal state, @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
+    test "drop resume keeps targeting the container agent" do
         agent = users(:ai_bot)
         CreativeShare.create!(creative: @container, user: agent, permission: :write)
         topic = @child.topics.find_or_create_by!(name: "Drop Trigger") { |record| record.user = @user }

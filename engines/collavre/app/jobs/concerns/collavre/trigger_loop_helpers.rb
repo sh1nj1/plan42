@@ -11,6 +11,8 @@ module Collavre
     # Resolve the task's current topic while excluding unrelated conversations.
     def trigger_completion_topic(task, loop_config)
       @loop_start_comment_id = loop_config["start_comment_id"]
+      @loop_expected_state = loop_config["state"]
+      @loop_control_version = loop_config["control_version"]
       return unless task.creative.trigger_loop_task?(task)
 
       id = loop_config["trigger_topic_id"]
@@ -59,11 +61,26 @@ module Collavre
         loop_data = trigger["loop"] || {}
         raise StaleLoopError if defined?(@loop_start_comment_id) && loop_data["start_comment_id"] != @loop_start_comment_id
 
+        if defined?(@loop_expected_state)
+          raise StaleLoopError unless loop_data["state"] == @loop_expected_state && loop_data["control_version"] == @loop_control_version
+        end
+
         changes.each { |key, value| loop_data[key.to_s] = value }
         trigger["loop"] = loop_data
         data["trigger"] = trigger
         child_creative.update!(data: data)
+        @loop_expected_state = loop_data["state"] if defined?(@loop_expected_state)
       end
+    end
+
+    def continuation_agent(creative, topic)
+      agent = creative.trigger_loop_agent
+      if creative.keep_loop_agent_unavailable?
+        update_loop_data(creative, state: "awaiting_user")
+        post_system_notice(creative, topic, I18n.t("collavre.comments.keep_command.agent_not_authorized"))
+        raise StaleLoopError
+      end
+      agent
     end
 
     # Post a system notice (no specific user author) in the trigger topic.

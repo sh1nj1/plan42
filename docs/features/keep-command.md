@@ -58,3 +58,13 @@ that keep loop. A fresh drop trigger replaces any keep loop except one that is
 `running` or `pending_verification`, including paused or user-blocked keep loops.
 Keep loops under drop containers inherit the container context for verification
 and status evaluation.
+
+Replacement drop loops create a fresh trigger comment and scope retries to that
+generation. Pausing invalidates evaluations already in flight, including when
+the loop is resumed before an evaluator returns.
+
+Explicit agent selection is revalidated against current feedback permission
+before each continuation or infrastructure retry. If the selected agent is
+missing or no longer authorized, the loop enters `awaiting_user` without
+rerouting. Resume and Restart reject an unavailable selection until access is
+restored or a new `/keep` selects a different agent.
