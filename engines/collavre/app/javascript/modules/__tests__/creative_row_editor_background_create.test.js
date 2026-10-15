@@ -534,6 +534,52 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(sentField(retry, 'before_id')).toBe('')
   })
 
+  test('a failed row retries after the saved row now above it, not one moved away since', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(90)))
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+    expect(sentField(await retryFailedRow(first), 'after_id')).toBe('5')
+
+    const otherParent = document.createElement('div')
+    document.body.appendChild(otherParent)
+    otherParent.appendChild(first.closest('creative-tree-row'))
+    const retry = await retryFailedRow(second)
+
+    expect(sentField(retry, 'after_id')).toBe('5')
+    expect(sentField(retry, 'before_id')).toBe('')
+  })
+
+  test('a failed row retries after a saved row moved in above it', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(90)))
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+    await retryFailedRow(first)
+
+    const secondRow = second.closest('creative-tree-row')
+    const { rowComponent } = appendExistingRow(70, secondRow.parentElement)
+    secondRow.before(rowComponent)
+    const retry = await retryFailedRow(second)
+
+    expect(sentField(retry, 'after_id')).toBe('70')
+    expect(sentField(retry, 'before_id')).toBe('')
+  })
+
   test('a failed row whose Enter retry fails again still retries after the failed row above it', async () => {
     saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
       .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))

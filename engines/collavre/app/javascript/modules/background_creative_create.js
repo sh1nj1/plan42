@@ -86,30 +86,27 @@ export async function cannotEdit(tree) {
   return !tree.dataset.id && !failedDrafts.has(tree)
 }
 
-const saved = (row) => row.isConnected && row.dataset.id
-
-// The id of the first sibling row below this one that has been saved, read
-// from the tree as it is now, whatever was added or removed around the row
-// since it failed.
-function savedIdBelow(tree) {
-  let row = siblingTreeRow(treeRowElement(tree), 'next')
-  while (row && !creativeIdFrom(row)) row = siblingTreeRow(row, 'next')
+// The id of the nearest sibling row in this direction that has been saved,
+// read from the tree as it is now, whatever was added, removed or moved around
+// the row since it failed.
+function savedSiblingId(tree, direction) {
+  let row = siblingTreeRow(treeRowElement(tree), direction)
+  while (row && !creativeIdFrom(row)) row = siblingTreeRow(row, direction)
   return row ? creativeIdFrom(row) : ''
 }
 
 // Hands over the draft of a row whose background create failed, so the editor
 // can reopen it as a new creative and retry the create: in front of the first
-// saved row below it, else after the nearest saved row of its failed chain
-// above it, else in the slot it asked for. The chain outlives the draft, so a
-// retry that fails again still knows its neighbours.
+// saved sibling below it, else after the nearest saved sibling above it, else
+// in the slot it asked for.
 export function takeFailedDraft(tree) {
   const draft = failedDrafts.get(tree)
   failedDrafts.delete(tree)
   if (!draft) return draft
-  const next = savedIdBelow(tree)
-  const previous = chains.get(tree).predecessors.findLast(saved)
+  const next = savedSiblingId(tree, 'next')
+  const previous = savedSiblingId(tree, 'previous')
   if (next) Object.assign(draft, { afterId: '', beforeId: next })
-  else if (previous) Object.assign(draft, { afterId: previous.dataset.id, beforeId: '' })
+  else if (previous) Object.assign(draft, { afterId: previous, beforeId: '' })
   return draft
 }
 
