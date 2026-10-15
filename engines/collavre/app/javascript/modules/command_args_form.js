@@ -341,19 +341,11 @@ export default class CommandArgsForm {
     const keys = Object.keys(values)
     if (keys.length === 0) return command.label
 
-    // For built-in commands with special formatting
-    if (command.name === 'calendar') {
-      return this._buildCalendarText(command, values)
+    const builders = {
+      calendar: this._buildCalendarText, topic: this._buildTopicText,
+      keep: this._buildKeepText, compress: this._buildCompressText
     }
-    if (command.name === 'topic') {
-      return this._buildTopicText(command, values)
-    }
-    if (command.name === 'keep') {
-      return this._buildKeepText(command, values)
-    }
-    if (command.name === 'compress') {
-      return this._buildCompressText(command, values)
-    }
+    if (Object.hasOwn(builders, command.name)) return builders[command.name](command, values)
 
     // MCP commands: always use JSON to preserve values with spaces
     return `${command.label} ${JSON.stringify(values)}`
