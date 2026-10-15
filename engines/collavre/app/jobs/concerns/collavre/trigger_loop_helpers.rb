@@ -46,7 +46,11 @@ module Collavre
 
     # Evaluate only the accepted task's reply, never another same-agent turn.
     def find_last_agent_comment(creative, topic, task)
-      creative.comments.find_by(task_id: task.id, topic_id: topic.id, user_id: task.agent_id)
+      comment = creative.comments.find_by(task_id: task.id, topic_id: topic.id, user_id: task.agent_id)
+      if !comment && creative.keep_loop? && task.done?
+        update_loop_data(creative, state: "awaiting_user", infra_retry_count: 0)
+      end
+      comment
     end
 
     # Single method to update loop state — avoids multiple DB writes per Job execution.

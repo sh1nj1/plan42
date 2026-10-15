@@ -63,6 +63,130 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "keep fallback skips denied and revoked candidates before selecting a reader" do
+      allowed = users(:two)
+      allowed.update_columns(llm_vendor: "google", llm_model: "test")
+      CreativeShare.create!(creative: @parent, user: allowed, permission: :feedback)
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      share.update_columns(permission: :no_access)
+      assert @child.has_permission?(@ai_bot, :read)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
+      @child.comments.create!(content: "Work needs input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      selected = []
+      client = Object.new
+      client.define_singleton_method(:chat) { |_, &block| block.call("BLOCKED") }
+      AiClient.stub(:new, ->(**options) { selected << options.fetch(:context).fetch(:user).id; client }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+      assert_equal [ allowed.id ], selected
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+      assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "deleted accepted keep replies recover both evaluation phases" do
+      [ [ TriggerLoopCheckJob, "running" ], [ TriggerLoopVerifyJob, "pending_verification" ] ].each do |job, state|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", state: state,
+          current_comment_id: 999, start_comment_id: 999, cooldown_seconds: 15)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        reply = @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+        reply.destroy!
+        @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+        AiClient.stub(:new, ->(*) { flunk "Missing response must not be evaluated" }) { job.perform_now(@task.id) }
+        recovered = @child.reload.data.dig("trigger", "loop")
+        assert_equal "awaiting_user", recovered["state"]
+        assert_equal 999, recovered["current_comment_id"]
+        assert_equal config["current_iteration"], recovered["current_iteration"]
+        assert_operator recovered["control_version"], :>, config.fetch("control_version", 0)
+      end
+    end
+
+    test "dropped current keep dispatch retains ownership until restored work completes" do
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id, start_comment_id: turn.id, cooldown_seconds: 0)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      record = Orchestration::DeliveryRecord
+      payload = turn.dispatch_payload.deep_stringify_keys
+      payload["comment"]["id"] = turn.id - 1
+      payload[record::DROPPED_KEY] = [ turn.id ]
+      payload[record::KEY] = [ turn.id ]
+      Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: payload)
+      enqueued = []
+      AiAgentJob.stub(:perform_later, ->(*args) { enqueued << args }) { @task.reload.update!(status: "failed") }
+      assert_equal 1, enqueued.size
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      assert_includes record.restored_ids_in(@task.reload.trigger_event_payload), turn.id
+      restored = Task.create!(name: "Restored keep", status: "running", agent: @ai_bot, creative: @child,
+        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: turn.dispatch_payload.deep_stringify_keys)
+      @child.comments.create!(content: "[STATUS: BLOCKED]", user: @ai_bot, task: restored, topic: @topic, skip_dispatch: true)
+      checks = []
+      TriggerLoopCheckJob.stub(:perform_later, ->(id) { checks << id }) { restored.update!(status: "done") }
+      assert_equal [ restored.id ], checks
+      TriggerLoopCheckJob.perform_now(restored.id)
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "settled handoff releases keep ownership that was waiting for restoration" do
+      turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      payload = { "comment" => { "id" => turn.id - 1 }, Orchestration::DeliveryRecord::KEY => [ turn.id ],
+                  Orchestration::DeliveryRecord::DROPPED_KEY => [ turn.id ] }
+      Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: payload)
+      @task.reload.update!(status: "cancelled")
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      Orchestration::DeliveryRecord.mark_handed_off!(@task)
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "restoration of another dropped comment does not retain the current keep turn" do
+      turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      payload = { "comment" => { "id" => 999 }, Orchestration::DeliveryRecord::DROPPED_KEY => [ turn.id ] }
+      Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: payload)
+      @task.reload.update!(status: "cancelled")
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "missing reply recovery preserves paused replacement and drop loops" do
+      [ { "state" => "paused" }, { "current_comment_id" => 1000 }, { "source" => "drop" } ].each do |change|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999).merge(change)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        TriggerLoopCheckJob.perform_now(@task.id)
+        assert_equal config, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "fallback write pool also excludes agents denied on the loop creative" do
+      allowed = users(:two)
+      allowed.update_columns(llm_vendor: "google", llm_model: "test")
+      CreativeShare.create!(creative: @child, user: allowed, permission: :read)
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :no_access)
+      shares = [ Struct.new(:user).new(@ai_bot), Struct.new(:user).new(allowed) ]
+      @parent.stub(:all_shared_users, ->(permission) { permission == :write ? shares : [] }) do
+        assert_equal allowed, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
+      end
+    end
+
+    test "missing reply recovery does not overwrite a concurrent pause or replacement" do
+      [ { "state" => "paused" }, { "start_comment_id" => 1000 } ].each do |change|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, start_comment_id: 999)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        job = TriggerLoopCheckJob.new
+        lookup = job.method(:find_last_agent_comment)
+        job.stub(:find_last_agent_comment, ->(creative, topic, task) {
+          newer = @child.reload.data.deep_dup
+          newer["trigger"]["loop"].merge!(change)
+          @child.update!(data: newer)
+          lookup.call(creative, topic, task)
+        }) { job.perform(@task.id) }
+        assert_equal config.merge(change), @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
     test "keep evaluator never sends loop content to a denied or revoked verifier" do
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       CreativeShare.create!(creative: @child, user: nil, permission: :read)

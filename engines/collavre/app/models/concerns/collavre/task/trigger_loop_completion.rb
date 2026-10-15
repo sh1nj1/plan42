@@ -6,7 +6,8 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
-        after_update_commit :release_terminated_keep_turn, if: :saved_change_to_status?
+        # A settling worker may record delivery after Stop committed its status.
+        after_update_commit :release_terminated_keep_turn, if: -> { saved_change_to_status? || saved_change_to_trigger_event_payload? }
       end
 
       private
@@ -22,6 +23,8 @@ module Collavre
           next unless target.keep_loop? && config["state"] == "running"
           next unless config["trigger_topic_id"] == topic_id && terminated_keep_turn?(target)
           next if surviving_keep_turn?(target)
+          # Restored dispatches have no sibling Task until their queued job starts.
+          next if Orchestration::DeliveryRecord.pending_restoration?(self.class.find(id), comment_id: config["current_comment_id"])
 
           config["state"] = "awaiting_user"
           config["control_version"] = config.fetch("control_version", 0) + 1

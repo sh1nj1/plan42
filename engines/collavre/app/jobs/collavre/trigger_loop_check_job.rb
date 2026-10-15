@@ -212,7 +212,7 @@ module Collavre
     PROMPT
 
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
-      verifier = pick_fallback_agent(parent_creative)
+      verifier = pick_fallback_agent(parent_creative, child_creative)
 
       unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
         # No AI agent available for fallback — default to continue
@@ -264,17 +264,17 @@ module Collavre
 
     # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
     # fall back to the trigger agent itself.
-    def pick_fallback_agent(creative)
+    def pick_fallback_agent(creative, child_creative)
       ai_agents = creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select(&:ai_user?)
+                          .select { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
 
       return ai_agents.first if ai_agents.any?
 
       # Fall back to write-permission agents (the trigger agent)
       creative.all_shared_users(:write)
               .map(&:user)
-              .find(&:ai_user?)
+              .find { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
     end
 
     # Collect instructions from context creatives for LLM evaluation

@@ -406,12 +406,12 @@ module Collavre
 
       def self.dropped_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[DROPPED_KEY]).compact.map(&:to_i) : []
 
-      def self.pending_restoration?(task)
+      def self.pending_restoration?(task, comment_id: nil)
         payload = task&.trigger_event_payload
         return false unless task&.ended_undelivered? && task.agent
 
         pending = dropped_ids_in(payload) - handed_off_ids_in(payload) - claimed_comment_ids(task)
-        restorable_comments(task, pending).exists?
+        restorable_comments(task, comment_id ? pending & [ comment_id.to_i ] : pending).exists?
       end
 
       # Take responsibility for a dispatch about to be discarded, or refuse it.
