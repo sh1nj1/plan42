@@ -337,23 +337,9 @@
   background: var(--surface-bg);
 }
 
-/* Extend only the home feature band's paint across the viewport, preserving
-   the existing section and card geometry. */
+/* Continue the preceding section's background without changing the boxed layout. */
 #features.landing-features {
-  position: relative;
-  isolation: isolate;
-}
-
-#features.landing-features::before {
-  content: "";
-  position: absolute;
-  inset-block: 0;
-  left: 50%;
-  width: 100vw;
-  transform: translateX(-50%);
-  background: var(--surface-bg);
-  z-index: -1;
-  pointer-events: none;
+  background: var(--surface-section);
 }
 
 .landing-features-grid {

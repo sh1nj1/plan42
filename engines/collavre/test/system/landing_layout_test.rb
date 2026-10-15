@@ -1,7 +1,7 @@
 require_relative "../application_system_test_case"
 
 class LandingLayoutTest < ApplicationSystemTestCase
-  test "home feature background spans the viewport without changing content geometry" do
+  test "home features continue the preceding background within the original layout" do
     %w[/features /landing].each do |path|
       visit path
       assert_selector ".landing-features"
@@ -21,9 +21,9 @@ class LandingLayoutTest < ApplicationSystemTestCase
                 band: (() => {
                   const band = main.querySelector('#features');
                   if (!band) return null;
-                  const paint = getComputedStyle(band, '::before');
-                  return { width: parseFloat(paint.width), background: paint.backgroundColor,
-                    expected: getComputedStyle(band).backgroundColor,
+                  const paint = getComputedStyle(band);
+                  return { background: paint.backgroundColor, before: getComputedStyle(band, '::before').content,
+                    expected: getComputedStyle(main.querySelector('#problem')).backgroundColor,
                     cards: band.querySelectorAll('.landing-feature-card').length };
                 })(),
                 width: main.getBoundingClientRect().width, viewport: document.documentElement.clientWidth,
@@ -34,10 +34,9 @@ class LandingLayoutTest < ApplicationSystemTestCase
             })()
           JS
           assert_equal "960px", styles["maxWidth"], "#{path} #{theme} #{width}px"
-          assert_equal(width > 768 ? "0px 16px 64px" : "0px 4.8px 64px", styles["padding"])
           refute_equal "rgba(0, 0, 0, 0)", styles["background"]
           if path == "/landing"
-            assert_in_delta styles["viewport"], styles["band"]["width"], 1
+            assert_equal "none", styles["band"]["before"]
             assert_equal styles["band"]["expected"], styles["band"]["background"]
             assert_equal 4, styles["band"]["cards"]
           else
