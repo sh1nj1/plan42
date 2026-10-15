@@ -121,6 +121,32 @@ and drop loops are preserved.
 
 ### Interrupted turns
 
+`Collavre::KeepLoopReconcileJob` runs every minute as a backstop for missing
+callbacks and discarded jobs. A running keep loop must have a live owner or
+be released to `awaiting_user` within the recovery grace plus one sweep interval.
+Recovery also covers a lost completion-verification job. It preserves iteration
+and retry counters and revalidates the loop snapshot under topic and creative
+locks before changing state.
+
+Set `keep_loop_reconcile_grace_seconds` through `SystemSetting` to tune the
+grace; the default is 900 seconds, allowing the ten-minute restoration sweep
+to run first. Active and waiting current-turn tasks, executable queue jobs,
+and fresh dispatch/restoration leases retain ownership. Failed jobs and claims
+whose worker heartbeat expired do not. Expired dispatch reservations and
+abandoned restoration claims are retired. A queue lookup failure defers recovery
+rather than assuming there is no owner. Existing callbacks still release turns
+promptly.
+
+| State | Event | Result |
+| --- | --- | --- |
+| `running` | Current task, executable job, or fresh lease exists | Keep `running`; clear recovery observation |
+| `running` | No owner, grace has not elapsed | Keep `running`; observe the unchanged snapshot |
+| `running` | No owner after grace | `awaiting_user`; preserve counters |
+| `pending_verification` | Verification job is lost and grace expires | `awaiting_user`; preserve counters |
+| Any active state | Queue evidence unavailable | Preserve state and ownership records; retry next sweep |
+| Any active state | Pause or replacement wins before recovery | Preserve the newer snapshot |
+| Inactive state | Recovery sweep | No change |
+
 Stopping, failing, or escalating the last task serving the current keep turn
 changes a running loop to `awaiting_user`. Completing without a finalized reply
 (including a blank response whose placeholder is removed) also releases the turn

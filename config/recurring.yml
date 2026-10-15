@@ -8,6 +8,9 @@ production: &production
   async_approval_recovery:
     class: Collavre::AsyncApprovalSweepJob
     schedule: every minute
+  keep_loop_recovery:
+    class: Collavre::KeepLoopReconcileJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
@@ -54,6 +57,9 @@ desktop:
   async_approval_recovery:
     class: Collavre::AsyncApprovalSweepJob
     schedule: every minute
+  keep_loop_recovery:
+    class: Collavre::KeepLoopReconcileJob
+    schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
@@ -99,6 +105,9 @@ development:
     schedule: every minute
   async_approval_recovery:
     class: Collavre::AsyncApprovalSweepJob
+    schedule: every minute
+  keep_loop_recovery:
+    class: Collavre::KeepLoopReconcileJob
     schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob

@@ -16,7 +16,7 @@ module Collavre
 
         change(context.dig("creative", "id")) do |entry|
           entry = { "comment_id" => comment_id, "agent_ids" => [] } unless entry&.dig("comment_id") == comment_id
-          entry.merge("agent_ids" => entry["agent_ids"] + [ agent.id ])
+          entry.merge("agent_ids" => entry["agent_ids"] + [ agent.id ], "reserved_at" => Time.current.iso8601(6))
         end
       end
 

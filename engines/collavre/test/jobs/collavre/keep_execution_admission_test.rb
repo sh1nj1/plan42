@@ -202,7 +202,7 @@ module Collavre
       next_context = @context.deep_merge("comment" => { "id" => @turn.id + 1 })
       Orchestration::KeepQueuedDispatches.reserve!(next_context, @agent)
       assert_equal({ "comment_id" => @turn.id + 1, "agent_ids" => [ @agent.id ] },
-        @creative.reload.data.dig("trigger", "keep_queued_dispatches"))
+        @creative.reload.data.dig("trigger", "keep_queued_dispatches").slice("comment_id", "agent_ids"))
       Orchestration::KeepQueuedDispatches.release!(@context, @agent)
       assert Orchestration::KeepQueuedDispatches.pending?(@creative.reload, @turn.id + 1)
     end
