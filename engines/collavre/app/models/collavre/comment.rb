@@ -576,17 +576,18 @@ module Collavre
       return if user&.ai_user?             # must be a human, not an AI agent
       return if approval_action?           # approval surface is not a user-resume signal; the resumed @agent turn would otherwise carry it into history
       return unless creative
+      # Lock-free precheck on a fresh read: almost every comment lands on a
+      # creative with no loop awaiting this topic, and must not pay for a
+      # write transaction + row lock just to find that out.
+      return unless trigger_loop_resumable?(Creative.where(id: creative.id).pick(:data))
 
       # Use pessimistic lock to prevent duplicate resume from concurrent comments
       iteration = nil
       max = nil
       creative.with_lock do
-        loop_data = creative.data&.dig("trigger", "loop")
-        return unless loop_data && loop_data["state"] == "awaiting_user"
-
-        # Only resume if this comment is in the trigger topic
-        trigger_topic_id = loop_data["trigger_topic_id"]
-        return if trigger_topic_id.present? && trigger_topic_id != topic_id
+        # Re-check under the lock: a concurrent comment may have resumed the
+        # loop (or the loop moved on) after the precheck.
+        return unless trigger_loop_resumable?(creative.data)
 
         # Transition to running and post continue instruction atomically
         data = creative.data || {}
@@ -625,6 +626,16 @@ module Collavre
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
         "#{e.class} #{e.message}"
       )
+    end
+
+    # True when the loop is awaiting user input and this comment is in its
+    # trigger topic (or the loop has no trigger topic recorded).
+    def trigger_loop_resumable?(data)
+      loop_data = data&.dig("trigger", "loop")
+      return false unless loop_data.is_a?(Hash) && loop_data["state"] == "awaiting_user"
+
+      trigger_topic_id = loop_data["trigger_topic_id"]
+      trigger_topic_id.blank? || trigger_topic_id == topic_id
     end
 
     def use_origin_creative
