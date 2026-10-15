@@ -1,6 +1,12 @@
 en:
   collavre:
     tool_descriptions:
+      keep:
+        summary: Start a bounded keep loop in a topic.
+        details: |-
+          Requires write permission and uses the same validation and routing as /keep. Supply topic_id; creative_id is derived from the topic.
+          Set max to 1–50 iterations (default 10). Optionally supply an exact agent_name without @ or a colon; omit it to use normal topic routing.
+          Supply a goal, or omit it to continue the topic's current work.
       meta_tool:
         summary: Inspect and run registered tools through one interface.
         details: Lists, searches, describes, and runs tools by name. Agents use it to discover user-defined Ruby tools and run them after the owner approves.
