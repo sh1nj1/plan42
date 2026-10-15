@@ -21,7 +21,7 @@ such agents to unique, mention-compatible names to select them in the popup.
   trigger instructions.
 - `@agent:` optionally selects an AI agent by mention. Without it, normal
   speaking and workflow routing rules choose who responds.
-- `--max` accepts an integer from 1 to 50 and defaults to `10` iterations.
+- `--max` accepts an integer from 1 to 1000 and defaults to `10` iterations.
   It is parsed only before the agent or goal; later occurrences remain goal text.
 - The author needs write permission on the creative. Private `/keep` comments
   are rejected; loop instructions and continuation comments are public.

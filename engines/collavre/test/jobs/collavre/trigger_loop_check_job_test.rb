@@ -838,6 +838,41 @@ module Collavre
       assert_includes TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child, @ai_bot), "Deliver the feature"
     end
 
+    test "late keep continuation retains the goal without the original command in history" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!(
+        "source" => "keep", "current_comment_id" => 999,
+        "current_iteration" => 998, "max_iterations" => 1000, "goal" => "Deliver the feature"
+      )
+      @child.update!(data: data)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
+
+      assert_equal 999, @child.reload.data.dig("trigger", "loop", "current_iteration")
+      assert_includes @child.comments.order(:id).last.content, "Deliver the feature"
+    end
+
+    test "all keep follow-up instructions include only nonblank keep goals in both locales" do
+      [ "keep", "drop" ].product([ "Deliver the feature", "", nil ], [ :en, :ko ]).each do |source, goal, locale|
+        data = @child.data.deep_dup
+        data["trigger"]["loop"].merge!("source" => source, "goal" => goal)
+        @child.update!(data: data)
+        I18n.with_locale(locale) do
+          SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+            TriggerLoopCheckJob.new.send(:post_loop_instruction, @child,
+              content: "Follow up", topic_id: @topic.id, user: @human, private: false)
+          end
+          content = @child.comments.order(:id).last.content
+          if source == "keep" && goal.present?
+            assert_equal "Follow up\n\n#{I18n.t('collavre.comments.keep_command.goal_context', goal: goal)}", content
+          else
+            assert_equal "Follow up", content
+          end
+        end
+      end
+    end
+
     test "keep completion uses the shared verification job" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)

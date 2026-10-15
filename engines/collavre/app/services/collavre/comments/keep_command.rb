@@ -17,7 +17,7 @@ module Collavre
 
         text = @comment.content.to_s.strip.sub(/\A\/keep\s*/i, "")
         limit = text.slice!(/\A--max(?:\s+\S+)?(?=\s|\z)/)&.split&.last || "10"
-        return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/) && limit.to_i <= 50
+        return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/) && limit.to_i <= 1000
 
         text = text.strip
         agent = leading_agent(text)
