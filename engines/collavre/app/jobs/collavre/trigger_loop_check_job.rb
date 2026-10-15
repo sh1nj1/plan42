@@ -255,17 +255,17 @@ module Collavre
 
     # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
     # fall back to the trigger agent itself.
-    def pick_fallback_agent(creative, child_creative, task_agent_id = nil)
-      ai_agents = creative.all_shared_users(:feedback)
+    def pick_fallback_agent(_creative, child_creative, task_agent_id = nil)
+      ai_agents = child_creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
 
       return decision_agent(ai_agents) if ai_agents.any?
 
-      # Prefer parent write agents before the independently authorized keep task agent.
+      # Prefer task write agents before the independently authorized keep task agent.
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
-      (creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-              .find { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+      (child_creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
+              .find { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
     end
 
     # Collect instructions from context creatives for LLM evaluation

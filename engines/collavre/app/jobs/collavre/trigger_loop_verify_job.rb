@@ -94,10 +94,10 @@ module Collavre
     # Pick a verifier AI agent: prefer one with feedback+ permission that
     # is NOT the original task agent. Fall back to the task agent only if
     # no other AI agent exists.
-    def pick_verifier_agent(creative, task_agent_id, child_creative)
+    def pick_verifier_agent(_creative, task_agent_id, child_creative)
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
-      ai_agents = (creative.all_shared_users(:feedback).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+      ai_agents = (child_creative.all_shared_users(:feedback).map(&:user) + [ task_agent ]).compact.uniq(&:id)
+                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
 
       decision_agent(ai_agents, task_agent_id)
     end

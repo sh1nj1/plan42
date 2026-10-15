@@ -64,6 +64,23 @@ module Collavre
       )
     end
 
+    test "drop decisions prefer child-local native verifier and reject read-only inheritance" do
+      native = users(:two)
+      native.update_columns(llm_vendor: "typesafeai", llm_model: "test")
+      CreativeShare.create!(creative: @child, user: native, permission: :feedback)
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :read)
+
+      assert_equal native, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @ai_bot.id, @child)
+      assert_equal native, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+    end
+
+    test "drop decisions exclude inherited agents downgraded to read on task" do
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :read)
+
+      assert_nil TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @ai_bot.id, @child)
+      assert_nil TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+    end
+
     test "keep verification falls back to an authorized child-only task agent" do
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)

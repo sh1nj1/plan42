@@ -276,15 +276,16 @@ module Collavre
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       job = TriggerLoopCheckJob.new
-      assert_nil job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+      assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
       assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       other = users(:two)
       other.update_columns(llm_vendor: "google", llm_model: "test")
-      CreativeShare.create!(creative: @child, user: other, permission: :read)
-      @parent.stub(:all_shared_users, ->(_) { [ Struct.new(:user).new(other) ] }) do
+      CreativeShare.create!(creative: @child, user: other, permission: :feedback)
+      @child.stub(:all_shared_users, ->(_) { [ Struct.new(:user).new(other) ] }) do
         assert_equal other, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       end
+      CreativeShare.where(creative: @child, user: other).delete_all
       PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read)
@@ -295,10 +296,10 @@ module Collavre
     test "fallback write pool also excludes agents denied on the loop creative" do
       allowed = users(:two)
       allowed.update_columns(llm_vendor: "google", llm_model: "test")
-      CreativeShare.create!(creative: @child, user: allowed, permission: :read)
+      CreativeShare.create!(creative: @child, user: allowed, permission: :feedback)
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :no_access)
       shares = [ Struct.new(:user).new(@ai_bot), Struct.new(:user).new(allowed) ]
-      @parent.stub(:all_shared_users, ->(permission) { permission == :write ? shares : [] }) do
+      @child.stub(:all_shared_users, ->(permission) { permission == :write ? shares : [] }) do
         assert_equal allowed, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
       end
     end
