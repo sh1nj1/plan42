@@ -188,7 +188,8 @@
   stroke: currentColor;
   stroke-width: 2;
 }
-.ppt-viewer [data-ppt-previous], .ppt-viewer [data-ppt-next] {
+.ppt-viewer #slide-controls [data-ppt-previous],
+.ppt-viewer #slide-controls [data-ppt-next] {
   top: 50%;
   transform: translateY(-50%);
 }
@@ -220,4 +221,9 @@
 @media (hover: none) {
   .ppt-viewer.ppt-controls-visible #slide-controls { opacity: 1; }
   .ppt-viewer.ppt-controls-visible #slide-controls :is(button, a) { pointer-events: auto; }
+}
+
+/* Inline slides follow their frame width; fullscreen still fits both axes. */
+.ppt-viewer:not(:fullscreen) #slide-view .ppt-slide {
+  width: 100%;
 }

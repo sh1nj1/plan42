@@ -150,6 +150,44 @@ class PptViewerTest < ApplicationSystemTestCase
     end
   end
 
+  test "preview follows available row width as the viewport grows and shrinks" do
+    visit collavre.creatives_path
+    [ 900, 1400, 800 ].each do |width|
+      page.current_window.resize_to(width, 1000)
+      assert_preview_fills_container
+      frame = first("iframe.ppt-attachment-preview")
+      sizes = page.evaluate_script(<<~JS, frame)
+        ((frame) => {
+          const row = frame.closest('.creative-row-start');
+          return [frame.getBoundingClientRect().right, row.getBoundingClientRect().right];
+        })(arguments[0])
+      JS
+      assert_in_delta sizes[1], sizes[0], 4
+    end
+    find("#creative-#{@creative.id}").hover
+    find("#creative-#{@creative.id} .edit-inline-btn").click
+    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
+    [ 1400, 800 ].each do |width|
+      page.current_window.resize_to(width, 1000)
+      assert_preview_fills_container
+    end
+  end
+
+  test "navigation buttons stay centered while pressed" do
+    visit collavre.creatives_path(id: @creative.id)
+    within_frame(first("iframe.ppt-attachment-preview")) do
+      find(".ppt-viewer").hover
+      [ "next", "previous" ].each do |direction|
+        button = find("[data-ppt-#{direction}]")
+        before = button.rect.y
+        page.driver.browser.action.move_to(button.native).click_and_hold.perform
+        sleep 0.2
+        assert_in_delta before, button.rect.y, 0.5
+        page.driver.browser.action.release.perform
+      end
+    end
+  end
+
   private
 
   def assert_preview_fills_container(ratio = 16.0 / 9)

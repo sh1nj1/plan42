@@ -2056,3 +2056,15 @@ creative-tree-row.is-being-edited .creative-tree {
   display: block;
   width: 100%;
 }
+
+/* Presentation attachments expand the row rather than using text's reading width. */
+.creative-row-start > div:has(.ppt-attachment-preview) {
+  flex: 1;
+  min-width: 0;
+}
+
+.creative-content:has(.ppt-attachment-preview) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
