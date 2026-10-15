@@ -588,6 +588,55 @@ module Collavre
         assert created.skip_dispatch, "Continuation must suppress its after-commit dispatch"
       end
 
+      test "deleting the current keep turn clears only the loop and permits a new keep" do
+        comment = command("/keep finish")
+        KeepCommand.new(comment: comment, user: @user).call
+        comment.skip_dispatch = true
+        comment.save!
+        @creative.update!(data: @creative.data.deep_merge("trigger" => { "custom" => "preserved" }))
+        comment.destroy!
+        assert_nil @creative.reload.data.dig("trigger", "loop")
+        assert_equal "preserved", @creative.data.dig("trigger", "custom")
+        replacement = command("/keep new goal")
+        assert_nil KeepCommand.new(comment: replacement, user: @user).call
+      end
+
+      %w[queued running].each do |status|
+        test "deleting a #{status} keep continuation clears its loop" do
+          initial = command("/keep finish")
+          KeepCommand.new(comment: initial, user: @user).call
+          initial.skip_dispatch = true
+          initial.save!
+          continuation = @creative.comments.create!(content: "continue", topic: @topic, user: @user,
+                                                    loop_continuation: true, skip_dispatch: true)
+          task = Task.create!(name: "Keep turn", status: status, agent: users(:ai_bot), creative: @creative,
+                              topic_id: @topic.id, trigger_event_payload: { "comment" => { "id" => continuation.id } })
+          initial.destroy!
+          assert_equal continuation.id, @creative.reload.data.dig("trigger", "loop", "current_comment_id")
+          continuation.destroy!
+          assert_nil @creative.reload.data.dig("trigger", "loop")
+          continuation.send(:cancel_pending_tasks)
+          assert task.reload.cancelled?
+        end
+      end
+
+      test "deleting an unrelated comment or a drop turn preserves the loop" do
+        comment = command("ordinary")
+        comment.skip_dispatch = true
+        comment.save!
+        [ { "source" => "keep", "current_comment_id" => comment.id + 1 },
+          { "current_comment_id" => comment.id } ].each do |config|
+          @creative.update!(data: { "trigger" => { "loop" => config } })
+          Comment.transaction(requires_new: true) do
+            comment.destroy!
+            assert_equal config, @creative.reload.data.dig("trigger", "loop")
+            raise ActiveRecord::Rollback
+          end
+          comment = Comment.find(comment.id)
+          assert_equal config, @creative.reload.data.dig("trigger", "loop")
+        end
+      end
+
       private
 
       def command(content)

@@ -9,9 +9,23 @@ module Collavre
         attr_accessor :keep_loop_options, :loop_continuation
         after_create :track_loop_turn, if: :loop_continuation
         after_create :initialize_keep_loop
+        before_destroy :clear_deleted_keep_turn
       end
 
       private
+
+      def clear_deleted_keep_turn
+        Comments::TopicMutation.call(topic_id, creative_id) do
+          creative.with_lock do
+            data = (creative.data || {}).deep_dup
+            config = data.dig("trigger", "loop")
+            next unless config && config["source"] == "keep" && config["current_comment_id"] == id
+
+            data["trigger"].delete("loop")
+            creative.update!(data: data)
+          end
+        end
+      end
 
       def loop_dispatch_chat
         chat = { content: content }

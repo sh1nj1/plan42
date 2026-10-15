@@ -106,3 +106,8 @@ start ordinary loop turns rather than reviewing or replacing the quoted reply.
 Human-reply resumes revalidate the saved loop snapshot under topic and creative
 locks before creating and dispatching their continuation, so Pause or a newer
 control version invalidates a resume already in flight.
+
+Deleting the current keep turn comment clears its loop configuration in the
+same transaction, including queued or running turns. Deleting an older turn
+or an unrelated comment leaves the current loop intact. Other trigger settings
+and drop loops are preserved.
