@@ -307,10 +307,6 @@ body.dark-mode #comments-popup {
               0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
 }
 
-body.dark-mode creative-tree-row.chat-active .creative-row {
-  box-shadow: 0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
-              0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
-}
 
 @media (prefers-color-scheme: dark) {
   body:not(.light-mode):not(.dark-mode) #comments-popup {
@@ -319,8 +315,4 @@ body.dark-mode creative-tree-row.chat-active .creative-row {
                 0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
   }
 
-  body:not(.light-mode):not(.dark-mode) creative-tree-row.chat-active .creative-row {
-    box-shadow: 0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
-                0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
-  }
 }
