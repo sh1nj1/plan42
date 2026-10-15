@@ -55,7 +55,7 @@ module Collavre
       assert_equal "awaiting_user", config["state"]
     end
 
-    Task::ACTIVE_STATUSES.each do |status|
+    (Task::ACTIVE_STATUSES - [ "pending" ]).each do |status|
       test "#{status} same-turn task keeps ownership beyond the grace" do
         @task.update_columns(status: status)
         recover_after_grace
@@ -160,12 +160,51 @@ module Collavre
       end
     end
 
+    %i[ready scheduled claimed expired_claim failed discarded].each do |state|
+      test "pending promotion with #{state} job needs executable queue evidence" do
+        @task.update_columns(status: "pending")
+        KeepLoopReconcileJob.perform_now
+        assert_equal "running", config["state"], "Fresh publication has its grace"
+        travel 16.minutes do
+          job = SolidQueue::Job.enqueue(AiAgentJob.new(@task), scheduled_at: state == :scheduled ? 1.day.from_now : Time.current)
+          if %i[claimed expired_claim failed].include?(state)
+            job.ready_execution.destroy!
+            if state == :failed
+              SolidQueue::FailedExecution.create!(job: job, exception: RuntimeError.new("worker failed"))
+            else
+              process = SolidQueue::Process.register(kind: "Worker", pid: 12345, hostname: "example.test", name: SecureRandom.uuid)
+              process.update!(last_heartbeat_at: 1.hour.ago) if state == :expired_claim
+              SolidQueue::ClaimedExecution.create!(job: job, process: process)
+            end
+          elsif state == :discarded
+            job.destroy!
+          end
+          AiAgentJob.stub(:queue_adapter, ActiveJob::QueueAdapters::SolidQueueAdapter.new) { KeepLoopReconcileJob.perform_now }
+          live = %i[ready scheduled claimed].include?(state)
+          assert_equal live ? "running" : "awaiting_user", config["state"]
+          assert_equal live ? "pending" : "cancelled", @task.reload.status
+          assert_equal 2, config["current_iteration"]
+        end
+      end
+    end
+
     test "queue database failure is not evidence of owner absence" do
       before = @creative.reload.data.deep_dup
       SolidQueue::Job.stub(:where, ->(*) { raise ActiveRecord::ConnectionNotEstablished }) do
         AiAgentJob.stub(:queue_adapter, ActiveJob::QueueAdapters::SolidQueueAdapter.new) { recover_after_grace }
       end
       assert_equal before, @creative.reload.data
+    end
+
+    test "a live sibling retains the loop while an orphaned pending slot is cancelled" do
+      @task.update_columns(status: "pending")
+      sibling = @task.dup
+      sibling.assign_attributes(status: "running")
+      sibling.save!
+      recover_after_grace
+      assert_equal "cancelled", @task.reload.status
+      assert_equal "running", sibling.reload.status
+      assert_equal "running", config["state"]
     end
 
     test "configured grace overrides the default and invalid values use the default" do
@@ -188,8 +227,10 @@ module Collavre
 
     # Every dispatch entry uses its real lifecycle code; only the external queue
     # failure is injected. The sweep is the backstop when callbacks cannot help.
-    %i[initial continuation infrastructure_retry failed_verification resume restart public_reply restoration login_replay]
+    %i[initial continuation infrastructure_retry failed_verification resume restart public_reply restoration login_replay promotion]
       .product(%i[raise false execution_rejection permission_revocation deletion pause]).each do |entry, failure|
+      next if entry == :promotion && failure == :raise
+
       test "#{entry} with #{failure} cannot remain running after one recovery" do
         prepare_entry(entry)
         if %i[raise false].include?(failure)
@@ -211,6 +252,14 @@ module Collavre
         refute_equal "running", config&.dig("state")
         assert_equal before, config&.dig("current_iteration") if config
       end
+    end
+
+    test "failed promotion publication requeues a live waiter instead of orphaning it" do
+      prepare_entry(:promotion)
+      AiAgentJob.stub(:perform_later, ->(*) { raise ActiveJob::EnqueueError }) { attempt_entry(:promotion) }
+      assert_equal "queued", @task.reload.status
+      recover_after_grace
+      assert_equal "running", config["state"]
     end
 
     private
@@ -244,6 +293,7 @@ module Collavre
       when :failed_verification then set_state("pending_verification")
       when :restoration then cover_current_turn
       when :login_replay then prepare_login
+      when :promotion then @task.update_columns(status: "queued")
       end
       clear_enqueued_jobs
     end
@@ -264,6 +314,7 @@ module Collavre
         @creative.comments.create!(user: @user, topic: @topic, content: "Continue please")
       when :restoration then Orchestration::DeliveryRecord.restore!(@task)
       when :login_replay then CliProxy::InlineLogin.new(@reply, @user).resume!
+      when :promotion then Orchestration::AgentOrchestrator.dequeue_next_for_topic(@topic.id, @creative.id)
       end
     rescue ActiveJob::EnqueueError, CliProxy::Client::Error
       nil

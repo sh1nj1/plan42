@@ -131,7 +131,10 @@ locks before changing state.
 Set `keep_loop_reconcile_grace_seconds` through `SystemSetting` to tune the
 grace; the default is 900 seconds, allowing the ten-minute restoration sweep
 to run first. Active and waiting current-turn tasks, executable queue jobs,
-and fresh dispatch/restoration leases retain ownership. Failed jobs and claims
+and fresh dispatch/restoration leases retain ownership. A promoted `pending`
+Task requires an executable job or a fresh publication grace; if its job is
+lost, recovery cancels the pending slot as well as releasing an unowned loop.
+Failed jobs and claims
 whose worker heartbeat expired do not. Expired dispatch reservations and
 abandoned restoration claims are retired. A queue lookup failure defers recovery
 rather than assuming there is no owner. Existing callbacks still release turns

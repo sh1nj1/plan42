@@ -19,16 +19,25 @@ module Collavre
       end
 
       def live?
-        active = tasks.any? { |task| @creative.trigger_loop_task?(task) && task.active? }
-        return true if active && reservation.blank?
+        active = active_task_owner?
+        return true if active && reservation.blank? && tasks.none?(&:pending?)
 
-        queued = queued?
+        queued = executable_jobs.any? { |name, args| owns_job?(name, args) }
+        pending = pending_task_owner?
         retire_expired_claims unless queued
         prune_reservations unless queued
-        active || queued || fresh_reservation? || tasks.any? { |task| pending_restore?(task) && task.updated_at > @grace.ago }
+        active || pending || queued || fresh_reservation? || fresh_restoration_owner?
       end
 
       private
+
+      def active_task_owner?
+        tasks.any? { |task| @creative.trigger_loop_task?(task) && task.active? && !task.pending? }
+      end
+
+      def fresh_restoration_owner?
+        tasks.any? { |task| pending_restore?(task) && task.updated_at > @grace.ago }
+      end
 
       def tasks
         @tasks ||= Task.where(creative_id: @creative.id, topic_id: @config["trigger_topic_id"], trigger_event_name: "comment_created").to_a
@@ -68,15 +77,29 @@ module Collavre
         @creative.data["trigger"].delete(KeepQueuedDispatches::KEY)
       end
 
-      def queued?
-        adapter = AiAgentJob.queue_adapter
-        case adapter
+      def pending_task_owner?
+        tasks.map do |task|
+          next false unless task.pending? && task.trigger_event_payload&.dig("comment", "keep_loop_generation")
+          live = task.updated_at > @grace.ago || executable_jobs.any? do |name, args|
+            name == "Collavre::AiAgentJob" && task_id(args.first) == task.id
+          end
+          if live
+            @creative.trigger_loop_task?(task)
+          else
+            task.cancel_if_active!(statuses: [ "pending" ])
+            false
+          end
+        end.any?
+      end
+
+      def executable_jobs
+        @executable_jobs ||= case adapter = AiAgentJob.queue_adapter
         when ActiveJob::QueueAdapters::TestAdapter
-          adapter.enqueued_jobs.any? { |job| owns_job?(job[:job].name, job[:args]) }
+          adapter.enqueued_jobs.map { |job| [ job[:job].name, job[:args] ] }
         when ActiveJob::QueueAdapters::InlineAdapter
-          false
+          []
         when ActiveJob::QueueAdapters::SolidQueueAdapter
-          solid_queue_jobs.any? { |job| executable?(job) && owns_job?(job.class_name, job.arguments.fetch("arguments")) }
+          solid_queue_jobs.filter_map { |job| [ job.class_name, job.arguments.fetch("arguments") ] if executable?(job) }
         else
           raise NotImplementedError, "Keep reconciliation requires queue ownership evidence for #{adapter.class}"
         end
@@ -117,8 +140,11 @@ module Collavre
       end
 
       def owns_task?(value)
-        id = value.is_a?(Hash) ? GlobalID.parse(value["_aj_globalid"])&.model_id&.to_i : value
-        tasks.any? { |task| task.id == id && @creative.trigger_loop_task?(task) }
+        tasks.any? { |task| task.id == task_id(value) && @creative.trigger_loop_task?(task) }
+      end
+
+      def task_id(value)
+        value.is_a?(Hash) ? GlobalID.parse(value["_aj_globalid"])&.model_id&.to_i : value
       end
     end
   end
