@@ -2,15 +2,16 @@ en:
   collavre:
     comments:
       keep_command:
-        max_hint: "Maximum iterations (1–50, default: 10)"
+        max_hint: "Maximum iterations (1–1000, default: 10)"
         cooldown_hint: "Delay before checking a completed turn (0–3600 seconds, default: 10)"
         invalid_cooldown: "Use --cooldown with an integer from 0 to 3600 seconds (default: 10)."
         agent_hint: "Agent to run the loop (optional)"
+        goal_context: "Goal: %{goal}"
         goal_hint: "Goal to achieve (optional)"
         args: "[--max 10] [--cooldown 10] [@agent:] [goal]"
         no_agent: "No agent was scheduled. Choose an available agent and resume."
         not_authorized: "You need write permission to start a keep loop."
-        invalid_max: "Use --max with an integer from 1 to 50 (default: 10)."
+        invalid_max: "Use --max with an integer from 1 to 1000 (default: 10)."
         description: "Continue until the goal or trigger instructions are satisfied."
         private_not_supported: "Start /keep in a public message; loop goals and progress are shared with creative readers."
         already_running: "A loop is already running. Pause it before starting /keep."

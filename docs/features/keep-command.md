@@ -21,7 +21,7 @@ such agents to unique, mention-compatible names to select them in the popup.
   trigger instructions.
 - `@agent:` optionally selects an AI agent by mention. Without it, normal
   speaking and workflow routing rules choose who responds.
-- `--max` accepts an integer from 1 to 50 and defaults to `10` iterations.
+- `--max` accepts an integer from 1 to 1000 and defaults to `10` iterations.
   It is parsed only before the agent or goal; later occurrences remain goal text.
 - `--cooldown` accepts an integer from 0 to 3600 seconds and defaults to `10`.
   The delay starts after each agent task completes; `0` schedules the check immediately.

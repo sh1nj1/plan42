@@ -8,7 +8,7 @@ module Collavre
 
       tool_name "keep"
       tool_description "Start a bounded keep loop in a Collavre topic. Requires write permission. Uses the same validation and routing as /keep. Supply topic_id only; creative_id is derived from the topic."
-      tool_param :max, description: "Maximum iterations, from 1 to 50. Defaults to 10.", required: false
+      tool_param :max, description: "Maximum iterations, from 1 to 1000. Defaults to 10.", required: false
       tool_param :cooldown, description: "Delay after each completed task, from 0 to 3600 seconds. Defaults to 10; 0 checks immediately.", required: false
       tool_param :agent_name, description: "Exact agent name, without @ or colon. Omit to use normal topic routing.", required: false
       tool_param :goal, description: "Goal to pursue. Omit to continue the topic's current work.", required: false

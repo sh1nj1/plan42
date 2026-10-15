@@ -106,14 +106,14 @@ describe('CommandArgsForm context auto-fill', () => {
 describe('CommandArgsForm keep command', () => {
   const command = baseCommand({
     name: 'keep', label: '/keep', input_schema: [
-      { name: 'max', type: 'integer', minimum: 1, maximum: 50, required: false },
+      { name: 'max', type: 'integer', minimum: 1, maximum: 1000, required: false },
       { name: 'cooldown', type: 'integer', minimum: 0, maximum: 3600, required: false },
       { name: 'agent_name', type: 'string', format: 'keep_agent', required: false },
       { name: 'goal', type: 'string', required: false }
     ]
   })
 
-  test.each(['0', '-1', '51', '1.5'])('rejects invalid iteration limit %s before submission', (value) => {
+  test.each(['0', '-1', '1001', '1.5'])('rejects invalid iteration limit %s before submission', (value) => {
     const submitted = []
     const form = new CommandArgsForm({ onSubmit: text => submitted.push(text) })
     form.show(command)
@@ -183,7 +183,8 @@ describe('CommandArgsForm keep command', () => {
     [{ max: '5', agent_name: 'Vrex', goal: '@Other: investigate' },
       '/keep --max 5 @Vrex: -- @Other: investigate'],
     [{ max: '1' }, '/keep --max 1'],
-    [{ max: '50' }, '/keep --max 50'],
+    [{ max: '51' }, '/keep --max 51'],
+    [{ max: '1000' }, '/keep --max 1000'],
     [{ max: '1e1' }, '/keep --max 10']
   ])('submits parser-compatible text for %j', (values, expected) => {
     let submitted

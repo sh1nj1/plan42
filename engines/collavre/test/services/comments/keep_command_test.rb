@@ -235,7 +235,7 @@ module Collavre
       end
 
       test "rejects invalid limits without changing loop state" do
-        %w[0 -1 abc 1.5 51 100000].each do |limit|
+        %w[0 -1 abc 1.5 1001 100000].each do |limit|
           comment = command("/keep --max #{limit}")
           assert_equal I18n.t("collavre.comments.keep_command.invalid_max"),
                        KeepCommand.new(comment: comment, user: @user).call
@@ -243,10 +243,12 @@ module Collavre
         end
       end
 
-      test "accepts the maximum limit" do
-        comment = command("/keep --max 50 finish")
-        assert_nil KeepCommand.new(comment: comment, user: @user).call
-        assert_equal 50, comment.keep_loop_options["max_iterations"]
+      test "accepts limits through the new maximum" do
+        [ 1, 51, 1000 ].each do |limit|
+          comment = command("/keep --max #{limit} finish")
+          assert_nil KeepCommand.new(comment: comment, user: @user).call
+          assert_equal limit, comment.keep_loop_options["max_iterations"]
+        end
       end
 
       test "preserves max options inside the goal" do

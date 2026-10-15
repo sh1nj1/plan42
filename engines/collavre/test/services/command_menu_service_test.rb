@@ -19,7 +19,7 @@ module Collavre
           assert_equal "integer", schema.first[:type]
           assert_equal "keep_agent", schema.third[:format]
           assert_equal 1, schema.first[:minimum]
-          assert_equal 50, schema.first[:maximum]
+          assert_equal 1000, schema.first[:maximum]
           assert_equal "integer", schema.second[:type]
           assert_equal 0, schema.second[:minimum]
           assert_equal 3600, schema.second[:maximum]

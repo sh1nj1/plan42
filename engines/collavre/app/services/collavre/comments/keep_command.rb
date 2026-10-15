@@ -36,7 +36,7 @@ module Collavre
           name = match[1]
           text.slice!(0, match[0].length)
           value = text.slice!(/\A\s+\S+/).to_s.strip
-          valid = name == "max" ? value.match?(/\A[1-9]\d*\z/) && value.to_i <= 50 :
+          valid = name == "max" ? value.match?(/\A[1-9]\d*\z/) && value.to_i <= 1000 :
             value.match?(/\A\d+\z/) && value.to_i <= 3600
           return "invalid_#{name}" unless valid
 
