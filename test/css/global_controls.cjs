@@ -13,7 +13,7 @@ test('global controls retain theme, focus, and compact geometry', async () => {
       'engines/collavre/app/assets/stylesheets/collavre/comments_popup.css',
       'app/assets/stylesheets/application.css'
     ];
-    await page.setContent('<style>' + files.map(f => readFileSync(f, 'utf8')).join('\n') + '</style><body><form class="stacked-form"><input class="topic-input"><input class="topic-edit-input"><input type="submit" class="primary-action-button" value="Save 저장"><button class="secondary-action-button">Cancel 취소</button></form><span class="text-muted">Help</span><small class="form-text">Help</small><div class="comments-popup-actions"><button class="popup-close-btn">×</button></div><form id="new-comment-form" style="width:280px"><textarea></textarea></form></body>');
+    await page.setContent('<style>' + files.map(f => readFileSync(f, 'utf8')).join('\n') + '</style><body style="line-height:1.6"><div class="popup-box"><span class="topic-tag active"><input class="topic-edit-input"></span><span class="topic-tag">#Main<button class="delete-topic-btn">×</button></span><input class="topic-input"></div><form class="stacked-form"><input type="submit" class="primary-action-button" value="Save 저장"><button class="secondary-action-button">Cancel 취소</button></form><span class="text-muted">Help</span><small class="form-text">Help</small><div class="comments-popup-actions"><button class="popup-close-btn">×</button></div><form id="new-comment-form" style="width:280px"><textarea></textarea></form></body>');
     for (const theme of ['light-mode', 'dark-mode', 'system']) {
       await page.emulateMedia({ colorScheme: theme === 'system' ? 'dark' : 'light' });
       await page.evaluate(t => document.body.className = t === 'system' ? '' : t, theme);
@@ -25,6 +25,18 @@ test('global controls retain theme, focus, and compact geometry', async () => {
         });
         assert.deepEqual(style, ['1px', '1px', 'none']);
       }
+      const topics = await page.evaluate(() => {
+        const box = el => el.getBoundingClientRect();
+        const editTag = document.querySelector('.topic-edit-input').parentElement;
+        return {
+          edit: [box(document.querySelector('.topic-edit-input')).width, getComputedStyle(editTag).paddingLeft, getComputedStyle(editTag).backgroundColor],
+          input: [box(document.querySelector('.topic-input')).width, box(document.querySelector('.topic-input')).height],
+          close: box(document.querySelector('.delete-topic-btn')).height
+        };
+      });
+      assert.deepEqual(topics.edit, [80, '0px', 'rgba(0, 0, 0, 0)']);
+      assert.deepEqual(topics.input, [100, 26]);
+      assert.ok(topics.close < 20, `topic close button height ${topics.close}`);
       const geometry = await page.evaluate(() => {
         const close = document.querySelector('.popup-close-btn').getBoundingClientRect();
         const area = document.querySelector('textarea').getBoundingClientRect();

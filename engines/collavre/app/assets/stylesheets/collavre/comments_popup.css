@@ -2485,3 +2485,28 @@ li:hover .topic-create-option {
     box-shadow: none;
     outline: none;
 }
+
+/* While renaming, the input stands in for the chip so the chip's fill and padding don't frame it. */
+.topic-tag:has(> .topic-edit-input) {
+    padding: 0;
+    background: transparent;
+    border-color: transparent;
+}
+
+.topic-input {
+    box-sizing: border-box;
+    height: 26px;
+}
+
+.topic-tag > .topic-edit-input {
+    box-sizing: border-box;
+    height: 100%;
+    padding: 0 0.6em;
+    border-radius: 12px;
+    font-size: inherit;
+}
+
+/* Chip buttons inherit the body line-height via font: inherit; keep them to the glyph height. */
+.topic-tag button {
+    line-height: 1;
+}
