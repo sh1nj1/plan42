@@ -39,8 +39,15 @@ class PptViewerTest < ApplicationSystemTestCase
       assert_selector "[data-ppt-counter]", text: "2 / 2"
       find(".ppt-viewer-slide:not([hidden])").click
       assert_selector ".ppt-viewer:fullscreen"
+      find(".ppt-viewer-slide:not([hidden])").click
       assert_selector "a[download=\"slides.pptx\"]"
       assert_selector "[data-ppt-close]"
+      find(".ppt-viewer-slide:not([hidden])").click
+      assert_no_selector ".ppt-controls-visible"
+      assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
+      assert_equal "none", page.evaluate_script("getComputedStyle(document.querySelector('[data-ppt-close]')).pointerEvents")
+      find(".ppt-viewer-slide:not([hidden])").click
+      assert_selector ".ppt-controls-visible"
       find(".ppt-viewer").send_keys(:arrow_left)
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       find(".ppt-viewer").send_keys(:escape)
@@ -83,6 +90,7 @@ class PptViewerTest < ApplicationSystemTestCase
       find(".ppt-viewer").hover
       find(".ppt-viewer-slide:not([hidden])").click
       assert_selector ".ppt-viewer:fullscreen"
+      find(".ppt-viewer-slide:not([hidden])").click
       assert_selector "a[download=\"slides.pptx\"]"
       assert_selector "[data-ppt-close]"
       find(".ppt-viewer").send_keys(:escape)
