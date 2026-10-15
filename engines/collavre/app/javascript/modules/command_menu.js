@@ -4,6 +4,7 @@ import CommandArgsForm from './command_args_form'
 import { openCreativeLinkPicker } from './creative_link_picker'
 
 let commandMenuInitialized = false
+let commandSubmissionSequence = 0
 
 const escapeHtml = (value) => String(value)
   .replace(/&/g, '&amp;')
@@ -11,7 +12,47 @@ const escapeHtml = (value) => String(value)
   .replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;')
-let commandSubmissionSequence = 0
+
+function renderCommand(command, moreLabel) {
+  const aliasLabel = command.aliases?.length
+    ? `<span class="command-aliases">(${command.aliases.join(', ')})</span>`
+    : ''
+  const args = command.args ? `<span class="command-args">${command.args}</span>` : ''
+  const description = command.description
+    ? `<div class="command-description">${escapeHtml(command.description)}</div>`
+    : ''
+  const details = command.details
+    ? `<button type="button" class="command-more" data-command-more aria-expanded="false">${escapeHtml(moreLabel)}</button>
+       <div class="command-details" hidden>${escapeHtml(command.details)}</div>`
+    : ''
+  return `
+    <div class="command-item">
+      <span class="command-label">${command.label}</span>
+      ${aliasLabel}
+      ${args}
+    </div>
+    ${description}
+    ${details}
+  `
+}
+
+// "More" expands a tool's details in place. Handled in the capture phase so the
+// item's own touchstart/touchend/click never see it and the command is not chosen.
+function bindDetailsToggle(list, labels, onToggle) {
+  const toggle = (event) => {
+    const button = event.target.closest?.('[data-command-more]')
+    if (!button || !list.contains(button)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.type === 'touchstart') return
+    const expanded = button.getAttribute('aria-expanded') === 'true'
+    button.setAttribute('aria-expanded', String(!expanded))
+    button.textContent = expanded ? labels.more : labels.less
+    button.nextElementSibling.hidden = expanded
+    onToggle()
+  }
+  for (const type of ['touchstart', 'touchend', 'click']) list.addEventListener(type, toggle, true)
+}
 
 if (!commandMenuInitialized) {
   commandMenuInitialized = true
@@ -23,6 +64,7 @@ if (!commandMenuInitialized) {
     if (!textarea || !menu || !popup) return
 
     const list = menu.querySelector('[data-popup-list]')
+    const labels = { more: menu.dataset.moreLabel || 'More', less: menu.dataset.lessLabel || 'Less' }
     const commandCache = new Map()
     let skipNextMenuInput = false
 
@@ -100,28 +142,7 @@ if (!commandMenuInitialized) {
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
-      renderItem: (command) => {
-        const aliasLabel = command.aliases?.length
-          ? `<span class="command-aliases">(${command.aliases.join(', ')})</span>`
-          : ''
-        const args = command.args ? `<span class="command-args">${command.args}</span>` : ''
-        const description = command.description
-          ? `<div class="command-description">${escapeHtml(command.description)}</div>`
-          : ''
-        const details = command.details
-          ? `<button type="button" class="command-more" data-command-more aria-expanded="false">${escapeHtml(moreLabel)}</button>
-             <div class="command-details" hidden>${escapeHtml(command.details)}</div>`
-          : ''
-        return `
-          <div class="command-item">
-            <span class="command-label">${command.label}</span>
-            ${aliasLabel}
-            ${args}
-          </div>
-          ${description}
-          ${details}
-        `
-      },
+      renderItem: (command) => renderCommand(command, labels.more),
       onSelect: (command) => {
         if (command.type === 'popup' && command.popup_type === 'creative_picker') {
           openCreativePicker(textarea)
@@ -143,26 +164,7 @@ if (!commandMenuInitialized) {
       }
     })
 
-    // "More" expands a tool's details in place. Handled in the capture phase so
-    // the item's own click/touchend never sees it and the command is not chosen.
-    const moreLabel = menu.dataset.moreLabel || 'More'
-    const lessLabel = menu.dataset.lessLabel || 'Less'
-    const toggleDetails = (event) => {
-      const button = event.target.closest?.('[data-command-more]')
-      if (!button || !list.contains(button)) return
-      event.preventDefault()
-      event.stopPropagation()
-      if (event.type !== 'click' && event.type !== 'touchend') return
-      const body = button.nextElementSibling
-      const expanded = button.getAttribute('aria-expanded') === 'true'
-      button.setAttribute('aria-expanded', String(!expanded))
-      button.textContent = expanded ? moreLabel : lessLabel
-      if (body) body.hidden = expanded
-      popupMenu.reposition()
-    }
-    list.addEventListener('click', toggleDetails, true)
-    list.addEventListener('touchend', toggleDetails, true)
-    list.addEventListener('touchstart', toggleDetails, true)
+    bindDetailsToggle(list, labels, () => popupMenu.reposition())
 
     function currentTopicIdFromController(popupEl) {
       // Prefer the form controller's locally-cached topic id — the same value
