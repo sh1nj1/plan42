@@ -6,7 +6,10 @@ is satisfied, user input is needed, or the iteration limit is reached.
 Selecting `/keep` from the command menu opens a parameter popup for the maximum
 iterations, agent, and goal. All fields are optional; leaving them blank uses
 the defaults described below. Confirming the popup immediately submits the command and starts the loop.
-There is no separate send step.
+There is no separate send step. The agent picker excludes case-insensitive duplicate
+AI names and blank names or names containing colons,
+because the command identifies agents using a leading `@name:` token. Rename
+such agents to unique, mention-compatible names to select them in the popup.
 
 ```text
 /keep [--max 10] [@agent:] [goal]

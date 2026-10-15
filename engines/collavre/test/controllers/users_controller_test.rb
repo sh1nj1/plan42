@@ -315,6 +315,26 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.parsed_body.map { |u| u["id"] }, @admin.id
   end
 
+  test "keep picker excludes ambiguous and unparseable names before limiting" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Keep identity")
+    names = [ "Keep Duplicate", "keep duplicate", "Keep Colon:Agent", "Keep Valid Agent" ]
+    agents = names.each_with_index.map do |name, index|
+      agent = User.create!(email: "keep-identity-#{index}@example.com", name: name,
+                           password: "password", llm_vendor: "openai", searchable: true)
+      CreativeShare.create!(creative: creative, user: agent, permission: :feedback)
+      agent
+    end
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id, scope: "keep_agents", limit: 1 }
+    assert_response :success
+    assert_equal [ agents.last.id ], response.parsed_body.map { |u| u["id"] }
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id }
+    assert_includes response.parsed_body.map { |u| u["id"] }, agents.first.id
+    assert_includes response.parsed_body.map { |u| u["id"] }, agents[2].id
+  end
+
   test "keep agent eligibility is filtered in SQL before the result limit" do
     creative = Creative.create!(user: @regular_user, description: "SQL picker")
     agent = users(:ai_bot)
