@@ -16,11 +16,9 @@
   scroll-behavior: smooth;
 }
 
-/* Landing sections span the viewport and constrain their own content with
-   .landing-container, so the application's boxed main must not apply. */
-.landing-page > main {
-  max-width: none;
-  padding: 0;
+/* Preserve the feature index's existing geometry while hiding the main
+   background that shows through as strips beside its gray sections. */
+.landing-page > main:has(.features-index) {
   background: transparent;
 }
 
