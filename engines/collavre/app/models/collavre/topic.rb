@@ -37,6 +37,14 @@ module Collavre
 
     default_scope { order(:position) }
 
+    # Registry changes can invalidate ordinary pins without updating the user.
+    # Session pins remain part of the session's identity and exclusive boundary.
+    def effective_primary_agent(agent = primary_agent)
+      return nil if agent && session_id.nil? && !agent.supports?(:chat)
+
+      agent
+    end
+
     # Sets or replaces the primary agent for this topic
     def set_primary_agent!(agent)
       update!(primary_agent: agent)

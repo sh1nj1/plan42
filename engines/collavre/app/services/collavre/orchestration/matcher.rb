@@ -241,13 +241,7 @@ module Collavre
       end
 
       def effective_primary_agent
-        topic = matched_topic
-        agent = topic&.primary_agent
-        # Registry changes do not update users. Ignore stale ordinary pins while
-        # preserving session identity and its exclusive routing boundary.
-        return nil if agent && topic.session_id.nil? && !agent.supports?(:chat)
-
-        agent
+        matched_topic&.effective_primary_agent
       end
 
       # Returns [primary_agent] when the topic has one, nil when it does not.
