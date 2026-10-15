@@ -51,6 +51,40 @@ module Collavre
       end
     end
 
+    [ :older, :all ].each do |scope|
+      test "keep identity and loop ownership survive #{scope} mixed waiter promotion" do
+        @task.update_columns(status: "queued")
+        ordinary = @creative.comments.create!(content: "Ordinary followup", topic: @topic, user: @user, skip_dispatch: true)
+        waiter = Task.create!(name: "Ordinary", agent: @agent, creative: @creative, topic_id: @topic.id,
+          status: "queued", trigger_event_name: "comment_created", trigger_event_payload: ordinary.dispatch_payload.deep_stringify_keys)
+        survivor = scope == :older ? waiter : @task
+        assert_empty Orchestration::TaskCoalescer.coalesce!(survivor, scope: scope)
+        assert_equal "queued", @task.reload.status
+        assert_equal "queued", waiter.reload.status
+        assert KeepLoop.task?(@creative.reload, @task)
+        assert_equal "running", @creative.data.dig("trigger", "loop", "state")
+
+        Orchestration::AgentOrchestrator.send(:refresh_deferred_context!, @task)
+        assert_equal @turn.id, @task.reload.trigger_event_payload.dig("comment", "id")
+        assert_equal 4, @task.trigger_event_payload.dig("comment", "keep_loop_generation")
+        assert KeepLoop.task?(@creative.reload, @task)
+
+        @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "generation" => 5 } }))
+        refute KeepLoop.task?(@creative.reload, @task)
+      end
+    end
+
+    test "ordinary deferred context cannot acquire the newer keep instruction" do
+      ordinary = @creative.comments.create!(content: "Earlier ordinary", topic: @topic, user: @user, skip_dispatch: true)
+      waiter = Task.create!(name: "Ordinary", agent: @agent, creative: @creative, topic_id: @topic.id,
+        status: "queued", trigger_event_name: "comment_created", trigger_event_payload: ordinary.dispatch_payload.deep_stringify_keys)
+      next_turn = @creative.comments.create!(content: "New keep instruction", topic: @topic, user: @user, skip_dispatch: true)
+      @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "current_comment_id" => next_turn.id } }))
+      Orchestration::AgentOrchestrator.send(:refresh_deferred_context!, waiter)
+      assert_equal ordinary.id, waiter.reload.trigger_event_payload.dig("comment", "id")
+      assert_not_includes Array(waiter.trigger_event_payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]), next_turn.id
+    end
+
     test "duplicate check cannot evaluate the previous task between continuation turns" do
       @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => {
         "current_comment_id" => nil, "current_iteration" => 2, "max_iterations" => 3
