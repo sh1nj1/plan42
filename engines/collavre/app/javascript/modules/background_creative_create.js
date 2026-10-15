@@ -33,13 +33,19 @@ export async function cannotEdit(tree) {
   return !tree.dataset.id && !failedDrafts.has(tree)
 }
 
+const saved = (row) => row.isConnected && row.dataset.id
+
 // Hands over the draft of a row whose background create failed, so the editor
-// can reopen it as a new creative and retry the create.
+// can reopen it as a new creative and retry the create: in front of the first
+// saved row below it, else after the nearest saved row of its failed chain
+// above it, else in the slot it asked for.
 export function takeFailedDraft(tree) {
   const draft = failedDrafts.get(tree)
   failedDrafts.delete(tree)
-  const next = draft?.successors?.find((successor) => successor.isConnected && successor.dataset.id)
+  const next = draft?.successors?.find(saved)
+  const previous = draft?.predecessors.findLast(saved)
   if (next) Object.assign(draft, { afterId: '', beforeId: next.dataset.id })
+  else if (previous) Object.assign(draft, { afterId: previous.dataset.id, beforeId: '' })
   return draft
 }
 
@@ -64,7 +70,7 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     // The row keeps showing the text; flag it and say so, since the editor
     // has already moved on. Opening the row again restores the draft.
     tree.dataset.saveState = 'error'
-    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
+    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId, predecessors: fallback.failedTrees || [] })
     retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
     failed(error)
     return { ...fallback, failedTrees: [...(fallback.failedTrees || []), tree] }

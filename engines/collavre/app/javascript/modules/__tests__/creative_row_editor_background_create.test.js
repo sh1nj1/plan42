@@ -29,7 +29,7 @@ jest.unstable_mockModule('../../lib/utils/dialog', () => ({
 
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
 const {
-  buildEditorDom, defineTreeRowStub, renderEmptyState, flush,
+  buildEditorDom, defineTreeRowStub, renderEmptyState, appendExistingRow, flush,
 } = await import('./support/inline_editor_dom')
 
 function deferred() {
@@ -388,6 +388,51 @@ describe('Enter on a new creative saves it in the background', () => {
     await retryFailedRow(second)
     second.remove()
     expect(sentField(await retryFailedRow(first), 'before_id')).toBe('82')
+  })
+
+  test('a failed chain with no saved row below it retries in screen order', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(90)))
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    expect(sentField(await retryFailedRow(first), 'after_id')).toBe('5')
+    const retry = await retryFailedRow(second)
+    expect(sentField(retry, 'after_id')).toBe('90')
+    expect(sentField(retry, 'before_id')).toBe('')
+  })
+
+  test('a completed failed draft keeps its completion when another row reset the baseline', async () => {
+    const sentProgress = []
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementation((url, method, body) => {
+        // Read the progress fields while the request is sent: a save that
+        // skips progress disables them only until it settles.
+        sentProgress.push(new FormData(body).getAll('creative[progress]'))
+        return Promise.resolve(created(90))
+      })
+    const first = await startNewRow('done creative')
+    document.getElementById('inline-creative-progress').checked = true
+    await pressEnter()
+    await flush()
+    const { tree: completed, row } = appendExistingRow(7)
+    row.closest('creative-tree-row').dataset.progressValue = '1'
+    clickRow(completed)
+    await flush()
+    expect(document.getElementById('inline-creative-progress').checked).toBe(true)
+
+    const retry = await retryFailedRow(first)
+
+    expect(sentField(retry, 'creative[description]')).toContain('done creative')
+    // A check box posts its hidden 0 first; the server keeps the last value.
+    expect(sentProgress.at(-1).at(-1)).toBe('1')
   })
 
   test('a click that waits out a pending create yields to a later click', async () => {

@@ -1131,6 +1131,7 @@ function setupEditorSession() {
       fillFailedDraftForm(form, tree, draft, { methodInput, parentInput, afterInput, beforeInput, childInput, originIdInput, descriptionInput, contentTypeInput, markdownSourceInput, markdownEditorInput });
       lexicalEditor.load(draft.snapshot.content, `new-${Date.now()}`);
       setProgressState(draft.snapshot.progress);
+      originalProgress = 0;
       // A new creative always saves on close, so the draft just has to read as unsaved.
       isDirty = true;
       pendingSave = true;
