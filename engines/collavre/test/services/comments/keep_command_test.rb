@@ -515,6 +515,73 @@ module Collavre
         assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
       end
 
+      test "blocked reply routing reads persisted state in both directions" do
+        agent = users(:ai_bot)
+        %w[running awaiting_user].each do |cached_state|
+          @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @topic.id, source: "keep", state: cached_state, agent_id: agent.id
+          ) } })
+          response = command("Proceed")
+          persisted_state = cached_state == "running" ? "awaiting_user" : "running"
+          data = @creative.data.deep_merge("trigger" => { "loop" => { "state" => persisted_state } })
+          Creative.where(id: @creative.id).update_all(data: data)
+          assert_equal persisted_state == "awaiting_user", !!response.send(:blocked_keep_reply?)
+        end
+      end
+
+      test "ordinary dispatched reply cannot also resume a newly blocked keep" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "running", agent_id: agent.id
+        ) } })
+        response = command("Proceed")
+        refute response.send(:blocked_keep_reply?)
+        data = @creative.data.deep_merge("trigger" => { "loop" => { "state" => "awaiting_user" } })
+        Creative.where(id: @creative.id).update_all(data: data)
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Already routed reply must not resume" }) do
+          assert_no_difference -> { @creative.comments.count } do
+            response.send(:resume_trigger_loop_if_awaiting)
+          end
+        end
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
+      test "reply resume explicitly dispatches while guarded instead of after commit" do
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user"
+        ) } })
+        response = command("Proceed")
+        dispatched = []
+        guard_depth = 0
+        lock = @creative.method(:with_lock)
+        @creative.define_singleton_method(:with_lock) do |*args, &block|
+          lock.call(*args) do
+            guard_depth += 1
+            begin
+              block.call
+            ensure
+              guard_depth -= 1
+            end
+          end
+        end
+        created = nil
+        original = response.method(:create_loop_resume)
+        response.define_singleton_method(:create_loop_resume) do |*args|
+          created = original.call(*args)
+        end
+        SystemEvents::Dispatcher.stub(:dispatch, lambda { |_event, payload, **_options|
+          dispatched << payload
+          assert_operator guard_depth, :>, 0, "Resume must dispatch before releasing the creative lock"
+          assert @creative.comments.find(payload.dig(:comment, :id)).persisted?
+          [ users(:ai_bot) ]
+        }) do
+          response.send(:resume_trigger_loop_if_awaiting)
+        end
+        assert_equal 1, dispatched.size
+        assert created.skip_dispatch, "Continuation must suppress its after-commit dispatch"
+      end
+
       private
 
       def command(content)

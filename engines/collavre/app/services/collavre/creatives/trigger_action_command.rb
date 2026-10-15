@@ -92,6 +92,26 @@ module Collavre
       end
 
       def post_continue_to_agent
+        with_transitioned_loop { post_guarded_continue }
+      end
+
+      def with_transitioned_loop
+        topic_id = @transitioned_loop_data["trigger_topic_id"] || creative.topics.find_by(name: "Drop Trigger")&.id
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          creative.with_lock do
+            next unless creative.data&.dig("trigger", "loop") == @transitioned_loop_data
+            next unless @transitioned_loop_data["state"] == "running"
+            if creative.keep_loop_agent_unavailable?
+              creative.update!(data: creative.data.deep_merge("trigger" => { "loop" => { "state" => "awaiting_user" } }))
+              next
+            end
+
+            yield
+          end
+        end
+      end
+
+      def post_guarded_continue
         parent, topic, agent = trigger_context
         return log_missing_context("resume", topic) unless parent && topic && (agent || @transitioned_loop_data["source"] == "keep")
 
@@ -100,11 +120,18 @@ module Collavre
           iteration: @transitioned_loop_data["current_iteration"] || 0,
           max: @transitioned_loop_data["max_iterations"] || 10
         )}"
-        comment = create_trigger_comment(topic, content, skip_dispatch: false)
+        comment = create_trigger_comment(topic, content, skip_dispatch: true)
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment))
+        comment.send(:reconcile_loop_dispatch, scheduled)
         Rails.logger.info("[TriggerAction] resume: posted continue comment #{comment.id} for creative #{creative.id}")
       end
 
       def post_restart_trigger
+        with_transitioned_loop { post_guarded_restart }
+      end
+
+      def post_guarded_restart
         parent, topic, agent = trigger_context
         return log_missing_context("restart", topic) unless parent && topic && (agent || @transitioned_loop_data["source"] == "keep")
 

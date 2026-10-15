@@ -209,6 +209,75 @@ module Collavre
         assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
       end
 
+      test "keep resume revalidates pause control version and agent before posting" do
+        agent = users(:ai_bot)
+        share = CreativeShare.create!(creative: @child, user: agent, permission: :feedback)
+        %w[pause version permission].each do |change|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: "paused", agent_id: agent.id
+          ) } })
+          operation = command(action: "resume")
+          original = operation.method(:post_continue_to_agent)
+          operation.define_singleton_method(:post_continue_to_agent) do
+            data = @creative.reload.data.deep_dup
+            case change
+            when "pause" then data["trigger"]["loop"]["state"] = "paused"
+            when "version" then data["trigger"]["loop"]["control_version"] += 1
+            when "permission"
+              share.destroy!
+              CreativeSharesCache.where(creative: @creative, user: agent).delete_all
+            end
+            @creative.update!(data: data)
+            original.call
+          end
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale resume must not dispatch" }) do
+            assert_no_difference -> { @child.comments.count } do
+              operation.call
+            end
+          end
+          expected = change == "pause" ? "paused" : (change == "permission" ? "awaiting_user" : "running")
+          assert_equal expected, @child.reload.data.dig("trigger", "loop", "state")
+        end
+      end
+
+      test "keep resume dispatches once under the creative lock" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @child, user: agent, permission: :feedback)
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: "paused", agent_id: agent.id
+        ) } })
+        depth = 0
+        original_lock = @child.method(:with_lock)
+        @child.define_singleton_method(:with_lock) do |*args, &block|
+          original_lock.call(*args) do
+            depth += 1
+            begin
+              block.call
+            ensure
+              depth -= 1
+            end
+          end
+        end
+        operation = command(action: "resume")
+        created = nil
+        original_create = operation.method(:create_trigger_comment)
+        operation.define_singleton_method(:create_trigger_comment) do |*args, **kwargs|
+          created = original_create.call(*args, **kwargs)
+        end
+        dispatches = []
+        SystemEvents::Dispatcher.stub(:dispatch, lambda { |_event, payload, **_options|
+          assert_operator depth, :>, 0
+          dispatches << payload
+          [ agent ]
+        }) do
+          operation.call
+        end
+        assert created.skip_dispatch
+        assert_equal 1, dispatches.size
+        assert_equal created.id, dispatches.first.dig(:comment, :id)
+        assert_equal [ { id: agent.id } ], dispatches.first.dig(:chat, :mentioned_users)
+      end
+
       private
 
       def command(creative: @child, user: @user, action:, enabled: nil)

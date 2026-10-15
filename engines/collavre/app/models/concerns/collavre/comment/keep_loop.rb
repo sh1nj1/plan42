@@ -28,7 +28,10 @@ module Collavre
       end
 
       def blocked_keep_reply?
-        config = creative.data&.dig("trigger", "loop")
+        @keep_reply_dispatch_checked = true
+        @blocked_keep_reply_snapshot = nil
+        config = Creative.where(id: creative_id).pick(:data)&.dig("trigger", "loop")
+        @blocked_keep_reply_snapshot = config.deep_dup if config && config["state"] == "awaiting_user"
         config && config["state"] == "awaiting_user" && config["trigger_topic_id"] == topic_id &&
           config["source"] == "keep" && config["agent_id"].present?
       end
@@ -81,7 +84,7 @@ module Collavre
         agent = creative.trigger_loop_agent
         return unless agent || creative.keep_loop?
 
-        creative.comments.create!(
+        comment = creative.comments.create!(
           content: "#{"@#{agent.name}: " if agent}#{I18n.t(
             'collavre.trigger_loop.user_resumed',
             iteration: iteration,
@@ -90,8 +93,12 @@ module Collavre
           topic_id: topic_id,
           private: false,
           user: creative.user,
-          loop_continuation: true, skip_dispatch: false
+          loop_continuation: true, skip_dispatch: true
         )
+        agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment))
+        comment.send(:reconcile_loop_dispatch, agents)
+        comment
       end
 
       def initialize_keep_loop

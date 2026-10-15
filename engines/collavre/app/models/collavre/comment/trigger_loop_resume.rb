@@ -57,6 +57,11 @@ module Collavre
           data = creative.data
           next unless trigger_loop_resumable?(data)
           next if creative.keep_loop_agent_unavailable?
+          # A public reply already sent through ordinary routing must not also
+          # resume a newly blocked explicit keep turn.
+          if @keep_reply_dispatch_checked && creative.keep_loop? && data.dig("trigger", "loop", "agent_id").present?
+            next unless data.dig("trigger", "loop") == @blocked_keep_reply_snapshot
+          end
 
           loop_cfg = data["trigger"]["loop"]
           loop_cfg["state"] = "running"
