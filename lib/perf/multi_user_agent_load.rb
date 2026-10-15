@@ -25,7 +25,6 @@ module Perf
   # what is being measured). Fixture rows are tagged perf-* and reused across
   # runs.
   class MultiUserAgentLoad
-    PASSWORD = "perf-password-123"
     EMAIL_DOMAIN = "perf.collavre.test"
 
     def initialize(base_url:, users: 10, agents: 4, llm_seconds: 20, timeout: 300, probe_interval: 0.5,
@@ -47,13 +46,14 @@ module Perf
       log "fixtures ready: #{fixtures.users.size} users, #{fixtures.agents.size} agents, llm=#{llm.base_url}"
 
       sessions = fixtures.users.each_with_index.map do |user, index|
-        HttpSession.new(@base_url, client_ip: "198.51.100.#{index + 1}").tap { |s| s.login!(user.email, PASSWORD) }
+        HttpSession.new(@base_url, client_ip: "198.51.100.#{index + 1}").tap { |s| s.login!(user.email, fixtures.password) }
       end
       log "logged in #{sessions.size} users; posting #{expected_turns} messages (run #{@run_id})"
 
       posts, probes, outcomes = drive(fixtures, sessions)
       build_report(posts, llm, probes, outcomes)
     ensure
+      fixtures&.retire!
       llm&.stop
     end
 
@@ -165,13 +165,21 @@ module Perf
     end
 
     # Idempotent perf-* users, agents, workspaces, shares and pinned topics.
+    # The accounts are reused, but their password is not: each run sets a
+    # random one and #retire! replaces it with another nobody knows, so a
+    # finished run leaves no account anyone can sign in to.
     class Fixtures
-      attr_reader :users, :agents, :workspaces, :topics
+      attr_reader :users, :agents, :workspaces, :topics, :password
 
       def initialize(user_count:, agent_count:, gateway_url:)
         @user_count = user_count
         @agent_count = agent_count
         @gateway_url = gateway_url
+        @password = self.class.random_password
+      end
+
+      def self.random_password
+        SecureRandom.alphanumeric(32)
       end
 
       def prepare!
@@ -183,11 +191,15 @@ module Perf
         self
       end
 
+      def retire!
+        [ *@users, *@agents ].each { |user| user.update!(password: self.class.random_password) }
+      end
+
       private
 
       def human(name)
         user = Collavre::User.find_or_initialize_by(email: "#{name}@#{EMAIL_DOMAIN}")
-        user.assign_attributes(name: name, password: PASSWORD, email_verified_at: user.email_verified_at || Time.current)
+        user.assign_attributes(name: name, password: @password, email_verified_at: user.email_verified_at || Time.current)
         user.save!
         user.unlock_account! if user.respond_to?(:unlock_account!) && user.locked?
         user
@@ -195,7 +207,7 @@ module Perf
 
       def agent(name)
         agent = Collavre::User.find_or_initialize_by(email: "#{name}@#{EMAIL_DOMAIN}")
-        agent.assign_attributes(name: name, password: PASSWORD, llm_vendor: "openai", llm_model: "perf-fake",
+        agent.assign_attributes(name: name, password: @password, llm_vendor: "openai", llm_model: "perf-fake",
                                 gateway_url: @gateway_url, system_prompt: "You are a load-test agent. Reply briefly.",
                                 tools: [], searchable: false)
         agent.save!

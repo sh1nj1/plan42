@@ -43,6 +43,37 @@ module Perf
       assert SolidQueue::Job.exists?(other.id)
     end
 
+    test "signs the accounts in with a fresh random password each run" do
+      first = prepare
+      second = prepare
+
+      assert_not_equal first.password, second.password
+      assert_operator second.password.length, :>=, 32
+      [ *second.users, *second.agents ].each do |user|
+        assert user.reload.authenticate(second.password)
+        assert_not user.authenticate(first.password)
+      end
+    end
+
+    test "retire! leaves no account signable with the run's password" do
+      fixtures = prepare
+      fixtures.retire!
+
+      [ *fixtures.users, *fixtures.agents ].each { |user| assert_not user.reload.authenticate(fixtures.password) }
+    end
+
+    test "run retires the fixture accounts even when it aborts" do
+      load = MultiUserAgentLoad.new(base_url: "http://127.0.0.1:1", users: 1, agents: 1, log: StringIO.new)
+      captured = nil
+      prepare_and_capture = MultiUserAgentLoad::Fixtures.instance_method(:prepare!)
+      MultiUserAgentLoad::Fixtures.define_method(:prepare!) { captured = prepare_and_capture.bind_call(self) }
+
+      assert_raises(SystemCallError) { load.run }
+      assert_not captured.users.first.reload.authenticate(captured.password)
+    ensure
+      MultiUserAgentLoad::Fixtures.define_method(:prepare!, prepare_and_capture)
+    end
+
     test "lets every agent run one turn per user at once" do
       fixtures = prepare
       resolver = Collavre::Orchestration::PolicyResolver.new({})
