@@ -33,9 +33,7 @@ export default class CommandArgsForm {
     this.command = null
     this.overlay = null
     this.dialog = null
-    this._mentionPopup = null
     this._mentionTimer = null
-    this._activeMentionInput = null
     this._handleKeydown = this._handleKeydown.bind(this)
   }
 
@@ -240,12 +238,7 @@ export default class CommandArgsForm {
       input.appendChild(optTrue)
       input.appendChild(optFalse)
     } else if (param.type === 'integer' || param.type === 'float') {
-      input = document.createElement('input')
-      input.type = 'number'
-      input.className = 'modal-dialog-input'
-      input.step = param.type === 'float' ? 'any' : '1'
-      if (param.minimum != null) input.min = param.minimum
-      if (param.maximum != null) input.max = param.maximum
+      input = this._buildNumberField(param)
     } else {
       input = document.createElement('textarea')
       input.className = 'modal-dialog-input'
@@ -279,6 +272,16 @@ export default class CommandArgsForm {
 
     wrapper.appendChild(input)
     return wrapper
+  }
+
+  _buildNumberField(param) {
+    const input = document.createElement('input')
+    input.type = 'number'
+    input.className = 'modal-dialog-input'
+    input.step = param.type === 'float' ? 'any' : '1'
+    if (param.minimum != null) input.min = param.minimum
+    if (param.maximum != null) input.max = param.maximum
+    return input
   }
 
   _submit() {
@@ -354,10 +357,7 @@ export default class CommandArgsForm {
   }
 
   _buildCalendarText(command, values) {
-    const parts = [command.label]
-    if (values.date) parts.push(values.date)
-    if (values.memo) parts.push(values.memo)
-    return parts.join(' ')
+    return [command.label, values.date, values.memo].filter(Boolean).join(' ')
   }
 
   _buildTopicText(command, values) {
@@ -376,9 +376,7 @@ export default class CommandArgsForm {
   }
 
   _buildCompressText(command, values) {
-    const parts = [command.label]
-    if (values.instructions) parts.push(values.instructions)
-    return parts.join(' ')
+    return [command.label, values.instructions].filter(Boolean).join(' ')
   }
 
   _buildMentionField(param, wrapper) {

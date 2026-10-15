@@ -14,16 +14,7 @@ module Collavre
         head :forbidden and return
       end
 
-      scope = if params[:scope] == "contacts" && Current.user
-        # Include both contacts and searchable users (e.g., AI agents with searchable=true)
-        contact_ids = Current.user.contact_users.select(:id)
-        searchable_ids = Collavre::User.where(searchable: true).select(:id)
-        Collavre::User.where(id: contact_ids).or(Collavre::User.where(id: searchable_ids))
-      else
-        Collavre::User.mentionable_for(creative)
-      end
-
-      users = scope
+      users = search_scope(creative)
       if term.present?
         users = users.where("LOWER(users.email) LIKE :term OR LOWER(users.name) LIKE :term", term: "#{term}%")
       end
@@ -36,6 +27,14 @@ module Collavre
     end
 
     private
+
+    def search_scope(creative)
+      return Collavre::User.mentionable_for(creative) unless params[:scope] == "contacts" && Current.user
+
+      contact_ids = Current.user.contact_users.select(:id)
+      searchable_ids = Collavre::User.where(searchable: true).select(:id)
+      Collavre::User.where(id: contact_ids).or(Collavre::User.where(id: searchable_ids))
+    end
 
     def keep_agent_scope(scope, creative)
       return scope.none unless creative
