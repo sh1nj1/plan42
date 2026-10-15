@@ -284,7 +284,8 @@ body.chat-fullscreen {
 }
 
 #new-comment-form textarea {
-    width: 96%;
+    width: 100%;
+    box-sizing: border-box;
     resize: none;
     font-size: var(--text-1);
     overflow-y: auto;
@@ -2472,4 +2473,15 @@ li:hover .topic-create-option {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+
+/* Compact topic editors use a single border as their focus indicator. */
+.topic-input:focus,
+.topic-input:focus-visible,
+.topic-edit-input:focus,
+.topic-edit-input:focus-visible {
+    border-color: var(--color-link);
+    box-shadow: none;
+    outline: none;
 }

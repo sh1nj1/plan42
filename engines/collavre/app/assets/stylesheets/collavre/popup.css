@@ -160,6 +160,14 @@ body.chat-fullscreen #topic-list-modal {
 }
 
 .popup-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  flex: 0 0 28px;
   position: absolute;
   top: 0.75em;
   right: 0.75em;
