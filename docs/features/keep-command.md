@@ -80,3 +80,8 @@ suppresses drop dispatch until its shared slot becomes inactive. Evaluators
 revalidate the generation, control version, state, and current turn under the
 lock used to create and dispatch continuations, so a completed Pause prevents
 stale evaluators from posting further work.
+
+Deleting the topic used by a keep loop clears that loop configuration, allowing
+a new `/keep` in another topic. Other trigger settings and loops referencing
+other topics are preserved. No-agent notices are posted after the creative
+state-update lock is released.

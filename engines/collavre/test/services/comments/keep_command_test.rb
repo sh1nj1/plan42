@@ -32,6 +32,32 @@ module Collavre
                      Orchestration::Matcher.new(SystemEvents::ContextBuilder.new(comment.reload.dispatch_payload).build).match.map(&:id).sort
       end
 
+      test "no-agent notice is created outside the creative lock block" do
+        comment = command("/keep finish")
+        KeepCommand.new(comment: comment, user: @user).call
+        comment.skip_dispatch = true
+        comment.save!
+        locked = false
+        lock = lambda do |&block|
+          locked = true
+          block.call
+        ensure
+          locked = false
+        end
+        association = @creative.comments
+        create = association.method(:create!)
+        notice = lambda do |**attributes|
+          assert_not locked
+          assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+          create.call(**attributes)
+        end
+        @creative.stub(:with_lock, lock) do
+          @creative.stub(:comments, association) do
+            association.stub(:create!, notice) { comment.send(:reconcile_loop_dispatch, []) }
+          end
+        end
+      end
+
       test "initial dispatch without a matched agent awaits user instead of hanging" do
         comment = command("/keep finish")
         KeepCommand.new(comment: comment, user: @user).call

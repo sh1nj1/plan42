@@ -22,6 +22,7 @@ module Collavre
     # through the preference controller. Advance the ordering token first so a
     # client can distinguish that deletion from an older empty preference.
     before_destroy :advance_last_topic_preference_revisions, prepend: true
+    before_destroy :clear_keep_loop, prepend: true
 
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }
@@ -100,6 +101,18 @@ module Collavre
     end
 
     private
+
+    def clear_keep_loop
+      lock!
+      creative.with_lock do
+        data = (creative.data || {}).deep_dup
+        config = data.dig("trigger", "loop")
+        next unless config && config["source"] == "keep" && config["trigger_topic_id"] == id
+
+        data["trigger"].delete("loop")
+        creative.update!(data: data)
+      end
+    end
 
     def advance_last_topic_preference_revisions
       user_creative_preferences_as_last_topic.update_all(

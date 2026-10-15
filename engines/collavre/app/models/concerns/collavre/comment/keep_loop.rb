@@ -45,9 +45,9 @@ module Collavre
 
           loop_data["state"] = "awaiting_user"
           creative.update!(data: data)
-          creative.comments.create!(content: I18n.t("collavre.comments.keep_command.no_agent"),
-                                    topic_id: topic_id, skip_default_user: true)
         end
+        creative.comments.create!(content: I18n.t("collavre.comments.keep_command.no_agent"),
+                                  topic_id: topic_id, skip_default_user: true)
       end
 
       def post_loop_resume(iteration, max)
