@@ -368,7 +368,7 @@ body.chat-fullscreen {
 
 .comment-user-popup-email {
     overflow: hidden;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
     text-overflow: ellipsis;
 }
@@ -377,7 +377,7 @@ body.chat-fullscreen {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
 }
 
@@ -385,7 +385,7 @@ body.chat-fullscreen {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--color-text-muted);
+    background: var(--text-muted);
 }
 
 .comment-user-popup-status.is-online .comment-user-popup-status-dot {
@@ -404,7 +404,7 @@ body.chat-fullscreen {
     margin: var(--space-2) var(--space-2) var(--space-1);
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-border);
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
     line-height: 1.4;
 }
@@ -1522,7 +1522,7 @@ body.chat-fullscreen {
 .navigate-context-btn {
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     padding: 0 0.15em;
@@ -1537,7 +1537,7 @@ body.chat-fullscreen {
 .delete-context-btn {
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     padding: 0 0.15em;
@@ -2450,7 +2450,7 @@ li:hover .topic-create-option {
 .comment-agent-model-editor p {
     overflow-wrap: anywhere;
     margin: var(--space-1) 0;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
 }
 
