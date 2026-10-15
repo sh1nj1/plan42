@@ -34,7 +34,8 @@ bundle install
 
 ### 2. Run the Install Generator
 
-The install generator sets up JavaScript asset building for jsbundling-rails:
+The install generator sets up JavaScript asset building for jsbundling-rails
+and installs the PDF.js dependency through npm:
 
 ```bash
 rails generate collavre:install
@@ -174,9 +175,22 @@ When updating the Collavre gem:
 
 ```bash
 bundle update collavre
+bundle exec rails generate collavre:install
 npm run build
 rails db:migrate
 ```
+
+Rerunning `collavre:install` is required before building assets, including for
+hosts that already have Collavre configured. It installs `pdfjs-dist` at the
+exact Node.js 18-compatible version `4.8.69` and updates `script/build.cjs` so
+gem entry points can resolve dependencies from the host's `node_modules`.
+`bundle update` alone does not install JavaScript dependencies.
+
+Review and commit the resulting `package.json`, `package-lock.json`, and
+`script/build.cjs` changes. Keep the exact PDF.js version pin when updating
+dependencies. For a customized build script, merge the generator changes into
+your existing configuration; do not use `--replace-build-script` unless you
+intend to replace it entirely.
 
 ## Uninstalling
 
