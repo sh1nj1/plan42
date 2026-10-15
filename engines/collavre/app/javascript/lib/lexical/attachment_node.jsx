@@ -1,5 +1,5 @@
 import { createElement } from "react"
-import { attachmentLinkParts } from "./attachment_presentation"
+import { attachmentLinkLabel, attachmentLinkParts } from "./attachment_presentation"
 
 import {
     $applyNodeReplacement,
@@ -103,6 +103,7 @@ export class AttachmentNode extends DecoratorNode {
             href: this.__src,
             download: this.__filename,
             className: "attachment-link",
+            "aria-label": attachmentLinkLabel(this.__filename, this.__filesize),
             onClick: (event) => event.stopPropagation(),
         }, ...attachmentLinkParts(this.__filename, this.__filesize).map(({className, text, sizeLabel}, index) =>
             createElement("span", {className, key: index, "data-filesize-label": sizeLabel}, text)

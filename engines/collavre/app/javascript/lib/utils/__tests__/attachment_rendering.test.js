@@ -1,3 +1,4 @@
+import { computeAccessibleName } from 'dom-accessibility-api'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createEditor } from 'lexical'
 import { AttachmentNode, $createAttachmentNode } from '../../lexical/attachment_node'
@@ -18,6 +19,10 @@ describe('attachment rendering parity', () => {
       const saved = render(node.exportDOM().element.outerHTML).querySelector('a')
       const editing = document.createElement('div')
       editing.innerHTML = renderToStaticMarkup(node.decorate())
+      expect(computeAccessibleName(saved)).toBe('slides.pptx (2 KB)')
+      expect(computeAccessibleName(editing.firstChild)).toBe('slides.pptx (2 KB)')
+      expect(saved.textContent).toBe('slides.pptx')
+      expect(editing.firstChild.textContent).toBe('slides.pptx')
       expect(saved.innerHTML).toBe(editing.firstChild.innerHTML)
       expect(saved.className).toBe(editing.firstChild.className)
       expect(saved.getAttribute('href')).toBe(editing.firstChild.getAttribute('href'))
@@ -27,6 +32,15 @@ describe('attachment rendering parity', () => {
 
   test.each([null, '', '0', '-1', 'invalid'])('omits missing or invalid size %s', size => {
     expect(attachmentLinkParts('file', size)).toHaveLength(2)
+    const editor = createEditor({nodes: [AttachmentNode]})
+    editor.update(() => {
+      const node = $createAttachmentNode({src: '/file', filename: 'file', filesize: size})
+      const saved = render(node.exportDOM().element.outerHTML).querySelector('a')
+      const editing = document.createElement('div')
+      editing.innerHTML = renderToStaticMarkup(node.decorate())
+      expect(computeAccessibleName(saved)).toBe('file')
+      expect(computeAccessibleName(editing.firstChild)).toBe('file')
+    }, {discrete: true})
   })
 
   test('formats sizes consistently and escapes filenames', () => {
