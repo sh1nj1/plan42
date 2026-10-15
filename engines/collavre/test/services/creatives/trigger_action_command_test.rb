@@ -43,6 +43,7 @@ module Collavre
       end
 
       test "keep pause resume and restart reuse trigger actions with ambient routing" do
+        SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) do
         topic = @child.main_topic
         @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
           topic.id, source: "keep", goal: "Ship the feature"
@@ -66,6 +67,7 @@ module Collavre
         assert_equal "keep", @child.data.dig("trigger", "loop", "source")
         assert_equal topic.id, @child.comments.order(:id).last.topic_id
         assert_equal @container, @child.trigger_loop_context
+        end
       end
 
       test "rejects unknown actions" do

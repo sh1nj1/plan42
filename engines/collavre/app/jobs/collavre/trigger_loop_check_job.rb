@@ -176,7 +176,7 @@ module Collavre
         topic_id: topic.id,
         private: false,
         user: child_creative.user,
-        skip_dispatch: false  # Let after_create_commit dispatch this
+        loop_continuation: true, skip_dispatch: false  # Let after_create_commit dispatch this
       )
     end
 
@@ -195,7 +195,7 @@ module Collavre
         topic_id: topic.id,
         private: false,
         user: child_creative.user,
-        skip_dispatch: false
+        loop_continuation: true, skip_dispatch: false
       )
     end
 

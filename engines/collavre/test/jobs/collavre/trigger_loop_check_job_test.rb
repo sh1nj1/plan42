@@ -62,13 +62,70 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "keep ignores unrelated tasks and consumes each current turn once" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 999)
+      @child.update!(data: data)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      unrelated = Task.create!(name: "Unrelated", status: "running", created_at: @task.created_at, agent: @ai_bot, creative: @child, topic_id: @topic.id,
+                               trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000 } })
+      TriggerLoopCheckJob.perform_now(unrelated.id)
+      assert_equal 0, @child.reload.data.dig("trigger", "loop", "current_iteration")
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+        next_id = @child.reload.data.dig("trigger", "loop", "current_comment_id")
+        assert next_id.present?
+        assert_not_equal 999, next_id
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+      assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "keep follows its current comment when deferred tasks are reanchored" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      @child.update!(data: data)
+      @task.update!(trigger_event_payload: { "comment" => { "id" => 1000 }, "merged_comment_ids" => [ 999 ] })
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
+      assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "new continuation invalidates an evaluator before any state change" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      @child.update!(data: data)
+      job = TriggerLoopCheckJob.new
+      job.send(:trigger_completion_topic, @task, data.dig("trigger", "loop"))
+      @child.comments.create!(content: "Continue", user: @human, topic: @topic,
+                              loop_continuation: true, skip_dispatch: true)
+      assert_raises(TriggerLoopHelpers::StaleLoopError) do
+        job.send(:update_loop_data, @child, state: "completed")
+      end
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "competing completions for the same keep comment advance only once" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      @child.update!(data: data)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      job = TriggerLoopCheckJob.new
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        job.stub(:evaluate_response, ->(*) { TriggerLoopCheckJob.perform_now(@task.id); :continue }) do
+          job.perform(@task.id)
+        end
+      end
+      assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
+    end
+
     test "keep retains its authorized selected agent on continuation" do
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
         @topic.id, source: "keep", agent_id: @ai_bot.id
       ) } })
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
-      SystemEvents::Dispatcher.stub(:dispatch, []) { TriggerLoopCheckJob.perform_now(@task.id) }
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
       assert_match(/\A@#{Regexp.escape(@ai_bot.name)}:/, @child.comments.order(:id).last.content)
     end
@@ -139,7 +196,7 @@ module Collavre
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
 
-      TriggerLoopCheckJob.perform_now(@task.id)
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
 
       assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
       continuation = @child.comments.order(:id).last

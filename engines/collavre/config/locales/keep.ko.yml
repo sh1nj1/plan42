@@ -2,6 +2,8 @@ ko:
   collavre:
     comments:
       keep_command:
+        args: "[--max 10] [@에이전트:] [목표]"
+        no_agent: "실행할 에이전트가 없습니다. 사용 가능한 에이전트를 선택한 뒤 재개하세요."
         not_authorized: "keep 반복을 시작하려면 쓰기 권한이 필요합니다."
         invalid_max: "--max에 1부터 50까지의 정수를 지정하세요 (기본값: 10)."
         description: "목표 또는 트리거 지침을 만족할 때까지 반복합니다."

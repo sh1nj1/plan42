@@ -68,3 +68,8 @@ before each continuation or infrastructure retry. If the selected agent is
 missing or no longer authorized, the loop enters `awaiting_user` without
 rerouting. Resume and Restart reject an unavailable selection until access is
 restored or a new `/keep` selects a different agent.
+
+Keep loops track the current trigger comment. Unrelated topic tasks and duplicate
+completions cannot advance that turn. If initial or continuation routing schedules
+no agent (including an Inbox-ineligible session agent), the loop enters
+`awaiting_user` and posts a notice instead of remaining running without a task.

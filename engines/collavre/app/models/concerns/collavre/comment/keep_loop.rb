@@ -6,11 +6,39 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
-        attr_accessor :keep_loop_options
+        attr_accessor :keep_loop_options, :loop_continuation
+        after_create :track_loop_turn, if: :loop_continuation
         after_create :initialize_keep_loop
       end
 
       private
+
+      def track_loop_turn
+        creative.with_lock do
+          data = (creative.data || {}).deep_dup
+          loop_data = data.dig("trigger", "loop")
+          return unless loop_data && loop_data["source"] == "keep" && loop_data["state"] == "running"
+
+          loop_data["current_comment_id"] = id
+          creative.update!(data: data)
+        end
+      end
+
+      def reconcile_loop_dispatch(agents)
+        return unless creative.keep_loop?
+
+        creative.with_lock do
+          data = (creative.data || {}).deep_dup
+          loop_data = data.dig("trigger", "loop")
+          return unless loop_data && loop_data["source"] == "keep" && loop_data["state"] == "running"
+          return unless loop_data["current_comment_id"] == id && agents.blank?
+
+          loop_data["state"] = "awaiting_user"
+          creative.update!(data: data)
+          creative.comments.create!(content: I18n.t("collavre.comments.keep_command.no_agent"),
+                                    topic_id: topic_id, skip_default_user: true)
+        end
+      end
 
       def post_loop_resume(iteration, max)
         return unless creative.trigger_loop_enabled?
@@ -27,7 +55,7 @@ module Collavre
           topic_id: topic_id,
           private: false,
           user: creative.user,
-          skip_dispatch: false
+          loop_continuation: true, skip_dispatch: false
         )
       end
 
@@ -50,7 +78,7 @@ module Collavre
 
           data = (creative.data || {}).deep_dup
           data["trigger"] ||= {}
-          data["trigger"]["loop"] = TriggerLoopConfig.build(topic_id, source: "keep", start_comment_id: id, **keep_loop_options)
+          data["trigger"]["loop"] = TriggerLoopConfig.build(topic_id, source: "keep", start_comment_id: id, current_comment_id: id, **keep_loop_options)
           creative.update!(data: data)
         end
       end

@@ -111,6 +111,7 @@ module Collavre
         content = "#{"@#{agent.name}: " if agent}#{restart_message(parent)}"
         comment = create_trigger_comment(topic, content, skip_dispatch: true)
         scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
+        comment.send(:reconcile_loop_dispatch, scheduled)
         Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end
 
@@ -145,7 +146,7 @@ module Collavre
           topic_id: topic.id,
           private: false,
           user: user,
-          skip_dispatch: skip_dispatch
+          loop_continuation: true, skip_dispatch: skip_dispatch
         )
       end
 

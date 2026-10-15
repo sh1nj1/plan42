@@ -16,7 +16,7 @@ module Collavre
     def keep_item
       { name: "keep", label: "/keep",
         description: I18n.t("collavre.comments.keep_command.description"),
-        args: "[goal] [@agent:] [--max 10]" }
+        args: I18n.t("collavre.comments.keep_command.args") }
     end
 
     def built_in_items

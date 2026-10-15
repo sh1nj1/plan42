@@ -9,6 +9,43 @@ module Collavre
         @topic = @creative.main_topic
       end
 
+      test "initial dispatch without a matched agent awaits user instead of hanging" do
+        comment = command("/keep finish")
+        KeepCommand.new(comment: comment, user: @user).call
+        SystemEvents::Dispatcher.stub(:dispatch, []) { comment.save! }
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_equal I18n.t("collavre.comments.keep_command.no_agent"), @creative.comments.order(:id).last.content
+      end
+
+      test "rejects keep in the Inbox System topic where dispatch is suppressed" do
+        @creative = Creative.create!(description: "Inbox", data: { "kind" => "inbox" }, user: @user)
+        @topic = @creative.system_topic
+        comment = command("/keep finish")
+        assert_equal I18n.t("collavre.comments.keep_command.no_agent"), KeepCommand.new(comment: comment, user: @user).call
+        assert_nil comment.keep_loop_options
+      end
+
+      test "Claude channel agent with feedback cannot strand keep in ordinary Inbox" do
+        @creative = Creative.create!(description: "Inbox", data: { "kind" => "inbox" }, user: @user)
+        @topic = @creative.main_topic
+        agent = users(:ai_bot)
+        agent.update!(llm_model: "claude-code")
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        comment = command("/keep @#{agent.name}: finish")
+        assert_nil KeepCommand.new(comment: comment, user: @user).call
+        comment.save!
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_empty Task.where(creative_id: @creative.id)
+      end
+
+      test "initial dispatch with an agent stays running" do
+        comment = command("/keep finish")
+        KeepCommand.new(comment: comment, user: @user).call
+        SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) { comment.save! }
+        assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_equal comment.id, @creative.data.dig("trigger", "loop", "current_comment_id")
+      end
+
       test "starts a standalone loop with default routing and limit" do
         comment = command("/keep finish the work")
         assert_nil KeepCommand.new(comment: comment, user: @user).call
@@ -172,8 +209,10 @@ module Collavre
           @topic.id, source: "keep", state: "awaiting_user"
         ) } })
         response = command("You can proceed")
-        response.save!
-        response.send(:resume_trigger_loop_if_awaiting)
+        SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) do
+          response.save!
+          response.send(:resume_trigger_loop_if_awaiting)
+        end
         assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
         refute_match(/@/, @creative.comments.order(:id).last.content)
       end
@@ -238,7 +277,7 @@ module Collavre
         @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
           @topic.id, source: "keep", state: "awaiting_user", agent_id: agent.id
         ) } })
-        SystemEvents::Dispatcher.stub(:dispatch, []) do
+        SystemEvents::Dispatcher.stub(:dispatch, [ agent ]) do
           command("Proceed").send(:resume_trigger_loop_if_awaiting)
         end
         assert_match(/@#{Regexp.escape(agent.name)}:/, @creative.comments.order(:id).last.content)

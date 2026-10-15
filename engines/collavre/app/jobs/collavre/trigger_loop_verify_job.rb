@@ -189,7 +189,7 @@ module Collavre
         topic_id: topic.id,
         private: false,
         user: child_creative.user,
-        skip_dispatch: false
+        loop_continuation: true, skip_dispatch: false
       )
     end
   end

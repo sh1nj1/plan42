@@ -63,6 +63,14 @@ module Collavre
       )
     end
 
+    test "verification ignores a task outside the current keep turn" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 1000)
+      @child.update!(data: data)
+      TriggerLoopVerifyJob.perform_now(@task.id)
+      assert_equal "pending_verification", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "verification results cannot overwrite a user pause" do
       [ :verified, :awaiting_user, "INCOMPLETE" ].each do |result|
         data = @child.reload.data.deep_dup

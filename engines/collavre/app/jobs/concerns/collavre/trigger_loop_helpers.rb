@@ -13,6 +13,7 @@ module Collavre
       @loop_start_comment_id = loop_config["start_comment_id"]
       @loop_expected_state = loop_config["state"]
       @loop_control_version = loop_config["control_version"]
+      @loop_current_comment_id = loop_config["current_comment_id"]
       return unless task.creative.trigger_loop_task?(task)
 
       id = loop_config["trigger_topic_id"]
@@ -59,18 +60,35 @@ module Collavre
         data = child_creative.data || {}
         trigger = data["trigger"] || {}
         loop_data = trigger["loop"] || {}
-        raise StaleLoopError if defined?(@loop_start_comment_id) && loop_data["start_comment_id"] != @loop_start_comment_id
-
-        if defined?(@loop_expected_state)
-          raise StaleLoopError unless loop_data["state"] == @loop_expected_state && loop_data["control_version"] == @loop_control_version
-        end
-
-        changes.each { |key, value| loop_data[key.to_s] = value }
+        validate_loop_snapshot!(loop_data)
+        apply_loop_changes(loop_data, changes)
         trigger["loop"] = loop_data
         data["trigger"] = trigger
         child_creative.update!(data: data)
         @loop_expected_state = loop_data["state"] if defined?(@loop_expected_state)
       end
+    end
+
+    def validate_loop_snapshot!(loop_data)
+      raise StaleLoopError if defined?(@loop_start_comment_id) && loop_data["start_comment_id"] != @loop_start_comment_id
+
+      if defined?(@loop_expected_state)
+        raise StaleLoopError unless loop_data["state"] == @loop_expected_state && loop_data["control_version"] == @loop_control_version
+      end
+
+      if defined?(@loop_current_comment_id) && loop_data["current_comment_id"] != @loop_current_comment_id
+        raise StaleLoopError
+      end
+    end
+
+    def apply_loop_changes(loop_data, changes)
+      if loop_data.key?("current_comment_id") && changes[:state] == "running"
+        changes[:current_comment_id] = nil
+      end
+      loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1 if defined?(@loop_expected_state)
+      @loop_control_version = loop_data["control_version"]
+      changes.each { |key, value| loop_data[key.to_s] = value }
+      @loop_current_comment_id = loop_data["current_comment_id"]
     end
 
     def continuation_agent(creative, topic)

@@ -13,6 +13,8 @@ module Collavre
         return message("private_not_supported") if @comment.private?
         return message("not_authorized") unless @comment.creative.has_permission?(@user, :write)
 
+        return message("no_agent") if dispatch_suppressed?
+
         text = @comment.content.to_s.strip.sub(/\A\/keep\s*/i, "")
         limit = text.slice!(/\A--max(?:\s+\S+)?(?=\s|\z)/)&.split&.last || "10"
         return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/) && limit.to_i <= 50
@@ -27,6 +29,10 @@ module Collavre
       end
 
       private
+
+      def dispatch_suppressed?
+        @comment.creative.inbox? && @comment.topic&.name == Creative::SYSTEM_TOPIC_NAME
+      end
 
       def leading_agent(text)
         @comment.mentioned_users.select(&:ai_user?).find do |user|

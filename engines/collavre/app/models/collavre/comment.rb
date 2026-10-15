@@ -549,7 +549,8 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
+      agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
+      reconcile_loop_dispatch(agents)
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
@@ -585,6 +586,7 @@ module Collavre
       creative.with_lock do
         loop_data = creative.data&.dig("trigger", "loop")
         return unless loop_data && loop_data["state"] == "awaiting_user"
+        return if id.present? && loop_data["current_comment_id"] == id
         return if creative.keep_loop_agent_unavailable?
 
         # Only resume if this comment is in the trigger topic

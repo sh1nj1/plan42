@@ -22,7 +22,14 @@ module Collavre
       end
 
       def trigger_loop_task?(task)
-        start_id = data&.dig("trigger", "loop", "start_comment_id")
+        loop_data = data&.dig("trigger", "loop") || {}
+        if loop_data.key?("current_comment_id")
+          payload = task.trigger_event_payload || {}
+          ids = [ payload.dig("comment", "id") ] + Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY])
+          return loop_data["current_comment_id"].present? && ids.compact.map(&:to_i).include?(loop_data["current_comment_id"])
+        end
+
+        start_id = loop_data["start_comment_id"]
         !start_id || task.trigger_event_payload&.dig("comment", "id").to_i >= start_id
       end
 
