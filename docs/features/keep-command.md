@@ -122,7 +122,10 @@ and drop loops are preserved.
 ### Interrupted turns
 
 Stopping, failing, or escalating the last task serving the current keep turn
-changes a running loop to `awaiting_user`. A coalesced replacement or another
+changes a running loop to `awaiting_user`. Completing without a finalized reply
+(including a blank response whose placeholder is removed) also releases the turn
+without consuming an iteration. Login waits still delegate to their replay.
+A coalesced replacement or another
 active/completed task serving that same turn retains ownership. Resume or a new `/keep` can then start work again. Unrelated
 tasks, paused loops, and drop loops are unaffected.
 

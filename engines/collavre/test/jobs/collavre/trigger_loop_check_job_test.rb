@@ -266,6 +266,57 @@ module Collavre
       end
     end
 
+    test "blank finalized keep response releases the current turn without evaluation" do
+      turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id, start_comment_id: turn.id)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => turn.id } })
+      placeholder = @child.comments.create!(content: "Thinking", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      assert_nil AiAgent::ResponseFinalizer.new(task: @task, agent: @ai_bot, original_comment: turn,
+        reply_comment: placeholder, response_content: "  ").finalize
+      assert_not Comment.exists?(placeholder.id)
+      TriggerLoopCheckJob.stub(:perform_later, ->(*) { flunk "Blank response must not be evaluated" }) do
+        @task.reload.update!(status: "done")
+      end
+      recovered = @child.reload.data.dig("trigger", "loop")
+      assert_equal "awaiting_user", recovered["state"]
+      assert_equal config["current_iteration"], recovered["current_iteration"]
+      assert_operator recovered["control_version"], :>, config.fetch("control_version", 0)
+    end
+
+    test "response-less completion preserves other owners and inactive or unrelated loops" do
+      [ { "source" => "drop" }, { "state" => "paused" }, { "current_comment_id" => 1000 } ].each do |change|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999).merge(change)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        @task.update_columns(status: "running")
+        @task.reload.update!(status: "done")
+        assert_equal config, @child.reload.data.dig("trigger", "loop")
+      end
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      survivor = Task.create!(name: "Other owner", status: "running", agent: @ai_bot, creative: @child,
+        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 999 } })
+      @task.update_columns(status: "running")
+      @task.reload.update!(status: "done")
+      assert_equal config, @child.reload.data.dig("trigger", "loop")
+      survivor.update!(status: "done")
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "login delegation and finalized review output do not release keep ownership" do
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, cooldown_seconds: 0)
+      [ { "retryable" => true }, { "replay_completed" => true }, { "replay_abandoned" => true } ].each do |login|
+        @child.update!(data: { "trigger" => { "loop" => config.deep_dup } })
+        @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999 }, "engine_login" => login })
+        TriggerLoopCheckJob.stub(:perform_later, ->(*) { }) { @task.reload.update!(status: "done") }
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      end
+      @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999 } })
+      @task.task_actions.create!(action_type: "review_updated", status: "done", payload: {})
+      TriggerLoopCheckJob.stub(:perform_later, ->(*) { }) { @task.reload.update!(status: "done") }
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "terminal unsuccessful tasks release only the persisted current keep turn" do
       %w[cancelled failed escalated].each do |status|
         data = @child.reload.data.deep_dup

@@ -12,9 +12,9 @@ module Collavre
 
       private
 
-      # A stopped or failed current turn cannot produce a completion callback.
+      # A terminal turn without usable output cannot produce a completion callback.
       def release_terminated_keep_turn
-        return unless status.in?(%w[cancelled failed escalated]) && trigger_event_name == "comment_created"
+        return unless recheck_abandonment_candidate?
         return unless creative
 
         target = creative
@@ -34,7 +34,7 @@ module Collavre
 
       def terminated_keep_turn?(target)
         task = self.class.find(id)
-        task.status.in?(%w[cancelled failed escalated]) && target.trigger_loop_task?(task)
+        task.send(:recheck_abandonment_candidate?) && target.trigger_loop_task?(task)
       end
 
       # Coalescing and ambient fan-out may leave another task owning this turn.
