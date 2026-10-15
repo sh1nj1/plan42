@@ -24,12 +24,23 @@ module Collavre
       test "rejects judgment-only primary agents with a localized explanation" do
         @ai_agent.update!(llm_vendor: "typesafe", llm_model: "jev-latest")
         comment = create_comment('/topic "Judge" @TestAgent:')
-        result = comment.stub(:mentioned_users, [ @ai_agent ]) do
-          TopicCommand.new(comment: comment, user: @user).call
-        end
+        result = TopicCommand.new(comment: comment, user: @user).call
 
         assert_equal I18n.t("collavre.comments.topic_command.agent_chat_not_supported", agent: @ai_agent.display_name), result
         assert_not Topic.exists?(creative: @creative, name: "Judge")
+      end
+
+      test "explicit judgment-only selector preserves an existing primary pin" do
+        @topic.set_primary_agent!(@ai_agent)
+        judge = users(:two)
+        judge.update!(name: "JudgeSelector", llm_vendor: "typesafe", searchable: true)
+        [ "@JudgeSelector:", "@#{judge.email}" ].each do |selector|
+          comment = create_comment("/topic \"Test Topic\" #{selector}")
+          result = TopicCommand.new(comment: comment, user: @user).call
+          assert_equal I18n.t("collavre.comments.topic_command.agent_chat_not_supported", agent: judge.display_name), result
+          assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+          assert_not_includes comment.mentioned_users, judge
+        end
       end
 
       test "creates topic with quoted name" do

@@ -47,8 +47,9 @@ module Collavre
         data = parsed_args
         return I18n.t("collavre.comments.topic_command.missing_name") if data.blank?
 
-        # Find primary agent from @mentions using the same parsing as chat
-        primary_agent = comment.mentioned_users.find(&:ai_user?)
+        # Resolve explicit selectors before capability filtering so invalid agents
+        # are rejected rather than interpreted as a request to release the pin.
+        primary_agent = comment.mentioned_users(chat_only: false).find(&:ai_user?)
 
         # Find existing topic or create new one
         existing_topic = Topic.find_by(creative: creative, name: data[:name])

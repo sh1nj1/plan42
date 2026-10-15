@@ -230,14 +230,14 @@ module Collavre
       owned.or(searchable).order(:name)
     end
 
-    def self.mentionable_for(creative)
-      scope = where(searchable: true).chat_capable
+    def self.mentionable_for(creative, chat_only: true)
+      candidates = chat_only ? chat_capable : all
+      scope = candidates.where(searchable: true)
       return scope unless creative
 
       origin = creative.effective_origin
-      permitted_users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
-      permitted_ids = permitted_users.compact.map(&:id)
-      permitted_ids.any? ? scope.or(where(id: permitted_ids).chat_capable) : scope
+      permitted_ids = ([ origin.user ] + origin.all_shared_users(:feedback).map(&:user)).compact.map(&:id)
+      permitted_ids.any? ? scope.or(candidates.where(id: permitted_ids)) : scope
     end
 
     normalizes :email, with: ->(e) { e.strip.downcase }
