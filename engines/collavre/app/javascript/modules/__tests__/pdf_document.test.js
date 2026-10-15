@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { jest } from '@jest/globals'
 import { initializePdfDocument } from '../pdf_document'
 
@@ -152,4 +153,38 @@ test.each([true, false])('queued render determines error state after an earlier 
   expect(viewer.querySelector('[data-document-error]').hidden).toBe(succeeds)
   expect(viewer.querySelector('.media-loading').hidden).toBe(true)
   expect(Boolean(viewer.querySelector('canvas'))).toBe(succeeds)
+})
+
+
+test('PDF failures overlay the document area and remain hidden after recovery', async () => {
+  const style = document.createElement('style')
+  style.textContent = readFileSync('engines/collavre/app/assets/stylesheets/collavre/slide_view.css', 'utf8')
+  document.head.append(style)
+  const viewer = setup()
+  viewer.classList.add('document-viewer')
+  const content = document.createElement('div')
+  content.id = 'slide-content'
+  viewer.prepend(content)
+  content.append(viewer.querySelector('[data-pdf-src]'), viewer.querySelector('.media-loading'), viewer.querySelector('[data-document-error]'))
+  const error = viewer.querySelector('[data-document-error]')
+  try {
+    expect(getComputedStyle(error).display).toBe('none')
+    await initializePdfDocument(viewer, async () => { throw new Error('Load failed') })
+    expect(getComputedStyle(content).position).toBe('relative')
+    expect(getComputedStyle(error).position).toBe('absolute')
+    expect(getComputedStyle(error).inset).toBe('0')
+    expect(getComputedStyle(error).display).toBe('grid')
+    expect(getComputedStyle(error).placeItems).toBe('center')
+    const getPage = async () => ({
+      getViewport: () => ({ width: 400, height: 600 }),
+      render: () => ({ promise: Promise.resolve() })
+    })
+    await initializePdfDocument(viewer, async () => ({
+      getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage }) }), GlobalWorkerOptions: {}
+    }))
+    expect(getComputedStyle(error).display).toBe('none')
+    expect(content.querySelector('canvas')).not.toBeNull()
+  } finally {
+    style.remove()
+  }
 })
