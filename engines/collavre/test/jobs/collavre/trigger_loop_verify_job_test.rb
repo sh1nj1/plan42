@@ -128,6 +128,26 @@ module Collavre
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
     end
 
+    test "evaluator rechecks feedback after selection is downgraded to read" do
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      job = TriggerLoopVerifyJob.new
+      lookup = job.method(:pick_verifier_agent)
+      selected = false
+      downgrade = lambda do |*args|
+        agent = lookup.call(*args)
+        assert_equal @ai_bot, agent
+        selected = true
+        share.update_columns(permission: :read)
+        agent
+      end
+      AiClient.stub(:new, ->(*) { flunk "Read-only verifier received loop content" }) do
+        job.stub(:pick_verifier_agent, downgrade) do
+          job.perform(@task.id)
+        end
+      end
+      assert selected
+    end
+
     test "keep evaluator never sends loop content to a denied or revoked verifier" do
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       CreativeShare.create!(creative: @child, user: nil, permission: :read)

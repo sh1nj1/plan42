@@ -320,6 +320,27 @@ module Collavre
       end
     end
 
+    test "evaluator rechecks feedback after selection is downgraded to read" do
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      job = TriggerLoopCheckJob.new
+      lookup = job.method(:pick_fallback_agent)
+      selected = false
+      downgrade = lambda do |*args|
+        agent = lookup.call(*args)
+        assert_equal @ai_bot, agent
+        selected = true
+        share.update_columns(permission: :read)
+        agent
+      end
+      AiClient.stub(:new, ->(*) { flunk "Read-only verifier received loop content" }) do
+        job.stub(:pick_fallback_agent, downgrade) do
+          comment = @child.comments.create!(content: "Private response", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+          assert_equal :continue, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+        end
+      end
+      assert selected
+    end
+
     test "keep evaluator never sends loop content to a denied or revoked verifier" do
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       CreativeShare.create!(creative: @child, user: nil, permission: :read)
