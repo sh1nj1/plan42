@@ -8,6 +8,7 @@ import { cacheSavedMarkdownSource } from './queued_creative_row'
 const creates = new WeakMap()
 const anchors = new WeakMap()
 const failedDrafts = new WeakMap()
+const chains = new WeakMap()
 const dependents = new WeakMap()
 const retryDeletes = new WeakMap()
 const holds = new WeakMap()
@@ -41,12 +42,15 @@ const saved = (row) => row.isConnected && row.dataset.id
 // Hands over the draft of a row whose background create failed, so the editor
 // can reopen it as a new creative and retry the create: in front of the first
 // saved row below it, else after the nearest saved row of its failed chain
-// above it, else in the slot it asked for.
+// above it, else in the slot it asked for. The chain outlives the draft, so a
+// retry that fails again still knows its neighbours.
 export function takeFailedDraft(tree) {
   const draft = failedDrafts.get(tree)
   failedDrafts.delete(tree)
-  const next = draft?.successors?.find(saved)
-  const previous = draft?.predecessors.findLast(saved)
+  if (!draft) return draft
+  const { predecessors, successors = [] } = chains.get(tree)
+  const next = successors.find(saved)
+  const previous = predecessors.findLast(saved)
   if (next) Object.assign(draft, { afterId: '', beforeId: next.dataset.id })
   else if (previous) Object.assign(draft, { afterId: previous.dataset.id, beforeId: '' })
   return draft
@@ -73,7 +77,8 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     // The row keeps showing the text; flag it and say so, since the editor
     // has already moved on. Opening the row again restores the draft.
     tree.dataset.saveState = 'error'
-    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId, predecessors: fallback.failedTrees || [] })
+    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
+    if (!chains.has(tree)) chains.set(tree, { predecessors: fallback.failedTrees || [] })
     retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
     failed(error)
     return { ...fallback, failedTrees: [...(fallback.failedTrees || []), tree] }
@@ -119,10 +124,11 @@ export function releaseFailedRows(tree) {
 export function retargetFailedDrafts(tree) {
   const failedTrees = dependents.get(tree) || []
   failedTrees.forEach((failedTree, index) => {
-    const draft = failedDrafts.get(failedTree)
-    if (draft && !draft.successors) draft.successors = [...failedTrees.slice(index + 1), tree]
+    const chain = chains.get(failedTree)
+    if (chain && !chain.successors) chain.successors = [...failedTrees.slice(index + 1), tree]
   })
   dependents.delete(tree)
+  chains.delete(tree)
 }
 
 // Each edit request takes a ticket. waitToEdit() is falsy when nothing is in
