@@ -2473,3 +2473,15 @@ li:hover .topic-create-option {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.comments-loading {
+    padding: 16px;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8em;
+}
+
+.comments-loading .creative-loading-indicator {
+    margin-left: 0;
+}

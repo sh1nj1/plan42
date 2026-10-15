@@ -6,17 +6,22 @@ import { jest } from '@jest/globals'
 import CommentsListController from '../list_controller'
 
 describe('CommentsListController docked startup', () => {
-  test.each([undefined, '<div>불러오는 중...</div>'])('search shows configured loading markup or the default spinner: %s', (loadingText) => {
+  test.each([undefined, '<div>불러오는 중...</div>'])('search shows configured loading markup or the default emoji loader: %s', (loadingHtml) => {
     const controller = Object.create(CommentsListController.prototype)
     controller.flushPendingRead = jest.fn()
     controller.resetState = jest.fn()
     controller.loadInitialComments = jest.fn()
     controller.listTarget = document.createElement('div')
-    Object.defineProperty(controller, 'element', { value: { dataset: { loadingText } } })
+    Object.defineProperty(controller, 'element', { value: { dataset: { loadingHtml } } })
 
     controller.applySearchQuery('invoice')
 
-    expect(controller.listTarget.innerHTML).toBe(loadingText || '<div class="loading-spinner">Loading...</div>')
+    if (loadingHtml) {
+      expect(controller.listTarget.innerHTML).toBe(loadingHtml)
+    } else {
+      expect(controller.listTarget.querySelector('[role="status"][data-controller="comments--loading"]')).not.toBeNull()
+      expect(controller.listTarget.querySelectorAll('.creative-loading-dot')).toHaveLength(3)
+    }
     expect(controller.manualSearchQuery).toBe('invoice')
     expect(controller.loadInitialComments).toHaveBeenCalledTimes(1)
   })
@@ -72,7 +77,7 @@ describe('CommentsListController docked startup', () => {
     controller.resetState = jest.fn()
     controller.loadInitialComments = jest.fn()
     controller.listTarget = { innerHTML: '' }
-    Object.defineProperty(controller, 'element', { value: { dataset: { loadingText: 'Loading' } } })
+    Object.defineProperty(controller, 'element', { value: { dataset: { loadingHtml: '<div role="status">Loading</div>' } } })
     Object.defineProperty(controller, 'presenceController', { value: null })
 
     // Popup initialization pre-sets creativeId before this method runs, so the

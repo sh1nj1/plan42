@@ -161,7 +161,7 @@ export default class extends Controller {
     this.deepLinkCommentId = null
 
     this.resetState()
-    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
     this.presenceController?.clearManualTypingMessage()
     this.loadInitialComments()
   }
@@ -189,7 +189,7 @@ export default class extends Controller {
 
   resetToLatest() {
     this.resetState()
-    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
     // Optimistically set if we know it
     this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
     this.loadInitialComments()
@@ -444,7 +444,7 @@ export default class extends Controller {
     this.flushPendingRead()
     this.resetState()
     this.manualSearchQuery = query
-    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
     this.loadInitialComments()
   }
 

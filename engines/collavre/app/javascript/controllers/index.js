@@ -16,6 +16,7 @@ import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
 import CreativesWorkflowRuleController from "./creatives/workflow_rule_controller"
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
+import CommentsLoadingController from "./comments/loading_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
 import CommentsRunOptionsController from "./comments/run_options_controller"
@@ -77,6 +78,7 @@ export {
   CreativesRowEditorController,
   CreativesTreeController,
   CreativesSyncController,
+  CommentsLoadingController,
   CommentsListController,
   CommentsFormController,
   CommentsPresenceController,
@@ -158,6 +160,7 @@ export function registerControllers(application) {
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)
   registerCreativeControllers(application)
+  application.register("comments--loading", CommentsLoadingController)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
   application.register("comments--run-options", CommentsRunOptionsController)
