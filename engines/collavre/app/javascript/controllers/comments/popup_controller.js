@@ -263,7 +263,8 @@ export default class extends Controller {
         } else if (highlightId) {
           this.reloadDockedHighlight(creativeId, highlightId)
         }
-        return
+        // Workspace navigation replaces the title after chat has already opened.
+        return this._markChatActiveRow(this.element.dataset.creativeId)
       }
       this.close()
       return
