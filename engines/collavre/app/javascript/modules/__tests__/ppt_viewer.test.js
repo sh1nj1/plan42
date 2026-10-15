@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { jest } from '@jest/globals'
 import { initializePptViewer } from '../ppt_viewer'
 
@@ -169,4 +170,22 @@ test('document viewers initialize fullscreen without presentation navigation', a
   await tick()
   expect(viewer.requestFullscreen).toHaveBeenCalledTimes(1)
   expect(document.activeElement).toBe(viewer)
+})
+
+test('document fullscreen control stays hidden when fullscreen is unsupported', () => {
+  const style = document.createElement('style')
+  style.textContent = readFileSync('engines/collavre/app/assets/stylesheets/collavre/slide_view.css', 'utf8')
+  document.head.append(style)
+  const viewer = setup(false)
+  viewer.classList.add('document-viewer')
+  const controls = document.createElement('div')
+  controls.id = 'slide-controls'
+  viewer.append(controls)
+  const button = viewer.querySelector('[data-ppt-fullscreen]')
+  controls.append(button)
+  expect(button.hidden).toBe(true)
+  expect(getComputedStyle(button).display).toBe('none')
+  button.hidden = false
+  expect(getComputedStyle(button).display).toBe('block')
+  style.remove()
 })

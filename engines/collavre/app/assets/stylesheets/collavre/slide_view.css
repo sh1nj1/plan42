@@ -258,7 +258,7 @@
   filter: none;
 }
 .document-viewer #slide-controls svg { width: 24px; height: 24px; }
-.document-viewer #slide-controls [data-ppt-fullscreen] { display: block; }
+.document-viewer #slide-controls [data-ppt-fullscreen]:not([hidden]) { display: block; }
 .document-viewer:fullscreen #slide-controls [data-ppt-fullscreen] { display: none; }
 .document-viewer #slide-controls [data-ppt-previous],
 .document-viewer #slide-controls [data-ppt-next],
