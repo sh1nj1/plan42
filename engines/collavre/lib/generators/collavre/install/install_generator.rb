@@ -54,10 +54,19 @@ module Collavre
       def update_existing_build_script(build_script)
         content = File.read(build_script)
 
-        unless content.include?("nodePaths:")
-          content = content.sub(/\bbundle:\s*true\s*(?:,|(?=\}))/, "bundle: true,\n    nodePaths: [require('path').join(process.cwd(), 'node_modules')],")
-          File.write(build_script, content)
+        host_path = "require('path').join(process.cwd(), 'node_modules')"
+        if content.match?(/\bnodePaths\s*:/)
+          unless content.include?(host_path)
+            updated = content.sub(/\bnodePaths\s*:\s*\[/, "nodePaths: [#{host_path}, ")
+            if updated == content
+              raise Thor::Error, "Cannot update dynamic nodePaths. Add #{host_path} to nodePaths and rerun the generator."
+            end
+            content = updated
+          end
+        else
+          content = content.sub(/\bbundle:\s*true\s*(?:,|(?=\}))/, "bundle: true,\n    nodePaths: [#{host_path}],")
         end
+        File.write(build_script, content)
 
         # Check if already installed
         if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
