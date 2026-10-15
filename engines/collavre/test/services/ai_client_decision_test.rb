@@ -278,6 +278,32 @@ module Collavre
       end
     end
 
+    test "invalid score scales fail before either decision adapter is called" do
+      [ "google", "typesafe" ].each do |vendor|
+        client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Invalid scale reached native adapter" }) do
+          client.stub(:chat_decision, ->(*) { flunk "Invalid scale reached chat adapter" }) do
+            [ 0, 1, 11 ].each do |count|
+              assert_raises(ArgumentError) do
+                client.judge("Task", questions: { rating: { type: :score, levels: Array.new(count, "level") } })
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "score scales accept both native contract boundaries" do
+      [ 2, 10 ].each do |count|
+        definitions = DecisionQuestions.new(rating: { type: :score, levels: Array.new(count, "level") })
+        assert_equal count - 1, definitions.schema.dig(:properties, :answers, :properties, "rating", :properties, "score", :maximum)
+        [ 0, count - 1 ].each do |score|
+          result = definitions.normalize({ answers: { rating: { score: score } } }, source: "chat")
+          assert_equal score, result.dig("answers", "rating", "score")
+        end
+      end
+    end
+
     test "decision questions validate probability and score bounds" do
       definitions = DecisionQuestions.new(p: { type: :probability }, s: { type: :score, levels: %w[low high] })
       assert definitions.schema

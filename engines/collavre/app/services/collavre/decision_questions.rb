@@ -42,10 +42,17 @@ module Collavre
         raise ArgumentError, "A choice needs options" if options.empty?
         { type: "string", enum: options }
       when "probability" then { type: "number", minimum: 0, maximum: 1 }
-      when "score" then { type: "number", minimum: 0, maximum: definition.fetch("levels").size - 1 }
+      when "score" then score_schema(definition)
       else raise ArgumentError, "Unsupported question type: #{type}"
       end
       { type: "object", properties: { type => value }, required: [ type ], additionalProperties: false }
+    end
+
+    def score_schema(definition)
+      count = definition.fetch("levels").size
+      raise ArgumentError, "A score needs 2 to 10 levels" unless (2..10).cover?(count)
+
+      { type: "number", minimum: 0, maximum: count - 1 }
     end
 
     def validate_value!(value, definition)
