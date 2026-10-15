@@ -23,6 +23,15 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
     assert_file "script/build.cjs", /nodePaths: \[path\.join\(process\.cwd\(\), 'node_modules'\)\]/
   end
 
+  test "installs an exact PDF.js dependency with Yarn in Yarn hosts" do
+    File.write(File.join(destination_root, "yarn.lock"), "")
+    generator = self.class.generator_class.new([], {}, destination_root: destination_root)
+    generator.stub(:run, ->(command, **options) {
+      assert_equal "yarn add --exact pdfjs-dist@4.8.69", command
+      assert_equal true, options[:abort_on_failure]
+    }) { generator.install_pdf_dependency }
+  end
+
   test "adds host dependency resolution to an existing build script" do
     FileUtils.mkdir_p(File.join(destination_root, "script"))
     File.write(File.join(destination_root, "script/build.cjs"), <<~JS)

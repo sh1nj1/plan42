@@ -22,7 +22,8 @@ module Collavre
       end
 
       def install_pdf_dependency
-        run "npm install --save-exact pdfjs-dist@4.8.69", abort_on_failure: true
+        manager = File.exist?(File.join(destination_root, "yarn.lock")) ? "yarn add --exact" : "npm install --save-exact"
+        run "#{manager} pdfjs-dist@4.8.69", abort_on_failure: true
       end
 
       def show_post_install
