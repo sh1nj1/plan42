@@ -8,6 +8,18 @@ class CreativesControllerTest < ActionDispatch::IntegrationTest
     sign_in_as(users(:one), password: "password")
   end
 
+  test "index provides engine owned document loading labels in both locales" do
+    %w[en ko].each do |locale|
+      users(:one).update!(locale: locale)
+      get creatives_path
+
+      assert_response :success
+      assert_select 'meta[name="document-loading"]', count: 1 do |tags|
+        assert_equal I18n.t("collavre.ppt_viewer.loading", locale: locale), tags.first["content"]
+      end
+    end
+  end
+
   test "workspace restores merged root preferences without changing stored rows" do
     allow_legacy_root_duplicates!
     root = Creative.create!(user: users(:one), description: "Root")
