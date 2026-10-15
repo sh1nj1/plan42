@@ -27,6 +27,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
     destroy: jest.fn(() => new Promise(() => {})),
     archive: jest.fn(() => new Promise(() => {})),
     linkExisting: jest.fn(() => Promise.resolve()),
+    updateMetadata: jest.fn(() => Promise.resolve({ ok: true })),
   },
 }))
 jest.unstable_mockModule('../../lib/utils/dialog', () => ({
@@ -1556,5 +1557,80 @@ describe('Enter on a new creative saves it in the background', () => {
 
     expect(event.detail.resume).toHaveBeenCalledTimes(1)
     expect(attachmentDeletes()).toEqual([])
+  })
+
+  test('a row reparented while its create waits for the previous id is bound to its new parent', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementationOnce(() => Promise.resolve(created(78)))
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    type('second creative')
+    document.getElementById('inline-close').click()
+    await flush()
+    document.getElementById('inline-parent-id').value = '5'
+
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(sentField(saveMock.mock.calls[1], 'creative[parent_id]')).toBe('5')
+    expect(second.dataset.id).toBe('78')
+    expect(second.dataset.parentId).toBe('5')
+    expect(second.parentElement.getAttribute('parent-id')).toBe('5')
+  })
+
+  test('attachments removed from a failed draft are deleted when it is emptied and closed', async () => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+    const first = await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+    clickRow(first)
+    await flush()
+    deletedAttachments = ['blob-2']
+    type('')
+
+    document.getElementById('inline-close').click()
+    await flush()
+
+    expect(first.isConnected).toBe(false)
+    expect(attachmentDeletes()).toEqual(['/attachments/blob-1', '/attachments/blob-2'])
+  })
+
+  test('a click that waits out a pending create yields to opening the metadata editor on the open row', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    creativesApi.updateMetadata.mockClear()
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const { tree: existing } = appendExistingRow(9)
+    clickRow(existing)
+    await flush()
+
+    clickRow(first)
+    await flush()
+    document.getElementById('inline-metadata-btn').click()
+    firstPost.resolve(created(77))
+    await flush()
+    expect(template().parentElement).toBe(existing)
+    document.getElementById('metadata-save-btn').click()
+    await flush()
+
+    expect(creativesApi.updateMetadata).toHaveBeenCalledWith('9', {})
+  })
+
+  test('the metadata editor kept open across a switch saves to the row opened since', async () => {
+    creativesApi.updateMetadata.mockClear()
+    const { tree: existing } = appendExistingRow(9)
+    const { tree: other } = appendExistingRow(10)
+    clickRow(existing)
+    await flush()
+    document.getElementById('inline-metadata-btn').click()
+    clickRow(other)
+    await flush()
+    document.getElementById('metadata-save-btn').click()
+    await flush()
+
+    expect(creativesApi.updateMetadata).toHaveBeenCalledWith('10', {})
   })
 })

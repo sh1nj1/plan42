@@ -492,15 +492,18 @@ function setupEditorSession() {
         lexicalEditor.focus();
       }
       updateActionButtonStates();
-      // Reload metadata if the popup is open
-      if (isMetadataPopupVisible()) {
-        if (data.data !== undefined) {
-          // Use data already fetched from API response — avoids extra request
-          const yamlStr = yaml.dump(data.data || {}, { lineWidth: -1 });
-          metadataEditor.value = yamlStr;
-        } else {
-          loadMetadataForCreative(creativeId);
-        }
+      reloadOpenMetadata(creativeId, data);
+    }
+
+    // Reload metadata if the popup is open, now for the row the editor opened.
+    function reloadOpenMetadata(creativeId, data) {
+      if (!isMetadataPopupVisible()) return;
+      metadataPopup.dataset.creativeId = creativeId || '';
+      if (data.data !== undefined) {
+        // Use data already fetched from API response — avoids extra request
+        metadataEditor.value = yaml.dump(data.data || {}, { lineWidth: -1 });
+      } else {
+        loadMetadataForCreative(creativeId);
       }
     }
 
@@ -794,7 +797,9 @@ function setupEditorSession() {
           return null;
         }
 
-        const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
+        // The parent this request is sent with: a reparent while the save waited
+        // on its anchor changed the form, so the pre-wait argument is stale.
+        const method = methodInput.value === 'patch' ? 'PATCH' : 'POST', sentParentId = parentInput.value;
         pendingSave = false;
         if (!form.action) return null;
         // Only reflect this save's outcome while the editor is still bound to the
@@ -847,7 +852,7 @@ function setupEditorSession() {
               form.action = `/creatives/${data.id}`;
               methodInput.value = 'patch';
               form.dataset.creativeId = data.id;
-              adoptCreatedTree(tree, data, parentId, currentRowElement);
+              adoptCreatedTree(tree, data, sentParentId, currentRowElement);
             } else if (method === 'PATCH') {
               refreshRow(tree);
             }
@@ -1038,9 +1043,7 @@ function setupEditorSession() {
           }
           releaseEditingPresence();
           if (wasNew && !form.dataset.creativeId) {
-            // removeTreeElement() restores the placeholder when this leaves the
-            // tree empty — see creative_tree_dom.js.
-            removeTreeElement(tree);
+            discardEmptiedDraft(tree);
           } else if (!tree.querySelector('.creative-row')) {
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) {
@@ -1062,6 +1065,12 @@ function setupEditorSession() {
       const closePromise = uploadsPending ? waitForUploads().then(finalizeHide) : finalizeHide();
       return Promise.resolve(closePromise).finally(() => { closeSaveInProgress = false; });
     }
+
+    // An emptied new row is discarded: no create will drain the uploads removed
+    // from it, whether by an earlier failed create or since. removeTreeElement()
+    // restores the placeholder when this leaves the tree empty — see
+    // creative_tree_dom.js.
+    const discardEmptiedDraft = (tree) => { [...takeRetryDeletedIds(tree), ...(lexicalEditor.getDeletedAttachments?.() || [])].forEach(deleteAttachment); removeTreeElement(tree); };
 
     function flushOnClose(tree, parentId, editCreativeId, waitForServer) {
       if (!typeEditor.needsFlush(pendingSave, saveQueue.saving)) return apiQueue.waitFor(waitForServer ? `creative_${editCreativeId}` : null);
@@ -2221,6 +2230,10 @@ function setupEditorSession() {
           return;
         }
 
+        // A later edit request: a click waiting on a pending create must not
+        // move the editor, and the popup saves to the row it was opened on.
+        editTickets.take();
+        metadataPopup.dataset.creativeId = creativeId;
         loadMetadataForCreative(creativeId);
         metadataPopup.style.display = 'block';
       });
@@ -2233,7 +2246,7 @@ function setupEditorSession() {
 
       if (metadataSaveBtn) {
         metadataSaveBtn.addEventListener('click', function () {
-          const creativeId = form.dataset.creativeId;
+          const creativeId = metadataPopup.dataset.creativeId;
           if (!creativeId) return;
 
           try {
