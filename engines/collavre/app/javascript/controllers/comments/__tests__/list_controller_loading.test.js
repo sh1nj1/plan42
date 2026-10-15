@@ -3,7 +3,7 @@ import { jest } from '@jest/globals'
 import CommentsListController from '../list_controller'
 
 describe('comment loading placeholders', () => {
-  test.each(['onPopupOpened', 'resetToLatest', 'applySearchQuery'])('%s displays three skeleton rows while loading', (method) => {
+  test.each(['onPopupOpened', 'resetToLatest', 'applySearchQuery'])('%s displays the emoji loading indicator while loading', (method) => {
     const controller = Object.create(CommentsListController.prototype)
     Object.defineProperties(controller, {
       element: { value: document.createElement('div') },
@@ -18,7 +18,7 @@ describe('comment loading placeholders', () => {
     controller[method]()
 
     expect(controller.listTarget.querySelector('[role="status"]')).not.toBeNull()
-    expect(controller.listTarget.querySelectorAll('.comments-loading-row')).toHaveLength(3)
+    expect(controller.listTarget.querySelectorAll('.creative-loading-dot')).toHaveLength(3)
     expect(controller.listTarget.textContent).not.toContain('Loading')
     expect(controller.loadInitialComments).toHaveBeenCalledTimes(1)
   })
