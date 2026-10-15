@@ -63,6 +63,29 @@ module Collavre
       )
     end
 
+    test "pause after failed verification transition prevents the next turn" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"]["source"] = "keep"
+      @child.update!(data: data)
+      job = TriggerLoopVerifyJob.new
+      original = job.method(:continuation_agent)
+      job.stub(:pick_verifier_agent, @ai_bot) do
+        job.stub(:verify_completion, "INCOMPLETE") do
+          job.stub(:continuation_agent, ->(creative, topic) {
+            Creatives::TriggerActionCommand.new(creative: creative, user: @human, action: "pause").call
+            original.call(creative, topic)
+          }) do
+            SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "paused verification dispatched" }) do
+              assert_no_difference -> { @child.comments.count } do
+                job.perform(@task.id)
+              end
+            end
+          end
+        end
+      end
+      assert_equal "paused", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "verification ignores a task outside the current keep turn" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 1000)

@@ -26,6 +26,19 @@ module Collavre
       Current.reset
     end
 
+    test "drop never dispatches or creates a trigger comment while keep owns the slot" do
+      %w[running pending_verification].each do |state|
+        config = TriggerLoopConfig.build(@child.main_topic.id, source: "keep", state: state)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        SystemEvents::Dispatcher.stub(:dispatch_with_outcome, ->(*) { flunk "active keep must block drop dispatch" }) do
+          assert_no_difference -> { @child.comments.count } do
+            DropTriggerJob.perform_now(@parent.id, @child.id)
+          end
+        end
+        assert_equal config, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
     test "replacement drop uses a fresh comment and retries that generation" do
       dispatched = []
       dispatcher = ->(_event, payload, **) { dispatched << payload.deep_stringify_keys.dig("comment", "id"); dispatch_outcome([ @ai_bot ]) }

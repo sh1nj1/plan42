@@ -73,3 +73,10 @@ Keep loops track the current trigger comment. Unrelated topic tasks and duplicat
 completions cannot advance that turn. If initial or continuation routing schedules
 no agent (including an Inbox-ineligible session agent), the loop enters
 `awaiting_user` and posts a notice instead of remaining running without a task.
+
+An explicit keep agent is the only routing target even when the goal mentions
+other agents; the displayed goal text is preserved. An active keep loop also
+suppresses drop dispatch until its shared slot becomes inactive. Evaluators
+revalidate the generation, control version, state, and current turn under the
+lock used to create and dispatch continuations, so a completed Pause prevents
+stale evaluators from posting further work.

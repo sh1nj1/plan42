@@ -62,6 +62,32 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "pause after transition prevents continuation and infrastructure retry dispatch" do
+      [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |response|
+        [ false, true ].each do |resume|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(@topic.id) } })
+          @child.comments.create!(content: response, user: @ai_bot, topic: @topic, skip_dispatch: true)
+          job = TriggerLoopCheckJob.new
+          original = job.method(:continuation_agent)
+          resuming = false
+          job.stub(:continuation_agent, ->(creative, topic) {
+            Creatives::TriggerActionCommand.new(creative: creative, user: @human, action: "pause").call
+            if resume
+              resuming = true
+              Creatives::TriggerActionCommand.new(creative: creative, user: @human, action: "resume").call
+              resuming = false
+            end
+            original.call(creative, topic)
+          }) do
+            SystemEvents::Dispatcher.stub(:dispatch, ->(*) { assert resuming, "stale evaluator dispatched"; [ @ai_bot ] }) do
+              job.perform(@task.id)
+            end
+          end
+          assert_equal(resume ? "running" : "paused", @child.reload.data.dig("trigger", "loop", "state"))
+        end
+      end
+    end
+
     test "keep ignores unrelated tasks and consumes each current turn once" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 999)

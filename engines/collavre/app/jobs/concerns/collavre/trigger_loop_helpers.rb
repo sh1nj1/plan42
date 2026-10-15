@@ -91,6 +91,17 @@ module Collavre
       @loop_current_comment_id = loop_data["current_comment_id"]
     end
 
+    def post_loop_instruction(creative, **attributes)
+      Comments::TopicMutation.call(attributes.fetch(:topic_id), creative.id) do
+        creative.with_lock do
+          validate_loop_snapshot!(creative.data&.dig("trigger", "loop") || {})
+          comment = creative.comments.create!(**attributes, loop_continuation: true, skip_dispatch: true)
+          agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "comment_callback")
+          comment.send(:reconcile_loop_dispatch, agents)
+        end
+      end
+    end
+
     def continuation_agent(creative, topic)
       agent = creative.trigger_loop_agent
       if creative.keep_loop_agent_unavailable?

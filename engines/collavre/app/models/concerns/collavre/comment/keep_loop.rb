@@ -13,6 +13,16 @@ module Collavre
 
       private
 
+      def loop_dispatch_chat
+        chat = { content: content }
+        config = creative&.data&.dig("trigger", "loop")
+        if config && config["source"] == "keep" && config["agent_id"].present? &&
+           [ config["start_comment_id"], config["current_comment_id"] ].include?(id)
+          chat[:mentioned_users] = [ { id: config["agent_id"] } ]
+        end
+        chat
+      end
+
       def track_loop_turn
         creative.with_lock do
           data = (creative.data || {}).deep_dup

@@ -9,6 +9,29 @@ module Collavre
         @topic = @creative.main_topic
       end
 
+      test "selected agent exclusively receives the initial turn while goal mentions stay intact" do
+        agent = users(:ai_bot)
+        other = agent.dup
+        other.email = "keep-other@example.com"
+        other.name = "KeepOther"
+        other.save!
+        [ agent, other ].each do |user|
+          CreativeShare.find_or_create_by!(creative: @creative, user: user).update!(permission: :feedback)
+          CreativeSharesCache.find_or_create_by!(creative: @creative, user: user).update!(permission: :feedback)
+        end
+        comment = command("/keep @#{agent.name}: compare with @#{other.name}: output")
+        KeepCommand.new(comment: comment, user: @user).call
+        comment.skip_dispatch = true
+        comment.save!
+        payload = Comment.find(comment.id).dispatch_payload
+        context = SystemEvents::ContextBuilder.new(payload).build
+        assert_includes payload[:comment][:content], "@#{other.name}: output"
+        assert_equal [ agent ], Orchestration::Matcher.new(context).match
+        @creative.update!(data: {})
+        assert_equal [ agent, other ].map(&:id).sort,
+                     Orchestration::Matcher.new(SystemEvents::ContextBuilder.new(comment.reload.dispatch_payload).build).match.map(&:id).sort
+      end
+
       test "initial dispatch without a matched agent awaits user instead of hanging" do
         comment = command("/keep finish")
         KeepCommand.new(comment: comment, user: @user).call

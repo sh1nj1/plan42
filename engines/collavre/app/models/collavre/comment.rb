@@ -240,9 +240,7 @@ module Collavre
         topic: {
           id: topic_id
         },
-        chat: {
-          content: content
-        }
+        chat: loop_dispatch_chat
       }
     end
 

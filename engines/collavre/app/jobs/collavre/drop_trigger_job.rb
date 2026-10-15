@@ -62,6 +62,7 @@ module Collavre
         # rejected, or wins first and makes this stale job a no-op.
         child.with_lock do
           replaced = initialize_trigger_loop(child, topic)
+          next if replaced == :preserve_active_keep
           comment = (find_trigger_comment(child, parent, topic) unless replaced) ||
                     create_trigger_comment(child, parent, agent, topic)
           if replaced
@@ -185,6 +186,7 @@ module Collavre
 
         existing = trigger["loop"]
         inactive_keep = existing && existing["source"] == "keep" && !%w[running pending_verification].include?(existing["state"])
+        return :preserve_active_keep if existing && existing["source"] == "keep" && !inactive_keep
         return if existing.present? && !inactive_keep
 
         trigger["loop"] = TriggerLoopConfig.build(topic&.id)

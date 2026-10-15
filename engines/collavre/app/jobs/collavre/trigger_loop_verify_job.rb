@@ -184,12 +184,11 @@ module Collavre
         reason: reason.to_s.truncate(500)
       )}"
 
-      child_creative.comments.create!(
+      post_loop_instruction(child_creative,
         content: content,
         topic_id: topic.id,
         private: false,
-        user: child_creative.user,
-        loop_continuation: true, skip_dispatch: false
+        user: child_creative.user
       )
     end
   end
