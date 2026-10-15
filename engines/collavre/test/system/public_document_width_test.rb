@@ -20,9 +20,9 @@ class PublicDocumentWidthTest < ApplicationSystemTestCase
             viewport: innerWidth, documentWidth: document.documentElement.scrollWidth };
         })()
       JS
-      assert_in_delta dimensions["viewport"], dimensions["mainWidth"], 2
+      assert_in_delta [ dimensions["viewport"], 960 ].min, dimensions["mainWidth"], 2
       assert_in_delta dimensions["rowRight"], dimensions["frameRight"], 2
-      assert_operator dimensions["frameWidth"], :>, width * 0.75
+      assert_operator dimensions["frameWidth"], :>, dimensions["mainWidth"] * 0.75
       assert_operator dimensions["documentWidth"], :<=, dimensions["viewport"]
     end
   end
