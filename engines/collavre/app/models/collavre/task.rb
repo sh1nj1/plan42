@@ -14,6 +14,7 @@ module Collavre
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
     before_validation :assign_trigger_comment_id
+    before_validation :assign_event_causation_id
     validates :name, presence: true
 
     enum :status, {
@@ -165,6 +166,10 @@ module Collavre
 
     def assign_trigger_comment_id
       self.trigger_comment_id ||= trigger_event_payload&.dig("comment", "id")
+    end
+
+    def assign_event_causation_id
+      self.event_causation_id = trigger_event_payload&.dig("event", "causation_id")
     end
 
     def became_terminal?

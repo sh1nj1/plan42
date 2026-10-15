@@ -25,13 +25,7 @@ module Collavre
       end
 
       def children(event_ids)
-        connection = Task.connection
-        expression = if connection.adapter_name == "PostgreSQL"
-          "trigger_event_payload::jsonb -> 'event' ->> 'causation_id'"
-        else
-          "json_extract(trigger_event_payload, '$.event.causation_id')"
-        end
-        Task.where("#{expression} IN (?)", event_ids).includes(:agent)
+        Task.where(event_causation_id: event_ids).includes(:agent)
       end
     end
   end

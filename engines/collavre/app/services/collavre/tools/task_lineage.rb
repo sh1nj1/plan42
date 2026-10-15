@@ -9,7 +9,10 @@ module Collavre
 
       def for_comment(comment_id)
         indexed = Task.where(trigger_comment_id: comment_id)
-        indexed.or(Task.where(merged_condition, id: comment_id.to_s))
+        return indexed if indexed.exists?
+
+        # Only historical re-anchored rows need the JSON fallback.
+        Task.where(merged_condition, id: comment_id.to_s)
       end
 
       def merged_condition

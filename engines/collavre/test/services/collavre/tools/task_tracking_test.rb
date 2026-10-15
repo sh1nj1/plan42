@@ -152,23 +152,19 @@ module Collavre
           { name: "Child", agent_id: @owner.id, creative_id: @creative.id, status: "done",
            trigger_comment_id: @comment.id, trigger_event_payload: payload(child_event) }
         end
+        rows.each { |row| row[:event_causation_id] = event.id }
         Task.insert_all!(rows)
         assert_raises(ArgumentError) { TaskStatusService.new.call(comment_id: @comment.id) }
         assert_raises(ArgumentError) { TaskStatusService.new.call(task_ids: root.id) }
       end
 
-      test "generates parameterized PostgreSQL descendant lookup" do
-        connection = Task.connection
-        relation = Task.none
-        Task.stub(:where, ->(sql, values) {
-          assert_equal "trigger_event_payload::jsonb -> 'event' ->> 'causation_id' IN (?)", sql
-          assert_equal [ "parent-id" ], values
-          relation
-        }) do
-          connection.stub(:adapter_name, "PostgreSQL") do
-            assert_empty TaskDescendants.children([ "parent-id" ])
-          end
-        end
+      test "updates the indexed causation when the envelope changes" do
+        event = SystemEvents::Envelope.root("comment_created")
+        task = make_task(payload: payload(event.with(causation_id: "parent-id")))
+        assert_equal [ task.id ], TaskDescendants.children([ "parent-id" ]).pluck(:id)
+        task.update!(trigger_event_payload: {})
+        assert_nil task.reload.event_causation_id
+        assert_empty TaskDescendants.children([ "parent-id" ])
       end
 
       test "read share allows polling and listing another owners work" do
@@ -222,6 +218,21 @@ module Collavre
         assert_raises(ActiveRecord::RecordNotFound) { TaskStatusService.new.call(task_ids: task.id) }
         action.update!(payload: { "superseded_by_task_id" => task.id })
         assert_raises(ArgumentError) { TaskStatusService.new.call(task_ids: task.id) }
+      end
+
+      test "indexed instructions never invoke the legacy merged payload scan" do
+        task = make_task
+        TaskLineage.stub(:merged_condition, -> { flunk "Unexpected legacy scan" }) do
+          assert_equal [ task.id ], TaskLineage.for_comment(@comment.id).pluck(:id)
+        end
+      end
+
+      test "descendant query uses the causation expression index" do
+        assert Task.connection.indexes(:tasks).any? { |index| index.name == "index_tasks_on_event_causation_id" }
+        unless Task.connection.adapter_name == "PostgreSQL"
+          plan = Task.connection.execute("EXPLAIN QUERY PLAN #{TaskDescendants.children([ 'parent-id' ]).to_sql}")
+          assert_includes plan.map { |row| row["detail"] }.join, "index_tasks_on_event_causation_id"
+        end
       end
 
       test "PostgreSQL merged lookup compares both string and integer ids as text" do

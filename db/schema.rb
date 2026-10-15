@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_000001) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1068,8 +1068,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000000) do
     t.integer "workflow_execution_id"
     t.string "workflow_stop_reason"
     t.bigint "trigger_comment_id"
+    t.string "event_causation_id"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
+    t.index ["event_causation_id"], name: "index_tasks_on_event_causation_id"
     t.index ["status", "resume_not_before"], name: "index_tasks_on_status_and_resume_not_before"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
     t.index ["trigger_comment_id"], name: "index_tasks_on_trigger_comment_id"
