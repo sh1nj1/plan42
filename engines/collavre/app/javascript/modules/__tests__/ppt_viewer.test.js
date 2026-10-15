@@ -64,3 +64,26 @@ test('hides unsupported fullscreen and initializes only viewer pages', () => {
   document.body.innerHTML = ''
   document.dispatchEvent(new window.Event('DOMContentLoaded'))
 })
+
+test('sizes the embedding frame from validated presentation dimensions', () => {
+  const frame = document.createElement('iframe')
+  Object.defineProperty(window, 'frameElement', { configurable: true, value: frame })
+  const viewer = setup()
+  const slide = document.createElement('div')
+  slide.className = 'ppt-slide'
+  viewer.prepend(slide)
+  for (const [width, height] of [[9144000, 6858000], [12192000, 6858000], [6858000, 9144000]]) {
+    slide.dataset.pptWidth = width
+    slide.dataset.pptHeight = height
+    initializePptViewer(viewer)
+    expect(frame.style.aspectRatio).toBe(`${width} / ${height}`)
+  }
+  for (const [width, height] of [[0, 1], [1, -1], ['invalid', 1], [Infinity, 1], [1, 1e10]]) {
+    frame.style.aspectRatio = ''
+    slide.dataset.pptWidth = width
+    slide.dataset.pptHeight = height
+    initializePptViewer(viewer)
+    expect(frame.style.aspectRatio).toBe('')
+  }
+  Object.defineProperty(window, 'frameElement', { configurable: true, value: null })
+})

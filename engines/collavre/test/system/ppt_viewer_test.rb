@@ -9,6 +9,10 @@ class PptViewerTest < ApplicationSystemTestCase
     @creative = Creative.create!(user: @user, description: "Presentation")
     Tempfile.create([ "viewer", ".pptx" ]) do |file|
       Zip::OutputStream.open(file.path) do |zip|
+        if name.include?("standard")
+          zip.put_next_entry("ppt/presentation.xml")
+          zip.write %(<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldSz cx="9144000" cy="6858000"/></p:presentation>)
+        end
         2.times do |index|
           zip.put_next_entry("ppt/slides/slide#{index + 1}.xml")
           zip.write %(<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Slide #{index + 1}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>)
@@ -70,9 +74,28 @@ class PptViewerTest < ApplicationSystemTestCase
     assert_equal original_src, first("#creative-#{@creative.id} iframe.ppt-attachment-preview")["src"]
   end
 
+  test "standard slides fill editor and creative width and preserve fullscreen" do
+    visit collavre.creatives_path(id: @creative.id)
+    assert_preview_fills_container(4.0 / 3)
+    within_frame(first("iframe.ppt-attachment-preview")) do
+      find(".ppt-viewer").hover
+      find("[data-ppt-fullscreen]").click
+      assert_selector ".ppt-viewer:fullscreen"
+      find(".ppt-viewer").send_keys(:escape)
+      assert_no_selector ".ppt-viewer:fullscreen"
+    end
+    assert_preview_fills_container(4.0 / 3)
+    visit collavre.creatives_path
+    find("#creative-#{@creative.id}").hover
+    find("#creative-#{@creative.id} .edit-inline-btn").click
+    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
+    assert_preview_fills_container(4.0 / 3)
+  end
+
   private
 
-  def assert_preview_fills_container
+  def assert_preview_fills_container(ratio = 16.0 / 9)
+    assert_selector 'iframe.ppt-attachment-preview[style*="aspect-ratio"]'
     dimensions = page.evaluate_script(<<~JS, first("iframe.ppt-attachment-preview"))
       ((frame) => {
         const container = frame.closest('.lexical-content-editable') || frame.parentElement;
@@ -85,7 +108,7 @@ class PptViewerTest < ApplicationSystemTestCase
       })(arguments[0])
     JS
     assert_in_delta dimensions["available"], dimensions["width"], 2
-    assert_in_delta dimensions["width"] * 9 / 16, dimensions["height"], 2
+    assert_in_delta dimensions["width"] / ratio, dimensions["height"], 2
     within_frame(first("iframe.ppt-attachment-preview")) do
       assert_selector ".ppt-slide"
       slide_width = page.evaluate_script("document.querySelector('.ppt-slide').getBoundingClientRect().width")

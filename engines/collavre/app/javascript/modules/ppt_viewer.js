@@ -1,4 +1,15 @@
+function sizePreviewFrame(viewer) {
+  const frame = viewer.ownerDocument.defaultView.frameElement
+  const slide = viewer.querySelector('.ppt-slide')
+  if (!frame || !slide) return
+  const width = Number(slide.dataset.pptWidth)
+  const height = Number(slide.dataset.pptHeight)
+  const valid = value => Number.isFinite(value) && value >= 1 && value <= 1e9
+  if (valid(width) && valid(height)) frame.style.aspectRatio = `${width} / ${height}`
+}
+
 export function initializePptViewer(viewer) {
+  sizePreviewFrame(viewer)
   const slides = Array.from(viewer.querySelectorAll('.ppt-viewer-slide'))
   const previous = viewer.querySelector('[data-ppt-previous]')
   const next = viewer.querySelector('[data-ppt-next]')
