@@ -40,6 +40,18 @@ module Collavre
       })
     end
 
+    test "rejected keep reply resume enqueue retains the awaiting turn" do
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "agent_id" => @ai_bot.id } }))
+      before = @child.reload.data.deep_dup
+      AiAgentJob.stub(:perform_later, false) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic: @topic, user: @human)
+        end
+      end
+      assert_equal before, @child.reload.data
+    end
+
     test "failed keep reply resume preserves awaiting state and can retry" do
       data = @child.data.deep_dup
       data["trigger"]["loop"]["source"] = "keep"

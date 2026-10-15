@@ -30,6 +30,7 @@ module Collavre
     module DeliveryRecord
       extend RestoredDispatchContext
       extend RestoredDispatchAdmission
+      extend KeepDispatchRestoration
       # Comment ids a turn delivered as chat history although it was not created
       # for them. Sits beside TaskCoalescer::PAYLOAD_KEY and
       # TaskCoalescer::ACQUIRED_ANCHOR_KEY, which record the other two ways a
@@ -152,7 +153,7 @@ module Collavre
 
       TURN_SCOPED_KEYS = [
         KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
-        RESTORED_KEY, RESTORE_REJECTED_KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
+        RESTORED_KEY, RESTORE_REJECTED_KEY, KeepDispatchRestoration::KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
         TaskCoalescer::ACQUIRED_ANCHOR_KEY, ResumeContext::KEY, *ExecutionFence::KEYS
       ].freeze
 
@@ -431,7 +432,7 @@ module Collavre
       # drop costs a redundant turn; taking an unsound one costs the message.
       #
       # @return [Boolean] whether the caller may discard the dispatch
-      def self.claim_drop!(covering, comment_id)
+      def self.claim_drop!(covering, comment_id, context: nil)
         id = comment_id.to_i
         return false if covering.nil? || id.zero?
 
@@ -442,7 +443,7 @@ module Collavre
           next unless task&.status.to_s.in?(IN_FLIGHT_STATUSES) && payload.is_a?(Hash)
 
           dropped = (dropped_ids_in(payload) + [ id ]).uniq.sort
-          task.update!(trigger_event_payload: payload.merge(DROPPED_KEY => dropped))
+          task.update!(trigger_event_payload: record_keep_drop(payload, task, id, context).merge(DROPPED_KEY => dropped))
           claimed = true
         end
         claimed
@@ -671,9 +672,10 @@ module Collavre
         return unless claim_restore!(task, comment_id)
 
         begin
-          yield
-        rescue StandardError
+          raise ActiveJob::EnqueueError unless yield
+        rescue StandardError => error
           release_restore_claim!(task, comment_id)
+          reject_restore!(task, comment_id) if error.is_a?(ActiveJob::EnqueueError)
           raise
         end
       end

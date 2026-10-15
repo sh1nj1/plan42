@@ -507,6 +507,7 @@ module Collavre
         dispatched = turn.trigger_event_payload.keys
 
         DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+        @creative.update!(data: { "trigger" => { "loop" => { "source" => "keep", "current_comment_id" => late.id } } })
         DeliveryRecord.claim_drop!(turn.reload, late.id)
         DeliveryRecord.mark_handoff_failed!(turn.reload)
         DeliveryRecord.mark_handed_off!(turn.reload)

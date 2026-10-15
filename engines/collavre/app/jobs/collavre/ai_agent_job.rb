@@ -132,7 +132,7 @@ module Collavre
         # As at the enqueue door, the drop only happens if the covering turn
         # records it — otherwise this dispatch has nobody to restore it.
         covering = Orchestration::DeliveryRecord.covering_task(agent, comment_id, context, event_name)
-        if covering && Orchestration::DeliveryRecord.claim_drop!(covering, comment_id)
+        if covering && Orchestration::DeliveryRecord.claim_drop!(covering, comment_id, context: context)
           Rails.logger.info(
             "[AiAgentJob] Skipping dispatch: comment #{comment_id} was already delivered to " \
             "agent #{agent.id} by in-flight task #{covering.id} (event=#{event_name})"

@@ -230,7 +230,8 @@ module Collavre
           content: content,
           user_id: user_id,
           from_ai: user&.searchable? || false,
-          quoted_comment_id: quoted_comment_id
+          quoted_comment_id: quoted_comment_id,
+          keep_loop_generation: dispatch_loop_generation
         }.compact,
         creative: {
           id: creative_id,

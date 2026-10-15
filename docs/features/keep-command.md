@@ -134,7 +134,12 @@ permission or scheduler admission refuses restoration, that refusal is recorded,
 the dispatch is excluded from subsequent sweeps, and the last owner releases the
 keep loop to `awaiting_user`. Admitted restoration retains ownership until its
 replacement task starts. Pending restoration owned by another task serving the
-same turn also retains ownership; unrelated pending comments do not.
+same turn also retains ownership; unrelated pending comments do not. Dropped keep
+turns retain their original dispatch generation, including jobs dropped after a
+replacement starts. Restoration revalidates that generation and the running
+current turn under the creative lock; paused or superseded work is not enqueued.
+A rejected restoration enqueue releases its claim and returns the current keep
+to `awaiting_user`. Ordinary dispatch restoration remains retryable.
 
 Initial keep dispatch requires queue acknowledgement. A rejected enqueue leaves
 the committed command in `awaiting_user` rather than claiming an agent is working.
@@ -146,7 +151,8 @@ If enqueueing completion verification raises or returns false, the accepted
 running turn and its counters are restored so the status check can retry.
 Recovery preserves a concurrent Pause or replacement loop.
 
-If continuation, infrastructure-retry, or failed-verification dispatch raises,
+If continuation, infrastructure-retry, or failed-verification dispatch raises
+or its enqueue is rejected,
 the new comment and tasks roll back and the accepted evaluator turn is restored,
 including its previous iteration and retry counters. The evaluator can retry
 that turn; recovery never overwrites a newer Pause or replacement loop.
@@ -160,10 +166,12 @@ UI Resume and Restart commit their state transition together with continuation
 creation and dispatch. A creation or dispatch error rolls back the prior state,
 iteration counters, and control version, so the same action can be retried.
 Public reply resumes likewise return to their previous awaiting-user state on
-failure; the human reply remains saved and another reply can retry the resume.
+failure, including rejected enqueues; the human reply remains saved and another
+reply can retry the resume.
 Controls whose loop topic or start comment changed before locking do not affect
 the replacement, including a new keep loop in the same topic.
 
 Completion verification filters candidates by current read access to the loop
 creative before preferring a different agent. If every alternative is denied,
-an authorized task agent can still verify the result.
+an authorized task agent can still verify the result, including an explicitly
+selected agent shared only on the child rather than the drop container.

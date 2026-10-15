@@ -64,6 +64,17 @@ module Collavre
       )
     end
 
+    test "keep verification falls back to an authorized child-only task agent" do
+      CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "agent_id" => @ai_bot.id } }))
+      job = TriggerLoopVerifyJob.new
+      selected = []
+      job.stub(:verify_completion, ->(agent, *) { selected << agent.id; :awaiting_user }) { job.perform(@task.id) }
+      assert_equal [ @ai_bot.id ], selected
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "keep verification skips denied candidates and prefers an authorized alternative" do
       denied = users(:two)
       allowed = users(:three)

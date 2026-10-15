@@ -44,6 +44,10 @@ module Collavre
       # parks anything — a restored dispatch has moved, and park_waiter would
       # create the row without that question being asked.
       def enqueue_restored(task, agent, event_name, context)
+        with_current_keep_restore(task, context) { enqueue_admitted_restore(task, agent, event_name, context) }
+      end
+
+      def enqueue_admitted_restore(task, agent, event_name, context)
         decision = admitted_restore_decision(agent, context)
         comment_id = context.dig("comment", "id")
         return reject_restore!(task, comment_id) unless decision

@@ -98,7 +98,8 @@ module Collavre
         creative.with_lock do
           validate_loop_snapshot!(creative.data&.dig("trigger", "loop") || {})
           comment = creative.comments.create!(**attributes, loop_continuation: true, skip_dispatch: true)
-          agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "comment_callback")
+          agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+            source: "comment_callback", require_enqueue_ack: creative.keep_loop?)
           comment.send(:reconcile_loop_dispatch, agents)
         end
       end

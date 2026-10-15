@@ -131,7 +131,7 @@ module Collavre
         )}"
         comment = create_trigger_comment(topic, content, skip_dispatch: true)
         scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
-          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment))
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment), require_enqueue_ack: creative.keep_loop?)
         comment.send(:reconcile_loop_dispatch, scheduled)
         Rails.logger.info("[TriggerAction] resume: posted continue comment #{comment.id} for creative #{creative.id}")
       end
@@ -146,7 +146,8 @@ module Collavre
 
         content = "#{"@#{agent.name}: " if agent}#{restart_message(parent)}"
         comment = create_trigger_comment(topic, content, skip_dispatch: true)
-        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+          source: "trigger_restart", require_enqueue_ack: creative.keep_loop?)
         comment.send(:reconcile_loop_dispatch, scheduled)
         Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end

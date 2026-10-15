@@ -27,6 +27,13 @@ module Collavre
         end
       end
 
+      def dispatch_loop_generation
+        config = creative&.data&.dig("trigger", "loop")
+        return unless config && config["source"] == "keep" && config["current_comment_id"] == id
+
+        config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+      end
+
       def loop_dispatch_chat
         chat = { content: content }
         config = creative&.data&.dig("trigger", "loop")
@@ -125,7 +132,7 @@ module Collavre
           loop_continuation: true, skip_dispatch: true
         )
         agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
-          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment))
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment), require_enqueue_ack: creative.keep_loop?)
         comment.send(:reconcile_loop_dispatch, agents)
         comment
       end

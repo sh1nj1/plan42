@@ -95,8 +95,8 @@ module Collavre
     # is NOT the original task agent. Fall back to the task agent only if
     # no other AI agent exists.
     def pick_verifier_agent(creative, task_agent_id, child_creative)
-      ai_agents = creative.all_shared_users(:feedback)
-                          .map(&:user)
+      task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
+      ai_agents = (creative.all_shared_users(:feedback).map(&:user) + [ task_agent ]).compact.uniq(&:id)
                           .select { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
 
       return nil if ai_agents.empty?

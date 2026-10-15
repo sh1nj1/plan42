@@ -341,6 +341,20 @@ module Collavre
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
     end
 
+    test "rejected continuation enqueue restores the accepted keep turn" do
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "agent_id" => @ai_bot.id,
+        "current_comment_id" => 999, "start_comment_id" => 999)
+      @child.update!(data: data)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      before = @child.reload.data.dig("trigger", "loop").deep_dup
+      AiAgentJob.stub(:perform_later, false) do
+        assert_raises(ActiveJob::EnqueueError) { TriggerLoopCheckJob.perform_now(@task.id) }
+      end
+      assert_equal before.except("control_version"), @child.reload.data.dig("trigger", "loop").except("control_version")
+    end
+
     test "failed continuation and infrastructure dispatch preserve the retryable keep turn" do
       [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |response|
         data = @child.reload.data.deep_dup

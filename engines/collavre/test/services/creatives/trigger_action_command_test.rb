@@ -17,6 +17,23 @@ module Collavre
         clear_enqueued_jobs
       end
 
+      test "keep resume and restart require acknowledged dispatch" do
+        { "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state
+          ) } })
+          previous = @child.reload.data.deep_dup
+          dispatch = lambda do |*args, **options|
+            raise ActiveJob::EnqueueError if options[:require_enqueue_ack]
+            [ users(:ai_bot) ]
+          end
+          SystemEvents::Dispatcher.stub(:dispatch, dispatch) do
+            assert_raises(ActiveJob::EnqueueError) { command(action: action).call }
+          end
+          assert_equal previous, @child.reload.data
+        end
+      end
+
       test "keep controls roll back the entire transition when dispatch raises" do
         { "resume" => "paused", "restart" => "completed" }.each do |action, state|
           @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
