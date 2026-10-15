@@ -559,6 +559,11 @@ module Collavre
           AiClient.register_vendor_capabilities(@ai_agent.llm_vendor, capabilities: [ :judge ])
           assert_equal [ other ], Matcher.new(context).match
           assert Matcher.permits_assignment?(context, other)
+          [ nil, DispatchRecords.new.seed(topic) ].each do |records|
+            resolver = PolicyResolver.new(context, records: records)
+            assert_nil resolver.topic_primary_agent_id
+            assert_equal [ other ], Selection.new(context, policy_resolver: resolver, records: records).call.agents
+          end
           assert_equal @ai_agent.id, topic.reload.primary_agent_id
         end
       end
@@ -575,6 +580,11 @@ module Collavre
           AiClient.register_vendor_capabilities(@ai_agent.llm_vendor, capabilities: [ :judge ])
           assert_empty Matcher.new(context).match
           assert_not Matcher.permits_assignment?(context, other)
+          [ nil, DispatchRecords.new.seed(topic) ].each do |records|
+            resolver = PolicyResolver.new(context, records: records)
+            assert_equal @ai_agent.id, resolver.topic_primary_agent_id
+            assert_empty Arbiter.new(context, policy_resolver: resolver, records: records).select([ other ])
+          end
         end
       end
 
