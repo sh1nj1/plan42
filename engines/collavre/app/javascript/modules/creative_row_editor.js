@@ -2,7 +2,7 @@ import { updateRemovalButtons, destroyedIdsForRemoval, promotesChildrenToRoot as
 import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
 import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
-import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource } from './queued_creative_row'
+import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource, rowRefreshGuard } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
 import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates, trackNewRowSave } from './background_creative_create'
@@ -314,7 +314,11 @@ function setupEditorSession() {
     // So is an action confirmed on the open row: the waiting click must not move
     // the editor while the dialog is up, or the action would hit the wrong row.
     const confirmForCurrent = (message, options) => editTickets.take() && confirmDialog(message, options);
-    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }), flushOpenRow, deleteAttachment);
+    // Discarding the open new row's draft also deletes the uploads removed from
+    // it since it opened: nothing on the server refers to them. A saved row's
+    // removed uploads stay, as its saved content still does.
+    const purgeOpenDraft = (target) => !form.dataset.creativeId && target.contains(currentTree) && lexicalEditor.getDeletedAttachments?.().forEach(deleteAttachment);
+    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }).then((agreed) => (agreed && purgeOpenDraft(event.target), agreed)), flushOpenRow, deleteAttachment);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
 
@@ -730,9 +734,10 @@ function setupEditorSession() {
       if (!id) return;
       if (tree.dataset.saveState) return;
       const rowEl = treeRowElement(tree);
+      const current = rowRefreshGuard(tree);
       creativesApi.get(id)
         .then(data => {
-          updateRowFromData(rowEl, data);
+          if (current()) updateRowFromData(rowEl, data);
         });
     }
 
@@ -1687,15 +1692,19 @@ function setupEditorSession() {
       });
     }
 
+    // The picker is a later edit request too, and the link goes to the row it
+    // was opened on even if the editor has moved on by the time one is picked.
     function linkExistingCreative() {
       if (!currentTree || !form.dataset.creativeId) return;
+      editTickets.take();
+      const tree = currentTree, parentId = form.dataset.creativeId;
 
       const modal = document.getElementById('link-creative-modal')
       const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative')
       if (controller) {
         controller.open(linkBtn?.getBoundingClientRect(), (item) => {
-          creativesApi.linkExisting(form.dataset.creativeId, item.id).then(() => {
-            refreshChildren(currentTree).then(() => refreshRow(currentTree));
+          creativesApi.linkExisting(parentId, item.id).then(() => {
+            refreshChildren(tree).then(() => refreshRow(tree));
           });
         });
       }

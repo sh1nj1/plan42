@@ -3,6 +3,7 @@ import { creativeSaveSnapshotIsEmpty } from './creative_save_state'
 
 const revisions = new WeakMap()
 const retryAttachmentIds = new WeakMap()
+const refreshes = new WeakMap()
 
 // Only the latest queued snapshot may acknowledge or rewrite a row.
 export function queuedCreativeCompletion(tree, onComplete) {
@@ -23,7 +24,16 @@ export function queuedCreativeCompletion(tree, onComplete) {
   return complete
 }
 
+// A row refresh applies its response only if no later refresh was asked for
+// and nothing was painted into the row from the editor since.
+export function rowRefreshGuard(tree) {
+  const token = {}
+  refreshes.set(tree, token)
+  return () => refreshes.get(tree) === token
+}
+
 export function updateQueuedCreativeRow(tree, snapshot) {
+  refreshes.delete(tree)
   const row = treeRowElement(tree)
   if (!row) return
   const markdown = snapshot.contentType === 'markdown'

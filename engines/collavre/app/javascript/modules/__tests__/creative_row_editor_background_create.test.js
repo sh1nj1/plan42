@@ -12,6 +12,9 @@ const alertDialogMock = jest.fn(() => Promise.resolve())
 const confirmDialogMock = jest.fn(() => Promise.resolve(true))
 let deletedAttachments = []
 let editorOptions = null
+const linkPicker = { open: jest.fn() }
+// The editor reads window.Stimulus when it is imported.
+window.Stimulus = { getControllerForElementAndIdentifier: (_el, id) => (id === 'link-creative' ? linkPicker : null) }
 
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
   createInlineEditor: createInlineEditorMock,
@@ -23,6 +26,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
     children: jest.fn(() => Promise.resolve([])),
     destroy: jest.fn(() => new Promise(() => {})),
     archive: jest.fn(() => new Promise(() => {})),
+    linkExisting: jest.fn(() => Promise.resolve()),
   },
 }))
 jest.unstable_mockModule('../../lib/utils/dialog', () => ({
@@ -1433,5 +1437,124 @@ describe('Enter on a new creative saves it in the background', () => {
     await startNewRow('first creative')
 
     expect(frameRender(document.getElementById('creatives')).defaultPrevented).toBe(false)
+  })
+
+  test('a click that waits out a pending create yields to opening the link picker on the open row', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    creativesApi.linkExisting.mockClear()
+    linkPicker.open.mockClear()
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const { tree: existing } = appendExistingRow(9)
+    clickRow(existing)
+    await flush()
+
+    clickRow(first)
+    await flush()
+    document.getElementById('inline-link').click()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    expect(template().parentElement).toBe(existing)
+    linkPicker.open.mock.calls[0][1]({ id: 42 })
+    await flush()
+
+    expect(creativesApi.linkExisting).toHaveBeenCalledWith('9', 42)
+  })
+
+  test('a link picked after the editor moved on still goes to the row the picker was opened on', async () => {
+    creativesApi.linkExisting.mockClear()
+    linkPicker.open.mockClear()
+    const { tree: existing } = appendExistingRow(9)
+    const { tree: other } = appendExistingRow(10)
+    clickRow(existing)
+    await flush()
+    document.getElementById('inline-link').click()
+    clickRow(other)
+    await flush()
+    expect(template().parentElement).toBe(other)
+
+    linkPicker.open.mock.calls[0][1]({ id: 42 })
+    await flush()
+
+    expect(creativesApi.linkExisting).toHaveBeenCalledWith('9', 42)
+  })
+
+  test('a slow refresh after a background create does not overwrite an edit made since', async () => {
+    const refresh = deferred()
+    saveMock.mockImplementation(() => Promise.resolve(created(77)))
+    creativesApi.get.mockImplementationOnce(() => refresh.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    expect(first.dataset.id).toBe('77')
+
+    clickRow(first)
+    await flush()
+    type('edited creative')
+    document.getElementById('inline-close').click()
+    await flush()
+    const row = first.parentElement
+    expect(row.dataset.descriptionRawHtml).toBe('<p>edited creative</p>')
+
+    refresh.resolve({ id: 77, description: '<p>first creative</p>' })
+    await flush()
+
+    expect(row.dataset.descriptionRawHtml).toBe('<p>edited creative</p>')
+  })
+
+  test('a row refresh applies its response when nothing changed the row since', async () => {
+    const refresh = deferred()
+    saveMock.mockImplementation(() => Promise.resolve(created(77)))
+    creativesApi.get.mockImplementationOnce(() => refresh.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+
+    refresh.resolve({ id: 77, description: '<p>from server</p>' })
+    await flush()
+
+    expect(first.parentElement.dataset.descriptionRawHtml).toBe('<p>from server</p>')
+  })
+
+  test.each([
+    ['deleted when the user discards it', true, ['/attachments/blob-2', '/attachments/blob-1']],
+    ['kept when the user keeps it', false, []],
+  ])('attachments removed after reopening a failed draft that fails again are %s', async (_case, agreed, deletes) => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(agreed))
+    const first = await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+    clickRow(first)
+    await flush()
+    deletedAttachments = ['blob-2']
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalledTimes(agreed ? 1 : 0)
+    expect(attachmentDeletes()).toEqual(deletes)
+  })
+
+  test('attachments removed from a saved row whose edit cannot be saved stay when it is discarded', async () => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+    // A failed new row elsewhere holds the render and has it ask to discard.
+    await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    const { tree: existing } = appendExistingRow(9)
+    clickRow(existing)
+    await flush()
+    type('edited creative')
+    deletedAttachments = ['blob-3']
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalledTimes(1)
+    expect(attachmentDeletes()).toEqual([])
   })
 })
