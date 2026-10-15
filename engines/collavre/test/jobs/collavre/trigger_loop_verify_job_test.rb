@@ -64,6 +64,23 @@ module Collavre
       )
     end
 
+    test "drop decisions prefer child-local native verifier and reject read-only inheritance" do
+      native = users(:two)
+      native.update_columns(llm_vendor: "typesafeai", llm_model: "test")
+      CreativeShare.create!(creative: @child, user: native, permission: :feedback)
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :read)
+
+      assert_equal native, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @ai_bot.id, @child)
+      assert_equal native, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+    end
+
+    test "drop decisions exclude inherited agents downgraded to read on task" do
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :read)
+
+      assert_nil TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @ai_bot.id, @child)
+      assert_nil TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+    end
+
     test "keep verification falls back to an authorized child-only task agent" do
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
@@ -111,6 +128,26 @@ module Collavre
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
     end
 
+    test "evaluator rechecks feedback after selection is downgraded to read" do
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      job = TriggerLoopVerifyJob.new
+      lookup = job.method(:pick_verifier_agent)
+      selected = false
+      downgrade = lambda do |*args|
+        agent = lookup.call(*args)
+        assert_equal @ai_bot, agent
+        selected = true
+        share.update_columns(permission: :read)
+        agent
+      end
+      AiClient.stub(:new, ->(*) { flunk "Read-only verifier received loop content" }) do
+        job.stub(:pick_verifier_agent, downgrade) do
+          job.perform(@task.id)
+        end
+      end
+      assert selected
+    end
+
     test "keep evaluator never sends loop content to a denied or revoked verifier" do
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       CreativeShare.create!(creative: @child, user: nil, permission: :read)
@@ -155,9 +192,9 @@ module Collavre
         refute_includes prompt, hidden.description
         refute_includes prompt, revoked.description
       }
-      client.define_singleton_method(:chat) do |messages, &block|
-        check_prompt.call(messages)
-        block.call("VERIFIED")
+      client.define_singleton_method(:judge) do |prompt, **|
+        check_prompt.call([ { text: prompt } ])
+        { "answers" => { "status" => { "choice" => "VERIFIED" } } }
       end
       job = TriggerLoopVerifyJob.new
       job.stub(:pick_verifier_agent, verifier) do
@@ -320,7 +357,7 @@ module Collavre
       factory = ->(**options) {
         LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
         client = Object.new
-        client.define_singleton_method(:chat) { |*, &block| block.call("VERIFIED") }
+        client.define_singleton_method(:judge) { |*, **| { "answers" => { "status" => { "choice" => "VERIFIED" } } } }
         client
       }
       job = TriggerLoopVerifyJob.new
@@ -350,6 +387,48 @@ module Collavre
       assert_equal "completed", @child.data.dig("trigger", "loop", "state")
     end
 
+    test "native incomplete explanation filters contexts for the chat agent" do
+      verifier = users(:two)
+      verifier.update!(llm_vendor: "typesafe", llm_model: "test")
+      CreativeShare.create!(creative: @parent, user: verifier, permission: :feedback)
+      visible = Creative.create!(description: "Shared acceptance criteria", user: @human)
+      secret = Creative.create!(description: "Verifier-only confidential instructions", user: @human)
+      CreativeShare.create!(creative: visible, user: @ai_bot, permission: :read)
+      CreativeShare.create!(creative: visible, user: verifier, permission: :read)
+      CreativeShare.create!(creative: secret, user: verifier, permission: :read)
+      @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, secret.id ]))
+      native_prompts = []
+      explanation_prompts = []
+      native = Object.new
+      native.define_singleton_method(:judge) do |prompt, **|
+        native_prompts << prompt
+        { "source" => "judge", "answers" => { "status" => { "choice" => "INCOMPLETE" } } }
+      end
+      chat = Object.new
+      chat.define_singleton_method(:chat) do |messages|
+        explanation_prompts << messages.first.fetch(:text)
+        "Acceptance criteria remain"
+      end
+      factory = ->(**options) { options.fetch(:vendor) == "typesafe" ? native : chat }
+      AiClient.stub(:new, factory) { TriggerLoopVerifyJob.perform_now(@task.id) }
+
+      assert_equal 1, native_prompts.size
+      assert_includes native_prompts.first, secret.description
+      assert_equal 1, explanation_prompts.size
+      assert_includes explanation_prompts.first, visible.description
+      assert_includes explanation_prompts.first, @child.description
+      assert_includes explanation_prompts.first, @agent_comment.content
+      refute_includes explanation_prompts.first, secret.description
+      assert_includes @child.comments.order(:id).last.content, "Acceptance criteria remain"
+    end
+
+    test "native or chat AWAITING_USER verdict pauses the loop" do
+      AiClient.stub(:new, mock_ai_client("AWAITING_USER")) do
+        TriggerLoopVerifyJob.perform_now(@task.id)
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "continues loop when verification returns INCOMPLETE" do
       mock_client = mock_ai_client("INCOMPLETE: creative not moved to review")
 
@@ -365,10 +444,10 @@ module Collavre
       assert_equal 2, @child.data.dig("trigger", "loop", "current_iteration")
     end
 
-    test "accepts DONE when LLM call fails (graceful degradation)" do
+    test "continues when LLM verification fails" do
       error_client = ->(**opts) {
         obj = Object.new
-        obj.define_singleton_method(:chat) { |messages, &block| raise StandardError, "LLM API error" }
+        obj.define_singleton_method(:judge) { |*, **| raise StandardError, "LLM API error" }
         obj
       }
 
@@ -377,7 +456,7 @@ module Collavre
       end
 
       @child.reload
-      assert_equal "completed", @child.data.dig("trigger", "loop", "state")
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
     end
 
     test "skips when loop state is not pending_verification" do
@@ -448,13 +527,63 @@ module Collavre
       assert_equal "max_reached", @child.data.dig("trigger", "loop", "state")
     end
 
+    test "verification adapter follows JSON contract for completed and awaiting work" do
+      job = TriggerLoopVerifyJob.new
+      %w[VERIFIED AWAITING_USER INCOMPLETE].each do |verdict|
+        client = AiClient.new(vendor: "external-adapter", model: "test",
+          system_prompt: TriggerLoopVerifyJob::VERIFY_SYSTEM_PROMPT)
+        adapter = lambda do |messages, &block|
+          prompt = JSON.parse(messages.first[:text])
+          refute_match(/Respond with exactly one of|INCOMPLETE: \[list/i, prompt.fetch("input"))
+          assert_includes prompt.fetch("instruction"), "Return only JSON"
+          block.call({ answers: { status: { choice: verdict } }, reason: "PR not created" }.to_json)
+          nil
+        end
+        client.stub(:chat, adapter) do
+          job.stub(:decision_client, client) do
+            expected = { "VERIFIED" => :verified, "AWAITING_USER" => :awaiting_user,
+                         "INCOMPLETE" => "PR not created" }.fetch(verdict)
+            assert_equal expected, job.send(:verify_completion, @ai_bot, "Create a PR", "Task evaluated", @task)
+          end
+        end
+      end
+    end
+
+    test "verification schema rejection preserves JSON contract" do
+      job = TriggerLoopVerifyJob.new
+      client = AiClient.new(vendor: "google", model: "test",
+        system_prompt: TriggerLoopVerifyJob::VERIFY_SYSTEM_PROMPT)
+      rejected = Object.new
+      rejected.define_singleton_method(:with_schema) { |*| }
+      rejected.define_singleton_method(:ask) { |*| raise RubyLLM::BadRequestError, "response_format unsupported" }
+      fallback = Object.new
+      fallback.define_singleton_method(:ask) do |prompt|
+        input = JSON.parse(prompt)
+        raise "Conflicting format" if input.fetch("input").match?(/Respond with exactly one of|INCOMPLETE: \[list/i)
+        raise "Missing JSON contract" unless input.fetch("instruction").include?("Return only JSON")
+
+        Struct.new(:content, :tokens).new({ answers: { status: { choice: "VERIFIED" } } }.to_json, nil)
+      end
+      [ rejected, fallback ].each do |chat|
+        chat.define_singleton_method(:messages) { [] }
+        chat.define_singleton_method(:tools) { [] }
+        chat.define_singleton_method(:after_message) { |*| }
+      end
+      chats = [ rejected, fallback ]
+      client.stub(:build_conversation, -> { chats.shift }) do
+        job.stub(:decision_client, client) do
+          assert_equal :verified, job.send(:verify_completion, @ai_bot, "Create a PR", "PR created", @task)
+        end
+      end
+      assert_empty chats
+    end
+
     private
 
     def mock_ai_client(response_text)
       obj = Object.new
-      obj.define_singleton_method(:chat) do |messages, &block|
-        block&.call(response_text)
-        response_text
+      obj.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => response_text.split(":").first } }, "reason" => response_text }
       end
       obj
     end

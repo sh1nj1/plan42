@@ -175,7 +175,7 @@ module Collavre
         topic_primary_agent_id || arbitration_config["primary_agent_id"]
       end
 
-      # Read primary_agent_id directly from the topics table.
+      # Read the effective topic pin, preserving session exclusivity.
       #
       # Public because the two sources of a primary agent carry different
       # strength: a topic-column assignment is exclusive, while a policy-level
@@ -186,9 +186,8 @@ module Collavre
 
         topic_id = @context.dig("topic", "id")
         return nil unless topic_id
-        return @records.find(Topic, topic_id)&.primary_agent_id if @records
-
-        Topic.where(id: topic_id).pick(:primary_agent_id)
+        topic = @records ? @records.find(Topic, topic_id) : Topic.find_by(id: topic_id)
+        topic&.effective_primary_agent&.id
       end
 
       # Bid strategy specific

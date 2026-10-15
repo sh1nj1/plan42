@@ -29,6 +29,5 @@
   justify-content: center;
   font-weight: var(--weight-7);
   color: var(--text-primary);
-  border-radius: 50%;
-  background: var(--surface-section);
+  pointer-events: none;
 }

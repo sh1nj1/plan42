@@ -8,6 +8,18 @@ class TopicsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as @user, password: "password"
   end
 
+  test "primary assignment rejects judgment-only agents with feedback access" do
+    judge = Collavre::User.create!(name: "Judge", email: "judge-pin@example.test", password: "password123",
+                                  llm_vendor: "typesafe", llm_model: "jev-latest")
+    Collavre::CreativeShare.create!(creative: @creative, user: judge, shared_by: @user, permission: :feedback)
+
+    patch set_primary_agent_creative_topic_url(@creative, @topic), params: { agent_id: judge.id }, as: :json
+
+    assert_response :unprocessable_entity
+    assert_includes response.body, I18n.t("collavre.topics.agent_chat_not_supported", name: judge.display_name)
+    assert_nil @topic.reload.primary_agent_id
+  end
+
   test "index returns effective_creative_id for non-linked creative" do
     get collavre.creative_topics_url(@creative), as: :json
     assert_response :success

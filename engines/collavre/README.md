@@ -202,8 +202,11 @@ System prompts support Liquid templates with access to context variables.
 Collavre uses RubyLLM `~> 2.1.0` with in-memory conversations, without RubyLLM's
 `acts_as` persistence. Collavre owns approval snapshots and token-usage records;
 approval snapshots use the RubyLLM 2.1 message and attachment format. Snapshots
-from RubyLLM 1.x are no longer supported. OpenAI and OpenAI-compatible CLI
-gateways explicitly use the Chat Completions protocol.
+from RubyLLM 1.x are no longer supported. OpenAI chat requests and
+OpenAI-compatible CLI gateways explicitly use the Chat Completions protocol.
+Native OpenAI judgments use the Decisions operation; see the
+[decision adapter guide](../../docs/decision_adapter.md) for native and chat
+judgments, TypesafeAI setup, and agent capabilities.
 
 The host uses the released `rails_mcp_engine ~> 0.5.0` gem for RubyLLM 2.x tool schemas.
 

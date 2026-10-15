@@ -192,7 +192,7 @@ module Collavre
           agent = creative.trigger_loop_agent
           [ parent, creative.topics.find_by(id: loop_data["trigger_topic_id"]), agent ]
         else
-          [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write) ]
+          [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write, capability: :chat) ]
         end
       end
 

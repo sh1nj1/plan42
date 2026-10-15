@@ -14,7 +14,8 @@ module Collavre
 
       def call(topic, unread_count: nil)
         data = topic.slice(:id, :name, :source_topic_id)
-        data[:primary_agent] = agent_json(topic.primary_agent) if topic.primary_agent
+        agent = topic.effective_primary_agent
+        data[:primary_agent] = agent ? agent_json(agent) : nil if topic.primary_agent
         data[:agent_locked] = topic.session_id.present?
         data[:read_only] = topic.history?
         data[:display_name] = I18n.t("collavre.topics.history_name") if data[:read_only]
@@ -24,6 +25,7 @@ module Collavre
       end
 
       def with_agent(topic, agent)
+        agent = topic.effective_primary_agent(agent)
         data = topic.slice(:id, :name, :source_topic_id)
         data[:primary_agent] = agent ? agent_json(agent) : nil
         data[:agent_locked] = topic.session_id.present?
@@ -87,7 +89,7 @@ module Collavre
       end
 
       def primary_agent_for_tool(topic)
-        agent = topic.primary_agent
+        agent = topic.effective_primary_agent
         return nil unless agent
 
         { id: agent.id, name: agent.display_name }

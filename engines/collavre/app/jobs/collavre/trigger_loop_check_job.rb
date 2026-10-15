@@ -215,13 +215,12 @@ module Collavre
       - CONTINUE: The agent made progress but explicitly mentions remaining work it intends to do.
       - BLOCKED: The agent cannot proceed without external help (missing permissions, unclear requirements, dependency on others).
 
-      Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
     PROMPT
 
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
       verifier = pick_fallback_agent(parent_creative, child_creative, task&.agent_id)
 
-      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
+      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :feedback)
         # No AI agent available for fallback — default to continue
         return :continue
       end
@@ -237,31 +236,16 @@ module Collavre
 
         ## Question:
         Based on the agent's response, is the task DONE, should it CONTINUE, or is it BLOCKED?
-        Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
       PROMPT
 
-      client = AiClient.new(
-        vendor: verifier.llm_vendor,
-        model: verifier.llm_model,
-        system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
-        llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
-        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { user: verifier, usage_source_task: task }
-      )
-
-      response_text = +""
-      client.chat([ { role: "user", text: prompt } ]) do |delta|
-        response_text << delta
-      end
-
-      cleaned = response_text.strip.upcase
-      case cleaned
-      when /\ADONE\b/
-        :done
-      when /\ABLOCKED\b/
-        :awaiting_user
-      else
-        :continue
+      result = decision_client(verifier, task, LLM_FALLBACK_SYSTEM_PROMPT).judge(prompt, questions: {
+        status: { type: :choice, instructions: "Determine the current task status.",
+                  options: { DONE: "All required actions executed", CONTINUE: "Work remains", BLOCKED: "External help needed" } }
+      })
+      case result.dig("answers", "status", "choice")
+      when "DONE" then :done
+      when "BLOCKED" then :awaiting_user
+      else :continue
       end
     rescue StandardError => e
       Rails.logger.error("[TriggerLoopCheckJob] LLM fallback failed: #{e.class} #{e.message}")
@@ -271,17 +255,17 @@ module Collavre
 
     # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
     # fall back to the trigger agent itself.
-    def pick_fallback_agent(creative, child_creative, task_agent_id = nil)
-      ai_agents = creative.all_shared_users(:feedback)
+    def pick_fallback_agent(_creative, child_creative, task_agent_id = nil)
+      ai_agents = child_creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
 
-      return ai_agents.first if ai_agents.any?
+      return decision_agent(ai_agents) if ai_agents.any?
 
-      # Prefer parent write agents before the independently authorized keep task agent.
+      # Prefer task write agents before the independently authorized keep task agent.
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
-      (creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-              .find { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+      (child_creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
+              .find { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
     end
 
     # Collect instructions from context creatives for LLM evaluation

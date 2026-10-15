@@ -172,7 +172,7 @@ module Collavre
       @child.comments.create!(content: "Work needs input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       selected = []
       client = Object.new
-      client.define_singleton_method(:chat) { |_, &block| block.call("BLOCKED") }
+      client.define_singleton_method(:judge) { |*, **| { "answers" => { "status" => { "choice" => "BLOCKED" } } } }
       AiClient.stub(:new, ->(**options) { selected << options.fetch(:context).fetch(:user).id; client }) do
         TriggerLoopCheckJob.perform_now(@task.id)
       end
@@ -264,7 +264,7 @@ module Collavre
       @child.comments.create!(content: "Work needs your input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       selected = []
       client = Object.new
-      client.define_singleton_method(:chat) { |_, &block| block.call("BLOCKED") }
+      client.define_singleton_method(:judge) { |*, **| { "answers" => { "status" => { "choice" => "BLOCKED" } } } }
       AiClient.stub(:new, ->(**options) { selected << options.fetch(:context).fetch(:user).id; client }) do
         TriggerLoopCheckJob.perform_now(@task.id)
       end
@@ -276,15 +276,16 @@ module Collavre
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       job = TriggerLoopCheckJob.new
-      assert_nil job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+      assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       other = users(:two)
       other.update_columns(llm_vendor: "google", llm_model: "test")
-      CreativeShare.create!(creative: @child, user: other, permission: :read)
-      @parent.stub(:all_shared_users, ->(_) { [ Struct.new(:user).new(other) ] }) do
+      CreativeShare.create!(creative: @child, user: other, permission: :feedback)
+      @child.stub(:all_shared_users, ->(_) { [ Struct.new(:user).new(other) ] }) do
         assert_equal other, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       end
+      CreativeShare.where(creative: @child, user: other).delete_all
       PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read)
@@ -295,10 +296,10 @@ module Collavre
     test "fallback write pool also excludes agents denied on the loop creative" do
       allowed = users(:two)
       allowed.update_columns(llm_vendor: "google", llm_model: "test")
-      CreativeShare.create!(creative: @child, user: allowed, permission: :read)
+      CreativeShare.create!(creative: @child, user: allowed, permission: :feedback)
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :no_access)
       shares = [ Struct.new(:user).new(@ai_bot), Struct.new(:user).new(allowed) ]
-      @parent.stub(:all_shared_users, ->(permission) { permission == :write ? shares : [] }) do
+      @child.stub(:all_shared_users, ->(permission) { permission == :write ? shares : [] }) do
         assert_equal allowed, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
       end
     end
@@ -317,6 +318,27 @@ module Collavre
         }) { job.perform(@task.id) }
         assert_equal config.merge(change), @child.reload.data.dig("trigger", "loop")
       end
+    end
+
+    test "evaluator rechecks feedback after selection is downgraded to read" do
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      job = TriggerLoopCheckJob.new
+      lookup = job.method(:pick_fallback_agent)
+      selected = false
+      downgrade = lambda do |*args|
+        agent = lookup.call(*args)
+        assert_equal @ai_bot, agent
+        selected = true
+        share.update_columns(permission: :read)
+        agent
+      end
+      AiClient.stub(:new, ->(*) { flunk "Read-only verifier received loop content" }) do
+        job.stub(:pick_fallback_agent, downgrade) do
+          comment = @child.comments.create!(content: "Private response", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+          assert_equal :continue, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+        end
+      end
+      assert selected
     end
 
     test "keep evaluator never sends loop content to a denied or revoked verifier" do
@@ -839,7 +861,7 @@ module Collavre
       factory = ->(**options) {
         LlmUsage::Recorder.new(context: options.fetch(:context), vendor: options[:vendor], model: options[:model]).finish
         client = Object.new
-        client.define_singleton_method(:chat) { |*, &block| block.call("DONE") }
+        client.define_singleton_method(:judge) { |*, **| { "answers" => { "status" => { "choice" => "DONE" } } } }
         client
       }
       job = TriggerLoopCheckJob.new
@@ -1662,6 +1684,57 @@ module Collavre
 
     # --- LLM fallback tests ---
 
+    test "LLM fallback adapter follows JSON contract for completed and blocked work" do
+      job = TriggerLoopCheckJob.new
+      comment = Struct.new(:content).new("The task has been evaluated")
+      %w[DONE BLOCKED].each do |verdict|
+        client = AiClient.new(vendor: "external-adapter", model: "test",
+          system_prompt: TriggerLoopCheckJob::LLM_FALLBACK_SYSTEM_PROMPT)
+        adapter = lambda do |messages, &block|
+          prompt = JSON.parse(messages.first[:text])
+          refute_match(/exactly one word/i, client.send(:system_prompt))
+          refute_match(/exactly one word/i, prompt.fetch("input"))
+          assert_includes prompt.fetch("instruction"), "Return only JSON"
+          block.call({ answers: { status: { choice: verdict } } }.to_json)
+          nil
+        end
+        client.stub(:chat, adapter) do
+          job.stub(:decision_client, client) do
+            expected = verdict == "DONE" ? :done : :awaiting_user
+            assert_equal expected, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+          end
+        end
+      end
+    end
+
+    test "LLM fallback schema rejection preserves JSON contract" do
+      job = TriggerLoopCheckJob.new
+      comment = Struct.new(:content).new("The task is complete")
+      client = AiClient.new(vendor: "google", model: "test",
+        system_prompt: TriggerLoopCheckJob::LLM_FALLBACK_SYSTEM_PROMPT)
+      rejected = Object.new
+      rejected.define_singleton_method(:with_schema) { |*| }
+      rejected.define_singleton_method(:ask) { |*| raise RubyLLM::BadRequestError, "response_format unsupported" }
+      fallback = Object.new
+      fallback.define_singleton_method(:ask) do |prompt|
+        raise "Conflicting format" if JSON.parse(prompt).fetch("input").match?(/exactly one word/i)
+
+        Struct.new(:content, :tokens).new({ answers: { status: { choice: "DONE" } } }.to_json, nil)
+      end
+      [ rejected, fallback ].each do |chat|
+        chat.define_singleton_method(:messages) { [] }
+        chat.define_singleton_method(:tools) { [] }
+        chat.define_singleton_method(:after_message) { |*| }
+      end
+      chats = [ rejected, fallback ]
+      client.stub(:build_conversation, -> { chats.shift }) do
+        job.stub(:decision_client, client) do
+          assert_equal :done, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+        end
+      end
+      assert_empty chats
+    end
+
     test "LLM fallback: transitions to pending_verification when LLM says DONE" do
       # Agent response without [STATUS: ...] tag
       @child.comments.create!(
@@ -1673,8 +1746,8 @@ module Collavre
 
       # Stub AiClient with a fake that yields "DONE" to the block
       fake_client = Object.new
-      fake_client.define_singleton_method(:chat) do |_messages, &block|
-        block.call("DONE") if block
+      fake_client.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => "DONE" } } }
       end
 
       TriggerLoopVerifyJob.stub(:perform_later, ->(task_id) { }) do
@@ -1696,8 +1769,8 @@ module Collavre
       )
 
       fake_client = Object.new
-      fake_client.define_singleton_method(:chat) do |_messages, &block|
-        block.call("CONTINUE") if block
+      fake_client.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => "CONTINUE" } } }
       end
 
       AiClient.stub(:new, ->(*_args) { fake_client }) do
@@ -1718,8 +1791,8 @@ module Collavre
       )
 
       fake_client = Object.new
-      fake_client.define_singleton_method(:chat) do |_messages, &block|
-        block.call("BLOCKED") if block
+      fake_client.define_singleton_method(:judge) do |*, **|
+        { "answers" => { "status" => { "choice" => "BLOCKED" } } }
       end
 
       AiClient.stub(:new, ->(*_args) { fake_client }) do
