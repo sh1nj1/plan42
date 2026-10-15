@@ -40,6 +40,36 @@ module Collavre
       })
     end
 
+    test "failed keep reply resume preserves awaiting state and can retry" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"]["source"] = "keep"
+      @child.update!(data: data)
+      previous = @child.reload.data.deep_dup
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise "dispatch failed" }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic: @topic, user: @human)
+        end
+      end
+      assert_equal previous, @child.reload.data
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        assert_difference -> { @child.comments.count }, 2 do
+          @child.comments.create!(content: "Try again", topic: @topic, user: @human)
+        end
+      end
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "failed reply continuation creation rolls back its claim" do
+      previous = @child.reload.data.deep_dup
+      reply = @child.comments.create!(content: "Continue", topic: @topic, user: @human, skip_dispatch: true)
+      reply.stub(:create_loop_resume, ->(*) { raise "creation failed" }) do
+        assert_no_difference -> { @child.comments.count } do
+          reply.send(:resume_trigger_loop_if_awaiting)
+        end
+      end
+      assert_equal previous, @child.reload.data
+    end
+
     test "human comment in trigger topic resumes awaiting_user loop" do
       SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         assert_difference -> { @child.comments.count }, 2 do

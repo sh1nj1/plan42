@@ -131,3 +131,10 @@ Status evaluators and completion verifiers include a configured context creative
 only when the selected verifier currently has read permission. These checks use
 authoritative shares, so revocation and explicit denial take effect even before
 the asynchronous permission cache refreshes. Readable contexts remain deduplicated.
+
+UI Resume and Restart commit their state transition together with continuation
+creation and dispatch. A creation or dispatch error rolls back the prior state,
+iteration counters, and control version, so the same action can be retried.
+Public reply resumes likewise return to their previous awaiting-user state on
+failure; the human reply remains saved and another reply can retry the resume.
+Controls whose loop topic changed before locking do not affect the replacement.

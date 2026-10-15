@@ -17,6 +17,64 @@ module Collavre
         clear_enqueued_jobs
       end
 
+      test "keep controls roll back the entire transition when dispatch raises" do
+        { "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state, current_iteration: 3
+          ) } })
+          previous = @child.reload.data.deep_dup
+          error = RuntimeError.new("dispatch failed")
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise error }) do
+            assert_no_difference -> { @child.comments.count } do
+              assert_same error, assert_raises(RuntimeError) { command(action: action).call }
+            end
+          end
+          assert_equal previous, @child.reload.data
+          SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) do
+            assert_difference -> { @child.comments.count }, 1 do
+              assert command(action: action).call.success?
+            end
+          end
+        end
+      end
+
+      test "keep controls roll back when continuation creation fails" do
+        { "resume" => "awaiting_user", "restart" => "max_reached" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state, current_iteration: 4
+          ) } })
+          previous = @child.reload.data.deep_dup
+          operation = command(action: action)
+          operation.stub(:create_trigger_comment, ->(*) { raise "creation failed" }) do
+            assert_raises(RuntimeError) { operation.call }
+          end
+          assert_equal previous, @child.reload.data
+        end
+      end
+
+      test "stale controls do not lock or resume a replacement topic" do
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: "paused"
+        ) } })
+        operation = command(action: "resume")
+        replacement_topic = @child.topics.create!(name: "Replacement", user: @user)
+        replacement = @child.data.deep_dup
+        replacement["trigger"]["loop"]["trigger_topic_id"] = replacement_topic.id
+        Creative.where(id: @child.id).update_all(data: replacement)
+        locked_topics = []
+        original = Comments::TopicMutation.method(:call)
+        Comments::TopicMutation.stub(:call, lambda { |topic_id, creative_id, &block|
+          locked_topics << topic_id
+          original.call(topic_id, creative_id, &block)
+        }) do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale control dispatched" }) do
+            operation.call
+          end
+        end
+        assert_equal [ @child.main_topic.id ], locked_topics
+        assert_equal replacement, @child.reload.data
+      end
+
       test "keep resume and restart reject a missing selected agent" do
       { "resume" => "paused", "restart" => "completed" }.each do |action, state|
         @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(

@@ -20,9 +20,11 @@ module Collavre
         # write transaction + row lock just to find that out.
         return unless trigger_loop_resumable?(Creative.where(id: creative.id).pick(:data))
 
-        progress = claim_awaiting_trigger_loop
-        # Revalidate the committed turn under topic -> creative lock order.
-        post_loop_resume(*progress) if progress
+        # Claim and dispatch roll back together under topic -> creative locks.
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          progress = claim_awaiting_trigger_loop
+          post_loop_resume(*progress) if progress
+        end
       rescue StandardError => e
         Rails.logger.error(
           "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
