@@ -9,7 +9,7 @@ module Collavre
       end
 
       def call
-        return if creative.find_ai_agent(:write)
+        return if creative.find_ai_agent(:write, capability: :chat)
 
         topic = creative.topics.find_or_create_by!(name: "Drop Trigger") do |record|
           record.user = creative.user

@@ -44,6 +44,20 @@ module Collavre
         assert_equal({ id: @agent.id, name: "Worker" }, result[:primary_agent])
       end
 
+      test "rejects judgment-only agents even with feedback permission" do
+        @agent.update!(llm_vendor: "typesafe", llm_model: "jev-latest")
+        share!(:feedback)
+
+        assert_equal :chat_not_supported, Topic.primary_agent_rejection(@creative, @agent)
+        assert_not Topic.primary_agent_assignable?(@creative, @agent)
+        assert_equal "primary_agent_released_chat_not_supported", Topics::PinRejection.release_locale_key(:chat_not_supported)
+        error = assert_raises(ArgumentError) do
+          TopicCreateService.new.call(creative_id: @creative.id, name: "Judge", primary_agent: @agent.id.to_s)
+        end
+        assert_includes error.message, "does not support chat"
+        assert_not @creative.topics.exists?(name: "Judge")
+      end
+
       test "pins a private agent already shared on the creative" do
         @agent.update!(searchable: false)
         share!(:feedback)
