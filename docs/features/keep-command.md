@@ -83,7 +83,9 @@ unavailable selection until access is restored or a new `/keep` selects a
 different agent.
 
 Keep loops track the current trigger comment. Unrelated topic tasks and duplicate
-completions cannot advance that turn. If initial or continuation routing schedules
+completions cannot advance that turn. An abandoned inline-login replay yields only to
+a newer task serving that same turn; unrelated discussion work cannot block
+its transition to `awaiting_user`. If initial or continuation routing schedules
 no agent (including an Inbox-ineligible session agent), the loop enters
 `awaiting_user` and posts a notice instead of remaining running without a task.
 If initial dispatch raises, the current running keep turn also returns to

@@ -427,6 +427,33 @@ module Collavre
       end
     end
 
+    %w[running done].product([ false, true ]).each do |status, current_turn|
+      test "abandoned keep replay only yields to #{status} current_turn=#{current_turn}" do
+        @topic.update!(name: "Ordinary discussion")
+        @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => {
+          "source" => "keep", "start_comment_id" => 999, "current_comment_id" => 999
+        } }))
+        @task.reload.update!(trigger_event_payload: {
+          "comment" => { "id" => 999 }, "engine_login" => { "replay_abandoned" => true }
+        })
+        newer = @task.dup
+        newer.assign_attributes(status: "running", created_at: @task.created_at + 1.second,
+          trigger_event_payload: { "comment" => { "id" => current_turn ? 999 : 1000 } })
+        newer.save!
+        if status == "done"
+          newer.update_columns(status: "done")
+          @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic,
+            task: newer, skip_dispatch: true)
+        end
+        before = @child.comments.count
+        TriggerLoopCheckJob.perform_now(@task.id)
+        assert_equal(current_turn ? "running" : "awaiting_user", @child.reload.data.dig("trigger", "loop", "state"))
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+        assert_equal 999, @child.data.dig("trigger", "loop", "current_comment_id")
+        assert_equal before + (current_turn ? 0 : 1), @child.comments.count
+      end
+    end
+
     test "keep ignores unrelated tasks and consumes each current turn once" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 999)

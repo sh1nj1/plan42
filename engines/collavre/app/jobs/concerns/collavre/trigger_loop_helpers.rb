@@ -40,6 +40,8 @@ module Collavre
           .where(status: Task::ACTIVE_STATUSES + [ "done" ])
           .where("created_at > :time OR (created_at = :time AND id > :id)", time: task.created_at, id: task.id)
           .any? do |newer|
+        next false unless creative.trigger_loop_task?(newer)
+
         newer.active? || (!newer.unsuccessful_loop_response? && !newer.trigger_event_payload&.dig("engine_login", "replay_abandoned"))
       end
     end
