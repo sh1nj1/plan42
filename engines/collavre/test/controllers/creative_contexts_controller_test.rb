@@ -253,4 +253,18 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal [ @project.id ], @features.reload.data["context_order"]
   end
+
+  test "PATCH update_contexts keeps the order of a removed pin that is still inherited" do
+    @features.update!(data: { "context_ids" => [ @development.id ] })
+    @feature_a.update!(data: {
+      "context_ids" => [ @development.id, @project.id ],
+      "context_order" => [ @development.id, @project.id ]
+    })
+
+    patch update_contexts_creative_path(@feature_a), params: { context_ids: [ @project.id ] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    assert_equal [ @development.id, @project.id ], @feature_a.reload.data["context_order"]
+  end
 end

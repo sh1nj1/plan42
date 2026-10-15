@@ -107,9 +107,10 @@ module Collavre
 
       # A removed context must not keep its old slot in context_order, or
       # re-adding it later would restore that slot instead of appending it.
+      # IDs still inherited from an ancestor remain visible, so they keep theirs.
       def apply_context_ids_setting(new_data, settings)
         new_ids = Array(settings[:context_ids]).map(&:to_i)
-        removed_ids = context_ids.map(&:to_i) - new_ids
+        removed_ids = context_ids.map(&:to_i) - new_ids - (parent&.effective_context_ids || []).map(&:to_i)
         new_data["context_order"] = context_order - removed_ids if removed_ids.any? && new_data.key?("context_order")
         new_data["context_ids"] = new_ids
       end
