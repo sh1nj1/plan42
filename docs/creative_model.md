@@ -62,12 +62,18 @@ creative.comments                 # Has-many comments (images attached to commen
 creative.files                    # Active Storage has_many_attached files
 ```
 
-Attached `.pptx` files appear as inline slide viewers on the Creative page.
+Attached `.pptx` files appear at their attachment link position as the same inline
+slide viewer in the editor and on the Creative page, including immediately after
+upload. The stored description retains the attachment link; both display paths
+derive the preview iframe from it. Hover or keyboard focus reveals previous/next,
+download, and fullscreen controls; touch devices always show the controls.
 `Collavre::PptRenderer` renders slide HTML without creating creatives;
 `Collavre::PptImporter` reuses it when persisting imported slides.
 `Collavre::PptPreview` caches rendered HTML for seven days by blob key and locale.
-The preview endpoint checks Creative read permission on every request and returns
-`Cache-Control: private, no-store`; cached rendering never bypasses authorization.
+The preview endpoint checks read permission on the attachment-owning effective
+origin on every saved attachment request. Before an upload is attached, only its
+uploader can preview it. Responses return `Cache-Control: private, no-store`;
+cached rendering never bypasses authorization.
 Preview images are embedded in the rendered HTML rather than uploaded as new blobs.
 
 ## Tree Operations
