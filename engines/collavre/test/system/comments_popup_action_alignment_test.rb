@@ -56,6 +56,31 @@ class CommentsPopupActionAlignmentTest < ApplicationSystemTestCase
     assert_in_delta dimensions.dig("closeButton", "centerY"), dimensions.dig("closeIcon", "centerY"), 0.01
   end
 
+  test "message input aligns with both form edges at mobile and desktop widths" do
+    [ 375, 1000 ].each do |width|
+      page.current_window.resize_to(width, 900)
+      visit root_path
+      assert_selector "#creative-#{@creative.id}", wait: 5
+      find("#creative-#{@creative.id}").hover
+      within("#creative-#{@creative.id}") { find(".comments-btn").click }
+      assert_selector "#new-comment-form textarea", visible: :visible
+
+      [ false, true ].each do |fullscreen|
+        find(".comments-popup-fullscreen").click if fullscreen
+        assert_selector "#comments-popup[data-fullscreen='true']" if fullscreen
+        assert_selector "#new-comment-form textarea" do |textarea|
+          page.evaluate_script(<<~JS, textarea)
+            (() => {
+              const input = arguments[0].getBoundingClientRect()
+              const form = document.querySelector('#new-comment-form').getBoundingClientRect()
+              return Math.abs(input.left - form.left) <= 1 && Math.abs(input.right - form.right) <= 1
+            })()
+          JS
+        end
+      end
+    end
+  end
+
   test "approval reason is stacked and fills the message width" do
     task = Collavre::Task.create!(name: "Approval", status: "pending_approval", agent: users(:ai_bot),
       creative: @creative, topic_id: @creative.main_topic.id,
@@ -66,6 +91,7 @@ class CommentsPopupActionAlignmentTest < ApplicationSystemTestCase
     [ 480, 1000 ].each do |width|
       page.current_window.resize_to(width, 900)
       visit root_path
+      assert_selector "#creative-#{@creative.id}", wait: 5
       find("#creative-#{@creative.id}").hover
       within("#creative-#{@creative.id}") { find(".comments-btn").click }
       assert_selector "#comment_#{comment.id} textarea[data-approval-reason]", visible: :visible
