@@ -22,7 +22,7 @@ module Collavre
       end
 
       def install_pdf_dependency
-        run "npm install pdfjs-dist@4.8.69", abort_on_failure: true
+        run "npm install --save-exact pdfjs-dist@4.8.69", abort_on_failure: true
       end
 
       def show_post_install
@@ -48,7 +48,7 @@ module Collavre
         content = File.read(build_script)
 
         unless content.include?("nodePaths:")
-          content = content.sub(/(\bbundle:\s*true,)/, "\\1\n    nodePaths: [path.join(process.cwd(), 'node_modules')],")
+          content = content.sub(/(\bbundle:\s*true,)/, "\\1\n    nodePaths: [require('path').join(process.cwd(), 'node_modules')],")
           File.write(build_script, content)
         end
 
