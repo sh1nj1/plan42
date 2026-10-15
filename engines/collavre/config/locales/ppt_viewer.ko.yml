@@ -1,6 +1,7 @@
 ko:
   collavre:
     ppt_viewer:
+      close: "닫기"
       download: "다운로드"
       title: "프레젠테이션: %{filename}"
       navigation: "슬라이드 탐색"

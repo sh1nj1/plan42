@@ -161,14 +161,63 @@
   --slide-controls-space: 0px;
 }
 .ppt-viewer #slide-controls {
+  position: absolute;
+  inset: 0;
+  transform: none;
+  background: transparent;
+  pointer-events: none;
   opacity: 0;
   transition: opacity 120ms ease;
-  background: var(--surface-bg);
-  padding: var(--space-2);
-  border-radius: var(--space-2);
 }
-.ppt-viewer:hover #slide-controls,
-.ppt-viewer:focus-within #slide-controls { opacity: 1; }
+.ppt-viewer { position: relative; cursor: zoom-in; }
+.ppt-viewer:fullscreen { cursor: default; }
+.ppt-viewer #slide-controls :is(button, a) {
+  pointer-events: none;
+  position: absolute;
+  background: transparent;
+  border: 0;
+  color: white;
+  filter: drop-shadow(0 1px 2px black);
+  padding: 12px;
+  cursor: pointer;
+}
+.ppt-viewer #slide-controls svg {
+  width: 32px;
+  height: 32px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.ppt-viewer [data-ppt-previous], .ppt-viewer [data-ppt-next] {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.ppt-viewer [data-ppt-previous] { left: 0; }
+.ppt-viewer [data-ppt-next] { right: 0; }
+.ppt-viewer .ppt-viewer-download { top: 0; right: 56px; }
+.ppt-viewer [data-ppt-close] { top: 0; right: 0; }
+.ppt-viewer [data-ppt-fullscreen] { bottom: 0; right: 0; }
+.ppt-viewer [data-ppt-counter] {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  text-shadow: 0 1px 2px black;
+}
+.ppt-viewer [data-ppt-error] { position: absolute; bottom: 48px; }
+.ppt-viewer:not(:fullscreen) :is(.ppt-viewer-download, [data-ppt-close]),
+.ppt-viewer:fullscreen [data-ppt-fullscreen] { display: none; }
+@media (hover: hover) {
+  .ppt-viewer:hover #slide-controls,
+  .ppt-viewer:focus-visible #slide-controls,
+  .ppt-viewer #slide-controls:focus-within { opacity: 1; }
+  .ppt-viewer:hover #slide-controls :is(button, a),
+  .ppt-viewer:focus-visible #slide-controls :is(button, a),
+  .ppt-viewer #slide-controls:focus-within :is(button, a) { pointer-events: auto; }
+  .ppt-viewer [data-ppt-fullscreen] { display: none; }
+}
 @media (hover: none) {
-  .ppt-viewer #slide-controls { opacity: 1; }
+  .ppt-viewer.ppt-controls-visible #slide-controls { opacity: 1; }
+  .ppt-viewer.ppt-controls-visible #slide-controls :is(button, a) { pointer-events: auto; }
 }

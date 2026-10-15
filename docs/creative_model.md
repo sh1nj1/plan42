@@ -65,8 +65,10 @@ creative.files                    # Active Storage has_many_attached files
 Attached `.pptx` files appear at their attachment link position as the same inline
 slide viewer in the editor and on the Creative page, including immediately after
 upload. The stored description retains the attachment link; both display paths
-derive the preview iframe from it. Hover or keyboard focus reveals previous/next,
-download, and fullscreen controls; touch devices always show the controls.
+derive the preview iframe from it. Transparent chevrons sit at the left and right
+edges. Desktop hover or keyboard focus reveals controls; clicking a slide opens
+native fullscreen. On touch devices, tapping toggles controls and the fullscreen
+button opens the presentation. Fullscreen provides download and close controls.
 `Collavre::PptRenderer` renders slide HTML without creating creatives;
 `Collavre::PptImporter` reuses it when persisting imported slides.
 `Collavre::PptPreview` caches rendered HTML for seven days by blob key and locale.

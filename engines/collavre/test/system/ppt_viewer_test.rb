@@ -34,11 +34,13 @@ class PptViewerTest < ApplicationSystemTestCase
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       assert_selector ".ppt-slide", text: "Slide 1"
       find(".ppt-viewer").hover
-      assert_selector "a[download=\"slides.pptx\"]"
+      assert_no_selector "a[download=\"slides.pptx\"]"
       find("[data-ppt-next]").click
       assert_selector "[data-ppt-counter]", text: "2 / 2"
-      find("[data-ppt-fullscreen]").click
+      find(".ppt-viewer-slide:not([hidden])").click
       assert_selector ".ppt-viewer:fullscreen"
+      assert_selector "a[download=\"slides.pptx\"]"
+      assert_selector "[data-ppt-close]"
       find(".ppt-viewer").send_keys(:arrow_left)
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       find(".ppt-viewer").send_keys(:escape)
@@ -79,8 +81,10 @@ class PptViewerTest < ApplicationSystemTestCase
     assert_preview_fills_container(4.0 / 3)
     within_frame(first("iframe.ppt-attachment-preview")) do
       find(".ppt-viewer").hover
-      find("[data-ppt-fullscreen]").click
+      find(".ppt-viewer-slide:not([hidden])").click
       assert_selector ".ppt-viewer:fullscreen"
+      assert_selector "a[download=\"slides.pptx\"]"
+      assert_selector "[data-ppt-close]"
       find(".ppt-viewer").send_keys(:escape)
       assert_no_selector ".ppt-viewer:fullscreen"
     end
@@ -90,6 +94,32 @@ class PptViewerTest < ApplicationSystemTestCase
     find("#creative-#{@creative.id} .edit-inline-btn").click
     assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
     assert_preview_fills_container(4.0 / 3)
+  end
+
+  test "touch controls toggle and fullscreen provides download and close" do
+    visit collavre.creatives_path(id: @creative.id)
+    page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: true)
+    within_frame(find("iframe.ppt-attachment-preview")) do
+      assert page.evaluate_script("matchMedia('(hover: none)').matches")
+      viewer = find(".ppt-viewer")
+      assert_equal "0", page.evaluate_script("getComputedStyle(document.querySelector('#slide-controls')).opacity")
+      viewer.click
+      assert_selector ".ppt-controls-visible"
+      find("[data-ppt-next]").click
+      assert_selector "[data-ppt-counter]", text: "2 / 2"
+      assert_selector ".ppt-controls-visible"
+      viewer.click
+      assert_no_selector ".ppt-controls-visible"
+      viewer.click
+      find("[data-ppt-fullscreen]").click
+      assert_selector ".ppt-viewer:fullscreen"
+      viewer.click
+      assert_selector "a[download]"
+      find("[data-ppt-close]").click
+      assert_no_selector ".ppt-viewer:fullscreen"
+    end
+  ensure
+    page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: false)
   end
 
   private

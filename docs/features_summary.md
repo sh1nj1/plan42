@@ -7,7 +7,7 @@
 *   **Progress Tracking**: Visualize progress with value ranges (0.0 - 1.0). Parent progress is calculated from children.
 *   **Visual Boundaries**: Clear distinction of creative areas and child regions.
 *   **Styles**: Auto-styling for top-level creatives (h1, h2, h3).
-*   **PowerPoint Attachments**: View attached `.pptx` files at their attachment position in both the editor and Creative view, immediately after upload, without importing creatives. Hover or focus the preview to reveal previous/next, download, and fullscreen controls (always visible on touch devices). Use ←/→ to navigate slides; select Fullscreen to present and Esc to exit (where the browser supports fullscreen).
+*   **PowerPoint Attachments**: View attached `.pptx` files at their attachment position in both the editor and Creative view, immediately after upload, without importing creatives. Hover or focus to reveal transparent left/right chevrons; click the slide to enter fullscreen. On touch devices, tap to toggle controls and use the fullscreen button. Fullscreen provides download and close buttons. Use ←/→ to navigate and Esc to exit (where the browser supports fullscreen).
 
 ### Creative Page Menu
 *   **New Creative**: Add creative with '+' button.

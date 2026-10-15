@@ -2,7 +2,8 @@ import { jest } from '@jest/globals'
 import { initializePptViewer } from '../ppt_viewer'
 
 function setup(fullscreen = true) {
-  document.body.innerHTML = `<div class="ppt-viewer" tabindex="0"><div class="ppt-viewer-slide">One</div><div class="ppt-viewer-slide">Two</div><button data-ppt-previous></button><button data-ppt-next></button><span data-ppt-counter></span><button data-ppt-fullscreen></button><span data-ppt-error hidden></span></div>`
+  document.body.innerHTML = `<div class="ppt-viewer" tabindex="0"><div class="ppt-viewer-slide">One</div><div class="ppt-viewer-slide">Two</div><button data-ppt-previous></button><button data-ppt-next></button><span data-ppt-counter></span><button data-ppt-fullscreen></button><button data-ppt-close></button><a href="/download">Download</a><span data-ppt-error hidden></span></div>`
+  window.matchMedia = jest.fn().mockReturnValue({ matches: false })
   const viewer = document.querySelector('.ppt-viewer')
   if (fullscreen) viewer.requestFullscreen = jest.fn().mockResolvedValue(undefined)
   document.exitFullscreen = jest.fn().mockResolvedValue(undefined)
@@ -86,4 +87,54 @@ test('sizes the embedding frame from validated presentation dimensions', () => {
     expect(frame.style.aspectRatio).toBe('')
   }
   Object.defineProperty(window, 'frameElement', { configurable: true, value: null })
+})
+
+test('desktop slide click enters fullscreen but links and controls do not', async () => {
+  const viewer = setup()
+  viewer.querySelector('a').addEventListener('click', event => event.preventDefault())
+  viewer.querySelector('a').click()
+  viewer.querySelector('[data-ppt-next]').click()
+  expect(viewer.requestFullscreen).not.toHaveBeenCalled()
+  viewer.querySelector('.ppt-viewer-slide').click()
+  await tick()
+  expect(viewer.requestFullscreen).toHaveBeenCalledTimes(1)
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: viewer })
+  viewer.click()
+  expect(document.exitFullscreen).not.toHaveBeenCalled()
+  viewer.querySelector('[data-ppt-close]').click()
+  await tick()
+  expect(document.exitFullscreen).toHaveBeenCalledTimes(1)
+})
+
+test('touch taps toggle controls without entering fullscreen; buttons remain independent', async () => {
+  const viewer = setup()
+  window.matchMedia.mockReturnValue({ matches: true })
+  viewer.click()
+  expect(viewer.classList.contains('ppt-controls-visible')).toBe(true)
+  viewer.querySelector('[data-ppt-next]').click()
+  expect(viewer.classList.contains('ppt-controls-visible')).toBe(true)
+  viewer.click()
+  expect(viewer.classList.contains('ppt-controls-visible')).toBe(false)
+  expect(viewer.requestFullscreen).not.toHaveBeenCalled()
+  viewer.querySelector('[data-ppt-fullscreen]').click()
+  await tick()
+  expect(viewer.requestFullscreen).toHaveBeenCalledTimes(1)
+  viewer.classList.add('ppt-controls-visible')
+  document.dispatchEvent(new window.Event('fullscreenchange'))
+  expect(viewer.classList.contains('ppt-controls-visible')).toBe(false)
+})
+
+test('keyboard opens fullscreen and unsupported browsers ignore slide activation', async () => {
+  const viewer = setup()
+  for (const key of ['Enter', ' ']) {
+    const event = new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    viewer.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+  }
+  await tick()
+  expect(viewer.requestFullscreen).toHaveBeenCalledTimes(2)
+  const unsupported = setup(false)
+  unsupported.click()
+  unsupported.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  expect(document.exitFullscreen).not.toHaveBeenCalled()
 })
