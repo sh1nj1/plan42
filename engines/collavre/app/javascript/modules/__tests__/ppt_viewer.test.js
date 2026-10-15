@@ -31,7 +31,7 @@ test('buttons and arrow keys navigate within bounds', () => {
     expect(event.defaultPrevented).toBe(true)
   }
   expect(counter.textContent).toBe('1 / 2')
-  const event = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+  const event = new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
   viewer.dispatchEvent(event)
   expect(event.defaultPrevented).toBe(false)
 })

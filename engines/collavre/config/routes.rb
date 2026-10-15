@@ -80,8 +80,7 @@ Collavre::Engine.routes.draw do
   resources :creatives do
     resources :crons, only: %i[update destroy], param: :key
     draw :creative_history
-    resources :ppt_previews, only: :show, module: :creatives
-    resources :attachments, :file_drops, only: [ :create ], module: :creatives
+    draw :creative_attachments
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do
