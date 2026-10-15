@@ -42,8 +42,7 @@ module Collavre
       case status
       when :done
         # Transition to pending_verification and enqueue LLM verification
-        update_loop_data(child_creative, state: "pending_verification", infra_retry_count: 0)
-        TriggerLoopVerifyJob.perform_later(task.id)
+        enqueue_verification(child_creative, task)
       when :awaiting_user
         update_loop_data(child_creative, state: "awaiting_user", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
@@ -72,6 +71,14 @@ module Collavre
     end
 
     private
+
+    def enqueue_verification(creative, task)
+      update_loop_data(creative, state: "pending_verification", infra_retry_count: 0)
+      raise ActiveJob::EnqueueError, "Verification enqueue rejected" if TriggerLoopVerifyJob.perform_later(task.id) == false
+    rescue StandardError
+      restore_retryable_loop_turn(creative)
+      raise
+    end
 
     # Detect infrastructure errors (timeout, connection failure, etc.)
     # These are NOT valid task results — the agent never actually worked.

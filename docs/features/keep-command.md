@@ -129,6 +129,17 @@ A coalesced replacement or another
 active/completed task serving that same turn retains ownership. Resume or a new `/keep` can then start work again. Unrelated
 tasks, paused loops, and drop loops are unaffected.
 
+A dropped current dispatch retains ownership while restoration is pending. If
+permission or scheduler admission refuses restoration, that refusal is recorded,
+the dispatch is excluded from subsequent sweeps, and the last owner releases the
+keep loop to `awaiting_user`. Admitted restoration retains ownership until its
+replacement task starts. Pending restoration owned by another task serving the
+same turn also retains ownership; unrelated pending comments do not.
+
+If enqueueing completion verification raises or returns false, the accepted
+running turn and its counters are restored so the status check can retry.
+Recovery preserves a concurrent Pause or replacement loop.
+
 If continuation, infrastructure-retry, or failed-verification dispatch raises,
 the new comment and tasks roll back and the accepted evaluator turn is restored,
 including its previous iteration and retry counters. The evaluator can retry

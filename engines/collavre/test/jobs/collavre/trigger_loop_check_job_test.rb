@@ -63,6 +63,103 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "rejected restoration releases the current keep turn and is not swept again" do
+      [ :permission, :scheduler, :missing_decision ].each do |reason|
+        turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id, start_comment_id: turn.id)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        record = Orchestration::DeliveryRecord
+        payload = turn.dispatch_payload.deep_stringify_keys
+        payload["comment"]["id"] = turn.id - 1
+        payload[record::DROPPED_KEY] = [ turn.id ]
+        Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: payload)
+        scheduler = Object.new
+        scheduler.define_singleton_method(:schedule) { |_| reason == :missing_decision ? [] : [ { timing: :rejected, reason: :quota } ] }
+        Orchestration::Matcher.stub(:permits_creative_access?, reason != :permission) do
+          Orchestration::Scheduler.stub(:new, scheduler) do
+            AiAgentJob.stub(:perform_later, ->(*) { flunk "Rejected restoration was enqueued" }) do
+              @task.reload.update!(status: "failed")
+            end
+          end
+        end
+        recovered = @child.reload.data.dig("trigger", "loop")
+        assert_equal "awaiting_user", recovered["state"], reason.to_s
+        assert_equal config["current_iteration"], recovered["current_iteration"]
+        refute record.pending_restoration?(@task.reload, comment_id: turn.id)
+        AiAgentJob.stub(:perform_later, ->(*) { flunk "Rejected restoration was swept again" }) { record.restore!(@task.reload) }
+      end
+    end
+
+    test "rejected restoration preserves another pending owner of the same keep turn" do
+      [ true, false ].each do |admitted|
+        turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id, start_comment_id: turn.id, cooldown_seconds: 0)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        record = Orchestration::DeliveryRecord
+        payload = turn.dispatch_payload.deep_stringify_keys
+        payload["comment"]["id"] = turn.id - 1
+        payload[record::DROPPED_KEY] = [ turn.id ]
+        Task.where(id: @task.id).update_all(status: "failed", trigger_event_payload: payload)
+        other = Task.create!(name: "Other covering turn", status: "running", agent: users(:two), creative: @child,
+          topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: payload)
+        other_payload = admitted ? payload.merge(record::RESTORED_KEY => [ turn.id ]) : payload
+        other.update_columns(status: "failed", trigger_event_payload: other_payload)
+        record.reject_restore!(@task.reload, turn.id)
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        if admitted
+          restored = Task.create!(name: "Restored turn", status: "running", agent: other.agent, creative: @child,
+            topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: turn.dispatch_payload.deep_stringify_keys)
+          @child.comments.create!(content: "[STATUS: BLOCKED]", user: other.agent, task: restored, topic: @topic, skip_dispatch: true)
+          TriggerLoopCheckJob.stub(:perform_later, ->(*) { }) { restored.update!(status: "done") }
+          TriggerLoopCheckJob.perform_now(restored.id)
+        else
+          record.reject_restore!(other.reload, turn.id)
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        other.destroy!
+      end
+    end
+
+    test "verification enqueue recovery preserves a newer control snapshot" do
+      [ { "state" => "paused" }, { "start_comment_id" => 1000 } ].each do |change|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, start_comment_id: 999)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        @child.comments.where(task_id: @task.id).destroy_all
+        @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+        replacement = nil
+        enqueue = lambda do |*|
+          @child.reload
+          replacement = @child.data.dig("trigger", "loop").merge(change)
+          @child.update!(data: { "trigger" => { "loop" => replacement } })
+          raise "queue unavailable"
+        end
+        TriggerLoopVerifyJob.stub(:perform_later, enqueue) { assert_raises(RuntimeError) { TriggerLoopCheckJob.perform_now(@task.id) } }
+        assert_equal replacement, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "failed verification enqueue preserves the accepted keep turn for retry" do
+      [ :raise, :reject ].each do |failure|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, start_comment_id: 999,
+          current_iteration: 2, infra_retry_count: 1)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        @child.comments.where(task_id: @task.id).destroy_all
+        @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+        error = RuntimeError.new("queue unavailable")
+        enqueue = ->(*) { failure == :raise ? (raise error) : false }
+        TriggerLoopVerifyJob.stub(:perform_later, enqueue) do
+          raised = assert_raises(StandardError) { TriggerLoopCheckJob.perform_now(@task.id) }
+          assert_same error, raised if failure == :raise
+        end
+        restored = @child.reload.data.dig("trigger", "loop")
+        assert_equal config.except("control_version"), restored.except("control_version")
+        enqueued = []
+        TriggerLoopVerifyJob.stub(:perform_later, ->(id) { enqueued << id }) { TriggerLoopCheckJob.perform_now(@task.id) }
+        assert_equal [ @task.id ], enqueued
+        assert_equal "pending_verification", @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
     test "keep fallback skips denied and revoked candidates before selecting a reader" do
       allowed = users(:two)
       allowed.update_columns(llm_vendor: "google", llm_model: "test")

@@ -479,6 +479,21 @@ module Collavre
         assert_equal 123, payload["inline_login_task_id"]
       end
 
+      test "restoration rejection leaves ordinary drop and unrelated keep dispatches retryable" do
+        anchor = comment("first")
+        late = comment("second")
+        turn = task_for(anchor)
+        DeliveryRecord.claim_drop!(turn, late.id)
+        Task.where(id: turn.id).update_all(status: "failed")
+        [ {}, { "source" => "drop", "current_comment_id" => late.id },
+          { "source" => "keep", "current_comment_id" => anchor.id } ].each do |config|
+          @creative.update!(data: { "trigger" => { "loop" => config } })
+          DeliveryRecord.reject_restore!(turn, late.id)
+          assert_empty DeliveryRecord.rejected_restore_ids_in(turn.reload.trigger_event_payload)
+          assert DeliveryRecord.pending_restoration?(turn, comment_id: late.id)
+        end
+      end
+
       # The same drift, on the other list. TURN_SCOPED_KEYS is what a restored
       # dispatch is stripped of, and it is right only while it names every key a
       # turn writes onto its own payload. Driving every writer over one
@@ -496,6 +511,11 @@ module Collavre
         DeliveryRecord.mark_handoff_failed!(turn.reload)
         DeliveryRecord.mark_handed_off!(turn.reload)
         DeliveryRecord.claim_restore!(turn.reload, late.id)
+        @creative.update!(data: { "trigger" => { "loop" => { "source" => "keep", "current_comment_id" => folded.id } } })
+        DeliveryRecord.reject_restore!(turn.reload, folded.id)
+        refute DeliveryRecord.claim_restore!(turn.reload, folded.id)
+        DeliveryRecord.reject_restore!(turn.reload, late.id)
+        assert_equal [ folded.id ], DeliveryRecord.rejected_restore_ids_in(turn.reload.trigger_event_payload)
         turn.update!(
           trigger_event_payload: TaskCoalescer.reanchor_payload(
             TaskCoalescer.absorb_into_payload(turn.reload.trigger_event_payload, [ folded.id ]),

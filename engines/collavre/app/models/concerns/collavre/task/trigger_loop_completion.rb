@@ -40,9 +40,10 @@ module Collavre
       # Coalescing and ambient fan-out may leave another task owning this turn.
       def surviving_keep_turn?(target)
         self.class.where(creative_id: creative_id, topic_id: topic_id, trigger_event_name: "comment_created")
-            .where(status: ACTIVE_STATUSES + [ "done" ]).where.not(id: id).any? do |task|
+            .where(status: ACTIVE_STATUSES + Orchestration::DeliveryRecord::RESTORABLE_STATUSES).where.not(id: id).any? do |task|
           task.creative = target
-          target.trigger_loop_task?(task) && (task.active? || task.send(:trigger_loop_completion_eligible?))
+          target.trigger_loop_task?(task) && (task.active? || task.send(:trigger_loop_completion_eligible?) ||
+            Orchestration::DeliveryRecord.pending_restoration?(task, comment_id: target.data.dig("trigger", "loop", "current_comment_id")))
         end
       end
 
