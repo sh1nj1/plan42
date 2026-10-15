@@ -23,8 +23,8 @@
            t('collavre.comments.system_user')
          end %>
     <% timestamp = comment.created_at.in_time_zone %>
-    <strong><%= display_name %></strong>
-    <span>
+    <strong class="comment-header-name"><%= display_name %></strong>
+    <span class="comment-header-time">
       · <%= content_tag(
         :time,
         t('datetime.ago', time: time_ago_in_words(timestamp)),
