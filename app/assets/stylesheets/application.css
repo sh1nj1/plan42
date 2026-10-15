@@ -11,6 +11,10 @@
 
 /* Host-specific styles are loaded via stylesheet_link_tag in layouts */
 
+button, input, select, textarea {
+    font: inherit;
+}
+
 body {
     font-family: var(--font-sans);
     padding: 0;
@@ -55,7 +59,7 @@ body {
 }
 
 .shared-input-surface,
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]),
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"], [type="submit"], [type="button"], [type="reset"])),
 select,
 textarea {
     line-height: 1.5;
@@ -79,8 +83,8 @@ input[type="submit"]:disabled {
 
 .shared-input-surface:focus,
 .shared-input-surface:focus-visible,
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]):focus,
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"]):focus-visible,
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"], [type="submit"], [type="button"], [type="reset"])):focus,
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="hidden"], [type="file"], [type="submit"], [type="button"], [type="reset"])):focus-visible,
 select:focus,
 select:focus-visible,
 textarea:focus,
@@ -91,10 +95,10 @@ textarea:focus-visible {
 }
 
 /* Form inputs need more padding than compact nav inputs */
-.stacked-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
+.stacked-form input:where(:not([type="checkbox"], [type="radio"], [type="hidden"], [type="range"], [type="submit"], [type="button"], [type="reset"])),
 .stacked-form select,
 .stacked-form textarea,
-.profile-form input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
+.profile-form input:where(:not([type="checkbox"], [type="radio"], [type="hidden"], [type="range"], [type="submit"], [type="button"], [type="reset"])),
 .profile-form select,
 .profile-form textarea {
     padding: var(--space-2) var(--space-3);
@@ -119,21 +123,45 @@ textarea:focus-visible {
 }
 
 .primary-action-button {
-    background: var(--color-btn-bg);
-    color: var(--color-btn-text);
-    border: 1px solid var(--color-border);
+    background: var(--color-brand-strong);
+    color: white;
+    border: 1px solid transparent;
     border-radius: var(--radius-2);
-    padding: 0.45em 0.9em;
+    padding: 7px 0.9em;
     font-size: 1rem;
     font-weight: var(--weight-6);
     cursor: pointer;
     text-decoration: none;
 }
 
-.primary-action-button:hover,
-.primary-action-button:focus-visible {
+.primary-action-button,
+.secondary-action-button {
+    box-sizing: border-box;
+    min-height: 36px;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.25;
+}
+
+.secondary-action-button {
+    padding: 7px 0.9em;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    background: var(--color-btn-bg);
+    color: var(--color-btn-text);
+    text-decoration: none;
+}
+
+.primary-action-button:hover {
     filter: brightness(var(--hover-brightness));
-    outline: none;
+}
+
+.primary-action-button:focus-visible,
+.secondary-action-button:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
 }
 
 .auth-alt-action {
