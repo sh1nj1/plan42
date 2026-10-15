@@ -33,6 +33,47 @@ describe('chat emoji loading', () => {
     expect(jest.getTimerCount()).toBe(0)
   })
 
+  test('animates only while the containing popup is visible', async () => {
+    const popup = document.createElement('div')
+    popup.id = 'comments-popup'
+    popup.style.display = 'none'
+    popup.append(controller.element)
+    document.body.append(popup)
+    try {
+      controller.connect()
+      expect(jest.getTimerCount()).toBe(0)
+      jest.advanceTimersByTime(1200)
+      expect(dots(controller)).toEqual(['.', '.', '.'])
+
+      popup.style.display = 'flex'
+      await Promise.resolve()
+      expect(jest.getTimerCount()).toBe(1)
+      popup.classList.add('fullscreen')
+      await Promise.resolve()
+      expect(jest.getTimerCount()).toBe(1)
+      jest.advanceTimersByTime(120)
+      expect(dots(controller)).toEqual(['.', '.', '🎨'])
+
+      popup.style.display = 'none'
+      await Promise.resolve()
+      expect(jest.getTimerCount()).toBe(0)
+      jest.advanceTimersByTime(1200)
+      expect(dots(controller)).toEqual(['.', '.', '🎨'])
+
+      popup.style.display = 'flex'
+      await Promise.resolve()
+      expect(jest.getTimerCount()).toBe(1)
+      controller.disconnect()
+      expect(jest.getTimerCount()).toBe(0)
+      popup.style.display = 'none'
+      popup.style.display = 'flex'
+      await Promise.resolve()
+      expect(jest.getTimerCount()).toBe(0)
+    } finally {
+      popup.remove()
+    }
+  })
+
   test.each([['"✨🤝"', '✨'], ['', '🎨']])('uses root theme or fallback emojis (%s)', (value, emoji) => {
     document.documentElement.style.setProperty('--creative-loading-emojis', value)
     controller.connect()
