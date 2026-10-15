@@ -371,8 +371,8 @@ export default class CommandArgsForm {
 
   _buildKeepText(command, values) {
     const agentName = values.agent_name?.trim().replace(/^@/, '').replace(/:$/, '').trim()
-    return [command.label, values.max != null ? `--max ${values.max}` : null,
-      agentName ? `@${agentName}:` : null, keepGoalText(values.goal)].filter(Boolean).join(' ')
+    const options = ['max', 'cooldown'].filter(name => values[name] != null).map(name => `--${name} ${values[name]}`)
+    return [command.label, ...options, agentName ? `@${agentName}:` : null, keepGoalText(values.goal)].filter(Boolean).join(' ')
   }
 
   _buildCompressText(command, values) {

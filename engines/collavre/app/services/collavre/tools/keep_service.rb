@@ -9,13 +9,14 @@ module Collavre
       tool_name "keep"
       tool_description "Start a bounded keep loop in a Collavre topic. Requires write permission. Uses the same validation and routing as /keep. Supply topic_id only; creative_id is derived from the topic."
       tool_param :max, description: "Maximum iterations, from 1 to 1000. Defaults to 10.", required: false
+      tool_param :cooldown, description: "Delay after each completed task, from 0 to 3600 seconds. Defaults to 10; 0 checks immediately.", required: false
       tool_param :agent_name, description: "Exact agent name, without @ or colon. Omit to use normal topic routing.", required: false
       tool_param :goal, description: "Goal to pursue. Omit to continue the topic's current work.", required: false
       tool_param :topic_id, description: "Destination topic ID. No creative_id is needed."
 
-      sig { params(max: Integer, agent_name: T.nilable(String), goal: String, topic_id: Integer).returns(T::Hash[Symbol, T.untyped]) }
-      def call(max: 10, agent_name: nil, goal: "", topic_id: 0)
-        content = [ "/keep --max #{max}", ("@#{agent_name}:" if agent_name.present?), "--", goal ].compact.join(" ")
+      sig { params(max: Integer, cooldown: Integer, agent_name: T.nilable(String), goal: String, topic_id: Integer).returns(T::Hash[Symbol, T.untyped]) }
+      def call(max: 10, cooldown: 10, agent_name: nil, goal: "", topic_id: 0)
+        content = [ "/keep --max #{max} --cooldown #{cooldown}", ("@#{agent_name}:" if agent_name.present?), "--", goal ].compact.join(" ")
         MessageService.new.call(topic_id: topic_id, content: content)
       end
 

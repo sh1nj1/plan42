@@ -26,6 +26,7 @@ module Collavre
       test "defaults to ten iterations and permits an empty goal" do
         assert KeepService.new.call(topic_id: @topic.id)[:id]
         assert_equal 10, @creative.reload.data.dig("trigger", "loop", "max_iterations")
+        assert_equal 10, @creative.data.dig("trigger", "loop", "cooldown_seconds")
       end
 
       test "accepts the maximum limit" do
@@ -37,6 +38,27 @@ module Collavre
         [ 0, 1001 ].each do |limit|
           assert_no_difference "Comment.count" do
             assert_raises(ArgumentError) { KeepService.new.call(max: limit, topic_id: @topic.id) }
+          end
+        end
+        assert_nil @creative.reload.data["trigger"]
+      end
+
+      [ 0, 30, 3600 ].each do |cooldown|
+        test "stores cooldown #{cooldown} and preserves reserved goal text" do
+          result = KeepService.new.call(max: 3, cooldown: cooldown, goal: "--cooldown 99", topic_id: @topic.id)
+          loop_data = @creative.reload.data.dig("trigger", "loop")
+          assert_equal cooldown, loop_data["cooldown_seconds"]
+          assert_equal 3, loop_data["max_iterations"]
+          assert_equal "--cooldown 99", loop_data["goal"]
+          assert_includes result[:content], "--cooldown 99"
+        end
+      end
+
+      test "rejects invalid cooldowns without creating a comment or loop" do
+        [ -1, 3601 ].each do |cooldown|
+          assert_no_difference "Comment.count" do
+            error = assert_raises(ArgumentError) { KeepService.new.call(cooldown: cooldown, topic_id: @topic.id) }
+            assert_equal I18n.t("collavre.comments.keep_command.invalid_cooldown"), error.message
           end
         end
         assert_nil @creative.reload.data["trigger"]
@@ -129,6 +151,9 @@ module Collavre
 
       test "schema places required topic id last" do
         schema = ToolSchema::Builder.build(KeepService)
+        cooldown = schema[:params].find { |param| param[:name].to_s == "cooldown" }
+        assert_equal :integer, cooldown[:type]
+        assert_not cooldown[:required]
         assert_equal "topic_id", schema[:params].last[:name].to_s
         assert schema[:params].last[:required]
       end
