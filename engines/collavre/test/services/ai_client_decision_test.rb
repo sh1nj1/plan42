@@ -363,6 +363,34 @@ module Collavre
       end
     end
 
+    test "invalid question metadata fails before either decision adapter is called" do
+      invalid = [
+        { type: :probability, instructions: 123 },
+        { type: :score, levels: [ "Low", "High" ], instructions: false },
+        { type: :choice, options: { "" => "Empty", DONE: "Done" } },
+        { type: :choice, options: [ "Done", "Continue" ] }
+      ]
+      %w[google typesafe].each do |vendor|
+        client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Invalid metadata reached native adapter" }) do
+          client.stub(:chat_decision, ->(*) { flunk "Invalid metadata reached chat adapter" }) do
+            invalid.each do |definition|
+              assert_raises(ArgumentError) { client.judge("Task", questions: { result: definition }) }
+            end
+          end
+        end
+      end
+    end
+
+    test "question instructions accept native description types" do
+      [ nil, "", "Judge carefully", { "rubric" => "Done" }, [ "Done" ] ].each do |instructions|
+        definitions = DecisionQuestions.new(done: { type: :probability, instructions: instructions })
+        assert_equal({ "type" => :probability, "instructions" => instructions }, definitions.definitions["done"])
+        assert definitions.schema
+      end
+      assert DecisionQuestions.new(status: { type: :choice, options: { " " => nil, DONE: "Done" } }).schema
+    end
+
     test "choice descriptions accept the native description types" do
       [ "Done", { text: "Done" }, [ "Done" ], nil ].each do |description|
         definitions = DecisionQuestions.new(status: { type: :choice,

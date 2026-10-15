@@ -35,6 +35,10 @@ module Collavre
     private
 
     def answer_schema(definition)
+      unless description?(definition["instructions"])
+        raise ArgumentError, "Question instructions must be text, a Hash, an Array, or nil"
+      end
+
       type = definition.fetch("type").to_s
       value = case type
       when "choice"
@@ -48,7 +52,10 @@ module Collavre
 
     def choice_schema(definition)
       options = definition.fetch("options")
-      raise ArgumentError, "A choice needs at least two options" if options.size < 2
+      unless options.is_a?(Hash) && options.size >= 2
+        raise ArgumentError, "A choice needs at least two options"
+      end
+      raise ArgumentError, "Choice options must have nonempty names" if options.keys.any?(&:empty?)
       unless options.values.all? { |value| description?(value) }
         raise ArgumentError, "Choice descriptions must be text, a Hash, an Array, or nil"
       end
