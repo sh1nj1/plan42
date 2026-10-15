@@ -531,7 +531,7 @@ module Collavre
       # Orchestration::Matcher, which scopes a Claude session agent to its own
       # registered session topic — keeping non-System topics truly identical to a
       # normal topic whether or not a session is live.
-      return if creative.inbox? && inbox_system_topic?
+      return if orchestration_topic_blocked?
 
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
@@ -555,6 +555,10 @@ module Collavre
         "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
       )
       raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
+    end
+
+    def orchestration_topic_blocked?
+      (creative.inbox? && inbox_system_topic?) || blocked_keep_reply?
     end
 
     # The inbox System topic is the alarm/notification stream and must never

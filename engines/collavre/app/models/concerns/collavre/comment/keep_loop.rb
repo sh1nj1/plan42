@@ -23,6 +23,12 @@ module Collavre
         chat
       end
 
+      def blocked_keep_reply?
+        config = creative.data&.dig("trigger", "loop")
+        config && config["state"] == "awaiting_user" && config["trigger_topic_id"] == topic_id &&
+          creative.keep_loop_agent_unavailable?
+      end
+
       def track_loop_turn
         creative.with_lock do
           data = (creative.data || {}).deep_dup

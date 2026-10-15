@@ -49,7 +49,9 @@ Starting another `/keep` replaces an inactive loop, including a previous
 drop-trigger loop. Keep loops do not require a drop-enabled parent container.
 
 Agent selection uses only a leading `@name:` token after `/keep` or its `--max`
-option. Mentions inside the goal remain part of the goal.
+option. Mentions inside the goal remain part of the goal. A leading selector
+that cannot resolve to an eligible AI agent is rejected instead of falling back
+to normal routing.
 
 An active loop (`running` or `pending_verification`) must be paused before
 starting another `/keep`. Restart continues the stored loop source, goal, topic,
@@ -66,8 +68,10 @@ the loop is resumed before an evaluator returns.
 Explicit agent selection is revalidated against current feedback permission
 before each continuation or infrastructure retry. If the selected agent is
 missing or no longer authorized, the loop enters `awaiting_user` without
-rerouting. Resume and Restart reject an unavailable selection until access is
-restored or a new `/keep` selects a different agent.
+rerouting. Human replies in that loop topic are saved without dispatching to
+another agent while the selection is unavailable. Resume and Restart reject an
+unavailable selection until access is restored or a new `/keep` selects a
+different agent.
 
 Keep loops track the current trigger comment. Unrelated topic tasks and duplicate
 completions cannot advance that turn. If initial or continuation routing schedules

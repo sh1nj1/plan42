@@ -332,6 +332,46 @@ module Collavre
         assert_match(/@#{Regexp.escape(agent.name)}:/, @creative.comments.order(:id).last.content)
       end
 
+      test "rejects unresolved and non AI leading selectors without starting a loop" do
+        hidden = User.create!(email: "hidden-keep@example.com", name: "HiddenKeep", password: "password123",
+                              llm_vendor: "openai", llm_model: "gpt-4", searchable: false)
+        [ "TypoMissing", users(:two).name, hidden.name ].each do |name|
+          comment = command("/keep --max 2 @#{name}: finish")
+          assert_equal I18n.t("collavre.comments.keep_command.agent_not_authorized"),
+                       KeepCommand.new(comment: comment, user: @user).call
+          assert_nil comment.keep_loop_options
+          assert_equal "/keep --max 2 @#{name}: finish", comment.content
+        end
+      end
+
+      test "saving a blocked reply never dispatches to ambient agents when selection is unavailable" do
+        agent = users(:ai_bot)
+        [ -1, agent.id ].each do |agent_id|
+          @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @topic.id, source: "keep", state: "awaiting_user", agent_id: agent_id
+          ) } })
+          response = command("Proceed")
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Unavailable keep must not dispatch" }) do
+            assert_difference -> { @creative.comments.count }, 1 do
+              response.save!
+            end
+          end
+          assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+        end
+      end
+
+      test "unavailable keep does not suppress replies in other topics" do
+        other = @creative.topics.create!(name: "Other", user: @user)
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user", agent_id: -1
+        ) } })
+        dispatched = false
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { dispatched = true; [] }) do
+          command("Other work").tap { |comment| comment.topic = other }.save!
+        end
+        assert dispatched
+      end
+
       private
 
       def command(content)

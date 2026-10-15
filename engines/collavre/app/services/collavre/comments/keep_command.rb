@@ -21,7 +21,7 @@ module Collavre
 
         text = text.strip
         agent = leading_agent(text)
-        return message("agent_not_authorized") if agent && !@comment.creative.has_permission?(agent, :feedback)
+        return message("agent_not_authorized") unless valid_agent_selection?(text, agent)
 
         text = text.sub(/\A@#{Regexp.escape(agent.name)}:\s*/i, "") if agent
         prepare_loop(text, agent, limit)
@@ -32,6 +32,12 @@ module Collavre
 
       def dispatch_suppressed?
         @comment.creative.inbox? && @comment.topic&.name == Creative::SYSTEM_TOPIC_NAME
+      end
+
+      def valid_agent_selection?(text, agent)
+        return !text.match?(/\A@[^:\n]+:/) unless agent
+
+        @comment.creative.has_permission?(agent, :feedback)
       end
 
       def leading_agent(text)
