@@ -174,8 +174,9 @@ module Collavre
         data = child.data || {}
         trigger = data["trigger"] || {}
 
-        # Only initialize if loop doesn't exist yet
-        return if trigger["loop"].present?
+        existing = trigger["loop"]
+        terminal_keep = existing && existing["source"] == "keep" && %w[completed max_reached stuck].include?(existing["state"])
+        return if existing.present? && !terminal_keep
 
         trigger["loop"] = TriggerLoopConfig.build(topic&.id)
         data["trigger"] = trigger

@@ -43,7 +43,7 @@ module Collavre
       result = verify_completion(verifier, instructions, last_agent_comment.content.to_s, task)
 
       if result == :verified
-        nil unless update_loop_data(child_creative, state: "completed")
+        update_loop_data(child_creative, state: "completed")
       elsif result == :awaiting_user
         # Agent correctly paused to wait for user — do NOT re-loop
         update_loop_data(child_creative, state: "awaiting_user")
@@ -71,7 +71,6 @@ module Collavre
     rescue TriggerLoopHelpers::StaleLoopError
       nil
     end
-
 
     private
 
@@ -176,6 +175,7 @@ module Collavre
 
     def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)
       task_agent = child_creative.trigger_loop_agent if child_creative.keep_loop?
+      return unless task_agent || child_creative.keep_loop?
 
       content = "#{"@#{task_agent.name}: " if task_agent}#{I18n.t(
         'collavre.trigger_loop.verification_failed',

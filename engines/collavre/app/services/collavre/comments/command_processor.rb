@@ -10,6 +10,7 @@ module Collavre
         command_handlers.each do |command|
           result = command.call
           return result if result.present?
+          return if comment.keep_loop_options
         end
         nil
       rescue StandardError => e

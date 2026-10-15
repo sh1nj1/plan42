@@ -162,13 +162,13 @@ module Collavre
 
     has_many_attached :images, dependent: :purge_later
 
+    include KeepLoop
     include Broadcastable
     include Notifiable
     include Approvable
     include ClaudeChannelPermission, CreationEvents, ImageCdnEviction
 
     attribute :skip_default_user, :boolean, default: false
-    include KeepLoop
 
     attribute :skip_dispatch, :boolean, default: false
     attribute :skip_link_preview, :boolean, default: false

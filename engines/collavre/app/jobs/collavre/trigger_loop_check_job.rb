@@ -71,7 +71,6 @@ module Collavre
       nil
     end
 
-
     private
 
     # Detect infrastructure errors (timeout, connection failure, etc.)

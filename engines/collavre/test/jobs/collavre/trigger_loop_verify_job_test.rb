@@ -76,6 +76,31 @@ module Collavre
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
     end
 
+    test "keep without a goal inherits the drop container instructions in both evaluators" do
+      instruction = Creative.create!(description: "Stage acceptance instructions", user: @human)
+      @parent.update!(data: @parent.data.merge("context_ids" => [ instruction.id ]))
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "")
+      @child.update!(data: data)
+      assert_equal @parent, @child.trigger_loop_context
+      verifier = TriggerLoopVerifyJob.new
+      verifier.stub(:verify_completion, ->(_agent, instructions, *_args) {
+        assert_includes instructions, instruction.description
+        :verified
+      }) do
+        verifier.perform(@task.id)
+      end
+      assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
+      instructions = TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child.trigger_loop_context)
+      assert_includes instructions, instruction.description
+    end
+
+    test "drop verification failure without an agent does not post a comment" do
+      assert_no_difference -> { @child.comments.count } do
+        TriggerLoopVerifyJob.new.send(:post_verification_failed, @child, @topic, nil, 2, 10, "Incomplete")
+      end
+    end
+
     test "keep verifier receives goal and retries without forcing the previous agent" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Deliver keep")

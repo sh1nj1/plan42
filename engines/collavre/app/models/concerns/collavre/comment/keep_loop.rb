@@ -43,6 +43,11 @@ module Collavre
 
       def persist_keep_loop
         creative.with_lock do
+          if %w[running pending_verification].include?(creative.data&.dig("trigger", "loop", "state"))
+            errors.add(:base, I18n.t("collavre.comments.keep_command.already_running"))
+            raise ActiveRecord::RecordInvalid, self
+          end
+
           data = (creative.data || {}).deep_dup
           data["trigger"] ||= {}
           data["trigger"]["loop"] = TriggerLoopConfig.build(topic_id, source: "keep", start_comment_id: id, **keep_loop_options)

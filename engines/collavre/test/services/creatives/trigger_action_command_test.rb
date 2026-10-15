@@ -51,6 +51,9 @@ module Collavre
         end
         assert_includes @child.comments.order(:id).last.content, "Ship the feature"
         assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal "keep", @child.data.dig("trigger", "loop", "source")
+        assert_equal topic.id, @child.comments.order(:id).last.topic_id
+        assert_equal @container, @child.trigger_loop_context
       end
 
       test "rejects unknown actions" do

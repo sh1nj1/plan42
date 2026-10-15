@@ -17,13 +17,22 @@ module Collavre
         limit = text.slice!(/(?:\A|\s)--max\s+\S+/)&.split&.last || "10"
         return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/)
 
-        agent = @comment.mentioned_users.find(&:ai_user?)
-        text = text.sub(/@#{Regexp.escape(agent.name)}:\s*/i, "") if agent
+        text = text.strip
+        agent = leading_agent(text)
+        return message("agent_not_authorized") if agent && !@comment.creative.has_permission?(agent, :feedback)
+
+        text = text.sub(/\A@#{Regexp.escape(agent.name)}:\s*/i, "") if agent
         prepare_loop(text, agent, limit)
         nil
       end
 
       private
+
+      def leading_agent(text)
+        @comment.mentioned_users.select(&:ai_user?).find do |user|
+          text.match?(/\A@#{Regexp.escape(user.name)}:/i)
+        end
+      end
 
       def prepare_loop(text, agent, limit)
         @comment.topic ||= @comment.creative.main_topic

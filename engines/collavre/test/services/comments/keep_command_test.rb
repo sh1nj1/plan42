@@ -69,12 +69,70 @@ module Collavre
       test "selects a mentioned agent without pinning the topic" do
         agent = User.create!(email: "keep-agent@example.com", name: "KeepAgent", password: "password123",
                              llm_vendor: "openai", llm_model: "gpt-4", searchable: true)
-        comment = command("/keep finish @KeepAgent: --max 2")
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        comment = command("/keep --max 2 @KeepAgent: finish")
         assert_nil KeepCommand.new(comment: comment, user: @user).call
         assert_equal agent.id, comment.keep_loop_options["agent_id"]
         assert_equal "finish", comment.keep_loop_options["goal"]
         assert_match(/\A@KeepAgent:/, comment.content)
         assert_nil @topic.reload.primary_agent_id
+      end
+
+      test "only the leading agent mention selects routing and other mentions remain in the goal" do
+        first = users(:ai_bot)
+        second = User.create!(email: "other-keep@example.com", name: "OtherKeep", password: "password123",
+                              llm_vendor: "openai", llm_model: "gpt-4", searchable: true)
+        CreativeShare.create!(creative: @creative, user: second, permission: :feedback)
+        comment = command("/keep @#{second.name}: compare with @#{first.name}: output")
+        KeepCommand.new(comment: comment, user: @user).call
+        assert_equal second.id, comment.keep_loop_options["agent_id"]
+        assert_equal "compare with @#{first.name}: output", comment.keep_loop_options["goal"]
+      end
+
+      test "mentions inside a goal do not select an agent or change the goal" do
+        goal = "compare with @#{users(:ai_bot).name}: output"
+        comment = command("/keep #{goal}")
+        KeepCommand.new(comment: comment, user: @user).call
+        assert_nil comment.keep_loop_options["agent_id"]
+        assert_equal goal, comment.keep_loop_options["goal"]
+      end
+
+      test "rejects an active loop under lock even when it started after command parsing" do
+        %w[keep drop].each do |source|
+          %w[running pending_verification].each do |state|
+            comment = command("/keep replacement")
+            KeepCommand.new(comment: comment, user: @user).call
+            existing = TriggerLoopConfig.build(@topic.id, source: source, state: state, goal: "original")
+            Creative.find(@creative.id).update!(data: { "trigger" => { "loop" => existing } })
+            comment.skip_dispatch = true
+            assert_no_difference -> { @creative.comments.count } do
+              assert_not comment.save
+            end
+            assert_includes comment.errors[:base], I18n.t("collavre.comments.keep_command.already_running")
+            assert_equal existing, @creative.reload.data.dig("trigger", "loop")
+          end
+        end
+      end
+
+      test "rejects a selected agent without response permission" do
+        agent = User.create!(email: "denied-keep@example.com", name: "DeniedKeep", password: "password123",
+                             llm_vendor: "openai", llm_model: "gpt-4", searchable: true)
+        comment = command("/keep @#{agent.name}: finish")
+        assert_equal I18n.t("collavre.comments.keep_command.agent_not_authorized"),
+                     KeepCommand.new(comment: comment, user: @user).call
+        assert_nil comment.keep_loop_options
+      end
+
+      test "does not execute commands embedded at the beginning of the goal" do
+        comment = command("/keep /compress summarize this")
+        handler = Object.new
+        handler.define_singleton_method(:call) { flunk "Subsequent handler must not run" }
+        processor = CommandProcessor.new(comment: comment, user: @user)
+        processor.stub(:command_handlers, [ KeepCommand.new(comment: comment, user: @user), handler ]) do
+          assert_nil processor.call
+        end
+        assert_equal "/compress summarize this", comment.keep_loop_options["goal"]
+        refute comment.skip_dispatch
       end
 
       test "assigns Main when no topic was supplied" do

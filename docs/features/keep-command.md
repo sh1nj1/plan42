@@ -4,7 +4,7 @@ Post `/keep` in a creative's discussion to continue agent work until the goal
 is satisfied, user input is needed, or the iteration limit is reached.
 
 ```text
-/keep [goal] [@agent:] [--max 10]
+/keep [--max 10] [@agent:] [goal]
 ```
 
 - `goal` is optional. Omit it to follow the creative's existing context and
@@ -19,7 +19,7 @@ For example:
 
 ```text
 /keep Fix the failing login tests --max 5
-/keep Prepare the release @Astra: --max 10
+/keep --max 10 @Astra: Prepare the release
 /keep
 ```
 
@@ -43,7 +43,16 @@ Reply in the loop's topic to continue work waiting for user input. Resume keeps
 the iteration count; Restart resets it and reuses the saved goal and agent
 selection. An omitted agent continues to use normal routing after either action.
 
-Each creative stores one loop in `data.trigger.loop`. Starting another `/keep`
-replaces that loop, including a previous drop-trigger loop; it does not create
-an independent loop for each topic. Keep loops do not require a drop-enabled
-parent container.
+Each creative stores one loop in `data.trigger.loop`, shared across topics.
+Starting another `/keep` replaces an inactive loop, including a previous
+drop-trigger loop. Keep loops do not require a drop-enabled parent container.
+
+Agent selection uses only a leading `@name:` token after `/keep` or its `--max`
+option. Mentions inside the goal remain part of the goal.
+
+An active loop (`running` or `pending_verification`) must be paused before
+starting another `/keep`. Restart continues the stored loop source, goal, topic,
+and routing; restarting a completed keep loop under a drop container restarts
+that keep loop. A fresh drop trigger after a completed, max-reached, or stuck
+keep loop starts a drop loop. Keep loops under drop containers inherit the
+container context for verification and status evaluation.

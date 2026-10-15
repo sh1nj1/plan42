@@ -26,6 +26,24 @@ module Collavre
       Current.reset
     end
 
+    test "drop startup replaces terminal keep state and stays idempotent" do
+      %w[completed max_reached stuck].each do |state|
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: state, goal: "Old goal"
+        ) } })
+        topic = @child.topics.find_or_create_by!(name: "Drop Trigger") { |record| record.user = @owner }
+        job = DropTriggerJob.new
+        job.send(:initialize_trigger_loop, @child, topic)
+        loop_data = @child.reload.data.dig("trigger", "loop")
+        assert_equal "running", loop_data["state"]
+        assert_equal topic.id, loop_data["trigger_topic_id"]
+        refute @child.keep_loop?
+        assert_nil loop_data["goal"]
+        job.send(:initialize_trigger_loop, @child, @child.main_topic)
+        assert_equal loop_data, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
     test "stale loop initialization preserves committed type and metadata" do
       stale = Creative.find(@child.id)
       latest = { "kind" => "project", "context_ids" => [ @parent.id ] }

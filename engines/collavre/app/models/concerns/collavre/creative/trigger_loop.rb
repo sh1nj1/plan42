@@ -23,6 +23,8 @@ module Collavre
       end
 
       def trigger_loop_context
+        return parent if parent&.drop_trigger_enabled?
+
         keep_loop? ? self : parent
       end
     end
