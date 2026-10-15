@@ -11,6 +11,21 @@ module Collavre
       end
     end
 
+    test "keep exposes localized optional inputs in parser order" do
+      %i[en ko].each do |locale|
+        I18n.with_locale(locale) do
+          schema = CommandMenuService.new(user: users(:one)).send(:keep_item)[:input_schema]
+          assert_equal %w[max agent_name goal], schema.map { |param| param[:name] }
+          assert_equal "integer", schema.first[:type]
+          assert_equal "mention", schema.second[:format]
+          schema.zip(%w[max agent goal]).each do |param, key|
+            assert_not param[:required]
+            assert_equal I18n.t("collavre.comments.keep_command.#{key}_hint", raise: true), param[:description]
+          end
+        end
+      end
+    end
+
     test "returns built-in calendar and topic items" do
       user = users(:one)
       items = CommandMenuService.new(user: user).items

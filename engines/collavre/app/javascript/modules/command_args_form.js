@@ -348,6 +348,9 @@ export default class CommandArgsForm {
     if (command.name === 'topic') {
       return this._buildTopicText(command, values)
     }
+    if (command.name === 'keep') {
+      return this._buildKeepText(command, values)
+    }
     if (command.name === 'compress') {
       return this._buildCompressText(command, values)
     }
@@ -369,6 +372,14 @@ export default class CommandArgsForm {
     if (values.agent_name) {
       parts.push(values.agent_name)
     }
+    return parts.join(' ')
+  }
+
+  _buildKeepText(command, values) {
+    const parts = [command.label]
+    if (values.max != null) parts.push(`--max ${values.max}`)
+    if (values.agent_name) parts.push(values.agent_name)
+    if (values.goal) parts.push(values.goal)
     return parts.join(' ')
   }
 

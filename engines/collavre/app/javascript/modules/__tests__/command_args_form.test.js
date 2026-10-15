@@ -101,3 +101,33 @@ describe('CommandArgsForm context auto-fill', () => {
     expect(fieldFor('topic_id').value).toBe('')
   })
 })
+
+
+describe('CommandArgsForm keep command', () => {
+  const command = baseCommand({
+    name: 'keep', label: '/keep', input_schema: [
+      { name: 'max', type: 'integer', required: false },
+      { name: 'agent_name', type: 'string', format: 'mention', required: false },
+      { name: 'goal', type: 'string', required: false }
+    ]
+  })
+
+  test.each([
+    [{}, '/keep'],
+    [{ goal: '목표 달성' }, '/keep 목표 달성'],
+    [{ max: '5' }, '/keep --max 5'],
+    [{ agent_name: '@Agent Name:' }, '/keep @Agent Name:'],
+    [{ max: '8', agent_name: '@Agent Name:', goal: 'Fix bugs\nThen verify' },
+      '/keep --max 8 @Agent Name: Fix bugs\nThen verify'],
+    [{ max: '0', goal: 'Check' }, '/keep --max 0 Check']
+  ])('submits parser-compatible text for %j', (values, expected) => {
+    let submitted
+    const form = new CommandArgsForm({ onSubmit: (text) => { submitted = text } })
+    form.show(command)
+    expect(form.isOpen()).toBe(true)
+    for (const [name, value] of Object.entries(values)) fieldFor(name).value = value
+    form._submit()
+    expect(submitted).toBe(expected)
+    expect(form.isOpen()).toBe(false)
+  })
+})
