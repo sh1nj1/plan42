@@ -50,6 +50,28 @@ module Collavre
       ).tap { |blob| @creative.files.attach(blob) }
     end
 
+    test "parameterized SVG media types use sandboxed image responses" do
+      svg_blob.update!(content_type: "image/svg+xml; charset=utf-8")
+      headers = bearer(@owner)
+      get url_helpers.rails_blob_path(svg_blob, only_path: true), headers: headers
+      assert_response :redirect
+      assert_equal URI(url_helpers.rails_storage_proxy_path(svg_blob, only_path: true)).path,
+                   URI(response.location).path
+
+      get url_helpers.rails_storage_proxy_path(svg_blob, only_path: true), headers: headers
+      assert_response :success
+      assert_equal svg_blob.download, response.body
+      assert_equal "image/svg+xml", response.media_type
+      assert_match(/\Ainline;/, response.headers["Content-Disposition"])
+      assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
+      assert_equal "nosniff", response.headers["X-Content-Type-Options"]
+
+      get url_helpers.rails_storage_proxy_path(svg_blob, only_path: true), headers: headers.merge("Range" => "bytes=0-9")
+      assert_response :partial_content
+      assert_equal "image/svg+xml", response.media_type
+      assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
+    end
+
     test "SVG streaming is not prepended again after its module is reloaded" do
       proxy = Class.new(ActiveStorage::Blobs::ProxyController)
       original_ancestors = proxy.ancestors

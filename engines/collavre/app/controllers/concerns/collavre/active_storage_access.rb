@@ -50,7 +50,7 @@ module Collavre
         return head(:not_found) unless blob && blob_readable?(blob)
 
         mark_private_blob_response!
-        if blob.content_type == "image/svg+xml" && is_a?(ActiveStorage::Blobs::RedirectController)
+        if Rack::MediaType.type(blob.content_type) == "image/svg+xml" && is_a?(ActiveStorage::Blobs::RedirectController)
           redirect_to Rails.application.routes.url_helpers.rails_storage_proxy_path(
             blob, disposition: params[:disposition], only_path: true
           )

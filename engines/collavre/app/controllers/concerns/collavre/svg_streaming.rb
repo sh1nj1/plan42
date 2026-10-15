@@ -21,7 +21,7 @@ module Collavre
     private
 
     def svg_image_blob(blob)
-      return blob unless blob.content_type == "image/svg+xml"
+      return blob unless Rack::MediaType.type(blob.content_type) == "image/svg+xml"
 
       response.headers["Content-Security-Policy"] = POLICY
       response.headers["X-Content-Type-Options"] = "nosniff"
