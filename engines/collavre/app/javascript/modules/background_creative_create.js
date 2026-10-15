@@ -28,15 +28,23 @@ export function trackCreate(tree, promise) {
 
 // A frame swap or page render would take rows still being created out of the
 // document, and with them the draft a failed create reopens from. The render
-// waits for those creates; if one fails it is dropped, so the row stays to
-// retry.
+// waits for those creates, including ones started while it waits; if one
+// fails it is dropped, so the row stays to retry.
 export function holdRenderForCreates(event) {
-  const pending = [...inFlight].filter((tree) => event.target.contains(tree))
-  if (!pending.length || !event.detail?.resume) return
+  const pendingIn = () => [...inFlight].filter((tree) => event.target.contains(tree))
+  if (!pendingIn().length || !event.detail?.resume) return
   event.preventDefault()
-  Promise.all(pending.map((tree) => creates.get(tree))).then(() => {
-    if (!pending.some((tree) => failedDrafts.has(tree))) event.detail.resume()
-  })
+  const waited = new Set()
+  const settle = () => {
+    const pending = pendingIn()
+    if (pending.length) {
+      pending.forEach((tree) => waited.add(tree))
+      Promise.all(pending.map((tree) => creates.get(tree))).then(settle)
+    } else if (![...waited].some((tree) => failedDrafts.has(tree))) {
+      event.detail.resume()
+    }
+  }
+  settle()
 }
 
 // The row's in-flight background create, if any, or for a failed row the
