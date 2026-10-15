@@ -43,6 +43,10 @@ function initializePresentationControls(viewer, fullscreen) {
 
 export function initializePptViewer(viewer) {
   sizePreviewFrame(viewer)
+  viewer.querySelectorAll(".ppt-viewer-slide a[href]").forEach(link => {
+    link.target = "_blank"
+    link.rel = "noopener noreferrer"
+  })
   const slides = Array.from(viewer.querySelectorAll('.ppt-viewer-slide'))
   const previous = viewer.querySelector('[data-ppt-previous]')
   const next = viewer.querySelector('[data-ppt-next]')

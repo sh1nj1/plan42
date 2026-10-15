@@ -34,7 +34,7 @@ class PptViewerTest < ApplicationSystemTestCase
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       assert_selector ".ppt-slide", text: "Slide 1"
       find(".ppt-viewer").hover
-      assert_no_selector "a[download=\"slides.pptx\"]"
+      assert_selector "a[download=\"slides.pptx\"]"
       find("[data-ppt-next]").click
       assert_selector "[data-ppt-counter]", text: "2 / 2"
       find(".ppt-viewer-slide:not([hidden])").click
@@ -120,6 +120,34 @@ class PptViewerTest < ApplicationSystemTestCase
     end
   ensure
     page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: false)
+  end
+
+  test "touch controls provide download without fullscreen support" do
+    script = page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument",
+      source: "Element.prototype.requestFullscreen = undefined")
+    page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: true)
+    visit collavre.creatives_path(id: @creative.id)
+    within_frame(find("iframe.ppt-attachment-preview")) do
+      assert page.evaluate_script("typeof document.querySelector('.ppt-viewer').requestFullscreen === 'undefined'")
+      find(".ppt-viewer").click
+      assert_selector "a[download]"
+      assert_no_selector "[data-ppt-fullscreen]"
+      assert_no_selector "[data-ppt-close]"
+    end
+  ensure
+    page.driver.browser.execute_cdp("Page.removeScriptToEvaluateOnNewDocument", identifier: script.fetch("identifier")) if script
+    page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: false)
+  end
+
+  test "download remains available when fullscreen request is rejected" do
+    visit collavre.creatives_path(id: @creative.id)
+    within_frame(find("iframe.ppt-attachment-preview")) do
+      page.execute_script("document.querySelector('.ppt-viewer').requestFullscreen = () => Promise.reject(new Error('Denied'))")
+      find(".ppt-viewer-slide:not([hidden])").click
+      assert_selector "[data-ppt-error]"
+      assert_selector "a[download]"
+      assert_no_selector "[data-ppt-close]"
+    end
   end
 
   private

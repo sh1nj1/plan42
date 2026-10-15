@@ -2,7 +2,7 @@ import { jest } from '@jest/globals'
 import { initializePptViewer } from '../ppt_viewer'
 
 function setup(fullscreen = true) {
-  document.body.innerHTML = `<div class="ppt-viewer" tabindex="0"><div class="ppt-viewer-slide">One</div><div class="ppt-viewer-slide">Two</div><button data-ppt-previous></button><button data-ppt-next></button><span data-ppt-counter></span><button data-ppt-fullscreen></button><button data-ppt-close></button><a href="/download">Download</a><span data-ppt-error hidden></span></div>`
+  document.body.innerHTML = `<div class="ppt-viewer" tabindex="0"><div class="ppt-viewer-slide">One <a href="https://example.com">Link</a></div><div class="ppt-viewer-slide">Two</div><button data-ppt-previous></button><button data-ppt-next></button><span data-ppt-counter></span><button data-ppt-fullscreen></button><button data-ppt-close></button><a href="/download">Download</a><span data-ppt-error hidden></span></div>`
   window.matchMedia = jest.fn().mockReturnValue({ matches: false })
   const viewer = document.querySelector('.ppt-viewer')
   if (fullscreen) viewer.requestFullscreen = jest.fn().mockResolvedValue(undefined)
@@ -137,4 +137,12 @@ test('keyboard opens fullscreen and unsupported browsers ignore slide activation
   unsupported.click()
   unsupported.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   expect(document.exitFullscreen).not.toHaveBeenCalled()
+})
+
+test('slide links open outside the iframe without changing download targets', () => {
+  const viewer = setup()
+  const link = viewer.querySelector('.ppt-viewer-slide a')
+  expect(link.target).toBe('_blank')
+  expect(link.rel).toBe('noopener noreferrer')
+  expect(viewer.querySelector('a[href="/download"]').target).toBe('')
 })

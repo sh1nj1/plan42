@@ -68,7 +68,9 @@ upload. The stored description retains the attachment link; both display paths
 derive the preview iframe from it. Transparent chevrons sit at the left and right
 edges. Desktop hover or keyboard focus reveals controls; clicking a slide opens
 native fullscreen. On touch devices, tapping toggles controls and the fullscreen
-button opens the presentation. Fullscreen provides download and close controls.
+button opens the presentation. Download is available in both inline and fullscreen
+controls, including browsers without native fullscreen; close is fullscreen-only.
+Slide hyperlinks open in a new tab instead of replacing the preview.
 `Collavre::PptRenderer` renders slide HTML without creating creatives;
 `Collavre::PptImporter` reuses it when persisting imported slides.
 `Collavre::PptPreview` caches rendered HTML for seven days by blob key and locale.
@@ -77,6 +79,8 @@ origin on every saved attachment request. Before an upload is attached, only its
 uploader can preview it. Responses return `Cache-Control: private, no-store`;
 cached rendering never bypasses authorization.
 Preview images are embedded in the rendered HTML rather than uploaded as new blobs.
+Each image occurrence consumes the cumulative rendered-byte budget before Base64
+expansion; encoded data URIs are reused for repeated archive entries.
 
 ## Tree Operations
 
