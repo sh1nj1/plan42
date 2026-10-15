@@ -1,3 +1,4 @@
+import DocumentPreviewController from "./document_preview_controller"
 import InlineCreativePickerController from './inline_creative_picker_controller'
 import CreativeMoveController from "./creative_move_controller"
 
@@ -133,6 +134,7 @@ function registerAppChromeControllers(application) {
 }
 
 function registerCreativeControllers(application) {
+  application.register("document-preview", DocumentPreviewController)
   application.register("creatives--import", CreativesImportController)
   application.register("creatives--select-mode", CreativesSelectModeController)
   application.register("creatives--drag-drop", CreativesDragDropController)

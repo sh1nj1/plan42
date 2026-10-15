@@ -62,15 +62,20 @@ creative.comments                 # Has-many comments (images attached to commen
 creative.files                    # Active Storage has_many_attached files
 ```
 
-Attached `.pptx` files appear at their attachment link position as the same inline
-slide viewer in the editor and on the Creative page, including immediately after
-upload. The stored description retains the attachment link; both display paths
-derive the preview iframe from it. Transparent chevrons sit at the left and right
-edges. Desktop hover or keyboard focus reveals controls; clicking a slide opens
-native fullscreen. On touch devices, tapping toggles controls and the fullscreen
-button opens the presentation. Download is available in both inline and fullscreen
-controls, including browsers without native fullscreen; close is fullscreen-only.
-Slide hyperlinks open in a new tab instead of replacing the preview.
+Attached `.pptx`, `.md`, `.html`, and `.pdf` files appear at their attachment
+link position in a shared inline iframe viewer, in both the editor and Creative
+page, including immediately after upload. Stored descriptions retain download
+links. A loading placeholder uses the same component as the image lightbox;
+fullscreen and download controls are shared across document formats.
+
+Markdown is rendered with CommonMarker, and Markdown/HTML documents are placed
+in an iframe with an empty sandbox (no scripts or parent-document access).
+Text documents are limited to 10 MiB. PDF.js renders one page at a time with
+previous/next page and zoom controls; its module and worker are loaded only for
+PDF previews. The historical `ppt_previews` endpoint serves all four formats.
+PPT slides retain their slide navigation, aspect ratio, hover/touch controls,
+keyboard navigation, and native fullscreen behavior. Slide hyperlinks open in a
+new tab instead of replacing the preview.
 `Collavre::PptRenderer` renders slide HTML without creating creatives;
 `Collavre::PptImporter` reuses it when persisting imported slides.
 `Collavre::PptPreview` caches rendered HTML for seven days by blob key and locale.

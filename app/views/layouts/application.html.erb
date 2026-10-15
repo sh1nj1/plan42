@@ -6,6 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="app-version" content="<%= Rails.application.config.app_version %>">
+    <%= tag.meta name: "document-loading", content: t("collavre.ppt_viewer.loading") %>
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <% if Current.user %>

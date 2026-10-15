@@ -1,18 +1,37 @@
-<div class="ppt-viewer" tabindex="0" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+<div class="ppt-viewer <%= "document-viewer" unless @slides %>" tabindex="0" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
   <div id="slide-view">
     <div id="slide-content">
+      <% if @slides %>
       <% @slides.each_with_index do |slide, index| %>
         <div class="ppt-viewer-slide" <%= 'hidden' unless index.zero? %>><%= slide.html_safe %></div>
+      <% end %>
+      <% elsif @document %>
+        <iframe class="document-viewer-content" sandbox="" title="<%= @blob.filename %>" srcdoc="<%= @blob.filename.extension.downcase == "md" ? String.new(render("collavre/creatives/ppt_previews/markdown_document")) : @document %>"></iframe>
+      <% else %>
+        <div class="pdf-document" data-pdf-src="<%= main_app.rails_storage_proxy_path(@blob, disposition: "inline") %>" data-pdf-worker="<%= asset_path('pdf_worker.js') %>"></div>
+        <span class="media-loading" role="status" aria-label="<%= t('collavre.ppt_viewer.loading') %>"></span>
+        <span data-document-error hidden role="alert"><%= t('collavre.ppt_viewer.invalid') %></span>
       <% end %>
     </div>
   </div>
   <nav id="slide-controls" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+    <% if @slides || @blob.filename.extension.downcase == "pdf" %>
     <button type="button" data-ppt-previous aria-label="<%= t('collavre.ppt_viewer.previous') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+    <% end %>
     <%= link_to t("collavre.ppt_viewer.download"), main_app.rails_storage_proxy_path(@blob, disposition: "attachment"), download: @blob.filename, class: "ppt-viewer-download" %>
+    <% if @slides || @blob.filename.extension.downcase == "pdf" %>
     <span data-ppt-counter aria-live="polite"></span>
     <button type="button" data-ppt-next aria-label="<%= t('collavre.ppt_viewer.next') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+    <% end %>
+    <% if @blob.filename.extension.downcase == "pdf" %>
+      <button type="button" data-pdf-zoom><%= t("collavre.ppt_viewer.zoom") %></button>
+    <% end %>
     <button type="button" data-ppt-fullscreen><%= t('collavre.ppt_viewer.fullscreen') %></button>
     <button type="button" data-ppt-close aria-label="<%= t('collavre.ppt_viewer.close') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     <span data-ppt-error hidden role="alert"><%= t('collavre.ppt_viewer.fullscreen_error') %></span>
   </nav>
 </div>
+
+<% if @blob.filename.extension.downcase == "pdf" %>
+  <%= javascript_include_tag 'pdf_viewer', type: 'module' %>
+<% end %>

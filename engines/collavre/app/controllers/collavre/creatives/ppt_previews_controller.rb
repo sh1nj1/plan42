@@ -9,16 +9,27 @@ module Collavre
         @blob = preview_blob
         return if performed?
         return head :not_found unless @blob
-        return head :not_found unless @blob.filename.extension.downcase == "pptx"
+        return head :not_found unless @blob.filename.extension.downcase.in?(%w[pptx md html pdf])
 
         response.headers["Cache-Control"] = "private, no-store"
-        @slides = PptPreview.slides(@blob)
+        prepare_document
         render layout: "collavre/slide"
       rescue PptRenderer::InvalidArchive, Zip::Error, Nokogiri::XML::SyntaxError
         render plain: t("collavre.ppt_viewer.invalid"), status: :unprocessable_entity
       end
 
       private
+
+      def prepare_document
+        if @blob.filename.extension.downcase == "pptx"
+          @slides = PptPreview.slides(@blob)
+        elsif @blob.filename.extension.downcase != "pdf"
+          raise PptRenderer::InvalidArchive if @blob.byte_size > 10.megabytes
+
+          source = @blob.download.force_encoding(Encoding::UTF_8).scrub
+          @document = @blob.filename.extension.downcase == "md" ? Commonmarker.to_html(source) : source
+        end
+      end
 
       def preview_blob
         return creative_blob if params[:creative_id]

@@ -1,6 +1,8 @@
 en:
   collavre:
     ppt_viewer:
+      zoom: "Zoom"
+      loading: "Loading…"
       close: "Close"
       download: "Download"
       title: "Presentation: %{filename}"
@@ -9,4 +11,4 @@ en:
       next: "Next slide"
       fullscreen: "Fullscreen"
       fullscreen_error: "Unable to enter fullscreen."
-      invalid: "Unable to display this presentation."
+      invalid: "Unable to display this document."
