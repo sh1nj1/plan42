@@ -66,7 +66,9 @@ and routing; restarting a completed keep loop under a drop container restarts
 that keep loop. A fresh drop trigger replaces any keep loop except one that is
 `running` or `pending_verification`, including paused or user-blocked keep loops.
 Keep loops under drop containers inherit the container context for verification
-and status evaluation.
+and status evaluation. Evaluators require current read access to the loop creative
+before receiving its goal, description, or agent response, even when selected
+through a parent container or a stale permission cache.
 
 Replacement drop loops create a fresh trigger comment and scope retries to that
 generation. Pausing invalidates evaluations already in flight, including when

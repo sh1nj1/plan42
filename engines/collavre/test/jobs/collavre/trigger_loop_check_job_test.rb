@@ -29,6 +29,7 @@ module Collavre
       )
       Creative.where(id: @child.id).update_all(parent_id: @parent.id)
       @child.reload
+      @child.rebuild!
 
       @topic = @child.topics.create!(name: "Drop Trigger", user: @human)
 
@@ -60,6 +61,24 @@ module Collavre
         topic_id: @topic.id
       )
       Task.where(id: @task.id).update_all(status: "done")
+    end
+
+    test "keep evaluator never sends loop content to a denied or revoked verifier" do
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      CreativeShare.create!(creative: @child, user: nil, permission: :read)
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      assert @child.has_permission?(@ai_bot, :read)
+      share.update_columns(permission: :no_access)
+      assert @child.has_permission?(@ai_bot, :read), "Cached grant must remain stale for this regression"
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Private keep goal")
+      @child.update!(data: data)
+      job = TriggerLoopCheckJob.new
+      AiClient.stub(:new, ->(*) { flunk "Denied verifier received loop content" }) do
+        comment = @child.comments.create!(content: "Private response", user: @ai_bot, task: @task,
+                                          topic: @topic, skip_dispatch: true)
+        assert_equal :continue, job.send(:llm_fallback_evaluate, @child, @parent, comment, @task)
+      end
     end
 
     test "keep evaluator filters context by the selected verifier current read permission" do

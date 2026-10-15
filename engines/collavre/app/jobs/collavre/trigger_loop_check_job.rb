@@ -214,7 +214,7 @@ module Collavre
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
       verifier = pick_fallback_agent(parent_creative)
 
-      unless verifier
+      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
         # No AI agent available for fallback — default to continue
         return :continue
       end

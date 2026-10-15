@@ -33,7 +33,7 @@ module Collavre
 
       verifier = pick_verifier_agent(parent_creative, task.agent_id)
 
-      unless verifier
+      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
         # No verifier available — accept DONE as-is
         update_loop_data(child_creative, state: "completed")
         return
