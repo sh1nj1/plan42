@@ -107,6 +107,7 @@ describe('CommandArgsForm keep command', () => {
   const command = baseCommand({
     name: 'keep', label: '/keep', input_schema: [
       { name: 'max', type: 'integer', minimum: 1, maximum: 50, required: false },
+      { name: 'cooldown', type: 'integer', minimum: 0, maximum: 3600, required: false },
       { name: 'agent_name', type: 'string', format: 'keep_agent', required: false },
       { name: 'goal', type: 'string', required: false }
     ]
@@ -125,6 +126,18 @@ describe('CommandArgsForm keep command', () => {
     fieldFor('max').value = '10'
     form._submit()
     expect(submitted).toEqual(['/keep --max 10'])
+    form.hide()
+  })
+
+  test.each(['-1', '3601', '1.5'])('rejects invalid cooldown %s', value => {
+    const submitted = []
+    const onSubmit = text => submitted.push(text)
+    const form = new CommandArgsForm({ onSubmit })
+    form.show(command)
+    fieldFor('cooldown').value = value
+    form._submit()
+    expect(submitted).toEqual([])
+    expect(fieldFor('cooldown').classList.contains('modal-dialog-error')).toBe(true)
     form.hide()
   })
 
@@ -155,6 +168,8 @@ describe('CommandArgsForm keep command', () => {
     [{}, '/keep'],
     [{ goal: '목표 달성' }, '/keep 목표 달성'],
     [{ max: '5' }, '/keep --max 5'],
+    [{ cooldown: '0' }, '/keep --cooldown 0'],
+    [{ cooldown: '3600', max: '5', goal: 'finish' }, '/keep --max 5 --cooldown 3600 finish'],
     [{ agent_name: '@Agent Name:' }, '/keep @Agent Name:'],
     ...['Vrex', '@Vrex', 'Vrex:', '@Vrex:', '  Vrex  ', '  @Vrex:  '].map(agent_name => [
       { agent_name, goal: 'Fix bugs' }, '/keep @Vrex: Fix bugs'
@@ -162,7 +177,7 @@ describe('CommandArgsForm keep command', () => {
     [{ agent_name: '   ', goal: 'Fix bugs' }, '/keep Fix bugs'],
     [{ max: '8', agent_name: '@Agent Name:', goal: 'Fix bugs\nThen verify' },
       '/keep --max 8 @Agent Name: Fix bugs\nThen verify'],
-    ...['@Vrex: investigate', '--max 1 investigate', '-- investigate', '--'].map(goal => [
+    ...['@Vrex: investigate', '--max 1 investigate', '--cooldown 30 investigate', '-- investigate', '--'].map(goal => [
       { goal }, `/keep -- ${goal}`
     ]),
     [{ max: '5', agent_name: 'Vrex', goal: '@Other: investigate' },

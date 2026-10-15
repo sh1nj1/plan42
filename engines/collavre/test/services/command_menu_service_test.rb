@@ -3,7 +3,7 @@ require "test_helper"
 module Collavre
   class CommandMenuServiceTest < ActiveSupport::TestCase
     test "keep arguments are localized in parser order" do
-      { en: "[--max 10] [@agent:] [goal]", ko: "[--max 10] [@에이전트:] [목표]" }.each do |locale, expected|
+      { en: "[--max 10] [--cooldown 10] [@agent:] [goal]", ko: "[--max 10] [--cooldown 10] [@에이전트:] [목표]" }.each do |locale, expected|
         I18n.with_locale(locale) do
           item = CommandMenuService.new(user: users(:one)).send(:keep_item)
           assert_equal expected, item[:args]
@@ -15,12 +15,15 @@ module Collavre
       %i[en ko].each do |locale|
         I18n.with_locale(locale) do
           schema = CommandMenuService.new(user: users(:one)).send(:keep_item)[:input_schema]
-          assert_equal %w[max agent_name goal], schema.map { |param| param[:name] }
+          assert_equal %w[max cooldown agent_name goal], schema.map { |param| param[:name] }
           assert_equal "integer", schema.first[:type]
-          assert_equal "keep_agent", schema.second[:format]
+          assert_equal "keep_agent", schema.third[:format]
           assert_equal 1, schema.first[:minimum]
           assert_equal 50, schema.first[:maximum]
-          schema.zip(%w[max agent goal]).each do |param, key|
+          assert_equal "integer", schema.second[:type]
+          assert_equal 0, schema.second[:minimum]
+          assert_equal 3600, schema.second[:maximum]
+          schema.zip(%w[max cooldown agent goal]).each do |param, key|
             assert_not param[:required]
             assert_equal I18n.t("collavre.comments.keep_command.#{key}_hint", raise: true), param[:description]
           end
@@ -32,7 +35,7 @@ module Collavre
       McpService.stub(:available_tools, [ { name: "keep", params: [] } ]) do
         items = CommandMenuService.new(user: users(:one)).items.select { |item| item[:name] == "keep" }
         assert_equal 1, items.size
-        assert_equal %w[max agent_name goal], items.first[:input_schema].pluck(:name)
+        assert_equal %w[max cooldown agent_name goal], items.first[:input_schema].pluck(:name)
       end
     end
 

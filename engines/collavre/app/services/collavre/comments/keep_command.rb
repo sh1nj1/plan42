@@ -16,19 +16,35 @@ module Collavre
         return message("no_agent") if dispatch_suppressed?
 
         text = @comment.content.to_s.strip.sub(/\A\/keep\s*/i, "")
-        limit = text.slice!(/\A--max(?:\s+\S+)?(?=\s|\z)/)&.split&.last || "10"
-        return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/) && limit.to_i <= 50
+        options = parse_options(text)
+        return message(options) if options.is_a?(String)
 
         text = text.strip
         agent = leading_agent(text)
         return message("agent_not_authorized") unless valid_agent_selection?(text, agent)
 
         text = text.sub(/\A@#{Regexp.escape(agent.name)}:\s*/i, "") if agent
-        prepare_loop(text.sub(/\A--(?:\s|\z)/, ""), agent, limit)
+        prepare_loop(text.sub(/\A--(?:\s|\z)/, ""), agent, options)
         nil
       end
 
       private
+
+      def parse_options(text)
+        options = { "max" => "10", "cooldown" => "10" }
+        while (match = text.match(/\A--(max|cooldown)(?=\s|\z)/))
+          name = match[1]
+          text.slice!(0, match[0].length)
+          value = text.slice!(/\A\s+\S+/).to_s.strip
+          valid = name == "max" ? value.match?(/\A[1-9]\d*\z/) && value.to_i <= 50 :
+            value.match?(/\A\d+\z/) && value.to_i <= 3600
+          return "invalid_#{name}" unless valid
+
+          options[name] = value
+          text.strip!
+        end
+        options
+      end
 
       def dispatch_suppressed?
         @comment.creative.inbox? && @comment.topic&.name == Creative::SYSTEM_TOPIC_NAME
@@ -46,11 +62,12 @@ module Collavre
         end
       end
 
-      def prepare_loop(text, agent, limit)
+      def prepare_loop(text, agent, options)
         @comment.assign_attributes(quoted_comment: nil, review_type: nil)
         @comment.topic ||= @comment.creative.main_topic
         @comment.keep_loop_options = { "goal" => text.strip, "agent_id" => agent&.id,
-                                       "max_iterations" => limit.to_i }
+                                       "max_iterations" => options.fetch("max").to_i,
+                                       "cooldown_seconds" => options.fetch("cooldown").to_i }
         @comment.content = [ ("@#{agent.name}:" if agent), text.strip,
                              I18n.t("collavre.trigger_loop.instructions") ].compact.join("\n\n")
       end

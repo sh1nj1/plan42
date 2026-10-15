@@ -372,6 +372,7 @@ export default class CommandArgsForm {
   _buildKeepText(command, values) {
     const agentName = values.agent_name?.trim().replace(/^@/, '').replace(/:$/, '').trim()
     return [command.label, values.max != null ? `--max ${values.max}` : null,
+      values.cooldown != null ? `--cooldown ${values.cooldown}` : null,
       agentName ? `@${agentName}:` : null, keepGoalText(values.goal)].filter(Boolean).join(' ')
   }
 

@@ -9,6 +9,56 @@ module Collavre
         @topic = @creative.main_topic
       end
 
+      [ [ "", 10, 10 ], [ "--cooldown 0", 10, 0 ], [ "--cooldown 3600", 10, 3600 ],
+        [ "--max 5 --cooldown 0", 5, 0 ], [ "--cooldown 0 --max 5", 5, 0 ],
+        [ "--max 5 --cooldown 30", 5, 30 ], [ "--cooldown 30 --max 5", 5, 30 ] ].each do |flags, max, cooldown|
+        test "persists cooldown and max for #{flags.inspect}" do
+          comment = command("/keep #{flags} finish")
+          assert_nil KeepCommand.new(comment: comment, user: @user).call
+          comment.skip_dispatch = true
+          comment.save!
+          config = @creative.reload.data.dig("trigger", "loop")
+          assert_equal cooldown, config["cooldown_seconds"]
+          assert_equal max, config["max_iterations"]
+          assert_equal "finish", config["goal"]
+          task = Task.create!(name: "Keep turn", status: "running", creative: @creative, topic_id: @topic.id,
+                              agent: users(:ai_bot), trigger_event_name: "comment_created",
+                              trigger_event_payload: comment.reload.dispatch_payload.deep_stringify_keys)
+          @creative.comments.create!(content: "finished", user: users(:ai_bot), topic: @topic, task: task, skip_dispatch: true)
+          travel_to Time.current.change(usec: 0) do
+            adapter = ActiveJob::QueueAdapters::TestAdapter.new
+            TriggerLoopCheckJob.stub(:queue_adapter, adapter) { task.done! }
+            job = adapter.enqueued_jobs.find { |entry| entry[:job] == TriggerLoopCheckJob }
+            assert_equal [ task.id ], job[:args]
+            if cooldown.positive?
+              assert_in_delta (Time.current + cooldown.seconds).to_f, job[:at], 0.01
+            else
+              assert_nil job[:at]
+            end
+          end
+        end
+      end
+
+      [ "", "-1", "3601", "1.5", "abc", "1e1", "+1", "--max 5" ].each do |value|
+        test "rejects invalid cooldown #{value.inspect} in both locales" do
+          %i[en ko].each do |locale|
+            I18n.with_locale(locale) do
+              comment = command("/keep --cooldown #{value}")
+              assert_equal I18n.t("collavre.comments.keep_command.invalid_cooldown"),
+                           KeepCommand.new(comment: comment, user: @user).call
+              assert_nil comment.keep_loop_options
+            end
+          end
+        end
+      end
+
+      test "cooldown after goal remains literal text" do
+        comment = command("/keep finish --cooldown 30")
+        assert_nil KeepCommand.new(comment: comment, user: @user).call
+        assert_equal "finish --cooldown 30", comment.keep_loop_options["goal"]
+        assert_equal 10, comment.keep_loop_options["cooldown_seconds"]
+      end
+
       test "selected agent exclusively receives the initial turn while goal mentions stay intact" do
         agent = users(:ai_bot)
         other = agent.dup
@@ -33,7 +83,7 @@ module Collavre
       end
 
       test "goal separator preserves reserved leading tokens without selecting an agent" do
-        [ "@#{users(:ai_bot).name}: investigate", "--max 1 investigate", "-- investigate", "--" ].each do |goal|
+        [ "@#{users(:ai_bot).name}: investigate", "--max 1 investigate", "--cooldown 30 investigate", "-- investigate", "--" ].each do |goal|
           comment = command("/keep -- #{goal}")
           assert_nil KeepCommand.new(comment: comment, user: @user).call
           assert_equal goal, comment.keep_loop_options["goal"]
