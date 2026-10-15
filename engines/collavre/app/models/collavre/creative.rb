@@ -74,6 +74,7 @@ module Collavre
     include Publishable
     include Describable
     include RealtimeBroadcastable
+    include Contextual
     include HistoryTrackable, CreativeHistoryTopic, CreativeReservedTopics, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
@@ -215,44 +216,6 @@ module Collavre
 
     def drop_trigger_enabled?
       data&.dig("trigger", "on_child_enter") == true
-    end
-
-    # --- Context IDs ---
-    # Returns the directly-configured context creative IDs for this creative.
-    def context_ids
-      data.is_a?(Hash) ? Array(data["context_ids"]) : []
-    end
-
-    # Returns the directly-configured disabled context IDs for this creative.
-    def disabled_context_ids
-      data.is_a?(Hash) ? Array(data["disabled_context_ids"]) : []
-    end
-
-    # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
-    def effective_context_ids(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      own = context_ids
-      parent_ctx = parent&.effective_context_ids(visited_ids) || []
-      (own + parent_ctx).uniq
-    end
-
-    # Returns the effective disabled context IDs: own + inherited from ancestors (deduplicated).
-    def effective_disabled_context_ids(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      own = disabled_context_ids
-      parent_disabled = parent&.effective_disabled_context_ids(visited_ids) || []
-      (own + parent_disabled).uniq
-    end
-
-    # Returns context creatives (excludes self to avoid duplication).
-    def context_creatives
-      ids = effective_context_ids
-      ids -= [ id ]
-      Creative.where(id: ids)
     end
 
     # Compatibility helper: ancestry gem exposes `subtree_ids`, while

@@ -86,7 +86,8 @@ module Collavre
         return unless creative && Kollavy::AccessScope.allowed?(creative, @agent)
 
         effective_origin = creative.effective_origin(Set.new)
-        context_ids = effective_origin.effective_context_ids
+        # Same order as the chat context bar, so the prompt follows what the user arranged.
+        context_ids = effective_origin.ordered_context_ids
         disabled_ids = effective_origin.effective_disabled_context_ids
         active_ids = context_ids - disabled_ids - [ creative_id, effective_origin.id ]
         return if active_ids.empty?
