@@ -77,13 +77,14 @@ module Collavre
       end
 
       def transition_loop(allowed_states)
+        start_comment_id = creative.data&.dig("trigger", "loop", "start_comment_id")
         topic_id = control_topic_id(creative.data&.dig("trigger", "loop"))
         Comments::TopicMutation.call(topic_id, creative.id) do
           creative.with_lock do
             data = (creative.data || {}).deep_dup
             loop_data = data.dig("trigger", "loop")
             return unless loop_data && allowed_states.include?(loop_data["state"])
-            next unless control_topic_id(loop_data) == topic_id
+            next unless control_topic_id(loop_data) == topic_id && loop_data["start_comment_id"] == start_comment_id
 
             yield loop_data
             loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1

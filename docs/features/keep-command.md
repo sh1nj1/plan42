@@ -139,4 +139,9 @@ creation and dispatch. A creation or dispatch error rolls back the prior state,
 iteration counters, and control version, so the same action can be retried.
 Public reply resumes likewise return to their previous awaiting-user state on
 failure; the human reply remains saved and another reply can retry the resume.
-Controls whose loop topic changed before locking do not affect the replacement.
+Controls whose loop topic or start comment changed before locking do not affect
+the replacement, including a new keep loop in the same topic.
+
+Completion verification filters candidates by current read access to the loop
+creative before preferring a different agent. If every alternative is denied,
+an authorized task agent can still verify the result.

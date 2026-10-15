@@ -64,6 +64,42 @@ module Collavre
       )
     end
 
+    test "keep verification skips denied candidates and prefers an authorized alternative" do
+      denied = users(:two)
+      allowed = users(:three)
+      [ denied, allowed ].each do |agent|
+        agent.update_columns(llm_vendor: "google", llm_model: "test")
+        CreativeShare.create!(creative: @parent, user: agent, permission: :feedback)
+      end
+      share = CreativeShare.create!(creative: @child, user: denied, permission: :feedback)
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      share.update_columns(permission: :no_access)
+      assert @child.has_permission?(denied, :read)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
+      job = TriggerLoopVerifyJob.new
+      selected = []
+      job.stub(:verify_completion, ->(agent, *) { selected << agent.id; :awaiting_user }) do
+        job.perform(@task.id)
+      end
+      assert_equal [ allowed.id ], selected
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "keep verification falls back to the task agent when alternatives are denied" do
+      denied = users(:two)
+      denied.update_columns(llm_vendor: "google", llm_model: "test")
+      CreativeShare.create!(creative: @parent, user: denied, permission: :feedback)
+      CreativeShare.create!(creative: @child, user: denied, permission: :no_access)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
+      job = TriggerLoopVerifyJob.new
+      selected = []
+      job.stub(:verify_completion, ->(agent, *) { selected << agent.id; :awaiting_user }) do
+        job.perform(@task.id)
+      end
+      assert_equal [ @ai_bot.id ], selected
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "keep evaluator never sends loop content to a denied or revoked verifier" do
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       CreativeShare.create!(creative: @child, user: nil, permission: :read)

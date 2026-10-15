@@ -52,6 +52,33 @@ module Collavre
         end
       end
 
+      test "stale controls preserve a replacement keep in the same topic" do
+        { "pause" => "running", "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state, start_comment_id: 100
+          ) } })
+          operation = command(action: action)
+          replacement = @child.data.deep_dup
+          replacement["trigger"]["loop"]["start_comment_id"] = 200
+          original = Comments::TopicMutation.method(:call)
+          intercepted = false
+          Comments::TopicMutation.stub(:call, lambda { |topic_id, creative_id, &block|
+            unless intercepted
+              intercepted = true
+              Creative.where(id: @child.id).update_all(data: replacement)
+            end
+            original.call(topic_id, creative_id, &block)
+          }) do
+            SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale generation dispatched" }) do
+              assert_no_difference -> { @child.comments.count } do
+                assert operation.call.success?
+              end
+            end
+          end
+          assert_equal replacement, @child.reload.data
+        end
+      end
+
       test "stale controls do not lock or resume a replacement topic" do
         @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
           @child.main_topic.id, source: "keep", state: "paused"

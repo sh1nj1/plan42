@@ -31,7 +31,7 @@ module Collavre
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
-      verifier = pick_verifier_agent(parent_creative, task.agent_id)
+      verifier = pick_verifier_agent(parent_creative, task.agent_id, child_creative)
 
       unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
         # No verifier available — accept DONE as-is
@@ -94,10 +94,10 @@ module Collavre
     # Pick a verifier AI agent: prefer one with feedback+ permission that
     # is NOT the original task agent. Fall back to the task agent only if
     # no other AI agent exists.
-    def pick_verifier_agent(creative, task_agent_id)
+    def pick_verifier_agent(creative, task_agent_id, child_creative)
       ai_agents = creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select(&:ai_user?)
+                          .select { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
 
       return nil if ai_agents.empty?
 
