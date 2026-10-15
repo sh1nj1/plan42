@@ -49,7 +49,12 @@ module Collavre
     end
 
     def score_schema(definition)
-      count = definition.fetch("levels").size
+      levels = definition.fetch("levels")
+      unless levels.is_a?(Array) && levels.all? { |level| level.is_a?(String) && level.present? }
+        raise ArgumentError, "Score levels must be nonblank descriptions"
+      end
+
+      count = levels.size
       raise ArgumentError, "A score needs 2 to 10 levels" unless (2..10).cover?(count)
 
       { type: "number", minimum: 0, maximum: count - 1 }

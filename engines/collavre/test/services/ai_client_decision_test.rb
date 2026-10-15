@@ -278,14 +278,25 @@ module Collavre
       end
     end
 
+    test "unmapped judgment-only vendors never call chat transport" do
+      capabilities = AiClient.vendor_capabilities.merge("acme" => [ :judge ])
+      client = AiClient.new(vendor: "acme", model: "test", system_prompt: nil)
+      AiClient.stub(:vendor_capabilities, capabilities) do
+        client.stub(:chat, ->(*) { flunk "Unsupported vendor reached chat transport" }) do
+          assert_raises(ArgumentError) { client.judge("Task", questions: QUESTIONS) }
+        end
+      end
+    end
+
     test "invalid score scales fail before either decision adapter is called" do
       [ "google", "typesafe" ].each do |vendor|
         client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
         client.stub(:native_decision, ->(*) { flunk "Invalid scale reached native adapter" }) do
           client.stub(:chat_decision, ->(*) { flunk "Invalid scale reached chat adapter" }) do
-            [ 0, 1, 11 ].each do |count|
+            [ [], [ "only" ], Array.new(11, "level"), "ok", nil, { low: "low", high: "high" },
+              [ nil, nil ], [ "low", 1 ], [ "low", "" ], [ "low", "  " ] ].each do |levels|
               assert_raises(ArgumentError) do
-                client.judge("Task", questions: { rating: { type: :score, levels: Array.new(count, "level") } })
+                client.judge("Task", questions: { rating: { type: :score, levels: levels } })
               end
             end
           end

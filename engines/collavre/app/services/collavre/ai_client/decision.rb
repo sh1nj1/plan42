@@ -39,6 +39,8 @@ module Collavre
       end
 
       def chat_decision(input, definitions)
+        raise ArgumentError, "Vendor cannot answer chat decisions" unless self.class.supports?(vendor, :chat)
+
         return adapter_decision(input, definitions) unless VENDOR_TO_PROVIDER.key?(vendor)
 
         perform_chat_decision(input, definitions, structured: true)
@@ -60,8 +62,6 @@ module Collavre
       end
 
       def perform_chat_decision(input, definitions, structured:)
-        raise ArgumentError, "Vendor cannot answer chat decisions" unless self.class.supports?(vendor, :chat)
-
         start_usage_tracking
         @conversation = build_conversation
         install_usage_tracking(@conversation)
