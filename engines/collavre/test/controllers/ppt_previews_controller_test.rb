@@ -86,6 +86,34 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "linked shell legacy attachments cannot be read through public origin permissions" do
+    CreativeShare.create!(creative: @creative, user: nil, permission: :read)
+    linked = Creative.create!(user: users(:two), origin: @creative)
+    linked.files.attach(io: StringIO.new("private deck"), filename: "private.pptx")
+    legacy_attachment = linked.files.last
+    sign_out
+
+    Collavre::PptPreview.stub :slides, ->(*) { flunk "Must not render a shell-owned attachment" } do
+      get collavre.creative_ppt_preview_path(linked, legacy_attachment)
+      assert_response :not_found
+    end
+  end
+
+  test "linked preview resolves origin before attachment lookup and authorization" do
+    linked = Creative.create!(user: users(:two), origin: @creative)
+    sign_out
+    Collavre::PptPreview.stub :slides, ->(*) { flunk "Must authorize the origin before rendering" } do
+      get collavre.creative_ppt_preview_path(linked, @attachment)
+      assert_response :forbidden
+    end
+
+    CreativeShare.create!(creative: @creative, user: nil, permission: :read)
+    Collavre::PptPreview.stub :slides, ->(blob) { assert_equal @blob, blob; [ "Origin presentation" ] } do
+      get collavre.creative_ppt_preview_path(linked, @attachment)
+      assert_response :success
+    end
+  end
+
   test "attachments from another creative and missing attachments are rejected" do
     other = Creative.create!(user: users(:one), description: "Other")
     get collavre.creative_ppt_preview_path(other, @attachment)

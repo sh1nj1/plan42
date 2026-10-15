@@ -6,7 +6,7 @@ module Collavre
       before_action :enforce_creatives_login_policy
 
       def show
-        creative = Creative.find(params[:creative_id])
+        creative = Creative.find(params[:creative_id]).effective_origin
         return head :forbidden unless creative.has_permission?(Current.user, :read)
 
         attachment = creative.files.find(params[:id])
