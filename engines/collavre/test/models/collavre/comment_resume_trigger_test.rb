@@ -59,6 +59,15 @@ module Collavre
       assert_includes resume_comment.content, "🔄"
     end
 
+    test "private comment does not resume a drop loop" do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Private input must not dispatch" }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Private approval", topic: @topic, user: @human, private: true)
+        end
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "dispatch-suppressed human comment does not resume awaiting_user loop" do
       SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Suppressed comment dispatched" }) do
         assert_difference -> { @child.comments.count }, 1 do

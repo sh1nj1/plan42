@@ -332,6 +332,54 @@ module Collavre
         assert_match(/@#{Regexp.escape(agent.name)}:/, @creative.comments.order(:id).last.content)
       end
 
+      test "blocked replies dispatch only the selected agent resume turn" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        other = agent.dup
+        other.email = "keep-reply-other@example.com"
+        other.name = "KeepReplyOther"
+        other.save!
+        CreativeShare.create!(creative: @creative, user: other, permission: :feedback)
+        [ "Proceed", "Compare with @#{other.name}: output" ].each do |content|
+          @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @topic.id, source: "keep", state: "awaiting_user", agent_id: agent.id
+          ) } })
+          dispatched = []
+          dispatch = lambda do |_event, payload, **_options|
+            dispatched << payload
+            [ agent ]
+          end
+          response = command(content)
+          SystemEvents::Dispatcher.stub(:dispatch, dispatch) do
+            assert_difference -> { @creative.comments.count }, 2 do
+              response.save!
+            end
+          end
+          assert_equal 1, dispatched.size
+          resume = @creative.comments.order(:id).last
+          assert_equal resume.id, dispatched.first.dig(:comment, :id)
+          assert_equal [ { id: agent.id } ], dispatched.first.dig(:chat, :mentioned_users)
+          assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+          assert_equal resume.id, @creative.data.dig("trigger", "loop", "current_comment_id")
+          assert_equal content, response.reload.content
+        end
+      end
+
+      test "private replies do not resume a blocked keep loop" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user", agent_id: agent.id
+        ) } })
+        previous = @creative.data.deep_dup
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Private reply must not dispatch" }) do
+          assert_difference -> { @creative.comments.count }, 1 do
+            command("Confidential input").tap { |comment| comment.private = true }.save!
+          end
+        end
+        assert_equal previous, @creative.reload.data
+      end
+
       test "rejects unresolved and non AI leading selectors without starting a loop" do
         hidden = User.create!(email: "hidden-keep@example.com", name: "HiddenKeep", password: "password123",
                               llm_vendor: "openai", llm_model: "gpt-4", searchable: false)

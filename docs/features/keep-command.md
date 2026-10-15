@@ -40,7 +40,11 @@ Responses without a status tag use the existing LLM evaluation fallback.
 Infrastructure retries do not consume iterations and stop as `stuck` after
 three consecutive infrastructure failures.
 
-Reply in the loop's topic to continue work waiting for user input. Resume keeps
+Reply publicly in the loop's topic to continue work waiting for user input.
+Private replies are saved without resuming the loop. For an explicitly selected
+agent, the public reply skips ordinary dispatch; only the synthetic resume turn
+is dispatched to that agent, even if the reply mentions another agent.
+Resume keeps
 the iteration count; Restart resets it and reuses the saved goal and agent
 selection. An omitted agent continues to use normal routing after either action.
 

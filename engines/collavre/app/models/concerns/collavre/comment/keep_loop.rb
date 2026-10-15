@@ -23,10 +23,14 @@ module Collavre
         chat
       end
 
+      def public_human_loop_reply?
+        user_id.present? && !user&.ai_user? && !approval_action? && !self.private?
+      end
+
       def blocked_keep_reply?
         config = creative.data&.dig("trigger", "loop")
         config && config["state"] == "awaiting_user" && config["trigger_topic_id"] == topic_id &&
-          creative.keep_loop_agent_unavailable?
+          config["source"] == "keep" && config["agent_id"].present?
       end
 
       def track_loop_turn
