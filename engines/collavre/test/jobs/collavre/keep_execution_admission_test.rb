@@ -237,6 +237,68 @@ module Collavre
       assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
     end
 
+    test "all siblings own the turn before the first published job can reject" do
+      sibling = users(:channel_bot)
+      enqueuer = batch_enqueuer
+      published = []
+      publish = lambda do |agent_id, _event, context|
+        published << agent_id
+        Orchestration::Matcher.stub(:prepare_waiting_payload, nil) do
+          Orchestration::KeepDispatchAdmission.call(context, User.find(agent_id)) { :rejected }
+        end
+        if published.one?
+          assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+          assert_equal [ sibling.id ], @creative.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+        end
+        Struct.new(:successfully_enqueued?).new(true)
+      end
+      AiAgentJob.stub(:perform_later, publish) do
+        enqueuer.send(:enqueue_jobs, [ @agent, sibling ].map { |agent| { agent: agent, timing: :immediate } },
+          context_for: nil, require_enqueue_ack: true)
+      end
+      assert_equal [ @agent.id, sibling.id ], published
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_nil @creative.data.dig("trigger", "keep_queued_dispatches")
+    end
+
+    test "failed publication releases every unpublished sibling reservation" do
+      [ false, :raise ].each do |failure|
+        enqueuer = batch_enqueuer
+        publish = ->(*) { failure == :raise ? raise(ActiveJob::EnqueueError) : false }
+        AiAgentJob.stub(:perform_later, publish) do
+          assert_raises(ActiveJob::EnqueueError) do
+            enqueuer.send(:enqueue_jobs, [ @agent, users(:channel_bot) ].map { |agent| { agent: agent, timing: :immediate } },
+              context_for: nil, require_enqueue_ack: true)
+          end
+        end
+        assert_nil @creative.reload.data.dig("trigger", "keep_queued_dispatches")
+      end
+    end
+
+    test "notice failure retains published ownership and releases unpublished siblings" do
+      enqueuer = batch_enqueuer
+      enqueuer.define_singleton_method(:post_waiting_notice) { |*| raise "notice failed" }
+      queue = Object.new
+      queue.define_singleton_method(:perform_later) { |*| Struct.new(:successfully_enqueued?).new(true) }
+      AiAgentJob.stub(:set, queue) do
+        assert_raises(RuntimeError) do
+          enqueuer.send(:enqueue_jobs, [ @agent, users(:channel_bot) ].map { |agent| { agent: agent, timing: :delayed, delay: 1 } },
+            context_for: nil, require_enqueue_ack: true)
+        end
+      end
+      assert_equal [ @agent.id ], @creative.reload.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+    end
+
+    def batch_enqueuer
+      enqueuer = Object.new.extend(Orchestration::JobEnqueue)
+      enqueuer.instance_variable_set(:@event_name, "comment_created")
+      context = @context
+      enqueuer.define_singleton_method(:context_for_agent) { |*| context }
+      enqueuer.define_singleton_method(:log_decision) { |*| }
+      enqueuer.define_singleton_method(:already_handled?) { |*| false }
+      enqueuer
+    end
+
     def task_for(status)
       Task.create!(name: "Keep owner", status: status, creative: @creative, agent: @agent,
         topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: @context.deep_dup)

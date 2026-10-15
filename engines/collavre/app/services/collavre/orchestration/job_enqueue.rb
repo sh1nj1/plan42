@@ -6,35 +6,50 @@ module Collavre
       private
 
       def enqueue_jobs(decisions, context_for:, require_enqueue_ack: false, ordinary_delivery: nil)
-        decisions.filter_map do |decision|
+        pending = decisions.filter_map do |decision|
           agent = decision[:agent]
           next unless ordinary_delivery.nil? || ordinary_delivery.permitted?(agent)
-          context = context_for_agent(agent, context_for)
-          log_decision(decision)
 
-          # A rejected decision is not a dispatch, so neither guard below
-          # applies to it. Both ask "is this dispatch redundant?", which is only
-          # a question about work that was going to run: the scheduler has
-          # already refused this one, over an exhausted quota or a loop breaker
-          # that fired. Recording a drop against it would make
-          # DeliveryRecord.restore! owe a turn for work nothing scheduled, and
-          # the restore enqueues AiAgentJob directly — past the very check that
-          # did the refusing, so the quota is exceeded or the broken loop
-          # restarted. Reporting the agent would be the same mistake in the
-          # other direction: nothing is answering, and an empty result is how a
-          # caller learns that.
-          if decision[:timing] == :rejected
-            ordinary_delivery&.record!(agent, "rejected")
-            next
-          end
-
-          if already_handled?(agent, context)
-            ordinary_delivery&.record!(agent, "handled")
-            next agent
-          end
-
-          enqueue_scheduled(agent, context, decision, require_enqueue_ack, ordinary_delivery)
+          [ decision, context_for_agent(agent, context_for) ]
         end
+        # Every sibling must own the turn before any job becomes visible.
+        pending.each do |decision, context|
+          KeepQueuedDispatches.reserve!(context, decision[:agent]) unless decision[:timing] == :rejected
+        end
+        results = []
+        until pending.empty?
+          decision, context = pending.first
+          entry = pending.first
+          result = enqueue_reserved_decision(decision, context, require_enqueue_ack, ordinary_delivery) { pending.shift }
+          pending.shift if pending.first.equal?(entry)
+          results << result if result
+        end
+        results
+      ensure
+        # Publication may fail halfway through; already published siblings keep
+        # their reservations, while every unpublished sibling gives its back.
+        pending&.each do |decision, context|
+          KeepQueuedDispatches.release!(context, decision[:agent]) unless decision[:timing] == :rejected
+        end
+      end
+
+      def enqueue_reserved_decision(decision, context, require_enqueue_ack, ordinary_delivery, &published)
+        agent = decision[:agent]
+        log_decision(decision)
+        if decision[:timing] == :rejected
+          ordinary_delivery&.record!(agent, "rejected")
+          return
+        end
+
+        if already_handled?(agent, context)
+          KeepQueuedDispatches.release!(context, agent)
+          ordinary_delivery&.record!(agent, "handled")
+          return agent
+        end
+
+        result = enqueue_scheduled(agent, context, decision, require_enqueue_ack, ordinary_delivery, reserved: true, &published)
+        KeepQueuedDispatches.release!(context, agent) unless %i[immediate delayed].include?(decision[:timing])
+        result
       end
 
       def already_handled?(agent, context)
@@ -88,10 +103,11 @@ module Collavre
         false
       end
 
-      def enqueue_scheduled(agent, context, decision, require_enqueue_ack, ordinary_delivery)
+      def enqueue_scheduled(agent, context, decision, require_enqueue_ack, ordinary_delivery, reserved: false)
         case decision[:timing]
         when :immediate, :delayed
-          enqueue_agent_job(agent, context, decision, require_enqueue_ack: require_enqueue_ack)
+          enqueue_agent_job(agent, context, decision, require_enqueue_ack: require_enqueue_ack, reserved: reserved)
+          yield if block_given?
           ordinary_delivery&.record!(agent, "handled")
           post_waiting_notice(agent, decision) if decision[:timing] == :delayed
           agent
@@ -109,16 +125,16 @@ module Collavre
         end
       end
 
-      def enqueue_agent_job(agent, context, decision, require_enqueue_ack:)
+      def enqueue_agent_job(agent, context, decision, require_enqueue_ack:, reserved: false)
         queue = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
-        KeepQueuedDispatches.reserve!(context, agent)
+        KeepQueuedDispatches.reserve!(context, agent) unless reserved
         begin
           job = queue.perform_later(agent.id, @event_name, context)
           # Child publication must remain recoverable when an adapter rejects
           # enqueue without raising. Keep the legacy array API's default behavior.
           raise ActiveJob::EnqueueError if require_enqueue_ack && !(job && job.successfully_enqueued?)
         rescue StandardError
-          KeepQueuedDispatches.release!(context, agent)
+          KeepQueuedDispatches.release!(context, agent) unless reserved
           raise
         end
       end
