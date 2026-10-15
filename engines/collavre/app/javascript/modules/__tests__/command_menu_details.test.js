@@ -149,6 +149,27 @@ describe('command menu details toggle', () => {
     expect(key(textarea, 'ArrowLeft').defaultPrevented).toBe(false)
   })
 
+  test('ArrowLeft moves the caret instead of collapsing when it is not at the end', async () => {
+    const { textarea, menu } = await open()
+    const details = menu.querySelector('.command-details')
+    textarea.value = '/ draft'
+    textarea.setSelectionRange(7, 7)
+    expect(key(textarea, 'ArrowRight').defaultPrevented).toBe(true)
+    expect(details.hidden).toBe(false)
+
+    textarea.setSelectionRange(3, 3)
+    expect(key(textarea, 'ArrowLeft').defaultPrevented).toBe(false)
+    expect(details.hidden).toBe(false)
+
+    textarea.setSelectionRange(3, 7)
+    expect(key(textarea, 'ArrowLeft').defaultPrevented).toBe(false)
+    expect(details.hidden).toBe(false)
+
+    textarea.setSelectionRange(7, 7)
+    expect(key(textarea, 'ArrowLeft').defaultPrevented).toBe(true)
+    expect(details.hidden).toBe(true)
+  })
+
   test('arrow keys leave the caret alone when they cannot toggle', async () => {
     const { textarea, menu } = await open()
     const details = menu.querySelector('.command-details')

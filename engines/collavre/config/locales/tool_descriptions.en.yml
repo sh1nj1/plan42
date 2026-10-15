@@ -23,9 +23,10 @@ en:
           Deleting archives the Creative, so it can be recovered from History.
           Under a review policy, a draft is stored in History for approval.
       creative_create_service:
-        summary: Create a new Creative (task or content block) under a parent.
+        summary: Create a new Creative (task or content block) under a parent, or as a root when no parent is given.
         details: |-
           Creatives form a tree, and a parent's progress is calculated from its children.
+          Agents limited to a conversation's creative tree must always give a parent.
           The description is written in Markdown.
           A fenced Ruby code block using the ToolMeta DSL defines a new tool, which becomes available after owner approval.
           Under a review policy, a draft is stored in History for approval.
