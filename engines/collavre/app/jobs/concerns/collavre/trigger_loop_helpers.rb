@@ -8,6 +8,23 @@ module Collavre
 
     private
 
+    def decision_agent(agents, task_agent_id = nil)
+      eligible = agents.compact.uniq(&:id)
+      native = eligible.select { |agent| agent.supports?(:judge) }
+      candidates = native.presence || eligible.select { |agent| agent.supports?(:chat) }
+      candidates.find { |agent| agent.id != task_agent_id } || candidates.first
+    end
+
+    # Attribute evaluator usage without routing internal prompts into the working topic session.
+    def decision_client(verifier, task, system_prompt)
+      AiClient.new(
+        vendor: verifier.llm_vendor, model: verifier.llm_model, system_prompt: system_prompt,
+        llm_api_key: verifier.llm_api_key.presence || verifier.creator&.llm_api_key,
+        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
+        context: { user: verifier, usage_source_task: task, evaluation_session_id: SecureRandom.uuid }
+      )
+    end
+
     # Resolve the task's current topic while excluding unrelated conversations.
     def trigger_completion_topic(task, loop_config)
       @loop_original_data = loop_config.deep_dup

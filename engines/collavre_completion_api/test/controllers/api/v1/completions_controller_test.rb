@@ -49,6 +49,54 @@ module CollavreCompletionApi
           assert_match(/Invalid model/, body.dig("error", "message"))
         end
 
+        test "rejects judgment-only agents for both model ID formats and streaming modes" do
+          @ai_bot.update!(llm_vendor: "typesafe", llm_model: "jev-latest", searchable: true)
+          Collavre::AiClient.stub(:new, ->(**) { flunk "Rejected agent must not create a chat client" }) do
+            [ "bot", "collavre/#{@ai_bot.id}" ].product([ false, true ]).each do |model, stream|
+              post "/api/v1/chat/completions",
+                   params: { model: model, stream: stream,
+                             messages: [ { role: "user", content: "hi" } ] }.to_json,
+                   headers: auth_headers
+
+              assert_response :bad_request
+              assert_equal "Invalid model", JSON.parse(response.body).dig("error", "message")
+            end
+          end
+        end
+
+        [ :judgment_only, :inaccessible ].each do |collision|
+          test "resolves advertised model past a #{collision} email collision" do
+            @ai_bot.update!(email: "collision@first.example", searchable: false)
+            if collision == :judgment_only
+              @ai_bot.update!(llm_vendor: "typesafe", llm_model: "jev-latest")
+            else
+              @ai_bot.update!(created_by_id: users(:two).id)
+            end
+            agent = Collavre::User.create!(
+              name: "Visible chat agent", email: "collision@second.example",
+              password: "password123", llm_vendor: "google", llm_model: "gemini-1.5-flash",
+              created_by_id: @user.id
+            )
+            get "/api/v1/models", headers: auth_headers
+            assert_includes JSON.parse(response.body).fetch("data").map { |model| model["id"] }, "collision"
+
+            client = Object.new
+            client.define_singleton_method(:last_input_tokens) { 0 }
+            client.define_singleton_method(:last_output_tokens) { 0 }
+            client.define_singleton_method(:chat) { |*| "done" }
+            Collavre::AiClient.stub(:new, ->(**options) {
+              assert_equal agent.id, options.fetch(:context).fetch(:agent).id
+              client
+            }) do
+              post "/api/v1/chat/completions",
+                   params: { model: "collision", messages: [ { role: "user", content: "hi" } ] }.to_json,
+                   headers: auth_headers
+              assert_response :success
+              assert_includes response.body, "done"
+            end
+          end
+        end
+
         test "returns 400 with external model name" do
           post "/api/v1/chat/completions",
                params: { model: "gpt-4", messages: [ { role: "user", content: "hi" } ] }.to_json,

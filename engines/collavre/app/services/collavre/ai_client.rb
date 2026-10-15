@@ -1,6 +1,7 @@
 module Collavre
   class AiClient
     include ErrorHandling
+    include Decision, ProviderContext
     include AiUsageTracking, AiApprovalSummary, ApprovalGate, CliToolEvents
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
@@ -49,6 +50,7 @@ module Collavre
     BASE_VENDOR_OPTIONS = [
       [ "Google (Gemini)", "google" ],
       [ "OpenAI", "openai" ],
+      [ "TypesafeAI", "typesafe" ],
       [ "Anthropic", "anthropic" ],
       [ "CLI Proxy", "cli_proxy" ]
     ].freeze
@@ -65,6 +67,24 @@ module Collavre
         return if registered_vendor_options.any? { |_l, v| v == value }
 
         registered_vendor_options << [ label, value ]
+      end
+
+      def register_vendor_capabilities(vendor, capabilities:)
+        vendor_capabilities[vendor.to_s.strip.downcase] = capabilities.map(&:to_sym).freeze
+      end
+
+      def vendor_capabilities
+        @vendor_capabilities ||= { "openai" => %i[chat judge], "typesafe" => %i[judge] }
+      end
+
+      def supports?(vendor, capability, model: nil)
+        vendor = vendor.to_s.strip.downcase
+        capability = capability.to_sym
+        return false unless vendor_capabilities.fetch(vendor, %i[chat]).include?(capability)
+        return false if capability == :judge && !VENDOR_TO_PROVIDER.key?(vendor)
+        return true unless vendor == "openai" && capability == :judge && !model.nil?
+
+        RubyLLM::Providers::OpenAI::Capabilities.augment([], model_id: model).include?("judgment")
       end
 
       def vendor_options
@@ -197,6 +217,7 @@ module Collavre
 
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
+      "typesafe" => :typesafe,
       "cli_proxy" => :openai,
       "anthropic" => :anthropic,
       "google" => :gemini,
@@ -204,66 +225,7 @@ module Collavre
     }.freeze
 
     def build_conversation(tools = [])
-      normalized_vendor = @vendor.to_s.downcase
-
-      context_block = case normalized_vendor
-      when "openai", "cli_proxy"
-        if normalized_vendor == "cli_proxy"
-          agent = context[:user]
-          gateway = agent&.agent_gateway
-          raise ArgumentError, "CLI Proxy agent has no active gateway" unless gateway&.active?
-
-          if context.key?(:workspace_user)
-            workspace_user = context[:workspace_user]
-          else
-            comment_user = context[:comment]&.user
-            workspace_user = comment_user unless comment_user&.ai_user?
-            workspace_user ||= agent.creator
-          end
-          if gateway.per_user? && workspace_user.nil?
-            raise ArgumentError, "CLI Proxy per-user workspace requires a verified human principal"
-          end
-          workspace_user = nil if gateway.shared?
-          workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
-          gateway = workspace.agent_gateway
-          @cli_proxy_identity = { gateway: gateway, workspace: workspace }
-          api_key = gateway.completion_key
-          base_url = gateway.completion_base_url
-        else
-          api_key = OpenaiEndpoint.api_key(base_url: @gateway_url, api_key: @llm_api_key)
-          base_url = @gateway_url.presence
-        end
-        # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
-        # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
-        # if openai_api_key is blank. Supply a placeholder so keyless local gateways
-        # work; hosted OpenAI (no gateway) still requires a real key.
-        api_key = "local-gateway" if api_key.blank? && base_url
-        proc do |config|
-          config.openai_api_key = api_key
-          config.openai_api_base = base_url if base_url
-          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin? && !gateway.desktop_loopback?
-            config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
-          end
-        end
-      when "anthropic"
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)
-        proc { |config| config.anthropic_api_key = api_key }
-      else
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:gemini_api_key)
-        proc { |config| config.gemini_api_key = api_key }
-      end
-
-      chat_opts = conversation_options(normalized_vendor)
-
-      # RubyLLM::Context duplicates the global config. Set the timeout on that
-      # per-client copy so concurrent agent threads cannot overwrite one
-      # another's deadline cap.
-      @ruby_llm_context = RubyLLM.context do |config|
-        context_block.call(config)
-        config.request_timeout = effective_request_timeout_seconds
-      end
-
-      @ruby_llm_context.chat(**chat_opts).tap do |chat|
+      build_llm_context.chat(**conversation_options(@vendor)).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         apply_request_headers!(chat)
         install_tool_boundary(chat)

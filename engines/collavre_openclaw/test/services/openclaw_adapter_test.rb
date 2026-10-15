@@ -9,6 +9,21 @@ module CollavreOpenclaw
       @user.expect :gateway_url, "https://test-gateway.com"
     end
 
+    test "evaluation sessions are isolated without adding gateway topic routing" do
+      user = build_test_user(gateway_url: "https://test-gateway.com", email: "judge@example.com")
+      adapters = %w[first-evaluation second-evaluation].map do |nonce|
+        OpenclawAdapter.new(user: user, system_prompt: "Evaluate", context: { evaluation_session_id: nonce })
+      end
+      working = OpenclawAdapter.new(user: user, system_prompt: "Work", context: {})
+
+      assert_not_equal adapters.first.session_key, adapters.last.session_key
+      adapters.each do |adapter|
+        assert_not_equal working.session_key, adapter.session_key
+        assert_includes adapter.session_key, "agent:judge:collavre:#{user.id}:evaluation:"
+        assert_not_includes adapter.send(:build_user_context), "topic_id"
+      end
+    end
+
     test "initializes with user and system prompt" do
       adapter = OpenclawAdapter.new(
         user: @user,

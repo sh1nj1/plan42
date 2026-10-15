@@ -33,6 +33,8 @@ module Collavre
       end
 
       def self.prepare_waiting_task!(task)
+        return false unless task.agent.supports?(:chat)
+
         if task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
           return false unless task.creative&.has_permission?(task.agent, :feedback)
         end
@@ -132,7 +134,7 @@ module Collavre
       # routing_expression against the refreshed comment, silently dropping
       # deferred work for reasons that have nothing to do with the assignment.
       def assignment_permits?(agent)
-        primary_id = matched_topic&.primary_agent_id
+        primary_id = effective_primary_agent&.id
         return true if primary_id.nil? || primary_id == agent.id
 
         # A review can only ever be applied in place by the author of the quoted
@@ -152,7 +154,7 @@ module Collavre
         # All agents need feedback permission on the creative to respond
         # searchable only affects discoverability, not response permission
         creative = matched_creative
-        return false unless creative
+        return false unless creative && agent.supports?(:chat)
 
         creative.has_permission?(agent, :feedback)
       end
@@ -238,6 +240,10 @@ module Collavre
         ids.filter_map { |id| by_id[id] }
       end
 
+      def effective_primary_agent
+        matched_topic&.effective_primary_agent
+      end
+
       # Returns [primary_agent] when the topic has one, nil when it does not.
       #
       # A topic's primary agent is an exclusive assignment: it is the only agent
@@ -252,11 +258,12 @@ module Collavre
       # Other agents are not muted, only demoted to explicit invitation: an
       # @mention or matching enabled workflow can route to them before this tier.
       #
-      # Returning [] (rather than nil) when the primary is ineligible is
+      # Ordinary pins invalidated by capability registration are ignored.
+      # Returning [] (rather than nil) when the primary is otherwise ineligible is
       # intentional — falling through to expression routing would let exactly
       # the agents this assignment excludes take the floor instead.
       def match_by_primary_agent
-        agent = matched_topic&.primary_agent
+        agent = effective_primary_agent
         return nil unless agent
 
         return [] unless agent.ai_user?

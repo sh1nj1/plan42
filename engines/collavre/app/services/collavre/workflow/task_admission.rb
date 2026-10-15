@@ -18,6 +18,8 @@ module Collavre
       end
 
       def self.permitted?(context, agent)
+        return false unless agent.supports?(:chat)
+
         return true unless context&.key?("workflow_execution_id")
         row = DispatchIdentity.admission(context, agent.id)
         return false unless row

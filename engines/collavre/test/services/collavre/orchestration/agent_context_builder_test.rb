@@ -173,6 +173,30 @@ module Collavre
         assert_nil human_collaborator
       end
 
+      test "excludes judgment-only agents from direct and inherited collaboration prompts" do
+        @qa_agent.update!(llm_vendor: "typesafe")
+        Collavre::CreativeShare.create!(creative: @creative, user: @qa_agent, permission: :feedback)
+        Collavre::CreativeShare.create!(creative: @creative, user: @pm_agent, permission: :write)
+        child = Collavre::Creative.create!(description: "Child task", user: @human_user, parent: @creative)
+
+        [ @creative, child ].each do |creative|
+          builder = AgentContextBuilder.new(agent: @ai_agent, creative: creative)
+
+          assert_equal [ @pm_agent.id ], builder.build["collaborators"].pluck("id")
+          assert_includes builder.to_collaboration_prompt, "@pm-agent:"
+          assert_not_includes builder.to_collaboration_prompt, "@qa-agent:"
+        end
+      end
+
+      test "omits collaboration instructions when only judgment agents are shared" do
+        @qa_agent.update!(llm_vendor: "typesafe")
+        Collavre::CreativeShare.create!(creative: @creative, user: @qa_agent, permission: :admin)
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative)
+
+        assert_empty builder.build["collaborators"]
+        assert_equal "", builder.to_collaboration_prompt
+      end
+
       test "inherits permissions from parent creatives" do
         # Create parent creative with QA agent access
         parent = Collavre::Creative.create!(
