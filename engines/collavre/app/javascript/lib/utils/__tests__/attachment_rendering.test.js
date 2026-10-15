@@ -37,7 +37,9 @@ describe('attachment rendering parity', () => {
   })
 
   test('uses the existing label for an empty download filename', () => {
-    expect(render('<a download href="/file">report.pdf</a>').querySelector('.attachment-link-name').textContent).toBe('report.pdf')
+    const once = sanitizeDescriptionHtml('<a download href="/file">report.pdf</a>')
+    expect(sanitizeDescriptionHtml(once)).toBe(once)
+    expect(render(once).querySelector('.attachment-link-name').textContent).toBe('report.pdf')
   })
 
   test('is idempotent and preserves link metadata', () => {
