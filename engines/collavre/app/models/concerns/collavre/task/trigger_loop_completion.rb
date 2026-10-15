@@ -73,12 +73,27 @@ module Collavre
       end
 
       def check_trigger_loop_completion
-        loop_config = creative.data&.dig("trigger", "loop")
-        cooldown = (loop_config&.dig("cooldown_seconds") || 10).to_i
-        if cooldown > 0
-          TriggerLoopCheckJob.set(wait: cooldown.seconds).perform_later(id)
-        else
-          TriggerLoopCheckJob.perform_later(id)
+        snapshot = creative.data&.dig("trigger", "loop")&.deep_dup
+        cooldown = (snapshot&.dig("cooldown_seconds") || 10).to_i
+        queue = cooldown.positive? ? TriggerLoopCheckJob.set(wait: cooldown.seconds) : TriggerLoopCheckJob
+        job = queue.perform_later(id)
+        raise ActiveJob::EnqueueError if snapshot&.dig("source") == "keep" && !job
+      rescue StandardError => error
+        raise unless snapshot&.dig("source") == "keep"
+
+        recover_loop_check_enqueue(snapshot)
+        Rails.logger.error("[Task] Loop check enqueue failed for task #{id}: #{error.class}: #{error.message}")
+      end
+
+      # The task is already committed; release only the exact turn we tried to queue.
+      def recover_loop_check_enqueue(snapshot)
+        creative.with_lock do
+          config = creative.data&.dig("trigger", "loop")
+          next unless config == snapshot && config["state"] == "running"
+
+          config["state"] = "awaiting_user"
+          config["control_version"] = config.fetch("control_version", 0) + 1
+          creative.update!(data: creative.data)
         end
       end
     end

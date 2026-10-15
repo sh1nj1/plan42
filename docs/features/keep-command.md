@@ -136,6 +136,12 @@ keep loop to `awaiting_user`. Admitted restoration retains ownership until its
 replacement task starts. Pending restoration owned by another task serving the
 same turn also retains ownership; unrelated pending comments do not.
 
+Initial keep dispatch requires queue acknowledgement. A rejected enqueue leaves
+the committed command in `awaiting_user` rather than claiming an agent is working.
+If enqueueing the completed turn's status check raises or returns false, that
+exact running turn also returns to `awaiting_user` without consuming an iteration.
+A concurrent Pause, replacement loop, or newer turn is preserved.
+
 If enqueueing completion verification raises or returns false, the accepted
 running turn and its counters are restored so the status check can retry.
 Recovery preserves a concurrent Pause or replacement loop.

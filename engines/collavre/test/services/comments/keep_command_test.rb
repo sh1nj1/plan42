@@ -118,6 +118,19 @@ module Collavre
         assert_empty Task.where(creative_id: @creative.id)
       end
 
+      test "rejected initial agent enqueue leaves the committed keep recoverable" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        comment = command("/keep @#{agent.name}: finish")
+        assert_nil KeepCommand.new(comment: comment, user: @user).call
+        AiAgentJob.stub(:perform_later, false) do
+          assert_raises(ActiveJob::EnqueueError) { comment.save! }
+        end
+        assert Comment.exists?(comment.id)
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_empty Task.where(creative_id: @creative.id)
+      end
+
       test "initial dispatch with an agent stays running" do
         comment = command("/keep finish")
         KeepCommand.new(comment: comment, user: @user).call

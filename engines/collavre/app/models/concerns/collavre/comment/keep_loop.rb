@@ -67,7 +67,7 @@ module Collavre
 
       def dispatch_loop_comment
         agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload,
-          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self))
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self), require_enqueue_ack: creative.keep_loop?)
         reconcile_loop_dispatch(agents)
       rescue StandardError
         reconcile_loop_dispatch([], notify: false)

@@ -110,7 +110,7 @@ module Collavre
           restored = Task.create!(name: "Restored turn", status: "running", agent: other.agent, creative: @child,
             topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: turn.dispatch_payload.deep_stringify_keys)
           @child.comments.create!(content: "[STATUS: BLOCKED]", user: other.agent, task: restored, topic: @topic, skip_dispatch: true)
-          TriggerLoopCheckJob.stub(:perform_later, ->(*) { }) { restored.update!(status: "done") }
+          TriggerLoopCheckJob.stub(:perform_later, ->(*) { true }) { restored.update!(status: "done") }
           TriggerLoopCheckJob.perform_now(restored.id)
         else
           record.reject_restore!(other.reload, turn.id)
@@ -405,12 +405,12 @@ module Collavre
       [ { "retryable" => true }, { "replay_completed" => true }, { "replay_abandoned" => true } ].each do |login|
         @child.update!(data: { "trigger" => { "loop" => config.deep_dup } })
         @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999 }, "engine_login" => login })
-        TriggerLoopCheckJob.stub(:perform_later, ->(*) { }) { @task.reload.update!(status: "done") }
+        TriggerLoopCheckJob.stub(:perform_later, ->(*) { true }) { @task.reload.update!(status: "done") }
         assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
       end
       @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999 } })
       @task.task_actions.create!(action_type: "review_updated", status: "done", payload: {})
-      TriggerLoopCheckJob.stub(:perform_later, ->(*) { }) { @task.reload.update!(status: "done") }
+      TriggerLoopCheckJob.stub(:perform_later, ->(*) { true }) { @task.reload.update!(status: "done") }
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
     end
 
@@ -521,7 +521,7 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "running")
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       configured = Minitest::Mock.new
-      configured.expect(:perform_later, nil, [ @task.id ])
+      configured.expect(:perform_later, true, [ @task.id ])
       TriggerLoopCheckJob.stub(:set, ->(wait:) { assert_equal 15.seconds, wait; configured }) do
         @task.reload.update!(status: "done")
       end
