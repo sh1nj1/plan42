@@ -146,8 +146,10 @@ module Collavre
     def normalized_arguments(writes)
       comment = writes[:result]
       writes[:jobs].map do |job|
+        # Only rewrite comment-id positions: a bare id match would also hit an
+        # unrelated record (e.g. the topic) that happens to share the number.
         job.arguments["arguments"].to_json
-          .gsub(/(?<![\w.])#{comment.id}(?![\w.])/, "COMMENT_ID")
+          .gsub(%r{(Comment/|\A\[|"comment":\{"id":)#{comment.id}(?![\w.])}, '\1COMMENT_ID')
           .gsub(/"(?:un)?batched /, '"')
           .gsub(/"(id|correlation_id|occurred_at)":"[^"]*"/, '"\\1":"X"')
       end
