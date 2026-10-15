@@ -32,6 +32,17 @@ module Perf
       end
     end
 
+    test "purges an aborted run's taskless agent jobs but leaves other agents' jobs" do
+      agent = prepare.agents.first
+      stale = SolidQueue::Job.enqueue(Collavre::AiAgentJob.new(agent.id, "comment_created", { "topic_id" => 1 }))
+      other = SolidQueue::Job.enqueue(Collavre::AiAgentJob.new(-1, "comment_created", { "topic_id" => 1 }))
+
+      prepare
+
+      assert_not SolidQueue::Job.exists?(stale.id)
+      assert SolidQueue::Job.exists?(other.id)
+    end
+
     test "lets every agent run one turn per user at once" do
       fixtures = prepare
       resolver = Collavre::Orchestration::PolicyResolver.new({})

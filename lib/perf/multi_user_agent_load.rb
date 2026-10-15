@@ -232,7 +232,18 @@ module Perf
       def settle_previous_runs!
         Collavre::Task.where(agent_id: @agents.map(&:id), status: Collavre::Task::ACTIVE_STATUSES)
                       .find_each { |task| task.update_columns(status: "cancelled") }
+        purge_taskless_jobs!
         @agents.each { |agent| Collavre::Orchestration::ResourceTracker.for(agent).reset! }
+      end
+
+      # Delayed dispatches are enqueued as AiAgentJob(agent_id, event, context)
+      # and create their Task only once they run, so the Task sweep above misses
+      # them; left alone they would call the new fake endpoint mid-run.
+      def purge_taskless_jobs!
+        agent_ids = @agents.map(&:id)
+        SolidQueue::Job.where(class_name: Collavre::AiAgentJob.name, finished_at: nil)
+                       .where.missing(:claimed_execution)
+                       .find_each { |job| job.destroy if agent_ids.include?(job.arguments.dig("arguments", 0)) }
       end
     end
 
