@@ -22,7 +22,7 @@ function renderCommand(command, moreLabel) {
     ? `<div class="command-description">${escapeHtml(command.description)}</div>`
     : ''
   const details = command.details
-    ? `<button type="button" class="command-more" data-command-more aria-expanded="false">${escapeHtml(moreLabel)}</button>
+    ? `<button type="button" class="command-more" data-command-more aria-expanded="false" aria-keyshortcuts="ArrowRight ArrowLeft">${escapeHtml(moreLabel)}</button>
        <div class="command-details" hidden>${escapeHtml(command.details)}</div>`
     : ''
   return `
@@ -59,13 +59,34 @@ function bindDetailsToggle(list, labels, onToggle) {
       if (moved) return
     }
     event.preventDefault()
-    const expanded = button.getAttribute('aria-expanded') === 'true'
-    button.setAttribute('aria-expanded', String(!expanded))
-    button.textContent = expanded ? labels.more : labels.less
-    button.nextElementSibling.hidden = expanded
+    setDetailsExpanded(button, button.getAttribute('aria-expanded') !== 'true', labels)
     onToggle()
   }
   for (const type of ['touchstart', 'touchend', 'click']) list.addEventListener(type, toggle, true)
+}
+
+function setDetailsExpanded(button, expanded, labels) {
+  button.setAttribute('aria-expanded', String(expanded))
+  button.textContent = expanded ? labels.less : labels.more
+  button.nextElementSibling.hidden = !expanded
+}
+
+// Focus stays in the textarea while the menu is open (Tab/Enter select the
+// active command), so the toggle is driven from there: ArrowRight expands the
+// active command's details, ArrowLeft collapses them. ArrowRight only applies
+// with the caret at the end so it never steals caret movement inside the text.
+function handleDetailsKey(event, list, labels) {
+  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return false
+  if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false
+  const button = list.querySelector('.active [data-command-more]')
+  if (!button) return false
+  const expand = event.key === 'ArrowRight'
+  if (expand === (button.getAttribute('aria-expanded') === 'true')) return false
+  const textarea = event.target
+  if (expand && textarea.selectionEnd !== textarea.value.length) return false
+  event.preventDefault()
+  setDetailsExpanded(button, expand, labels)
+  return true
 }
 
 if (!commandMenuInitialized) {
@@ -268,6 +289,10 @@ if (!commandMenuInitialized) {
     }
 
     textarea.addEventListener('keydown', function (event) {
+      if (popupMenu.isOpen() && handleDetailsKey(event, list, labels)) {
+        popupMenu.reposition()
+        return
+      }
       if (popupMenu.handleKey(event)) return
     })
 

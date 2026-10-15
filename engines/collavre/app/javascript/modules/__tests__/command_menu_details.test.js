@@ -119,6 +119,55 @@ describe('command menu details toggle', () => {
     expect(textarea.value).toBe('/topic_list ')
   })
 
+  const key = (textarea, keyName, init = {}) => {
+    const event = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true, ...init })
+    textarea.dispatchEvent(event)
+    return event
+  }
+
+  test('ArrowRight/ArrowLeft expand and collapse the active command details from the textarea', async () => {
+    const { textarea, menu } = await open()
+    const item = menu.querySelector('.common-popup-item')
+    const button = item.querySelector('[data-command-more]')
+    const details = item.querySelector('.command-details')
+    expect(item.classList.contains('active')).toBe(true)
+
+    expect(key(textarea, 'ArrowRight').defaultPrevented).toBe(true)
+    expect(details.hidden).toBe(false)
+    expect(button.textContent).toBe('접기')
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(textarea.value).toBe('/')
+    expect(menu.style.display).toBe('block')
+
+    expect(key(textarea, 'ArrowRight').defaultPrevented).toBe(false)
+    expect(details.hidden).toBe(false)
+
+    expect(key(textarea, 'ArrowLeft').defaultPrevented).toBe(true)
+    expect(details.hidden).toBe(true)
+    expect(button.textContent).toBe('더보기')
+
+    expect(key(textarea, 'ArrowLeft').defaultPrevented).toBe(false)
+  })
+
+  test('arrow keys leave the caret alone when they cannot toggle', async () => {
+    const { textarea, menu } = await open()
+    const details = menu.querySelector('.command-details')
+
+    expect(key(textarea, 'ArrowRight', { shiftKey: true }).defaultPrevented).toBe(false)
+    textarea.value = '/ draft'
+    textarea.setSelectionRange(1, 1)
+    expect(key(textarea, 'ArrowRight').defaultPrevented).toBe(false)
+    expect(details.hidden).toBe(true)
+
+    textarea.setSelectionRange(7, 7)
+    key(textarea, 'ArrowDown')
+    expect(menu.querySelectorAll('.common-popup-item')[1].classList.contains('active')).toBe(true)
+    expect(key(textarea, 'ArrowRight').defaultPrevented).toBe(false)
+    expect(key(textarea, 'Escape').defaultPrevented).toBe(false)
+    expect(menu.style.display).toBe('none')
+    expect(key(textarea, 'ArrowRight').defaultPrevented).toBe(false)
+  })
+
   test('falls back to English labels when the menu has none', async () => {
     const { menu } = await open('')
     const button = menu.querySelector('[data-command-more]')
