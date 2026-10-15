@@ -62,6 +62,143 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "failed continuation and infrastructure dispatch preserve the retryable keep turn" do
+      [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |response|
+        data = @child.reload.data.deep_dup
+        data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999,
+          "start_comment_id" => 999, "current_iteration" => 0, "infra_retry_count" => 0)
+        @child.update!(data: data)
+        @child.comments.create!(content: response, user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+        original = @child.reload.data.dig("trigger", "loop").deep_dup
+        error = RuntimeError.new("dispatch unavailable")
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise error }) do
+          assert_no_difference -> { @child.comments.count } do
+            assert_same error, assert_raises(RuntimeError) { TriggerLoopCheckJob.perform_now(@task.id) }
+          end
+        end
+        restored = @child.reload.data.dig("trigger", "loop")
+        assert_equal original.except("control_version"), restored.except("control_version")
+        SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        refute_equal 999, @child.data.dig("trigger", "loop", "current_comment_id")
+      end
+    end
+
+    test "terminal unsuccessful tasks release only the persisted current keep turn" do
+      %w[cancelled failed escalated].each do |status|
+        data = @child.reload.data.deep_dup
+        data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+        @child.update!(data: data)
+        # The worker/controller may have loaded the creative before keep started.
+        Task.where(id: @task.id).update_all(status: "running")
+        @task.reload
+        @task.creative.data = {}
+        @task.creative.clear_changes_information
+        TriggerLoopCheckJob.stub(:perform_later, ->(*) { flunk "stopped turn was evaluated" }) do
+          @task.update!(status: status)
+        end
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 999, @child.data.dig("trigger", "loop", "current_comment_id")
+      end
+    end
+
+    test "stopping unrelated or inactive turns preserves loop configuration" do
+      [ { "source" => "drop" }, { "state" => "paused" }, { "state" => "completed" },
+        { "current_comment_id" => 1000 }, { "trigger_topic_id" => nil } ].each do |change|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999).merge(change)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        Task.where(id: @task.id).update_all(status: "running")
+        @task.reload.update!(status: "cancelled")
+        assert_equal config, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "stopping a covering keep task recognizes coalesced and dropped dispatches" do
+      [ Orchestration::TaskCoalescer::PAYLOAD_KEY, Orchestration::DeliveryRecord::DROPPED_KEY ].each do |key|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: { "comment" => { "id" => 1 }, key => [ 999 ] })
+        @task.reload.update!(status: "cancelled")
+        assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
+    test "terminal tasks without creatives and non-comment tasks do not change keep" do
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      Task.where(id: @task.id).update_all(status: "running", creative_id: nil)
+      @task.reload.update!(status: "failed")
+      Task.where(id: @task.id).update_all(status: "running", creative_id: @child.id, trigger_event_name: "manual")
+      @task.reload.update!(status: "cancelled")
+      assert_equal config, @child.reload.data.dig("trigger", "loop")
+    end
+
+    test "continuation recovery does not overwrite pause or a replacement loop" do
+      [ { "state" => "paused" }, { "start_comment_id" => 1000, "current_comment_id" => 1000 } ].each do |change|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, start_comment_id: 999)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+        job = TriggerLoopCheckJob.new
+        restore = job.method(:restore_retryable_loop_turn)
+        expected = nil
+        job.stub(:restore_retryable_loop_turn, ->(creative) {
+          creative.reload
+          data = creative.data.deep_dup
+          data["trigger"]["loop"].merge!(change)
+          creative.update!(data: data)
+          expected = data["trigger"]["loop"].deep_dup
+          restore.call(creative)
+        }) do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise "dispatch unavailable" }) do
+            assert_raises(RuntimeError) { job.perform(@task.id) }
+          end
+        end
+        assert_equal expected, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "coalescing the current keep task leaves the surviving turn running" do
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      Task.where(id: @task.id).update_all(status: "queued")
+      survivor = Task.create!(name: "Surviving turn", status: "queued", agent: @ai_bot, creative: @child,
+        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000 } })
+      assert_includes Orchestration::TaskCoalescer.coalesce!(survivor), @task.id
+      assert_equal "cancelled", @task.reload.status
+      assert_equal config, @child.reload.data.dig("trigger", "loop")
+      assert @child.trigger_loop_task?(survivor.reload)
+      survivor.update!(status: "cancelled")
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "another active or completed keep turn retains loop ownership after a sibling stops" do
+      %w[running done].each do |status|
+        config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        Task.where(id: @task.id).update_all(status: "running")
+        survivor = Task.create!(name: "Ambient sibling", status: status, agent: @ai_bot, creative: @child,
+          topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 999 } })
+        @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: survivor, topic: @topic, skip_dispatch: true) if status == "done"
+        @task.reload.update!(status: "cancelled")
+        assert_equal config, @child.reload.data.dig("trigger", "loop")
+        survivor.destroy!
+      end
+    end
+
+    test "successful keep tasks still schedule evaluation with the configured cooldown" do
+      config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, cooldown_seconds: 15)
+      @child.update!(data: { "trigger" => { "loop" => config } })
+      Task.where(id: @task.id).update_all(status: "running")
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      configured = Minitest::Mock.new
+      configured.expect(:perform_later, nil, [ @task.id ])
+      TriggerLoopCheckJob.stub(:set, ->(wait:) { assert_equal 15.seconds, wait; configured }) do
+        @task.reload.update!(status: "done")
+      end
+      configured.verify
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "status evaluation uses the accepted task reply despite newer same-agent responses" do
       reply = @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic,
                                       task: @task, skip_dispatch: true)

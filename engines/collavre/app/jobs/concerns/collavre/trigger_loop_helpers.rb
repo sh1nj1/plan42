@@ -10,6 +10,7 @@ module Collavre
 
     # Resolve the task's current topic while excluding unrelated conversations.
     def trigger_completion_topic(task, loop_config)
+      @loop_original_data = loop_config.deep_dup
       @loop_start_comment_id = loop_config["start_comment_id"]
       @loop_expected_state = loop_config["state"]
       @loop_control_version = loop_config["control_version"]
@@ -95,6 +96,25 @@ module Collavre
           comment.send(:reconcile_loop_dispatch, agents)
         end
       end
+    rescue StandardError
+      restore_retryable_loop_turn(creative)
+      raise
+    end
+
+    # Comment/task writes rolled back; restore the evaluator's accepted turn too.
+    def restore_retryable_loop_turn(creative)
+      return unless @loop_original_data
+
+      creative.with_lock do
+        config = creative.data&.dig("trigger", "loop") || {}
+        validate_loop_snapshot!(config)
+        restored = @loop_original_data.merge("control_version" => config.fetch("control_version", 0) + 1)
+        data = creative.data.deep_dup
+        data["trigger"]["loop"] = restored
+        creative.update!(data: data)
+      end
+    rescue StaleLoopError
+      nil
     end
 
     def continuation_agent(creative, topic)

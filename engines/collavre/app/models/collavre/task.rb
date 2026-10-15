@@ -2,6 +2,7 @@ module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
     include UsageAttributionTracking
+    include TriggerLoopCompletion
     include ReplayLoopCompletion
     include WorkflowCompletion
     include ApprovalGateCleanup
@@ -161,31 +162,6 @@ module Collavre
 
     private
 
-    def trigger_loop_candidate?
-      return false unless saved_change_to_attribute?("status")
-
-      trigger_loop_completion_eligible?
-    end
-
-    # State-only eligibility check (no save-lifecycle dependency).
-    # Reused by trigger_loop_candidate? for the callback path and by
-    # fire_completion_callbacks_after_external_claim for explicit replay.
-    def trigger_loop_completion_eligible?
-      return false unless status == "done"
-      # Pending and completed replays own completion instead of the login card.
-      return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
-      return false unless trigger_event_name == "comment_created"
-      return false unless creative&.trigger_loop_enabled? && creative.trigger_loop_task?(self)
-
-      # Only trigger loop check for tasks in the loop's trigger topic
-      # to avoid cross-topic contamination from unrelated AI conversations
-      loop_config = creative.data&.dig("trigger", "loop")
-      return false unless loop_config && loop_config["state"] == "running"
-
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      trigger_topic_id.nil? || trigger_topic_id == topic_id
-    end
-
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
     end
@@ -291,16 +267,6 @@ module Collavre
           partial: "collavre/comments/comment",
           locals: { comment: notice, streaming: false }
         )
-      end
-    end
-
-    def check_trigger_loop_completion
-      loop_config = creative.data&.dig("trigger", "loop")
-      cooldown = (loop_config&.dig("cooldown_seconds") || 10).to_i
-      if cooldown > 0
-        TriggerLoopCheckJob.set(wait: cooldown.seconds).perform_later(id)
-      else
-        TriggerLoopCheckJob.perform_later(id)
       end
     end
   end

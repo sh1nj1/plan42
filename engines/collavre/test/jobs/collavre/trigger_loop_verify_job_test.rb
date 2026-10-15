@@ -63,6 +63,27 @@ module Collavre
       )
     end
 
+    test "failed verification continuation dispatch preserves the retryable verification turn" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      @child.update!(data: data)
+      original = @child.reload.data.dig("trigger", "loop").deep_dup
+      job = TriggerLoopVerifyJob.new
+      job.stub(:pick_verifier_agent, @ai_bot) do
+        job.stub(:verify_completion, "INCOMPLETE") do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise "dispatch unavailable" }) do
+            assert_no_difference -> { @child.comments.count } do
+              assert_raises(RuntimeError) { job.perform(@task.id) }
+            end
+          end
+          assert_equal original.except("control_version"), @child.reload.data.dig("trigger", "loop").except("control_version")
+          SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { job.perform(@task.id) }
+        end
+      end
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      assert_equal 2, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
     test "verification uses the task reply instead of a newer same-agent comment" do
       @child.comments.create!(content: "Unrelated [STATUS: DONE]", topic: @topic, user: @ai_bot, skip_dispatch: true)
       job = TriggerLoopVerifyJob.new

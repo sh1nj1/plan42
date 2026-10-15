@@ -114,3 +114,15 @@ Deleting the current keep turn comment clears its loop configuration in the
 same transaction, including queued or running turns. Deleting an older turn
 or an unrelated comment leaves the current loop intact. Other trigger settings
 and drop loops are preserved.
+
+### Interrupted turns
+
+Stopping, failing, or escalating the last task serving the current keep turn
+changes a running loop to `awaiting_user`. A coalesced replacement or another
+active/completed task serving that same turn retains ownership. Resume or a new `/keep` can then start work again. Unrelated
+tasks, paused loops, and drop loops are unaffected.
+
+If continuation, infrastructure-retry, or failed-verification dispatch raises,
+the new comment and tasks roll back and the accepted evaluator turn is restored,
+including its previous iteration and retry counters. The evaluator can retry
+that turn; recovery never overwrites a newer Pause or replacement loop.
