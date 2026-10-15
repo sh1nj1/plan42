@@ -158,6 +158,10 @@ main {
     box-sizing: border-box;
 }
 
+main.public-creative-main {
+    max-width: none;
+}
+
 @media (max-width: 768px) {
     main {
         padding: 0 0.3rem 4rem 0.3rem;

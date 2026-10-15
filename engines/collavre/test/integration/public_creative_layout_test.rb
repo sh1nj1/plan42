@@ -1,0 +1,29 @@
+require "test_helper"
+
+class PublicCreativeLayoutTest < ActionDispatch::IntegrationTest
+  test "anonymous creative pages use the full width layout" do
+    get collavre.creatives_path
+
+    assert_response :success
+    assert_select "main.public-creative-main"
+    assert_select ".creative-workspace-shell", count: 0
+  end
+
+  test "sign in pages retain the constrained layout" do
+    get collavre.new_session_path
+
+    assert_response :success
+    assert_select "main.public-creative-main", count: 0
+  end
+
+  test "signed in creative pages retain the workspace layout" do
+    users(:one).update!(creative_workspace_enabled: true)
+    sign_in_as(users(:one), password: "password")
+
+    get collavre.creatives_path
+
+    assert_response :success
+    assert_select ".creative-workspace-shell > main"
+    assert_select "main.public-creative-main", count: 0
+  end
+end
