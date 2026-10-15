@@ -257,6 +257,41 @@ module Collavre
       end
     end
 
+    test "keep fallback evaluates with the authorized child-only task agent" do
+      CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "agent_id" => @ai_bot.id } }))
+      @child.comments.create!(content: "Work needs your input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      selected = []
+      client = Object.new
+      client.define_singleton_method(:chat) { |_, &block| block.call("BLOCKED") }
+      AiClient.stub(:new, ->(**options) { selected << options.fetch(:context).fetch(:user).id; client }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+      assert_equal [ @ai_bot.id ], selected
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "task fallback preserves alternative priority current permission and drop behavior" do
+      CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
+      share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      job = TriggerLoopCheckJob.new
+      assert_nil job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
+      assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+      other = users(:two)
+      other.update_columns(llm_vendor: "google", llm_model: "test")
+      CreativeShare.create!(creative: @child, user: other, permission: :read)
+      @parent.stub(:all_shared_users, ->(_) { [ Struct.new(:user).new(other) ] }) do
+        assert_equal other, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+      end
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      share.update_columns(permission: :no_access)
+      assert @child.has_permission?(@ai_bot, :read)
+      assert_nil job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
+      assert_nil job.send(:pick_fallback_agent, @parent, @child, -1)
+    end
+
     test "fallback write pool also excludes agents denied on the loop creative" do
       allowed = users(:two)
       allowed.update_columns(llm_vendor: "google", llm_model: "test")

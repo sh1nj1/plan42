@@ -36,7 +36,7 @@ status display, and Pause, Resume, and Restart controls.
 Agents report `[STATUS: CONTINUE]`, `[STATUS: DONE]`, or `[STATUS: BLOCKED]`.
 Completion enters `pending_verification` before `completed`; blocked work enters
 `awaiting_user`. The loop can also become `paused`, `max_reached`, or `stuck`.
-Responses without a status tag use the existing LLM evaluation fallback.
+Responses without a status tag use the existing LLM evaluation fallback. If no authorized parent-shared evaluator is available, the keep task agent is also eligible, including agents shared only on the child. Every candidate must retain current read access to the child.
 Infrastructure retries do not consume iterations and stop as `stuck` after
 three consecutive infrastructure failures.
 
