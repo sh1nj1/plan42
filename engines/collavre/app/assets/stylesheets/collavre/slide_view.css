@@ -1,15 +1,48 @@
 #slide-view {
-  height: 100vh;
+  /* The space a slide may fill: the viewport minus padding and the fixed controls. */
+  --slide-view-height: 100dvh;
+  --slide-padding: var(--space-7);
+  --slide-controls-space: var(--space-7);
+  --slide-avail-h: calc(var(--slide-view-height) - 2 * var(--slide-padding) - var(--slide-controls-space));
+
+  height: var(--slide-view-height);
   display: flex;
   overflow: auto;
-  padding: var(--space-7);
+  padding: var(--slide-padding) var(--slide-padding) calc(var(--slide-padding) + var(--slide-controls-space));
   box-sizing: border-box;
 }
 
 #slide-content {
   margin: auto;
+  max-width: 100%;
+  min-width: 0;
   font-size: 150%;
 }
+
+/* Media shrinks to fit the slide while keeping its aspect ratio; small media keeps its size. */
+#slide-content :is(img, video, iframe):not(.ppt-slide *) {
+  max-width: 100%;
+  max-height: var(--slide-avail-h);
+  height: auto;
+  object-fit: contain;
+  vertical-align: top;
+}
+
+#slide-content figure {
+  margin: 0;
+}
+
+/* The tree view's indentation allowance does not apply here; keep only the readable width. */
+#slide-content > .creative-content {
+  min-width: 0;
+  max-width: min(100%, calc(var(--max-width) - 160px));
+  margin-block: 0;
+  padding-top: 0;
+}
+
+/* Outer margins would push a full-height image past the screen. */
+#slide-content > .creative-content > :first-child { margin-top: 0; }
+#slide-content > .creative-content > :last-child { margin-bottom: 0; }
 
 #slide-content .trix-content {
     line-height: 1.8;
@@ -46,9 +79,18 @@
   display: none;
 }
 
+@media (display-mode: fullscreen) {
+  #slide-view {
+    --slide-padding: var(--space-2);
+  }
+}
+
 @media (max-width: 768px) {
   #slide-view {
-    height: 80vh;
+    /* The swipe area covers the bottom 20% and already hosts the controls. */
+    --slide-view-height: 80dvh;
+    --slide-padding: var(--space-3);
+    --slide-controls-space: 0px;
   }
 
   #slide-swipe {
@@ -57,7 +99,7 @@
     bottom: 0;
     left: 0;
     right: 0;
-    height: 20vh;
+    height: 20dvh;
     background: var(--border-color);
     align-items: center;
     justify-content: center;
@@ -78,10 +120,29 @@
   }
 }
 
-#slide-content:has(.ppt-slide--precise) {
-  width: min(960px, 100%);
-  min-width: 0;
+/* Presentation slides fill the screen, limited by whichever side runs out first. */
+#slide-content:has(.ppt-slide) {
+  width: 100%;
 }
+
+/* Slides with media or a presentation use the whole width instead of the reading width. */
+#slide-content:has(.ppt-slide, img, video, iframe) > .creative-content {
+  max-width: none;
+}
+
+#slide-view .ppt-slide {
+  --ppt-ratio: 16 / 9;
+
+  width: min(100%, calc(var(--slide-avail-h) * var(--ppt-ratio)));
+  max-width: none;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 0;
+}
+
+#slide-view .ppt-slide--standard { --ppt-ratio: 4 / 3; }
+#slide-view .ppt-slide--square { --ppt-ratio: 1; }
+#slide-view .ppt-slide--portrait { --ppt-ratio: 3 / 4; }
 
 #slide-content .ppt-slide-notes {
   display: none;
