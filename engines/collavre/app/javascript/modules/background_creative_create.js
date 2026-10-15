@@ -32,10 +32,12 @@ export function trackCreate(tree, promise) {
 // A frame swap or page render would take rows still being created out of the
 // document, and with them the draft a failed create reopens from. The render
 // waits for those creates, including ones started while it waits; if one
-// fails it is dropped, so the row stays to retry.
-export function holdRenderForCreates(event) {
+// fails it is dropped, so the row stays to retry. A render over a row whose
+// create had already failed goes ahead only once the user agrees to discard it.
+export function holdRenderForCreates(event, confirmDiscard) {
   const pendingIn = () => [...inFlight].filter((tree) => event.target.contains(tree))
-  if (!pendingIn().length || !event.detail?.resume) return
+  const failedIn = () => [...event.target.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
+  if (!event.detail?.resume || !(pendingIn().length || failedIn())) return
   event.preventDefault()
   const waited = new Set()
   const settle = () => {
@@ -43,8 +45,12 @@ export function holdRenderForCreates(event) {
     if (pending.length) {
       pending.forEach((tree) => waited.add(tree))
       Promise.all(pending.map((tree) => creates.get(tree))).then(settle)
-    } else if (![...waited].some((tree) => failedRows.has(tree))) {
+    } else if ([...waited].some((tree) => failedRows.has(tree))) {
+      return
+    } else if (!failedIn()) {
       event.detail.resume()
+    } else {
+      confirmDiscard().then((discard) => discard && event.detail.resume())
     }
   }
   settle()
@@ -117,7 +123,7 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     // The row keeps showing the text; flag it and say so, since the editor
     // has already moved on. Opening the row again restores the draft.
     tree.dataset.saveState = 'error'
-    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
+    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId, childId: body.get('child_id') || '' })
     failedRows.add(tree)
     if (!chains.has(tree)) chains.set(tree, { predecessors: fallback.failedTrees || [] })
     retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
@@ -208,8 +214,8 @@ export function isMarkdownSourceDraft(snapshot) {
 }
 
 // Points the shared form at a new creative in the failed row's slot, holding
-// the draft it was rejected with.
-export function fillFailedDraftForm(form, tree, { snapshot, afterId, beforeId }, inputs) {
+// the draft it was rejected with and the child it was to adopt as parent.
+export function fillFailedDraftForm(form, tree, { snapshot, afterId, beforeId, childId }, inputs) {
   delete tree.dataset.saveState
   form.action = '/creatives'
   form.dataset.creativeId = ''
@@ -218,7 +224,7 @@ export function fillFailedDraftForm(form, tree, { snapshot, afterId, beforeId },
     parentInput: tree.dataset.parentId || '',
     afterInput: afterId || '',
     beforeInput: beforeId || '',
-    childInput: '',
+    childInput: childId || '',
     originIdInput: snapshot.originId,
     descriptionInput: snapshot.content,
     contentTypeInput: snapshot.contentType,

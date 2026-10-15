@@ -307,8 +307,9 @@ function setupEditorSession() {
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
-    globalListeners.add(document, 'turbo:before-frame-render', holdRenderForCreates);
-    globalListeners.add(document, 'turbo:before-render', holdRenderForCreates);
+    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }));
+    globalListeners.add(document, 'turbo:before-frame-render', holdRender);
+    globalListeners.add(document, 'turbo:before-render', holdRender);
 
     // Registered with the module-level teardown so a workspace frame swap —
     // which rebuilds the session without ever calling hideCurrent()/move() on

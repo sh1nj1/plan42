@@ -9,6 +9,7 @@ import { jest } from '@jest/globals'
 const createInlineEditorMock = jest.fn()
 const saveMock = jest.fn()
 const alertDialogMock = jest.fn(() => Promise.resolve())
+const confirmDialogMock = jest.fn(() => Promise.resolve(true))
 let deletedAttachments = []
 
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
@@ -23,7 +24,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
 }))
 jest.unstable_mockModule('../../lib/utils/dialog', () => ({
   alertDialog: alertDialogMock,
-  confirmDialog: jest.fn(() => Promise.resolve(true)),
+  confirmDialog: confirmDialogMock,
   promptDialog: jest.fn(() => Promise.resolve(null)),
 }))
 
@@ -102,9 +103,11 @@ describe('Enter on a new creative saves it in the background', () => {
     document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
     saveMock.mockReset()
     alertDialogMock.mockClear()
+    confirmDialogMock.mockClear()
     deletedAttachments = []
     global.fetch = jest.fn(() => Promise.resolve({ ok: true }))
     buildEditorDom(document.getElementById('center-frame'), { saveFailedMessage: 'Save failed' })
+    document.getElementById('inline-edit-form-element').dataset.discardFailedDraftMessage = 'Discard it?'
     initializeCreativeRowEditor()
     document.getElementById('metadata-popup').style.display = 'none'
   })
@@ -313,6 +316,27 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(sentField(saveMock.mock.calls[1], 'creative[description]')).toContain('first creative')
     expect(sentField(saveMock.mock.calls[1], 'after_id')).toBe('5')
     expect(sentField(saveMock.mock.calls[1], 'before_id')).toBe('6')
+    expect(first.dataset.id).toBe('81')
+  })
+
+  test('a failed parent draft retries with the child it was to adopt', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(81)))
+    const first = await startNewRow('parent creative')
+    document.getElementById('inline-child-id').value = '42'
+    await pressEnter()
+    await flush()
+    expect(sentField(saveMock.mock.calls[0], 'child_id')).toBe('42')
+
+    document.dispatchEvent(new CustomEvent('creative-edit-click', {
+      detail: { treeElement: first }, cancelable: true,
+    }))
+    await flush()
+    expect(document.getElementById('inline-child-id').value).toBe('42')
+    document.getElementById('inline-close').click()
+    await flush()
+
+    expect(sentField(saveMock.mock.calls[1], 'child_id')).toBe('42')
     expect(first.dataset.id).toBe('81')
   })
 
@@ -941,6 +965,47 @@ describe('Enter on a new creative saves it in the background', () => {
     await flush()
 
     expect(event.detail.resume).toHaveBeenCalled()
+  })
+
+  test('a frame swap over a row whose create already failed renders once the user discards it', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    expect(event.defaultPrevented).toBe(true)
+    await flush()
+
+    expect(confirmDialogMock).toHaveBeenCalledWith('Discard it?', { danger: true })
+    expect(event.detail.resume).toHaveBeenCalled()
+  })
+
+  test('a frame swap over a row whose create already failed is dropped when the user keeps it', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    clickRow(first)
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+
+    expect(confirmDialogMock).toHaveBeenCalled()
+    expect(event.detail.resume).not.toHaveBeenCalled()
+    expect(template().parentElement).toBe(first)
+  })
+
+  test('a frame swap after a create succeeded renders at once', async () => {
+    saveMock.mockImplementation(() => Promise.resolve(created(77)))
+    await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+
+    expect(frameRender(document.getElementById('creatives')).defaultPrevented).toBe(false)
+    expect(confirmDialogMock).not.toHaveBeenCalled()
   })
 
   test('a frame swap with no background create in flight renders at once', async () => {
