@@ -278,4 +278,30 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal [ @development.id, @project.id ], @feature_a.reload.data["context_order"]
   end
+
+  test "GET contexts treats digit-string own and disabled IDs as own disabled contexts" do
+    @feature_a.update!(data: { "context_ids" => [ @development.id.to_s ], "disabled_context_ids" => [ @development.id.to_s ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+
+    ctx = JSON.parse(response.body)["contexts"].sole
+    assert_equal @development.id, ctx["id"]
+    refute ctx["inherited"]
+    assert ctx["disabled"]
+  end
+
+  test "PATCH update_contexts ignores malformed persisted and inherited IDs" do
+    @features.update!(data: { "context_ids" => [ {}, true, @project.id ] })
+    @feature_a.update!(data: { "context_ids" => [ {}, true, @development.id.to_s ], "disabled_context_ids" => [ {} ] })
+
+    patch update_contexts_creative_path(@feature_a), params: {
+      context_ids: [], context_order: [ @project.id ], disabled_context_ids: []
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @feature_a.reload
+    assert_equal [], @feature_a.data["context_ids"]
+    assert_equal [ @project.id ], @feature_a.data["context_order"]
+    assert_equal [ @project.id ], @feature_a.ordered_context_ids
+  end
 end

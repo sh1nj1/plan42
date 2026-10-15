@@ -7,12 +7,12 @@ module Collavre
 
       # Returns the directly-configured context creative IDs for this creative.
       def context_ids
-        data.is_a?(Hash) ? Array(data["context_ids"]) : []
+        data.is_a?(Hash) ? context_id_list(data["context_ids"]) : []
       end
 
       # Returns the directly-configured disabled context IDs for this creative.
       def disabled_context_ids
-        data.is_a?(Hash) ? Array(data["disabled_context_ids"]) : []
+        data.is_a?(Hash) ? context_id_list(data["disabled_context_ids"]) : []
       end
 
       # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
@@ -80,7 +80,7 @@ module Collavre
 
         visited_ids.add(id)
         inherited = (parent&.arranged_context_ids(visited_ids) || []) - [ hidden_id ]
-        arrange_own_contexts(inherited, context_id_list(context_ids) - inherited - [ hidden_id ])
+        arrange_own_contexts(inherited, context_ids - inherited - [ hidden_id ])
       end
 
       private
@@ -108,7 +108,8 @@ module Collavre
         new_data
       end
 
-      # Metadata is free-form JSON, so drop anything that is not a positive ID.
+      # Metadata is free-form JSON, so drop anything that is not a positive ID
+      # and normalize digit strings to integers for membership checks.
       def context_id_list(values)
         Array(values).filter_map { |v| v.to_i if v.is_a?(Integer) || v.to_s.match?(/\A\d+\z/) }.select(&:positive?).uniq
       end
@@ -117,7 +118,7 @@ module Collavre
       # stale reorder from another tab cannot resurrect a just-removed context.
       def apply_context_order_setting(new_data, requested)
         own_ids = context_id_list(new_data["context_ids"])
-        effective = own_ids + (parent&.effective_context_ids || []).map(&:to_i)
+        effective = own_ids + (parent&.effective_context_ids || [])
         new_data["context_order"] = context_id_list(requested) & effective
       end
 
@@ -125,8 +126,8 @@ module Collavre
       # re-adding it later would restore that slot instead of appending it.
       # IDs still inherited from an ancestor remain visible, so they keep theirs.
       def apply_context_ids_setting(new_data, settings)
-        new_ids = Array(settings[:context_ids]).map(&:to_i)
-        removed_ids = context_ids.map(&:to_i) - new_ids - (parent&.effective_context_ids || []).map(&:to_i)
+        new_ids = context_id_list(settings[:context_ids])
+        removed_ids = context_ids - new_ids - (parent&.effective_context_ids || [])
         new_data["context_order"] = context_order - removed_ids if removed_ids.any? && new_data.key?("context_order")
         new_data["context_ids"] = new_ids
       end
@@ -136,7 +137,7 @@ module Collavre
       def apply_disabled_context_setting(new_data, requested)
         parent_disabled = parent&.effective_disabled_context_ids || []
         inherited_only = parent_disabled - disabled_context_ids
-        new_data["disabled_context_ids"] = Array(requested).map(&:to_i) - inherited_only
+        new_data["disabled_context_ids"] = context_id_list(requested) - inherited_only
         new_data.delete("disabled_context_ids") if new_data["disabled_context_ids"].empty?
       end
 

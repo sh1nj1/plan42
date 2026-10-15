@@ -38,6 +38,17 @@ module Collavre
       assert_equal [ @development.id ], @features.context_ids
     end
 
+    test "context readers normalize digit strings and drop malformed IDs" do
+      @features.update!(data: {
+        "context_ids" => [ @development.id.to_s, {}, true, "x", -1, @goal.id ],
+        "disabled_context_ids" => [ @goal.id.to_s, [ 1 ] ]
+      })
+
+      assert_equal [ @development.id, @goal.id ], @features.context_ids
+      assert_equal [ @goal.id ], @features.disabled_context_ids
+      assert_equal [ @development.id, @goal.id ], @feature_a.ordered_context_ids
+    end
+
     test "effective_context_ids inherits from parent" do
       @features.update!(data: { "context_ids" => [ @development.id ] })
       assert_includes @feature_a.effective_context_ids, @development.id
