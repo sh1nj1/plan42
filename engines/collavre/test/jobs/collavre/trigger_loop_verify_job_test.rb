@@ -350,6 +350,41 @@ module Collavre
       assert_equal "completed", @child.data.dig("trigger", "loop", "state")
     end
 
+    test "native incomplete explanation filters contexts for the chat agent" do
+      verifier = users(:two)
+      verifier.update!(llm_vendor: "typesafe", llm_model: "test")
+      CreativeShare.create!(creative: @parent, user: verifier, permission: :feedback)
+      visible = Creative.create!(description: "Shared acceptance criteria", user: @human)
+      secret = Creative.create!(description: "Verifier-only confidential instructions", user: @human)
+      CreativeShare.create!(creative: visible, user: @ai_bot, permission: :read)
+      CreativeShare.create!(creative: visible, user: verifier, permission: :read)
+      CreativeShare.create!(creative: secret, user: verifier, permission: :read)
+      @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, secret.id ]))
+      native_prompts = []
+      explanation_prompts = []
+      native = Object.new
+      native.define_singleton_method(:judge) do |prompt, **|
+        native_prompts << prompt
+        { "source" => "judge", "answers" => { "status" => { "choice" => "INCOMPLETE" } } }
+      end
+      chat = Object.new
+      chat.define_singleton_method(:chat) do |messages|
+        explanation_prompts << messages.first.fetch(:text)
+        "Acceptance criteria remain"
+      end
+      factory = ->(**options) { options.fetch(:vendor) == "typesafe" ? native : chat }
+      AiClient.stub(:new, factory) { TriggerLoopVerifyJob.perform_now(@task.id) }
+
+      assert_equal 1, native_prompts.size
+      assert_includes native_prompts.first, secret.description
+      assert_equal 1, explanation_prompts.size
+      assert_includes explanation_prompts.first, visible.description
+      assert_includes explanation_prompts.first, @child.description
+      assert_includes explanation_prompts.first, @agent_comment.content
+      refute_includes explanation_prompts.first, secret.description
+      assert_includes @child.comments.order(:id).last.content, "Acceptance criteria remain"
+    end
+
     test "native or chat AWAITING_USER verdict pauses the loop" do
       AiClient.stub(:new, mock_ai_client("AWAITING_USER")) do
         TriggerLoopVerifyJob.perform_now(@task.id)

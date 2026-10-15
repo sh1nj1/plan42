@@ -113,8 +113,8 @@ module Collavre
       - IMPORTANT: If the agent correctly identified that it needs user approval, user input, or user action before it can proceed, and has paused/stopped to wait for the user, respond AWAITING_USER. This is NOT incomplete work — the agent did the right thing by asking.
     PROMPT
 
-    def verify_completion(verifier, instructions, agent_response, task)
-      prompt = <<~PROMPT
+    def verification_prompt(instructions, agent_response)
+      <<~PROMPT
         ## Instructions given to the agent:
         #{instructions}
 
@@ -124,7 +124,10 @@ module Collavre
         ## Question:
         Did the agent actually execute ALL required actions in the instructions?
       PROMPT
+    end
 
+    def verify_completion(verifier, instructions, agent_response, task)
+      prompt = verification_prompt(instructions, agent_response)
       result = decision_client(verifier, task, VERIFY_SYSTEM_PROMPT).judge(prompt, questions: {
         status: { type: :choice, instructions: "Were all required actions actually executed?",
                   options: { VERIFIED: "All actions executed", AWAITING_USER: "Correctly waiting for human action",
@@ -134,18 +137,21 @@ module Collavre
       when "VERIFIED" then :verified
       when "AWAITING_USER" then :awaiting_user
       else
-        incomplete_reason(result, prompt, task)
+        incomplete_reason(result, agent_response, task)
       end
     rescue StandardError => e
       Rails.logger.error("[TriggerLoopVerifyJob] LLM verification failed: #{e.class} #{e.message}")
       I18n.t("collavre.trigger_loop.verification_error")
     end
 
-    def incomplete_reason(result, prompt, task)
+    def incomplete_reason(result, agent_response, task)
       return result["reason"] if result["reason"].present?
 
       agent = task.creative.find_ai_agent(:feedback, capability: :chat)
       if result["source"] == "judge" && agent
+        creative = task.creative
+        instructions = collect_instructions(creative, creative.trigger_loop_context, agent)
+        prompt = verification_prompt(instructions, agent_response)
         explanation = decision_client(agent, task, VERIFY_SYSTEM_PROMPT).chat([
           { role: "user", text: "#{prompt}\nThe decision is INCOMPLETE. List only the unexecuted actions as a short explanation." }
         ])
