@@ -10,6 +10,9 @@ import { treeRowElement } from './creative_row_editor_helpers'
 const creates = new WeakMap()
 const anchors = new WeakMap()
 const failedDrafts = new WeakMap()
+// Rows whose create failed, until one succeeds: reopening a row takes its
+// draft out of failedDrafts, but the draft is still unsaved in the editor.
+const failedRows = new WeakSet()
 const chains = new WeakMap()
 const retryDeletes = new WeakMap()
 const holds = new WeakMap()
@@ -40,7 +43,7 @@ export function holdRenderForCreates(event) {
     if (pending.length) {
       pending.forEach((tree) => waited.add(tree))
       Promise.all(pending.map((tree) => creates.get(tree))).then(settle)
-    } else if (![...waited].some((tree) => failedDrafts.has(tree))) {
+    } else if (![...waited].some((tree) => failedRows.has(tree))) {
       event.detail.resume()
     }
   }
@@ -115,6 +118,7 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     // has already moved on. Opening the row again restores the draft.
     tree.dataset.saveState = 'error'
     failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
+    failedRows.add(tree)
     if (!chains.has(tree)) chains.set(tree, { predecessors: fallback.failedTrees || [] })
     retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
     failed(error)
@@ -154,10 +158,11 @@ export function releaseFailedRows(tree) {
   releases.delete(tree)
 }
 
-// A created row drops its failed chain; failed rows around it find it in the
-// tree when they retry.
+// A created row drops its failed chain and its failure; failed rows around it
+// find it in the tree when they retry.
 export function forgetFailedChain(tree) {
   chains.delete(tree)
+  failedRows.delete(tree)
 }
 
 // Each edit request takes a ticket. waitToEdit() is falsy when nothing is in

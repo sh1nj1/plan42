@@ -886,6 +886,63 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(second.dataset.saveState).toBe('error')
   })
 
+  test('a frame swap stays dropped when the failed row it waited for is reopened before it settles', async () => {
+    const firstPost = deferred()
+    const secondPost = deferred()
+    const thirdPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementationOnce(() => secondPost.promise)
+      .mockImplementationOnce(() => thirdPost.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    type('second creative')
+    await pressEnter()
+    type('third creative')
+    await pressEnter()
+    const event = frameRender(document.getElementById('creatives'))
+    firstPost.resolve({ ok: false, status: 500 })
+    await flush()
+    secondPost.resolve(created(78))
+    await flush()
+
+    clickRow(first)
+    await flush()
+    expect(template().parentElement).toBe(first)
+    thirdPost.resolve(created(79))
+    await flush()
+
+    expect(event.detail.resume).not.toHaveBeenCalled()
+    expect(first.isConnected).toBe(true)
+  })
+
+  test('a frame swap resumes once a failed row it waited for is retried successfully', async () => {
+    const firstPost = deferred()
+    const thirdPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementationOnce(() => Promise.resolve(created(78)))
+      .mockImplementationOnce(() => thirdPost.promise)
+      .mockImplementation(() => Promise.resolve(created(80)))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    type('second creative')
+    await pressEnter()
+    type('third creative')
+    await pressEnter()
+    const event = frameRender(document.getElementById('creatives'))
+    firstPost.resolve({ ok: false, status: 500 })
+    await flush()
+
+    clickRow(first)
+    await flush()
+    await pressEnter()
+    await flush()
+    expect(first.dataset.id).toBe('80')
+    thirdPost.resolve(created(79))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalled()
+  })
+
   test('a frame swap with no background create in flight renders at once', async () => {
     await startNewRow('first creative')
 

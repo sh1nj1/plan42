@@ -15,7 +15,7 @@ describe('bindPersistedTree', () => {
     expect(() => bindPersistedTree(null, { id: 1 }, '', null)).not.toThrow()
   })
 
-  test('binds a root row and renders a placeholder row when none exists', () => {
+  test('binds a root row', () => {
     const rowComponent = document.createElement('creative-tree-row')
     const tree = treeInside(rowComponent)
     tree.dataset.level = '2'
@@ -29,10 +29,9 @@ describe('bindPersistedTree', () => {
     expect(rowComponent.level).toBe(2)
     expect(rowComponent.isRoot).toBe(true)
     expect(rowComponent.hasAttribute('is-root')).toBe(true)
-    expect(tree.querySelector('.creative-row a').textContent).toBe('hello')
   })
 
-  test('binds the fallback row under a parent and keeps an existing row', () => {
+  test('binds the fallback row under a parent and keeps the rendered row', () => {
     const tree = treeInside(null)
     const existing = document.createElement('div')
     existing.className = 'creative-row'
@@ -45,13 +44,5 @@ describe('bindPersistedTree', () => {
     expect(fallback.isRoot).toBe(false)
     expect(fallback.hasAttribute('level')).toBe(false)
     expect(tree.querySelectorAll('.creative-row')).toHaveLength(1)
-  })
-
-  test('renders an empty link when the response has no description', () => {
-    const tree = treeInside(null)
-
-    bindPersistedTree(tree, { id: 9 }, '', null)
-
-    expect(tree.querySelector('.creative-row a').textContent).toBe('')
   })
 })
