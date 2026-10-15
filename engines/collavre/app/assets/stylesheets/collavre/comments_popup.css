@@ -284,10 +284,8 @@ body.chat-fullscreen {
 }
 
 #new-comment-form textarea {
-    width: 100%;
-    box-sizing: border-box;
+    width: 96%;
     resize: none;
-    font: inherit;
     font-size: var(--text-1);
     overflow-y: auto;
     min-height: calc(var(--text-1) * 1.5 * 2); /* 2 lines minimum */
@@ -985,10 +983,7 @@ body.chat-fullscreen {
 .copy-comment-link-btn {
     border: none;
     background: none;
-    font: inherit;
-    font-size: 13px;
-    font-weight: 500;
-    border-radius: var(--radius-1);
+    font-weight: bold;
     cursor: pointer;
     color: var(--color-chat-btn-text);
 }
@@ -1024,7 +1019,7 @@ body.chat-fullscreen {
     border-radius: var(--radius-2);
     cursor: pointer;
     padding: var(--space-px-1) var(--space-px-2);
-    font-size: 11px;
+    font-size: var(--text-00);
     color: var(--color-danger);
     line-height: 1;
     white-space: nowrap;
@@ -1036,7 +1031,7 @@ body.chat-fullscreen {
 
 .comment-stop-btn:hover {
     background: var(--color-danger);
-    color: var(--text-on-badge);
+    color: var(--text-on-btn);
 }
 
 .comment-stop-btn:disabled {
@@ -1329,7 +1324,7 @@ body.chat-fullscreen {
     border-radius: var(--radius-2);
     color: var(--color-danger);
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--text-00);
     padding: var(--space-px-1) var(--space-px-2);
     display: inline-flex;
     align-items: center;
@@ -1342,12 +1337,12 @@ body.chat-fullscreen {
 }
 
 .agent-stop-btn .agent-stop-icon {
-    font-size: 11px;
+    font-size: var(--text-00);
 }
 
 .agent-stop-btn:hover {
     background: var(--color-danger);
-    color: var(--text-on-badge);
+    color: var(--text-on-btn);
 }
 
 /* --- Channel Chips (PR monitor etc) ------------------------------------ */
@@ -2477,142 +2472,4 @@ li:hover .topic-create-option {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-/* Keep chat typography and controls consistent in every panel mode. */
-#new-comment-form textarea::placeholder {
-    color: var(--text-muted);
-}
-
-.comment-header-name {
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.comment-header-time {
-    color: var(--text-muted);
-    font-size: 11px;
-}
-
-.comment-user-popup .popup-menu-item {
-    text-decoration: none;
-}
-
-.comment-action-container,
-.comment-actions {
-    align-items: center;
-}
-
-.comment-action-container button,
-.comment-actions button {
-    font-family: inherit;
-}
-
-.comment-action-container button:not(.comment-stop-btn),
-.comment-actions button {
-    font-size: 13px;
-    font-weight: 500;
-    border-radius: var(--radius-1);
-}
-
-.comment-action-container button:hover:not(:disabled, .comment-stop-btn),
-.comment-actions button:hover:not(:disabled) {
-    background: var(--surface-hover);
-}
-
-.add-reaction-btn .grayscale-emoji {
-    font-size: 15px;
-    display: inline-flex;
-    align-items: center;
-    line-height: 1;
-}
-
-.topic-tag :is(.delete-topic-btn, .archive-topic-btn, .unarchive-topic-btn) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.topic-tag :is(.delete-topic-btn, .archive-topic-btn, .unarchive-topic-btn):hover {
-    background: color-mix(in srgb, currentColor 12%, transparent);
-}
-
-@media (hover: hover) and (not (any-pointer: coarse)) {
-    .comment-item:not(:hover, :focus-within, .selected-for-move) .comment-action-container > :not(.comment-stop-btn, .approve-comment-btn, .deny-comment-btn),
-    .comment-item:not(:hover, :focus-within, .selected-for-move) .comment-content-action-controls,
-    #comments-list:not(:has(.selected-for-move)) .comment-item:not(:hover, :focus-within) .comment-select {
-        opacity: 0;
-        pointer-events: none;
-    }
-
-    .topic-tag:not(:hover, :focus-within, .active) .archive-topic-btn {
-        opacity: 0;
-        pointer-events: none;
-    }
-}
-
-#comments-popup[data-fullscreen="true"] > :is(.comments-popup-header, .comment-topics-bar, .comment-contexts-bar, .comment-participants-bar, #typing-indicator-row, #comments-list, #new-comment-form) {
-    width: 100%;
-    max-width: 880px;
-    box-sizing: border-box;
-    margin-inline: auto;
-}
-
-.comments-loading {
-    padding: 16px;
-    display: grid;
-    gap: 16px;
-}
-
-.comments-loading-row {
-    height: 64px;
-    padding: 12px 0 12px 32px;
-    box-sizing: border-box;
-    position: relative;
-    border-bottom: 1px solid var(--border-color);
-    background: linear-gradient(90deg, var(--surface-section), var(--surface-hover), var(--surface-section));
-    background-size: 200% 100%;
-    animation: comments-skeleton 1.5s ease-in-out infinite;
-}
-
-.comments-loading-row::before {
-    content: '';
-    position: absolute;
-    left: 4px;
-    top: 12px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--border-color);
-}
-
-.comments-loading-row::after {
-    content: '';
-    display: block;
-    width: 70%;
-    height: 8px;
-    border-radius: var(--radius-1);
-    background: var(--border-color);
-    box-shadow: 0 14px 0 var(--border-color), 0 28px 0 var(--border-color);
-}
-
-.comments-loading-row:nth-child(2)::after { width: 85%; }
-.comments-loading-row:nth-child(3)::after { width: 55%; }
-
-@keyframes comments-skeleton {
-    to { background-position: -200% 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .comments-loading-row { animation: none; }
 }

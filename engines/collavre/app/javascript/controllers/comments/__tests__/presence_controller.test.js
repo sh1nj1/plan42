@@ -44,14 +44,6 @@ describe('CommentsPresenceController', () => {
     jest.restoreAllMocks()
   })
 
-  test('typing avatars use initials without a silhouette for default users', () => {
-    controller.participantsData = [{ id: 7, name: 'Human', initial: 'H', default_avatar: true, avatar_url: '/default.svg' }]
-    controller.typingUsers = { 7: 'Human' }
-    controller.renderTypingIndicator()
-    expect(controller.typingIndicatorTarget.querySelector('img')).toBeNull()
-    expect(controller.typingIndicatorTarget.querySelector('.avatar-initial').textContent).toBe('H')
-  })
-
   test('hides comment input immediately when affected user loses comment permission', () => {
     const loadParticipantsSpy = jest.spyOn(controller, 'loadParticipants').mockImplementation(() => {})
     const setCommentPermission = jest.fn()

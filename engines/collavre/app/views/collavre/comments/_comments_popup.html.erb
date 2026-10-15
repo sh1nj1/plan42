@@ -20,7 +20,6 @@
      data-creative-snippet="<%= popup_creative.creative_snippet %>"
      data-can-comment="<%= popup_creative.has_permission?(Current.user, :feedback) %>"
      <% end %>
-     data-loading-html="<%= ERB::Util.html_escape_once(render("collavre/comments/loading")) %>"
      data-loading-text="<%= t('app.loading') %>"
      data-delete-confirm-text="<%= t("collavre.comments.delete_confirm") %>"
      data-update-comment-text="<%= t('collavre.comments.update_comment') %>"
@@ -199,7 +198,7 @@
   </div>
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
-  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= render "collavre/comments/loading" %></div>
+  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
   <div id="typing-indicator-row">
     <button type="button" id="scroll-prev-msg-btn" class="scroll-prev-msg-btn" data-action="click->comments--list#scrollToPreviousMessage" title="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>" aria-label="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>">&#8963;</button>
     <div id="typing-scroll-viewport" data-comments--presence-target="scrollRow">

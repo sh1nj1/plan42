@@ -57,7 +57,7 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     end
   end
 
-  test "unknown activity fallback and timing fit a narrow dark panel" do
+  test "long activity names and timing fit a narrow dark panel" do
     @reply.activity_logs.first.update!(activity: "LongActivity" * 20)
     visit collavre.creatives_path(id: @creative.id)
     find("button[name='show-comments-btn'][data-creative-id='#{@creative.id}']").click
