@@ -16,7 +16,12 @@ module Collavre
     def keep_item
       { name: "keep", label: "/keep",
         description: I18n.t("collavre.comments.keep_command.description"),
-        args: I18n.t("collavre.comments.keep_command.args") }
+        args: I18n.t("collavre.comments.keep_command.args"),
+        input_schema: [
+          { name: "max", type: "integer", minimum: 1, maximum: 50, required: false, description: I18n.t("collavre.comments.keep_command.max_hint") },
+          { name: "agent_name", type: "string", format: "keep_agent", required: false, description: I18n.t("collavre.comments.keep_command.agent_hint") },
+          { name: "goal", type: "string", required: false, description: I18n.t("collavre.comments.keep_command.goal_hint") }
+        ] }
     end
 
     def built_in_items

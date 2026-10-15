@@ -7,6 +7,8 @@
  * and builds the final command string to insert into the textarea.
  */
 
+import { keepGoalText } from './keep_goal_text.js'
+
 const OVERLAY_ID = 'command-args-overlay'
 const DIALOG_ID = 'command-args-dialog'
 const MENTION_DEBOUNCE_MS = 200
@@ -33,9 +35,7 @@ export default class CommandArgsForm {
     this.command = null
     this.overlay = null
     this.dialog = null
-    this._mentionPopup = null
     this._mentionTimer = null
-    this._activeMentionInput = null
     this._handleKeydown = this._handleKeydown.bind(this)
   }
 
@@ -204,7 +204,7 @@ export default class CommandArgsForm {
     wrapper.appendChild(label)
 
     let input
-    if (param.format === 'mention') {
+    if (['mention', 'keep_agent'].includes(param.format)) {
       input = this._buildMentionField(param, wrapper)
       wrapper.appendChild(input)
       return wrapper
@@ -240,10 +240,7 @@ export default class CommandArgsForm {
       input.appendChild(optTrue)
       input.appendChild(optFalse)
     } else if (param.type === 'integer' || param.type === 'float') {
-      input = document.createElement('input')
-      input.type = 'number'
-      input.className = 'modal-dialog-input'
-      if (param.type === 'float') input.step = 'any'
+      input = this._buildNumberField(param)
     } else {
       input = document.createElement('textarea')
       input.className = 'modal-dialog-input'
@@ -279,6 +276,16 @@ export default class CommandArgsForm {
     return wrapper
   }
 
+  _buildNumberField(param) {
+    const input = document.createElement('input')
+    input.type = 'number'
+    input.className = 'modal-dialog-input'
+    input.step = param.type === 'float' ? 'any' : '1'
+    if (param.minimum != null) input.min = param.minimum
+    if (param.maximum != null) input.max = param.maximum
+    return input
+  }
+
   _submit() {
     const values = this._collectValues()
     if (!values) return // validation failed
@@ -302,7 +309,7 @@ export default class CommandArgsForm {
 
       input.classList.remove('modal-dialog-error')
 
-      if (required && !val) {
+      if ((required && !val) || (input.type === 'number' && !input.checkValidity())) {
         input.classList.add('modal-dialog-error')
         valid = false
         return
@@ -325,7 +332,7 @@ export default class CommandArgsForm {
 
   _castValue(val, type) {
     switch (type) {
-      case 'integer': return parseInt(val, 10)
+      case 'integer': return Number(val)
       case 'float': return parseFloat(val)
       case 'boolean': return val === 'true'
       default: return val
@@ -341,41 +348,35 @@ export default class CommandArgsForm {
     const keys = Object.keys(values)
     if (keys.length === 0) return command.label
 
-    // For built-in commands with special formatting
-    if (command.name === 'calendar') {
-      return this._buildCalendarText(command, values)
+    const builders = {
+      calendar: this._buildCalendarText, topic: this._buildTopicText,
+      keep: this._buildKeepText, compress: this._buildCompressText
     }
-    if (command.name === 'topic') {
-      return this._buildTopicText(command, values)
-    }
-    if (command.name === 'compress') {
-      return this._buildCompressText(command, values)
-    }
+    if (Object.hasOwn(builders, command.name)) return builders[command.name].call(this, command, values)
 
     // MCP commands: always use JSON to preserve values with spaces
     return `${command.label} ${JSON.stringify(values)}`
   }
 
   _buildCalendarText(command, values) {
-    const parts = [command.label]
-    if (values.date) parts.push(values.date)
-    if (values.memo) parts.push(values.memo)
-    return parts.join(' ')
+    return [command.label, values.date, values.memo].filter(Boolean).join(' ')
   }
 
   _buildTopicText(command, values) {
     const parts = [command.label]
     if (values.topic_name) parts.push(`"${values.topic_name}"`)
-    if (values.agent_name) {
-      parts.push(values.agent_name)
-    }
+    if (values.agent_name) parts.push(values.agent_name)
     return parts.join(' ')
   }
 
+  _buildKeepText(command, values) {
+    const agentName = values.agent_name?.trim().replace(/^@/, '').replace(/:$/, '').trim()
+    return [command.label, values.max != null ? `--max ${values.max}` : null,
+      agentName ? `@${agentName}:` : null, keepGoalText(values.goal)].filter(Boolean).join(' ')
+  }
+
   _buildCompressText(command, values) {
-    const parts = [command.label]
-    if (values.instructions) parts.push(values.instructions)
-    return parts.join(' ')
+    return [command.label, values.instructions].filter(Boolean).join(' ')
   }
 
   _buildMentionField(param, wrapper) {
@@ -408,7 +409,7 @@ export default class CommandArgsForm {
       }
       clearTimeout(this._mentionTimer)
       this._mentionTimer = setTimeout(() => {
-        this._fetchMentions(q).then((users) => {
+        this._fetchMentions(q, param.format).then((users) => {
           this._renderMentionDropdown(dropdown, input, users)
         })
       }, MENTION_DEBOUNCE_MS)
@@ -457,9 +458,10 @@ export default class CommandArgsForm {
     return fieldContainer
   }
 
-  _fetchMentions(query) {
+  _fetchMentions(query, format) {
     const url = new URL('/users/search', window.location.origin)
     url.searchParams.set('q', query)
+    if (format === 'keep_agent') url.searchParams.set('scope', 'keep_agents')
     const creativeId = this._creativeIdFn()
     if (creativeId) {
       url.searchParams.set('creative_id', creativeId)
