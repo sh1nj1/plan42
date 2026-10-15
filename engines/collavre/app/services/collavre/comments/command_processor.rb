@@ -3,8 +3,8 @@ module Collavre
     class CommandProcessor
       # Every command matches against the stripped content with a leading "/"
       # (e.g. /\A\/topic\b/), so anything else can never be a command. Bail out
-      # before building the handlers: the MCP tool list alone costs a query and
-      # several milliseconds on every plain comment.
+      # before building the handlers: the MCP tool list alone costs several
+      # milliseconds per plain comment (plus a query when its cache is cold).
       COMMAND_PREFIX = "/".freeze
 
       def initialize(comment:, user:)
