@@ -228,6 +228,89 @@ module Collavre
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
     end
 
+    test "resume falls back to default iteration and max when the loop omits them" do
+      @child.data["trigger"]["loop"].except!("current_iteration", "max_iterations")
+      @child.save!
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        @child.comments.create!(content: "Continue", topic_id: @topic.id, user: @human)
+      end
+
+      expected = I18n.t("collavre.trigger_loop.user_resumed", iteration: 0, max: 10)
+      assert_equal "@#{@ai_bot.name}: #{expected}", @child.comments.order(:id).last.content
+    end
+
+    test "resume moves the loop to running without posting when the parent has no drop trigger" do
+      @parent.update!(data: {})
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic_id: @topic.id, user: @human)
+        end
+      end
+
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "resume moves the loop to running without posting when no AI agent can write" do
+      CreativeShare.where(creative: @parent, user: @ai_bot).delete_all
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic_id: @topic.id, user: @human)
+        end
+      end
+
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "comment without a user does not read the creative" do
+      comment = create_comment_without_callbacks(@topic)
+      comment.user_id = nil
+
+      assert_empty capture_sql { comment.send(:resume_trigger_loop_if_awaiting) }
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "precheck failure is logged instead of raised" do
+      comment = create_comment_without_callbacks(@topic)
+      logged = []
+
+      Rails.logger.stub(:error, ->(msg) { logged << msg }) do
+        Creative.stub(:where, ->(*) { raise ActiveRecord::StatementInvalid, "boom" }) do
+          assert_nothing_raised { comment.send(:resume_trigger_loop_if_awaiting) }
+        end
+      end
+
+      assert(logged.any? { |m| m.include?("resume_trigger_loop_if_awaiting") && m.include?("boom") })
+    end
+
+    test "creative row gone before the precheck is treated as not awaiting" do
+      comment = create_comment_without_callbacks(@topic)
+
+      assert_not comment.send(:trigger_loop_resumable?, nil)
+    end
+
+    test "comment whose user record is missing still resumes as a non-AI author" do
+      comment = create_comment_without_callbacks(@topic)
+      comment.define_singleton_method(:user) { nil }
+
+      assert comment.send(:trigger_loop_resume_candidate?)
+    end
+
+    test "resume on a root creative moves the loop to running without posting" do
+      Creative.where(id: @child.id).update_all(parent_id: nil)
+      @child.reload
+
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [] }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic_id: @topic.id, user: @human)
+        end
+      end
+
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     private
 
     def create_comment_without_callbacks(topic)
