@@ -1,3 +1,4 @@
+import { pptAttachmentProps } from "./ppt_attachment"
 import { formatFileSize } from './attachment_payload'
 
 // Shared by the editor decorator and sanitized, read-only descriptions.
@@ -22,6 +23,14 @@ export function decorateAttachmentLinks(root) {
     if (link.querySelector('img, video')) return
     const label = link.querySelector('.attachment-link-name') || link
     const filename = link.getAttribute('download') || label.textContent
+    const preview = pptAttachmentProps(link.getAttribute('href'), filename)
+    if (preview) {
+      const frame = document.createElement('iframe')
+      Object.assign(frame, preview)
+      frame.setAttribute('allowfullscreen', '')
+      link.replaceWith(frame)
+      return
+    }
     const parts = attachmentLinkParts(filename, link.getAttribute('data-filesize'))
     link.classList.add('attachment-link')
     link.setAttribute('aria-label', attachmentLinkLabel(filename, link.getAttribute('data-filesize')))

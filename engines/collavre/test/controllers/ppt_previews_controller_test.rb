@@ -24,14 +24,6 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "creative screen embeds pptx with fullscreen permission" do
-    get collavre.creatives_path(id: @creative.id)
-    assert_response :success
-    assert_select "iframe.ppt-attachment-preview[allowfullscreen][loading=lazy]" do |frames|
-      assert_equal @path, frames.first["src"]
-    end
-  end
-
   test "denied access never reads cached slides" do
     sign_in_as(users(:two), password: "password")
     Collavre::PptPreview.stub :slides, ->(*) { flunk "Must authorize before rendering" } do
@@ -65,22 +57,6 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
   test "global login policy allows authenticated previews" do
     SystemSetting.create!(key: "creatives_login_required", value: "true")
     Collavre::PptPreview.stub :slides, [ "Private" ] do
-      get @path
-      assert_response :success
-    end
-  end
-
-  test "linked creative embeds and serves the effective origins presentation" do
-    linked = Creative.create!(user: users(:one), origin: @creative)
-    assert_empty linked.files
-
-    get collavre.creatives_path(id: linked.id)
-    assert_response :success
-    assert_select "iframe.ppt-attachment-preview" do |frames|
-      assert_equal @path, frames.first["src"]
-    end
-
-    Collavre::PptPreview.stub :slides, [ "Linked presentation" ] do
       get @path
       assert_response :success
     end
@@ -136,5 +112,55 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
         assert_equal I18n.t("collavre.ppt_viewer.invalid"), response.body
       end
     end
+  end
+  test "signed blob route authorizes attached creative before rendering" do
+    path = collavre.ppt_preview_path(@blob.signed_id)
+    Collavre::PptPreview.stub :slides, [ "Slide" ] do
+      get path
+      assert_response :success
+      assert_select "a[download='deck.pptx']"
+      sign_in_as(users(:two), password: "password")
+      get path
+      assert_response :not_found
+      sign_out
+      get path
+      assert_response :not_found
+      CreativeShare.create!(creative: @creative, user: nil, permission: :read)
+      get path
+      assert_response :success
+      SystemSetting.create!(key: "creatives_login_required", value: "true")
+      get path
+      assert_redirected_to collavre.new_session_path
+    end
+  end
+
+  test "only uploader can preview an unsaved direct upload" do
+    blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("pptx"), filename: "new.pptx",
+      metadata: { Collavre::BlobAccess::UPLOADER_METADATA_KEY => users(:one).id.to_s })
+    path = collavre.ppt_preview_path(blob.signed_id)
+    Collavre::PptPreview.stub :slides, [ "Slide" ] do
+      get path
+      assert_response :success
+      sign_in_as(users(:two), password: "password")
+      get path
+      assert_response :not_found
+      sign_out
+      get path
+      assert_response :not_found
+    end
+  end
+
+  test "signed blob route rejects invalid IDs non pptx and private shell files" do
+    get collavre.ppt_preview_path("invalid")
+    assert_response :not_found
+    @blob.update!(filename: "notes.txt")
+    get collavre.ppt_preview_path(@blob.signed_id)
+    assert_response :not_found
+    CreativeShare.create!(creative: @creative, user: nil, permission: :read)
+    linked = Creative.create!(user: users(:two), origin: @creative)
+    linked.files.attach(io: StringIO.new("private"), filename: "legacy.pptx")
+    sign_out
+    get collavre.ppt_preview_path(linked.files.last.blob.signed_id)
+    assert_response :not_found
   end
 end

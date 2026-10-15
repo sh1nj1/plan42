@@ -1,6 +1,7 @@
 en:
   collavre:
     ppt_viewer:
+      download: "Download"
       title: "Presentation: %{filename}"
       navigation: "Slide navigation"
       previous: "Previous slide"

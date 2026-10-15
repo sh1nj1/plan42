@@ -8,6 +8,7 @@
   </div>
   <nav id="slide-controls" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
     <button type="button" data-ppt-previous aria-label="<%= t('collavre.ppt_viewer.previous') %>">←</button>
+    <%= link_to t("collavre.ppt_viewer.download"), main_app.rails_storage_proxy_path(@blob, disposition: "attachment"), download: @blob.filename, class: "ppt-viewer-download" %>
     <span data-ppt-counter aria-live="polite"></span>
     <button type="button" data-ppt-next aria-label="<%= t('collavre.ppt_viewer.next') %>">→</button>
     <button type="button" data-ppt-fullscreen><%= t('collavre.ppt_viewer.fullscreen') %></button>

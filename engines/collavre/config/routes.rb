@@ -49,7 +49,7 @@ Collavre::Engine.routes.draw do
   # OAuth callback routes (paths match OmniAuth provider names)
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
 
-  delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
+  draw :attachments
   get "/public-assets/blobs/:signed_id/*filename",
       to: "public_assets#show",
       as: :public_asset,

@@ -153,3 +153,21 @@
 .ppt-viewer-slide[hidden] { display: none; }
 .ppt-viewer .ppt-slide-notes { display: none; }
 .ppt-viewer #slide-content { width: 100%; }
+
+/* Overlay controls keep the inline preview focused on the slide. */
+.ppt-viewer #slide-view {
+  --slide-padding: 0px;
+  --slide-controls-space: 0px;
+}
+.ppt-viewer #slide-controls {
+  opacity: 0;
+  transition: opacity 120ms ease;
+  background: var(--surface-bg);
+  padding: var(--space-2);
+  border-radius: var(--space-2);
+}
+.ppt-viewer:hover #slide-controls,
+.ppt-viewer:focus-within #slide-controls { opacity: 1; }
+@media (hover: none) {
+  .ppt-viewer #slide-controls { opacity: 1; }
+}

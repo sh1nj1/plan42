@@ -30,6 +30,34 @@ describe('attachment rendering parity', () => {
     }, {discrete: true})
   })
 
+  test.each([
+    '/rails/active_storage/blobs/redirect/signed/deck.pptx',
+    '/rails/active_storage/blobs/proxy/signed/deck.pptx',
+    '/public-assets/blobs/signed/deck.pptx',
+    'https://assets.example.com/public-assets/blobs/signed/deck.pptx',
+  ])('PPT previews match in editor and saved descriptions: %s', src => {
+    const editor = createEditor({nodes: [AttachmentNode]})
+    editor.update(() => {
+      const node = $createAttachmentNode({src, filename: 'deck.PPTX', filesize: 2048})
+      const saved = render(node.exportDOM().element.outerHTML).querySelector('iframe')
+      const editing = document.createElement('div')
+      const decoration = node.decorate()
+      let stopped = false
+      decoration.props.onClick({ stopPropagation: () => { stopped = true } })
+      expect(stopped).toBe(true)
+      editing.innerHTML = renderToStaticMarkup(decoration)
+      expect(saved.getAttribute('src')).toBe('/ppt_previews/signed')
+      expect(saved.getAttribute('src')).toBe(editing.firstChild.getAttribute('src'))
+      expect(saved.title).toBe('deck.PPTX')
+      expect(saved.hasAttribute('allowfullscreen')).toBe(true)
+      expect(saved.getAttribute('allow')).toBe('fullscreen')
+      expect(saved.className).toBe(editing.firstChild.className)
+      expect(sanitizeDescriptionHtml(saved.outerHTML)).toContain('/ppt_previews/signed')
+      expect(node.exportDOM().element.tagName).toBe('A')
+      expect(AttachmentNode.importDOM().a(node.exportDOM().element).conversion(node.exportDOM().element).node.getSrc()).toBe(src)
+    }, {discrete: true})
+  })
+
   test.each([null, '', '0', '-1', 'invalid'])('omits missing or invalid size %s', size => {
     expect(attachmentLinkParts('file', size)).toHaveLength(2)
     const editor = createEditor({nodes: [AttachmentNode]})

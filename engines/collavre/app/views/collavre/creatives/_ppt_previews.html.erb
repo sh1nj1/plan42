@@ -1,7 +1,0 @@
-<% if creative.has_permission?(Current.user, :read) %>
-  <% origin = creative.effective_origin %>
-  <% origin.files.each do |attachment| %>
-    <% next unless attachment.filename.extension.downcase == "pptx" %>
-    <iframe class="ppt-attachment-preview" src="<%= creative_ppt_preview_path(origin, attachment) %>" title="<%= t('collavre.ppt_viewer.title', filename: attachment.filename) %>" loading="lazy" allow="fullscreen" allowfullscreen></iframe>
-  <% end %>
-<% end %>
