@@ -50,6 +50,17 @@ class UsersControllerAiProfileTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "Unused capability"
   end
 
+  test "read-only tools show the summary with details behind more" do
+    @agent.update!(tools: %w[my_tool])
+    tools = [ { name: "my_tool", description: "Does one thing. Then explains more.", params: {} } ]
+    Collavre::McpService.stub(:available_tools, tools) do
+      get edit_ai_user_url(@agent)
+    end
+    assert_response :success
+    assert_select "p", text: /Does one thing\./
+    assert_select "details.tool-details .tool-details-body", text: "Then explains more."
+  end
+
   test "AI profile opens the reused edit page" do
     get user_url(@agent)
     assert_redirected_to edit_ai_user_url(@agent)

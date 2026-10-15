@@ -30,4 +30,12 @@ class CommandMenuComponentTest < ViewComponent::TestCase
     component = Collavre::CommandMenuComponent.new
     assert_equal I18n.t("collavre.comments.command_menu.form_cancel"), component.form_cancel_label
   end
+  test "exposes form and more/less labels to the menu script" do
+    I18n.with_locale(:ko) do
+      render_inline(Collavre::CommandMenuComponent.new)
+
+      assert_selector "#command-menu[data-form-submit='확인'][data-form-cancel='취소']", visible: :all
+      assert_selector "#command-menu[data-more-label='더보기'][data-less-label='접기']", visible: :all
+    end
+  end
 end

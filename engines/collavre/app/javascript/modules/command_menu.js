@@ -6,6 +6,89 @@ import { openCreativeLinkPicker } from './creative_link_picker'
 let commandMenuInitialized = false
 let commandSubmissionSequence = 0
 
+const escapeHtml = (value) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+function renderCommand(command, moreLabel) {
+  const aliasLabel = command.aliases?.length
+    ? `<span class="command-aliases">(${command.aliases.join(', ')})</span>`
+    : ''
+  const args = command.args ? `<span class="command-args">${command.args}</span>` : ''
+  const description = command.description
+    ? `<div class="command-description">${escapeHtml(command.description)}</div>`
+    : ''
+  const details = command.details
+    ? `<button type="button" class="command-more" data-command-more aria-expanded="false" aria-keyshortcuts="ArrowRight ArrowLeft">${escapeHtml(moreLabel)}</button>
+       <div class="command-details" hidden>${escapeHtml(command.details)}</div>`
+    : ''
+  return `
+    <div class="command-item">
+      <span class="command-label">${command.label}</span>
+      ${aliasLabel}
+      ${args}
+    </div>
+    ${description}
+    ${details}
+  `
+}
+
+// "More" expands a tool's details in place. Handled in the capture phase so the
+// item's own touchstart/touchend/click never see it and the command is not chosen.
+// touchstart is left uncancelled so a swipe starting on the button still scrolls;
+// touchend toggles only when the finger stayed within the tap threshold.
+const TAP_THRESHOLD_PX = 10
+
+function bindDetailsToggle(list, labels, onToggle) {
+  let touchStartY = null
+  const toggle = (event) => {
+    const button = event.target.closest?.('[data-command-more]')
+    if (!button || !list.contains(button)) return
+    event.stopPropagation()
+    if (event.type === 'touchstart') {
+      touchStartY = event.touches[0].clientY
+      return
+    }
+    if (event.type === 'touchend') {
+      const moved = touchStartY === null ||
+        Math.abs(event.changedTouches[0].clientY - touchStartY) >= TAP_THRESHOLD_PX
+      touchStartY = null
+      if (moved) return
+    }
+    event.preventDefault()
+    setDetailsExpanded(button, button.getAttribute('aria-expanded') !== 'true', labels)
+    onToggle()
+  }
+  for (const type of ['touchstart', 'touchend', 'click']) list.addEventListener(type, toggle, true)
+}
+
+function setDetailsExpanded(button, expanded, labels) {
+  button.setAttribute('aria-expanded', String(expanded))
+  button.textContent = expanded ? labels.less : labels.more
+  button.nextElementSibling.hidden = !expanded
+}
+
+// Focus stays in the textarea while the menu is open (Tab/Enter select the
+// active command), so the toggle is driven from there: ArrowRight expands the
+// active command's details, ArrowLeft collapses them. Both only apply with a
+// collapsed caret at the end of the text so they never steal caret movement.
+function handleDetailsKey(event, list, labels) {
+  if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return false
+  if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false
+  const button = list.querySelector('.active [data-command-more]')
+  if (!button) return false
+  const expand = event.key === 'ArrowRight'
+  if (expand === (button.getAttribute('aria-expanded') === 'true')) return false
+  const { selectionStart, selectionEnd, value } = event.target
+  if (selectionStart !== selectionEnd || selectionEnd !== value.length) return false
+  event.preventDefault()
+  setDetailsExpanded(button, expand, labels)
+  return true
+}
+
 if (!commandMenuInitialized) {
   commandMenuInitialized = true
 
@@ -16,6 +99,7 @@ if (!commandMenuInitialized) {
     if (!textarea || !menu || !popup) return
 
     const list = menu.querySelector('[data-popup-list]')
+    const labels = { more: menu.dataset.moreLabel || 'More', less: menu.dataset.lessLabel || 'Less' }
     const commandCache = new Map()
     let skipNextMenuInput = false
 
@@ -93,23 +177,7 @@ if (!commandMenuInitialized) {
 
     const popupMenu = new CommonPopup(menu, {
       listElement: list,
-      renderItem: (command) => {
-        const aliasLabel = command.aliases?.length
-          ? `<span class="command-aliases">(${command.aliases.join(', ')})</span>`
-          : ''
-        const args = command.args ? `<span class="command-args">${command.args}</span>` : ''
-        const description = command.description
-          ? `<div class="command-description">${command.description}</div>`
-          : ''
-        return `
-          <div class="command-item">
-            <span class="command-label">${command.label}</span>
-            ${aliasLabel}
-            ${args}
-          </div>
-          ${description}
-        `
-      },
+      renderItem: (command) => renderCommand(command, labels.more),
       onSelect: (command) => {
         if (command.type === 'popup' && command.popup_type === 'creative_picker') {
           openCreativePicker(textarea)
@@ -130,6 +198,8 @@ if (!commandMenuInitialized) {
         textarea.focus()
       }
     })
+
+    bindDetailsToggle(list, labels, () => popupMenu.reposition())
 
     function currentTopicIdFromController(popupEl) {
       // Prefer the form controller's locally-cached topic id — the same value
@@ -219,6 +289,10 @@ if (!commandMenuInitialized) {
     }
 
     textarea.addEventListener('keydown', function (event) {
+      if (popupMenu.isOpen() && handleDetailsKey(event, list, labels)) {
+        popupMenu.reposition()
+        return
+      }
       if (popupMenu.handleKey(event)) return
     })
 

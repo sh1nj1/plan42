@@ -11,5 +11,13 @@ module Collavre
     def form_cancel_label
       I18n.t("collavre.comments.command_menu.form_cancel")
     end
+
+    def more_label
+      I18n.t("collavre.comments.command_menu.more")
+    end
+
+    def less_label
+      I18n.t("collavre.comments.command_menu.less")
+    end
   end
 end

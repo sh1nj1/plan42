@@ -221,6 +221,8 @@ ko:
         compress_instructions_hint: "추가 지시사항 (선택사항)"
         form_submit: "확인"
         form_cancel: "취소"
+        more: "더보기"
+        less: "접기"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
