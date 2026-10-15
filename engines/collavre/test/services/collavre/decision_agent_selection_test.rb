@@ -112,6 +112,20 @@ module Collavre
       assert_includes ko, "쓰기 권한"
     end
 
+    test "loop evaluators omit topic session routing while retaining usage attribution" do
+      task = Task.new(creative: @child, agent: @chat, topic_id: @child.main_topic.id)
+      [ TriggerLoopCheckJob.new, TriggerLoopVerifyJob.new ].each do |job|
+        factory = lambda do |**options|
+          assert_equal({ user: @chat, usage_source_task: task }, options.fetch(:context))
+          assert_equal "Evaluate only", options.fetch(:system_prompt)
+          :evaluator
+        end
+        AiClient.stub(:new, factory) do
+          assert_equal :evaluator, job.send(:decision_client, @chat, task, "Evaluate only")
+        end
+      end
+    end
+
     test "native decisions are preferred and feedback permission includes write" do
       job = TriggerLoopCheckJob.new
       assert_equal @judge, job.send(:pick_fallback_agent, @parent, @child)

@@ -15,12 +15,13 @@ module Collavre
       candidates.find { |agent| agent.id != task_agent_id } || candidates.first
     end
 
+    # Attribute evaluator usage without routing internal prompts into the working topic session.
     def decision_client(verifier, task, system_prompt)
       AiClient.new(
         vendor: verifier.llm_vendor, model: verifier.llm_model, system_prompt: system_prompt,
         llm_api_key: verifier.llm_api_key.presence || verifier.creator&.llm_api_key,
         gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { user: verifier, usage_source_task: task, creative: task.creative, topic_id: task.topic_id }
+        context: { user: verifier, usage_source_task: task }
       )
     end
 
