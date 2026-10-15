@@ -4,6 +4,7 @@ en:
       keep_command:
         max_hint: "Maximum iterations (1–1000, default: 10)"
         agent_hint: "Agent to run the loop (optional)"
+        goal_context: "Goal: %{goal}"
         goal_hint: "Goal to achieve (optional)"
         args: "[--max 10] [@agent:] [goal]"
         no_agent: "No agent was scheduled. Choose an available agent and resume."

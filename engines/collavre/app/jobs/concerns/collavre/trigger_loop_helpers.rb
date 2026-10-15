@@ -118,6 +118,10 @@ module Collavre
       Comments::TopicMutation.call(attributes.fetch(:topic_id), creative.id) do
         creative.with_lock do
           validate_loop_snapshot!(creative.data&.dig("trigger", "loop") || {}, creative)
+          goal = creative.data&.dig("trigger", "loop", "goal")
+          if creative.keep_loop? && goal.present?
+            attributes[:content] = "#{attributes.fetch(:content)}\n\n#{I18n.t('collavre.comments.keep_command.goal_context', goal: goal)}"
+          end
           comment = creative.comments.create!(**attributes, loop_continuation: true, skip_dispatch: true)
           agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
             source: "comment_callback", require_enqueue_ack: creative.keep_loop?)

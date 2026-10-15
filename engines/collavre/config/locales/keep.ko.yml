@@ -4,6 +4,7 @@ ko:
       keep_command:
         max_hint: "최대 반복 수 (1–1000, 기본값: 10)"
         agent_hint: "반복을 실행할 에이전트 (선택)"
+        goal_context: "목표: %{goal}"
         goal_hint: "달성할 목표 (선택)"
         args: "[--max 10] [@에이전트:] [목표]"
         no_agent: "실행할 에이전트가 없습니다. 사용 가능한 에이전트를 선택한 뒤 재개하세요."
