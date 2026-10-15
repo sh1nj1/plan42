@@ -73,6 +73,7 @@ if (Object.keys(entryPoints).length === 0) {
 const config = {
     entryPoints: entryPoints,
     bundle: true,
+    nodePaths: [path.join(process.cwd(), 'node_modules')],
     sourcemap: true,
     format: 'esm',
     jsx: 'automatic',

@@ -21,6 +21,10 @@ module Collavre
         end
       end
 
+      def install_pdf_dependency
+        run "npm install pdfjs-dist@^6.4.299", abort_on_failure: true
+      end
+
       def show_post_install
         say ""
         say "Collavre assets installed!", :green
@@ -42,6 +46,11 @@ module Collavre
 
       def update_existing_build_script(build_script)
         content = File.read(build_script)
+
+        unless content.include?("nodePaths:")
+          content = content.sub(/(\bbundle:\s*true,)/, "\\1\n    nodePaths: [path.join(process.cwd(), 'node_modules')],")
+          File.write(build_script, content)
+        end
 
         # Check if already installed
         if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
