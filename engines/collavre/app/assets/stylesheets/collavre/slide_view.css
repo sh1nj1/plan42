@@ -218,8 +218,10 @@
   .ppt-viewer:not(:fullscreen) #slide-controls:focus-within :is(button, a) { pointer-events: auto; }
   .ppt-viewer [data-ppt-fullscreen] { display: none; }
 }
-.ppt-viewer.ppt-controls-visible #slide-controls { opacity: 1; }
-.ppt-viewer.ppt-controls-visible #slide-controls :is(button, a) { pointer-events: auto; }
+.ppt-viewer.ppt-controls-visible #slide-controls,
+.ppt-viewer #slide-controls:has(:focus-visible) { opacity: 1; }
+.ppt-viewer.ppt-controls-visible #slide-controls :is(button, a),
+.ppt-viewer #slide-controls:has(:focus-visible) :is(button, a) { pointer-events: auto; }
 
 /* Inline slides follow their frame width; fullscreen still fits both axes. */
 .ppt-viewer:not(:fullscreen) #slide-view .ppt-slide {

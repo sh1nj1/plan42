@@ -55,6 +55,26 @@ class PptViewerTest < ApplicationSystemTestCase
       assert_selector ".ppt-slide", text: "Slide 1"
     end
   end
+  test "fullscreen controls reveal keyboard focus without changing click toggles" do
+    visit collavre.creatives_path(id: @creative.id)
+    within_frame(find("iframe.ppt-attachment-preview")) do
+      find(".ppt-viewer-slide:not([hidden])").click
+      assert_selector ".ppt-viewer:fullscreen"
+      assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
+      page.driver.browser.action.send_keys(:tab).perform
+      assert_selector "#slide-controls:has(:focus-visible)", style: { opacity: "1" }
+      assert_equal "auto", page.evaluate_script("getComputedStyle(document.activeElement).pointerEvents")
+      assert_selector "a[download]:focus-visible"
+      page.driver.browser.action.send_keys(:tab).perform
+      assert_selector "[data-ppt-next]:focus-visible"
+      page.driver.browser.action.send_keys(:enter).perform
+      assert_selector "[data-ppt-counter]", text: "2 / 2"
+      find(".ppt-viewer-slide:not([hidden])").click
+      find(".ppt-viewer-slide:not([hidden])").click
+      assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
+    end
+  end
+
   test "editor previews uploads immediately and retains the same viewer after save" do
     visit collavre.creatives_path
     find("#creative-#{@creative.id}").hover
