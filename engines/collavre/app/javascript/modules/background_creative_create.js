@@ -4,6 +4,7 @@
 // the { afterId, beforeId } its own create must send.
 const creates = new WeakMap()
 const anchors = new WeakMap()
+const failedDrafts = new WeakMap()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
@@ -17,18 +18,27 @@ export function pendingCreate(tree) {
 }
 
 // Waits out a row's background create; true when there is no row to open the
-// editor on: none at all, or one whose create failed and left it without an id.
+// editor on: none at all, or one left without an id and without a failed draft
+// to reopen.
 export async function cannotEdit(tree) {
   if (!tree) return true
   const create = creates.get(tree)
   if (!create) return false
   await create
-  return !tree.dataset.id
+  return !tree.dataset.id && !failedDrafts.has(tree)
+}
+
+// Hands over the draft of a row whose background create failed, so the editor
+// can reopen it as a new creative and retry the create.
+export function takeFailedDraft(tree) {
+  const draft = failedDrafts.get(tree)
+  failedDrafts.delete(tree)
+  return draft
 }
 
 // Resolves with the anchor for the row after this one: the new id, or on
 // failure the slot this row asked for, so the next row still lands there.
-export async function postNewCreative(tree, { action, body }, fallback, { save, created, failed }) {
+export async function postNewCreative(tree, { action, body, snapshot }, fallback, { save, created, failed }) {
   const anchor = await takeDeferredAnchor(tree)
   if (anchor) {
     Object.assign(fallback, anchor)
@@ -44,8 +54,9 @@ export async function postNewCreative(tree, { action, body }, fallback, { save, 
     return { afterId: String(data.id), beforeId: '' }
   } catch (error) {
     // The row keeps showing the text; flag it and say so, since the editor
-    // has already moved on and can't take the draft back.
+    // has already moved on. Opening the row again restores the draft.
     tree.dataset.saveState = 'error'
+    failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
     failed(error)
     return fallback
   }
@@ -68,4 +79,33 @@ export function takeDeferredAnchor(tree) {
   const anchor = tree ? anchors.get(tree) : undefined
   if (anchor) anchors.delete(tree)
   return anchor
+}
+
+// Markdown authored in the source textarea reopens there; anything else
+// reopens in the rich editor.
+export function isMarkdownSourceDraft(snapshot) {
+  return snapshot.contentType === 'markdown' && snapshot.markdownEditor !== 'rich'
+}
+
+// Points the shared form at a new creative in the failed row's slot, holding
+// the draft it was rejected with.
+export function fillFailedDraftForm(form, tree, { snapshot, afterId, beforeId }, inputs) {
+  delete tree.dataset.saveState
+  form.action = '/creatives'
+  form.dataset.creativeId = ''
+  const values = {
+    methodInput: '',
+    parentInput: tree.dataset.parentId || '',
+    afterInput: afterId || '',
+    beforeInput: beforeId || '',
+    childInput: '',
+    originIdInput: snapshot.originId,
+    descriptionInput: snapshot.content,
+    contentTypeInput: snapshot.contentType,
+    markdownSourceInput: snapshot.markdownSource,
+    markdownEditorInput: snapshot.markdownEditor,
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (inputs[name]) inputs[name].value = value
+  }
 }

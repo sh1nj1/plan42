@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, pendingCreate, cannotEdit, postNewCreative, deferRowAnchor, takeDeferredAnchor } from './background_creative_create'
+import { trackCreate, pendingCreate, cannotEdit, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, isMarkdownSourceDraft, fillFailedDraftForm } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -891,7 +891,7 @@ function setupEditorSession() {
       if (creativeSaveSnapshotIsEmpty(snapshot)) return null;
       const body = new FormData(form);
       if (!snapshot.persistProgress) body.delete('creative[progress]');
-      const request = { action: form.action, body, deletedIds: lexicalEditor.getDeletedAttachments?.() || [] };
+      const request = { action: form.action, body, snapshot, deletedIds: lexicalEditor.getDeletedAttachments?.() || [] };
       revealCreativeRow(tree, snapshot);
       tree.dataset.saveState = 'pending';
       isDirty = false;
@@ -1085,7 +1085,7 @@ function setupEditorSession() {
     function loadCreative(tree) {
       if (!tree) return;
       const id = tree.dataset?.id;
-      if (!id) return;
+      if (!id) return restoreFailedCreate(tree);
 
       // Try to use cached data from the row first for instant loading
       // BUT only if we have actual content in the dataset
@@ -1114,6 +1114,24 @@ function setupEditorSession() {
 	fetch: id => creativesApi.get(id),
 	apply: data => applyFetchedCreative(data, tree, revision),
       });
+    }
+
+    // A row whose background create failed reopens as a new creative holding
+    // the rejected draft, so closing or Enter retries the create.
+    function restoreFailedCreate(tree) {
+      const draft = takeFailedDraft(tree);
+      if (!draft) return;
+      typeEditor.load();
+      resetOriginTracking();
+      if (isMarkdownSourceDraft(draft.snapshot)) activateMarkdownMode(draft.snapshot.markdownSource); else deactivateMarkdownMode();
+      fillFailedDraftForm(form, tree, draft, { methodInput, parentInput, afterInput, beforeInput, childInput, originIdInput, descriptionInput, contentTypeInput, markdownSourceInput, markdownEditorInput });
+      lexicalEditor.load(draft.snapshot.content, `new-${Date.now()}`);
+      setProgressState(draft.snapshot.progress);
+      // A new creative always saves on close, so the draft just has to read as unsaved.
+      isDirty = true;
+      pendingSave = true;
+      setSaveStatus('pending');
+      updateActionButtonStates();
     }
 
     function beforeNewOrMove(wasNew, prev, prevParent) {

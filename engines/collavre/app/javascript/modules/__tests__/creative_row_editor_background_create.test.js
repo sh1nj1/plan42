@@ -236,33 +236,115 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(template().parentElement).toBe(first)
   })
 
-  test('moving up into a row whose create failed stays put', async () => {
+  test('moving up into a row whose create fails reopens its draft', async () => {
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)
     const first = await startNewRow('first creative')
-    const next = await pressEnter()
+    await pressEnter()
 
     document.getElementById('inline-move-up').click()
     firstPost.resolve({ ok: false, status: 422 })
     await flush()
 
-    expect(template().parentElement).toBe(next)
-    expect(first.dataset.saveState).toBe('error')
+    expect(template().parentElement).toBe(first)
+    expect(document.getElementById('markdown-editor-textarea').value).toBe('first creative')
   })
 
-  test('clicking a row whose create failed does not open the editor on it', async () => {
-    const firstPost = deferred()
-    saveMock.mockImplementationOnce(() => firstPost.promise)
+  test('clicking a row whose create already failed reopens the draft and retries the create', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(81)))
     const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    document.getElementById('inline-before-id').value = '6'
     const next = await pressEnter()
+    await flush()
+    expect(first.dataset.saveState).toBe('error')
 
     document.dispatchEvent(new CustomEvent('creative-edit-click', {
       detail: { treeElement: first }, cancelable: true,
     }))
-    firstPost.resolve({ ok: false, status: 422 })
     await flush()
 
-    expect(template().parentElement).toBe(next)
+    // The blank next row is dropped; the editor holds the rejected draft.
+    expect(next.isConnected).toBe(false)
+    expect(template().parentElement).toBe(first)
+    expect(first.dataset.saveState).toBeUndefined()
+    expect(document.getElementById('inline-edit-form-element').dataset.creativeId).toBe('')
+    expect(document.getElementById('markdown-editor-textarea').value).toBe('first creative')
+
+    document.getElementById('inline-close').click()
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(2)
+    expect(saveMock.mock.calls[1][1]).toBe('POST')
+    expect(sentField(saveMock.mock.calls[1], 'creative[description]')).toContain('first creative')
+    expect(sentField(saveMock.mock.calls[1], 'after_id')).toBe('5')
+    expect(sentField(saveMock.mock.calls[1], 'before_id')).toBe('6')
+    expect(first.dataset.id).toBe('81')
+  })
+
+  async function failThenReopen(prepare) {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(81)))
+    const first = await startNewRow('')
+    await prepare()
+    await pressEnter()
+    await flush()
+    document.dispatchEvent(new CustomEvent('creative-edit-click', {
+      detail: { treeElement: first }, cancelable: true,
+    }))
+    await flush()
+    expect(template().parentElement).toBe(first)
+    return first
+  }
+
+  const field = (id) => document.getElementById(id).value
+
+  test('a failed Markdown-source draft reopens in the Markdown editor', async () => {
+    await failThenReopen(async () => {
+      document.getElementById('inline-toggle-markdown').click()
+      await flush()
+      type('# md draft')
+    })
+
+    expect(document.getElementById('markdown-editor-wrapper').style.display).toBe('')
+    expect(field('markdown-editor-textarea')).toBe('# md draft')
+    expect(field('inline-content-type')).toBe('markdown')
+    expect(field('inline-markdown-editor')).toBe('source')
+
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(sentField(saveMock.mock.calls[1], 'creative[markdown_source]')).toBe('# md draft')
+  })
+
+  test('a failed rich-authored Markdown draft keeps its Markdown fields', async () => {
+    await failThenReopen(() => {
+      type('rich draft')
+      document.getElementById('inline-content-type').value = 'markdown'
+      document.getElementById('inline-markdown-source').value = 'rich draft'
+      document.getElementById('inline-markdown-editor').value = 'rich'
+    })
+
+    expect(document.getElementById('markdown-editor-wrapper').style.display).toBe('none')
+    expect(field('inline-creative-description')).toBe('<p>rich draft</p>')
+    expect(field('inline-content-type')).toBe('markdown')
+    expect(field('inline-markdown-source')).toBe('rich draft')
+    expect(field('inline-markdown-editor')).toBe('rich')
+  })
+
+  test('a row with neither an id nor a failed draft loads nothing into the editor', async () => {
+    document.getElementById('inline-after-id').value = 'stale'
+    const stray = document.createElement('div')
+    stray.className = 'creative-tree'
+    document.getElementById('creatives').appendChild(stray)
+
+    document.dispatchEvent(new CustomEvent('creative-edit-click', {
+      detail: { treeElement: stray }, cancelable: true,
+    }))
+    await flush()
+
+    expect(template().parentElement).toBe(stray)
+    expect(field('inline-after-id')).toBe('stale')
   })
 
   test('an upload in progress keeps the blocking save', async () => {
