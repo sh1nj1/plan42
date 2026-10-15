@@ -38,14 +38,22 @@ module Collavre
       type = definition.fetch("type").to_s
       value = case type
       when "choice"
-        options = definition.fetch("options").keys.map(&:to_s)
-        raise ArgumentError, "A choice needs at least two options" if options.size < 2
-        { type: "string", enum: options }
+        choice_schema(definition)
       when "probability" then { type: "number", minimum: 0, maximum: 1 }
       when "score" then score_schema(definition)
       else raise ArgumentError, "Unsupported question type: #{type}"
       end
       { type: "object", properties: { type => value }, required: [ type ], additionalProperties: false }
+    end
+
+    def choice_schema(definition)
+      options = definition.fetch("options")
+      raise ArgumentError, "A choice needs at least two options" if options.size < 2
+      unless options.values.all? { |value| value.nil? || [ String, Hash, Array ].any? { |type| value.is_a?(type) } }
+        raise ArgumentError, "Choice descriptions must be text, a Hash, an Array, or nil"
+      end
+
+      { type: "string", enum: options.keys.map(&:to_s) }
     end
 
     def score_schema(definition)

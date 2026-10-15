@@ -347,6 +347,31 @@ module Collavre
       end
     end
 
+    test "invalid choice descriptions fail before either decision adapter is called" do
+      %w[google typesafe].each do |vendor|
+        client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Invalid description reached native adapter" }) do
+          client.stub(:chat_decision, ->(*) { flunk "Invalid description reached chat adapter" }) do
+            [ 1, 0.5, true, false ].each do |description|
+              assert_raises(ArgumentError) do
+                client.judge("Task", questions: { status: { type: :choice,
+                  options: { DONE: description, CONTINUE: "Keep working" } } })
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "choice descriptions accept the native description types" do
+      [ "Done", { text: "Done" }, [ "Done" ], nil ].each do |description|
+        definitions = DecisionQuestions.new(status: { type: :choice,
+          options: { DONE: description, CONTINUE: "Keep working" } })
+        assert_equal %w[DONE CONTINUE],
+          definitions.schema.dig(:properties, :answers, :properties, "status", :properties, "choice", :enum)
+      end
+    end
+
     test "invalid score scales fail before either decision adapter is called" do
       [ "google", "typesafe" ].each do |vendor|
         client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
