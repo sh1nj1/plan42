@@ -17,6 +17,161 @@ module Collavre
         clear_enqueued_jobs
       end
 
+      test "keep resume and restart require acknowledged dispatch" do
+        { "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state
+          ) } })
+          previous = @child.reload.data.deep_dup
+          dispatch = lambda do |*args, **options|
+            raise ActiveJob::EnqueueError if options[:require_enqueue_ack]
+            [ users(:ai_bot) ]
+          end
+          SystemEvents::Dispatcher.stub(:dispatch, dispatch) do
+            assert_raises(ActiveJob::EnqueueError) { command(action: action).call }
+          end
+          assert_equal previous, @child.reload.data
+        end
+      end
+
+      test "keep controls roll back the entire transition when dispatch raises" do
+        { "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state, current_iteration: 3
+          ) } })
+          previous = @child.reload.data.deep_dup
+          error = RuntimeError.new("dispatch failed")
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise error }) do
+            assert_no_difference -> { @child.comments.count } do
+              assert_same error, assert_raises(RuntimeError) { command(action: action).call }
+            end
+          end
+          assert_equal previous, @child.reload.data
+          SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) do
+            assert_difference -> { @child.comments.count }, 1 do
+              assert command(action: action).call.success?
+            end
+          end
+        end
+      end
+
+      test "keep controls roll back when continuation creation fails" do
+        { "resume" => "awaiting_user", "restart" => "max_reached" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state, current_iteration: 4
+          ) } })
+          previous = @child.reload.data.deep_dup
+          operation = command(action: action)
+          operation.stub(:create_trigger_comment, ->(*) { raise "creation failed" }) do
+            assert_raises(RuntimeError) { operation.call }
+          end
+          assert_equal previous, @child.reload.data
+        end
+      end
+
+      test "stale controls preserve a replacement keep in the same topic" do
+        { "pause" => "running", "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: state, start_comment_id: 100
+          ) } })
+          operation = command(action: action)
+          replacement = @child.data.deep_dup
+          replacement["trigger"]["loop"]["start_comment_id"] = 200
+          original = Comments::TopicMutation.method(:call)
+          intercepted = false
+          Comments::TopicMutation.stub(:call, lambda { |topic_id, creative_id, &block|
+            unless intercepted
+              intercepted = true
+              Creative.where(id: @child.id).update_all(data: replacement)
+            end
+            original.call(topic_id, creative_id, &block)
+          }) do
+            SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale generation dispatched" }) do
+              assert_no_difference -> { @child.comments.count } do
+                assert operation.call.success?
+              end
+            end
+          end
+          assert_equal replacement, @child.reload.data
+        end
+      end
+
+      test "stale controls do not lock or resume a replacement topic" do
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: "paused"
+        ) } })
+        operation = command(action: "resume")
+        replacement_topic = @child.topics.create!(name: "Replacement", user: @user)
+        replacement = @child.data.deep_dup
+        replacement["trigger"]["loop"]["trigger_topic_id"] = replacement_topic.id
+        Creative.where(id: @child.id).update_all(data: replacement)
+        locked_topics = []
+        original = Comments::TopicMutation.method(:call)
+        Comments::TopicMutation.stub(:call, lambda { |topic_id, creative_id, &block|
+          locked_topics << topic_id
+          original.call(topic_id, creative_id, &block)
+        }) do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale control dispatched" }) do
+            operation.call
+          end
+        end
+        assert_equal [ @child.main_topic.id ], locked_topics
+        assert_equal replacement, @child.reload.data
+      end
+
+      test "keep resume and restart reject a missing selected agent" do
+      { "resume" => "paused", "restart" => "completed" }.each do |action, state|
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", agent_id: -1, state: state
+        ) } })
+        assert_no_difference -> { @child.comments.count } do
+          refute command(action: action).call.success?
+        end
+        assert_equal state, @child.reload.data.dig("trigger", "loop", "state")
+      end
+    end
+
+    test "drop resume keeps targeting the container agent" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @container, user: agent, permission: :write)
+        topic = @child.topics.find_or_create_by!(name: "Drop Trigger") { |record| record.user = @user }
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(topic.id, state: "paused") } })
+        previous_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+        assert command(action: "resume").call.success?
+        assert_match(/@#{Regexp.escape(agent.name)}:/, @child.comments.order(:id).last.content)
+      ensure
+        ActiveJob::Base.queue_adapter = previous_adapter
+      end
+
+      test "keep pause resume and restart reuse trigger actions with ambient routing" do
+        SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) do
+        topic = @child.main_topic
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          topic.id, source: "keep", goal: "Ship the feature"
+        ) } })
+
+        assert command(action: "pause").call.success?
+        assert_equal "paused", @child.reload.data.dig("trigger", "loop", "state")
+        assert_difference -> { @child.comments.count }, 1 do
+          assert command(action: "resume").call.success?
+        end
+        refute_match(/@/, @child.comments.order(:id).last.content)
+
+        data = @child.data.deep_dup
+        data["trigger"]["loop"]["state"] = "completed"
+        @child.update!(data: data)
+        assert_difference -> { @child.comments.count }, 1 do
+          assert command(action: "restart").call.success?
+        end
+        assert_includes @child.comments.order(:id).last.content, "Ship the feature"
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal "keep", @child.data.dig("trigger", "loop", "source")
+        assert_equal topic.id, @child.comments.order(:id).last.topic_id
+        assert_equal @container, @child.trigger_loop_context
+        end
+      end
+
       test "rejects unknown actions" do
         result = command(action: "invalid").call
 
@@ -154,6 +309,75 @@ module Collavre
 
         assert command(creative: stale, action: "pause").call.success?
         assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
+      end
+
+      test "keep resume revalidates pause control version and agent before posting" do
+        agent = users(:ai_bot)
+        share = CreativeShare.create!(creative: @child, user: agent, permission: :feedback)
+        %w[pause version permission].each do |change|
+          @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+            @child.main_topic.id, source: "keep", state: "paused", agent_id: agent.id
+          ) } })
+          operation = command(action: "resume")
+          original = operation.method(:post_continue_to_agent)
+          operation.define_singleton_method(:post_continue_to_agent) do
+            data = @creative.reload.data.deep_dup
+            case change
+            when "pause" then data["trigger"]["loop"]["state"] = "paused"
+            when "version" then data["trigger"]["loop"]["control_version"] += 1
+            when "permission"
+              share.destroy!
+              CreativeSharesCache.where(creative: @creative, user: agent).delete_all
+            end
+            @creative.update!(data: data)
+            original.call
+          end
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale resume must not dispatch" }) do
+            assert_no_difference -> { @child.comments.count } do
+              operation.call
+            end
+          end
+          expected = change == "pause" ? "paused" : (change == "permission" ? "awaiting_user" : "running")
+          assert_equal expected, @child.reload.data.dig("trigger", "loop", "state")
+        end
+      end
+
+      test "keep resume dispatches once under the creative lock" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @child, user: agent, permission: :feedback)
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: "paused", agent_id: agent.id
+        ) } })
+        depth = 0
+        original_lock = @child.method(:with_lock)
+        @child.define_singleton_method(:with_lock) do |*args, &block|
+          original_lock.call(*args) do
+            depth += 1
+            begin
+              block.call
+            ensure
+              depth -= 1
+            end
+          end
+        end
+        operation = command(action: "resume")
+        created = nil
+        original_create = operation.method(:create_trigger_comment)
+        operation.define_singleton_method(:create_trigger_comment) do |*args, **kwargs|
+          created = original_create.call(*args, **kwargs)
+        end
+        dispatches = []
+        SystemEvents::Dispatcher.stub(:dispatch, lambda { |_event, payload, **_options|
+          assert_operator depth, :>, 0
+          dispatches << payload
+          [ agent ]
+        }) do
+          operation.call
+        end
+        assert created.skip_dispatch
+        assert_equal 1, dispatches.size
+        assert_equal created.id, dispatches.first.dig(:comment, :id)
+        assert_equal [ { id: agent.id } ], dispatches.first.dig(:chat, :mentioned_users)
       end
 
       private

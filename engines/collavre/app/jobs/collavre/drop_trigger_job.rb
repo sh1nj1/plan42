@@ -60,9 +60,17 @@ module Collavre
         # The loop reference and its trigger comment must be created under the
         # topic lock. A concurrent topic move either sees the reference and is
         # rejected, or wins first and makes this stale job a no-op.
-        initialize_trigger_loop(child.reload, topic)
-        comment = find_trigger_comment(child, parent, topic) ||
-                  create_trigger_comment(child, parent, agent, topic)
+        child.with_lock do
+          replaced = initialize_trigger_loop(child, topic)
+          next if replaced == :preserve_active_keep
+          comment = (find_trigger_comment(child, parent, topic) unless replaced) ||
+                    create_trigger_comment(child, parent, agent, topic)
+          if replaced
+            data = child.data.deep_dup
+            data["trigger"]["loop"]["start_comment_id"] = comment.id
+            child.update!(data: data)
+          end
+        end
       end
       comment if applied
     end
@@ -146,8 +154,10 @@ module Collavre
 
     def find_trigger_comment(child, parent, topic)
       key = trigger_content_key(child, parent)
-      child.comments.where(topic_id: topic.id)
-           .where("content LIKE ?", "%#{key.first(80)}%")
+      comments = child.comments.where(topic_id: topic.id)
+      start_id = child.data&.dig("trigger", "loop", "start_comment_id")
+      comments = comments.where("id >= ?", start_id) if start_id
+      comments.where("content LIKE ?", "%#{key.first(80)}%")
            .first
     end
 
@@ -172,22 +182,15 @@ module Collavre
         data = child.data || {}
         trigger = data["trigger"] || {}
 
-        # Only initialize if loop doesn't exist yet
-        return if trigger["loop"].present?
+        existing = trigger["loop"]
+        inactive_keep = existing && existing["source"] == "keep" && !%w[running pending_verification].include?(existing["state"])
+        return :preserve_active_keep if existing && existing["source"] == "keep" && !inactive_keep
+        return if existing.present? && !inactive_keep
 
-        trigger["loop"] = {
-          "state" => "running",
-          "current_iteration" => 0,
-          "max_iterations" => 10,
-          "completion_conditions" => [],
-          "stuck_conditions" => [],
-          "on_retry" => "continue",
-          "last_task_id" => nil,
-          "cooldown_seconds" => 10,
-          "trigger_topic_id" => topic&.id
-        }
+        trigger["loop"] = TriggerLoopConfig.build(topic&.id)
         data["trigger"] = trigger
         child.update!(data: data)
+        inactive_keep
       end
     end
 

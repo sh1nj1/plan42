@@ -21,6 +21,7 @@ module Collavre
     end
 
     test "status evaluation sends the verifier default through the real client" do
+      CreativeShare.create!(creative: creatives(:tshirt), user: @verifier, permission: :read)
       request = stub_verifier_response("BLOCKED")
       job = TriggerLoopCheckJob.new
       job.stub(:pick_fallback_agent, @verifier) do

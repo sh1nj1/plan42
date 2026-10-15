@@ -77,7 +77,7 @@ module Collavre
         # only the unmodified dispatch context shares the dispatch's resolver.
         resolver = policy_resolver if context.equal?(@context)
         covering = DeliveryRecord.covering_task(agent, comment_id, context, @event_name, policy_resolver: resolver)
-        if covering && DeliveryRecord.claim_drop!(covering, comment_id)
+        if covering && DeliveryRecord.claim_drop!(covering, comment_id, context: context)
           Rails.logger.info(
             "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \
             "delivered to agent #{agent.id} by in-flight task #{covering.id}"

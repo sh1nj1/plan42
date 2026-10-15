@@ -114,17 +114,25 @@ module Collavre
 
     test "native decisions are preferred and feedback permission includes write" do
       job = TriggerLoopCheckJob.new
-      assert_equal @judge, job.send(:pick_fallback_agent, @child)
+      assert_equal @judge, job.send(:pick_fallback_agent, @parent, @child)
       assert_equal @chat, @child.find_ai_agent(:feedback, capability: :chat)
       assert_equal @judge, @child.find_ai_agent(:feedback, capability: :judge)
     end
 
     test "read-only and locally revoked native agents cannot judge" do
       @judge_share.update!(permission: :read)
-      assert_equal @chat, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @child)
+      assert_equal @chat, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
       @judge_share.update!(permission: :write)
       CreativeShare.create!(creative: @child, user: @judge, permission: :no_access)
       assert_nil @child.find_ai_agent(:feedback, capability: :judge)
+      assert_equal @chat, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
+      assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @chat.id, @child)
+    end
+
+    test "keep continuation rejects a judgment-only task agent" do
+      @child.update!(data: { "trigger" => { "loop" => { "source" => "keep", "agent_id" => @judge.id } } })
+      assert_nil @child.trigger_loop_agent
+      assert @child.keep_loop_agent_unavailable?
     end
 
     test "nearest native share wins across agents" do
@@ -138,36 +146,36 @@ module Collavre
       @judge_share.update!(permission: :read)
       other = users(:three)
       other.update!(llm_vendor: "google", llm_model: "test")
-      share = CreativeShare.create!(creative: @child, user: other, permission: :feedback)
+      share = CreativeShare.create!(creative: @parent, user: other, permission: :feedback)
       job = TriggerLoopVerifyJob.new
-      assert_equal other, job.send(:pick_verifier_agent, @child, @chat.id)
+      assert_equal other, job.send(:pick_verifier_agent, @parent, @chat.id, @child)
       share.update!(permission: :read)
-      assert_equal @chat, job.send(:pick_verifier_agent, @child, @chat.id)
+      assert_equal @chat, job.send(:pick_verifier_agent, @parent, @chat.id, @child)
     end
 
     test "native verifier prefers another native agent over self" do
       @chat.update!(llm_vendor: "openai", llm_model: "gpt-6-luna")
-      assert_equal @judge, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @chat.id)
+      assert_equal @judge, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @chat.id, @child)
       @judge_share.update!(permission: :read)
-      assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @chat.id)
+      assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @chat.id, @child)
     end
 
     test "OpenAI chat agents are not preferred as native verifiers" do
       @chat.update!(llm_vendor: "openai", llm_model: "gpt-4o")
       assert @chat.supports?(:chat)
       assert_not @chat.supports?(:judge)
-      assert_equal @judge, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @child)
-      assert_equal @judge, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @judge.id)
+      assert_equal @judge, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
+      assert_equal @judge, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @judge.id, @child)
 
       @judge_share.update!(permission: :read)
       assert_nil @child.find_ai_agent(:feedback, capability: :judge)
-      assert_equal @chat, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @child)
-      assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @child, @judge.id)
+      assert_equal @chat, TriggerLoopCheckJob.new.send(:pick_fallback_agent, @parent, @child)
+      assert_equal @chat, TriggerLoopVerifyJob.new.send(:pick_verifier_agent, @parent, @judge.id, @child)
     end
 
     test "trigger execution ignores judgment-only agents with write permission" do
       @judge_share.update!(permission: :write)
-      assert_equal @chat, TriggerLoopCheckJob.new.send(:find_trigger_agent, @child)
+      assert_equal @chat, @child.trigger_loop_agent
       assert_equal @chat, DropTriggerJob.new.send(:find_trigger_agent, @child)
     end
 

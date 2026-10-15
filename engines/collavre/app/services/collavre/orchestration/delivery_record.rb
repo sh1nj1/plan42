@@ -29,6 +29,8 @@ module Collavre
     # off that payload and is the single door every reader goes through.
     module DeliveryRecord
       extend RestoredDispatchContext
+      extend RestoredDispatchAdmission
+      extend KeepDispatchRestoration
       # Comment ids a turn delivered as chat history although it was not created
       # for them. Sits beside TaskCoalescer::PAYLOAD_KEY and
       # TaskCoalescer::ACQUIRED_ANCHOR_KEY, which record the other two ways a
@@ -124,6 +126,9 @@ module Collavre
       # way.
       RESTORED_KEY = "restored_dispatch_comment_ids"
 
+      # A refused current keep dispatch is released rather than retried by the sweep.
+      RESTORE_REJECTED_KEY = "rejected_restore_comment_ids"
+
       # StuckDetector failed this `running` row from outside its worker while
       # the worker may still be inside the provider call.
       #
@@ -148,7 +153,7 @@ module Collavre
 
       TURN_SCOPED_KEYS = [
         KEY, DROPPED_KEY, HANDOFF_FAILED_KEY, HANDED_OFF_KEY, HANDED_OFF_IDS_KEY,
-        RESTORED_KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
+        RESTORED_KEY, RESTORE_REJECTED_KEY, KeepDispatchRestoration::KEY, WORKER_SETTLING_KEY, TaskCoalescer::PAYLOAD_KEY,
         TaskCoalescer::ACQUIRED_ANCHOR_KEY, ResumeContext::KEY, *ExecutionFence::KEYS
       ].freeze
 
@@ -380,7 +385,7 @@ module Collavre
           row = Task.lock.find_by(id: task.id)
           payload = row&.trigger_event_payload
           next unless payload.is_a?(Hash)
-          next if restored_ids_in(payload).include?(id)
+          next if restored_ids_in(payload).include?(id) || rejected_restore_ids_in(payload).include?(id)
 
           restored = (restored_ids_in(payload) + [ id ]).uniq.sort
           row.update!(trigger_event_payload: payload.merge(RESTORED_KEY => restored))
@@ -406,12 +411,14 @@ module Collavre
 
       def self.dropped_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[DROPPED_KEY]).compact.map(&:to_i) : []
 
-      def self.pending_restoration?(task)
+      def self.rejected_restore_ids_in(payload) = payload.is_a?(Hash) ? Array(payload[RESTORE_REJECTED_KEY]).compact.map(&:to_i) : []
+
+      def self.pending_restoration?(task, comment_id: nil)
         payload = task&.trigger_event_payload
         return false unless task&.ended_undelivered? && task.agent
 
-        pending = dropped_ids_in(payload) - handed_off_ids_in(payload) - claimed_comment_ids(task)
-        restorable_comments(task, pending).exists?
+        pending = dropped_ids_in(payload) - handed_off_ids_in(payload) - claimed_comment_ids(task) - rejected_restore_ids_in(payload)
+        restorable_comments(task, comment_id ? pending & [ comment_id.to_i ] : pending).exists?
       end
 
       # Take responsibility for a dispatch about to be discarded, or refuse it.
@@ -425,7 +432,7 @@ module Collavre
       # drop costs a redundant turn; taking an unsound one costs the message.
       #
       # @return [Boolean] whether the caller may discard the dispatch
-      def self.claim_drop!(covering, comment_id)
+      def self.claim_drop!(covering, comment_id, context: nil)
         id = comment_id.to_i
         return false if covering.nil? || id.zero?
 
@@ -436,7 +443,7 @@ module Collavre
           next unless task&.status.to_s.in?(IN_FLIGHT_STATUSES) && payload.is_a?(Hash)
 
           dropped = (dropped_ids_in(payload) + [ id ]).uniq.sort
-          task.update!(trigger_event_payload: payload.merge(DROPPED_KEY => dropped))
+          task.update!(trigger_event_payload: record_keep_drop(payload, task, id, context).merge(DROPPED_KEY => dropped))
           claimed = true
         end
         claimed
@@ -524,7 +531,7 @@ module Collavre
         return unless payload.is_a?(Hash) && payload.key?("topic")
 
         orphaned = dropped_ids_in(payload) - handed_off_ids_in(payload) -
-          claimed_comment_ids(task) - restored_ids_in(payload)
+          claimed_comment_ids(task) - restored_ids_in(payload) - rejected_restore_ids_in(payload)
         return if orphaned.empty?
 
         agent = task.agent
@@ -649,64 +656,6 @@ module Collavre
         )
       end
 
-      # Put the dispatch back the way the orchestrator would have, by asking the
-      # same Scheduler again.
-      #
-      # The decision the drop discarded was a decision about *then*. A dispatch
-      # refused while the agent was at its concurrency limit or rate-limited
-      # carried a backoff with it, and enqueuing it now would run it past the
-      # check that set that delay — while the dying turn's own ResourceTracker
-      # slot is very often still held, since this fires from its status
-      # callback. Replaying the delay recorded at drop time would be no better:
-      # by now it describes pressure that may be long gone or much worse.
-      #
-      # Asked again, not merely honoured: a quota exhausted or a loop breaker
-      # tripped between the drop and the restore refuses this dispatch exactly
-      # as it would refuse a fresh one. AgentOrchestrator's own guard keeps
-      # rejected work out of the record; this is the other end of the same
-      # question, and only the scheduler can answer it as of now.
-      #
-      # Enqueued through AiAgentJob rather than AgentOrchestrator#enqueue_jobs
-      # even for a :deferred decision, because the job door re-asks
-      # Matcher#assignment_permits? against the re-anchored payload before it
-      # parks anything — a restored dispatch has moved, and park_waiter would
-      # create the row without that question being asked.
-      def self.enqueue_restored(task, agent, event_name, context)
-        # The one question no door on this path asks. Naming the agent skips
-        # Matcher#match, and every routing path in #match is gated on feedback
-        # permission for the creative; AiAgentJob re-asks the topic assignment
-        # and nothing else. A permission revoked between the drop and the
-        # restore would otherwise be seen by nobody, and this dispatch would
-        # answer a creative the agent may no longer read.
-        unless Matcher.permits_creative_access?(context, agent)
-          Rails.logger.info(
-            "[DeliveryRecord] Not restoring dispatch for comment #{context.dig("comment", "id")}: " \
-            "agent #{agent.id} no longer has feedback permission on creative " \
-            "#{context.dig("creative", "id")}"
-          )
-          return
-        end
-
-        decision = Scheduler.new(context).schedule([ agent ]).first
-        return if decision.nil?
-
-        comment_id = context.dig("comment", "id")
-        case decision[:timing]
-        when :rejected
-          Rails.logger.info(
-            "[DeliveryRecord] Not restoring dispatch for comment #{comment_id}: " \
-            "scheduler rejected agent #{agent.id} (#{decision[:reason]})"
-          )
-        when :delayed
-          enqueue_claimed(task, comment_id) do
-            AiAgentJob.set(wait: decision[:delay]).perform_later(agent.id, event_name, context)
-          end
-        else
-          enqueue_claimed(task, comment_id) { AiAgentJob.perform_later(agent.id, event_name, context) }
-        end
-      end
-      private_class_method :enqueue_restored
-
       def self.restorable_comments(task, ids)
         Comment.public_only.without_approval_action
           .where(id: ids, topic_id: task.topic_id, creative_id: task.creative_id)
@@ -723,9 +672,10 @@ module Collavre
         return unless claim_restore!(task, comment_id)
 
         begin
-          yield
-        rescue StandardError
+          raise ActiveJob::EnqueueError unless yield
+        rescue StandardError => error
           release_restore_claim!(task, comment_id)
+          reject_restore!(task, comment_id) if error.is_a?(ActiveJob::EnqueueError)
           raise
         end
       end

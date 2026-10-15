@@ -2,6 +2,15 @@ require "test_helper"
 
 module Collavre
   class CommandMenuServiceTest < ActiveSupport::TestCase
+    test "keep arguments are localized in parser order" do
+      { en: "[--max 10] [@agent:] [goal]", ko: "[--max 10] [@에이전트:] [목표]" }.each do |locale, expected|
+        I18n.with_locale(locale) do
+          item = CommandMenuService.new(user: users(:one)).send(:keep_item)
+          assert_equal expected, item[:args]
+        end
+      end
+    end
+
     test "returns built-in calendar and topic items" do
       user = users(:one)
       items = CommandMenuService.new(user: user).items

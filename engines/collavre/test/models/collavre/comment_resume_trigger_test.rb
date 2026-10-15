@@ -40,6 +40,48 @@ module Collavre
       })
     end
 
+    test "rejected keep reply resume enqueue retains the awaiting turn" do
+      CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "agent_id" => @ai_bot.id } }))
+      before = @child.reload.data.deep_dup
+      AiAgentJob.stub(:perform_later, false) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic: @topic, user: @human)
+        end
+      end
+      assert_equal before, @child.reload.data
+    end
+
+    test "failed keep reply resume preserves awaiting state and can retry" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"]["source"] = "keep"
+      @child.update!(data: data)
+      previous = @child.reload.data.deep_dup
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise "dispatch failed" }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Continue", topic: @topic, user: @human)
+        end
+      end
+      assert_equal previous, @child.reload.data
+      SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
+        assert_difference -> { @child.comments.count }, 2 do
+          @child.comments.create!(content: "Try again", topic: @topic, user: @human)
+        end
+      end
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "failed reply continuation creation rolls back its claim" do
+      previous = @child.reload.data.deep_dup
+      reply = @child.comments.create!(content: "Continue", topic: @topic, user: @human, skip_dispatch: true)
+      reply.stub(:create_loop_resume, ->(*) { raise "creation failed" }) do
+        assert_no_difference -> { @child.comments.count } do
+          reply.send(:resume_trigger_loop_if_awaiting)
+        end
+      end
+      assert_equal previous, @child.reload.data
+    end
+
     test "human comment in trigger topic resumes awaiting_user loop" do
       SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         assert_difference -> { @child.comments.count }, 2 do
@@ -57,6 +99,15 @@ module Collavre
       resume_comment = @child.comments.order(:created_at).last
       assert_includes resume_comment.content, "@#{@ai_bot.name}:"
       assert_includes resume_comment.content, "🔄"
+    end
+
+    test "private comment does not resume a drop loop" do
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Private input must not dispatch" }) do
+        assert_difference -> { @child.comments.count }, 1 do
+          @child.comments.create!(content: "Private approval", topic: @topic, user: @human, private: true)
+        end
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
     end
 
     test "dispatch-suppressed human comment does not resume awaiting_user loop" do

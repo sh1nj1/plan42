@@ -1,0 +1,165 @@
+# frozen_string_literal: true
+
+module Collavre
+  class Comment
+    module KeepLoop
+      extend ActiveSupport::Concern
+
+      included do
+        attr_accessor :keep_loop_options, :loop_continuation
+        after_create :track_loop_turn, if: :loop_continuation
+        after_create :initialize_keep_loop
+        before_destroy :clear_deleted_keep_turn
+      end
+
+      private
+
+      def clear_deleted_keep_turn
+        Comments::TopicMutation.call(topic_id, creative_id) do
+          creative.with_lock do
+            data = (creative.data || {}).deep_dup
+            config = data.dig("trigger", "loop")
+            next unless config && config["source"] == "keep" && config["current_comment_id"] == id
+
+            data["trigger"].delete("loop")
+            creative.update!(data: data)
+          end
+        end
+      end
+
+      def dispatch_loop_generation
+        config = creative&.data&.dig("trigger", "loop")
+        return unless config && config["source"] == "keep" && config["current_comment_id"] == id
+
+        config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+      end
+
+      def loop_dispatch_chat
+        chat = { content: content }
+        config = creative&.data&.dig("trigger", "loop")
+        if config && config["source"] == "keep" && config["agent_id"].present? &&
+           [ config["start_comment_id"], config["current_comment_id"] ].include?(id)
+          chat[:mentioned_users] = [ { id: config["agent_id"] } ]
+        end
+        chat
+      end
+
+      def public_human_loop_reply?
+        user_id.present? && !user&.ai_user? && !approval_action? && !self.private?
+      end
+
+      def orchestration_topic_blocked?
+        (creative.inbox? && inbox_system_topic?) || blocked_keep_reply?
+      end
+
+      def blocked_keep_reply?
+        @keep_reply_dispatch_checked = true
+        @blocked_keep_reply_snapshot = nil
+        config = Creative.where(id: creative_id).pick(:data)&.dig("trigger", "loop")
+        @blocked_keep_reply_snapshot = config.deep_dup if config && config["state"] == "awaiting_user"
+        config && config["state"] == "awaiting_user" && config["trigger_topic_id"] == topic_id &&
+          config["source"] == "keep"
+      end
+
+      def track_loop_turn
+        creative.with_lock do
+          data = (creative.data || {}).deep_dup
+          loop_data = data.dig("trigger", "loop")
+          return unless loop_data && loop_data["source"] == "keep" && loop_data["state"] == "running"
+
+          loop_data["current_comment_id"] = id
+          creative.update!(data: data)
+        end
+      end
+
+      def dispatch_loop_comment
+        agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload,
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self), require_enqueue_ack: creative.keep_loop?)
+        reconcile_loop_dispatch(agents)
+      rescue StandardError
+        reconcile_loop_dispatch([], notify: false)
+        raise
+      end
+
+      def reconcile_loop_dispatch(agents, notify: true)
+        return unless creative.keep_loop?
+
+        creative.with_lock do
+          data = (creative.data || {}).deep_dup
+          loop_data = data.dig("trigger", "loop")
+          return unless loop_data && loop_data["source"] == "keep" && loop_data["state"] == "running"
+          return unless loop_data["current_comment_id"] == id && agents.blank?
+
+          loop_data["state"] = "awaiting_user"
+          creative.update!(data: data)
+        end
+        return unless notify
+
+        creative.comments.create!(content: I18n.t("collavre.comments.keep_command.no_agent"),
+                                  topic_id: topic_id, skip_default_user: true)
+      end
+
+      def post_loop_resume(iteration, max, snapshot)
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          creative.with_lock do
+            next unless creative.data&.dig("trigger", "loop") == snapshot
+            next unless snapshot["state"] == "running"
+            if creative.keep_loop_agent_unavailable?
+              creative.update!(data: creative.data.deep_merge("trigger" => { "loop" => { "state" => "awaiting_user" } }))
+              next
+            end
+
+            create_loop_resume(iteration, max)
+          end
+        end
+      end
+
+      def create_loop_resume(iteration, max)
+        return unless creative.trigger_loop_enabled?
+
+        agent = creative.trigger_loop_agent
+        return unless agent || creative.keep_loop?
+
+        comment = creative.comments.create!(
+          content: "#{"@#{agent.name}: " if agent}#{I18n.t(
+            'collavre.trigger_loop.user_resumed',
+            iteration: iteration,
+            max: max
+          )}",
+          topic_id: topic_id,
+          private: false,
+          user: creative.user,
+          loop_continuation: true, skip_dispatch: true
+        )
+        agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment), require_enqueue_ack: creative.keep_loop?)
+        comment.send(:reconcile_loop_dispatch, agents)
+        comment
+      end
+
+      def initialize_keep_loop
+        return unless keep_loop_options
+
+        applied = Comments::TopicMutation.call(topic_id, creative_id) { persist_keep_loop }
+        return if applied
+
+        errors.add(:topic, I18n.t("collavre.comments.invalid_topic"))
+        raise ActiveRecord::RecordInvalid, self
+      end
+
+      def persist_keep_loop
+        creative.with_lock do
+          if %w[running pending_verification].include?(creative.data&.dig("trigger", "loop", "state"))
+            errors.add(:base, I18n.t("collavre.comments.keep_command.already_running"))
+            raise ActiveRecord::RecordInvalid, self
+          end
+
+          data = (creative.data || {}).deep_dup
+          data["trigger"] ||= {}
+          data["trigger"]["loop"] = TriggerLoopConfig.build(topic_id, source: "keep", start_comment_id: id, current_comment_id: id, **keep_loop_options)
+          creative.update!(data: data)
+        end
+      end
+    end
+  end
+end

@@ -20,9 +20,11 @@ module Collavre
         # write transaction + row lock just to find that out.
         return unless trigger_loop_resumable?(Creative.where(id: creative.id).pick(:data))
 
-        progress = claim_awaiting_trigger_loop
-        # Post continue instruction outside lock (state already committed)
-        post_trigger_loop_resume(*progress) if progress
+        # Claim and dispatch roll back together under topic -> creative locks.
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          progress = claim_awaiting_trigger_loop
+          post_loop_resume(*progress) if progress
+        end
       rescue StandardError => e
         Rails.logger.error(
           "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
@@ -30,12 +32,10 @@ module Collavre
         )
       end
 
+      # Human, public, non-approval replies only: private input is absent from
+      # agent history, and the approval surface is not a user-resume signal.
       def trigger_loop_resume_candidate?
-        return false unless user_id          # must have a user (not system)
-        return false if user&.ai_user?       # must be a human, not an AI agent
-        return false if approval_action?     # approval surface is not a user-resume signal; the resumed @agent turn would otherwise carry it into history
-
-        creative.present?
+        public_human_loop_reply? && creative.present?
       end
 
       # True when the loop is awaiting user input and this comment is in its
@@ -43,45 +43,33 @@ module Collavre
       def trigger_loop_resumable?(data)
         loop_data = data&.dig("trigger", "loop")
         return false unless loop_data.is_a?(Hash) && loop_data["state"] == "awaiting_user"
+        return false if id.present? && loop_data["current_comment_id"] == id
 
         trigger_topic_id = loop_data["trigger_topic_id"]
         trigger_topic_id.blank? || trigger_topic_id == topic_id
       end
 
       # Pessimistic lock prevents duplicate resumes from concurrent comments.
-      # Returns [iteration, max] when this comment moved the loop to running,
-      # nil when the re-check under the lock finds it no longer resumable
-      # (e.g. a concurrent comment resumed it after the precheck).
+      # Returns [iteration, max, snapshot] when this comment moved the loop to
+      # running, nil when the re-check under the lock finds it no longer
+      # resumable (e.g. a concurrent comment resumed it after the precheck, or
+      # the selected keep agent became unavailable).
       def claim_awaiting_trigger_loop
         creative.with_lock do
           data = creative.data
           next unless trigger_loop_resumable?(data)
+          next if creative.keep_loop_agent_unavailable?
+          # A public reply already sent through ordinary routing must not also
+          # resume a newly blocked keep turn.
+          if @keep_reply_dispatch_checked && creative.keep_loop?
+            next unless data.dig("trigger", "loop") == @blocked_keep_reply_snapshot
+          end
 
           loop_cfg = data["trigger"]["loop"]
           loop_cfg["state"] = "running"
           creative.update!(data: data)
-          [ loop_cfg["current_iteration"] || 0, loop_cfg["max_iterations"] || 10 ]
+          [ loop_cfg["current_iteration"] || 0, loop_cfg["max_iterations"] || 10, loop_cfg.deep_dup ]
         end
-      end
-
-      def post_trigger_loop_resume(iteration, max)
-        parent = creative.parent
-        return unless parent&.drop_trigger_enabled?
-
-        agent = parent.find_ai_agent(:write, capability: :chat)
-        return unless agent
-
-        creative.comments.create!(
-          content: "@#{agent.name}: #{I18n.t(
-            'collavre.trigger_loop.user_resumed',
-            iteration: iteration,
-            max: max
-          )}",
-          topic_id: topic_id,
-          private: false,
-          user: creative.user,
-          skip_dispatch: false
-        )
       end
     end
   end

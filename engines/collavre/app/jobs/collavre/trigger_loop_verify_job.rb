@@ -19,31 +19,27 @@ module Collavre
       return unless task&.creative
 
       child_creative = task.creative
-      parent_creative = child_creative.parent
-      return unless parent_creative&.drop_trigger_enabled?
+      parent_creative = child_creative.trigger_loop_context
+      return unless child_creative.trigger_loop_enabled?
 
       loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "pending_verification"
 
-      topic = Topic.find_by(id: task.topic_id)
+      topic = trigger_completion_topic(task, loop_config)
       return unless topic
-
-      # Only verify tasks from the loop's trigger topic (cross-topic guard)
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
 
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
-      instructions = collect_instructions(child_creative, parent_creative)
-      verifier = pick_verifier_agent(child_creative, task.agent_id)
+      verifier = pick_verifier_agent(parent_creative, task.agent_id, child_creative)
 
-      unless verifier
+      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
         # No verifier available — accept DONE as-is
         update_loop_data(child_creative, state: "completed")
         return
       end
 
+      instructions = collect_instructions(child_creative, parent_creative, verifier)
       result = verify_completion(verifier, instructions, last_agent_comment.content.to_s, task)
 
       if result == :verified
@@ -72,32 +68,23 @@ module Collavre
           post_verification_failed(child_creative, topic, task.agent, iteration, max, result)
         end
       end
+    rescue TriggerLoopHelpers::StaleLoopError
+      nil
     end
 
     private
 
     # Collect instructions from context creatives of both parent and child
-    def collect_instructions(child_creative, parent_creative)
-      parts = []
-      seen_ids = Set.new
+    def collect_instructions(child_creative, parent_creative, verifier)
+      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
+      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
+      contexts.each do |ctx|
+        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
 
-      # Parent's context creatives (trigger instructions, dev rules, etc.)
-      parent_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
         desc = ctx.description.to_s.strip
         parts << desc if desc.present?
       end
 
-      # Child's own context creatives (may have additional instructions)
-      child_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      # Child's own description (the task itself)
       child_desc = child_creative.description.to_s.strip
       parts << "Task: #{child_desc}" if child_desc.present?
 
@@ -107,8 +94,12 @@ module Collavre
     # Pick a verifier AI agent: prefer one with feedback+ permission that
     # is NOT the original task agent. Fall back to the task agent only if
     # no other AI agent exists.
-    def pick_verifier_agent(creative, task_agent_id)
-      decision_agent(creative, task_agent_id)
+    def pick_verifier_agent(creative, task_agent_id, child_creative)
+      task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
+      ai_agents = (creative.all_shared_users(:feedback).map(&:user) + [ task_agent ]).compact.uniq(&:id)
+                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+
+      decision_agent(ai_agents, task_agent_id)
     end
 
     VERIFY_SYSTEM_PROMPT = <<~PROMPT.freeze
@@ -165,21 +156,21 @@ module Collavre
     end
 
     def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)
-      return unless task_agent
+      task_agent = continuation_agent(child_creative, topic) if child_creative.keep_loop?
+      return unless task_agent || child_creative.keep_loop?
 
-      content = "@#{task_agent.name}: #{I18n.t(
+      content = "#{"@#{task_agent.name}: " if task_agent}#{I18n.t(
         'collavre.trigger_loop.verification_failed',
         iteration: iteration,
         max: max,
         reason: reason.to_s.truncate(500)
       )}"
 
-      child_creative.comments.create!(
+      post_loop_instruction(child_creative,
         content: content,
         topic_id: topic.id,
         private: false,
-        user: child_creative.user,
-        skip_dispatch: false
+        user: child_creative.user
       )
     end
   end

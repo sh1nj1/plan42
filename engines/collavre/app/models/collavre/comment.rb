@@ -162,6 +162,7 @@ module Collavre
 
     has_many_attached :images, dependent: :purge_later
 
+    include KeepLoop
     include Broadcastable
     include Notifiable
     include Approvable
@@ -229,7 +230,8 @@ module Collavre
           content: content,
           user_id: user_id,
           from_ai: user&.searchable? || false,
-          quoted_comment_id: quoted_comment_id
+          quoted_comment_id: quoted_comment_id,
+          keep_loop_generation: dispatch_loop_generation
         }.compact,
         creative: {
           id: creative_id,
@@ -238,9 +240,7 @@ module Collavre
         topic: {
           id: topic_id
         },
-        chat: {
-          content: content
-        }
+        chat: loop_dispatch_chat
       }
     end
 
@@ -531,7 +531,7 @@ module Collavre
       # Orchestration::Matcher, which scopes a Claude session agent to its own
       # registered session topic — keeping non-System topics truly identical to a
       # normal topic whether or not a session is live.
-      return if creative.inbox? && inbox_system_topic?
+      return if orchestration_topic_blocked?
 
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
@@ -547,7 +547,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self))
+      dispatch_loop_comment
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
