@@ -10,7 +10,10 @@ module Collavre
       raise ArgumentError, "A decision needs questions" if questions.blank?
 
       @definitions = questions.deep_stringify_keys
-      definitions.each_value { |definition| answer_schema(definition) }
+      definitions.each do |name, definition|
+        validate_question!(name, definition)
+        answer_schema(definition)
+      end
     end
 
     def schema
@@ -33,6 +36,16 @@ module Collavre
     end
 
     private
+
+    def validate_question!(name, definition)
+      raise ArgumentError, "A question name cannot be empty" if name.empty?
+      raise ArgumentError, "Each question must be a Hash" unless definition.is_a?(Hash)
+
+      criteria_key = { "choice" => "options", "probability" => "criteria", "score" => "levels" }
+        .fetch(definition["type"].to_s) { raise ArgumentError, "Unsupported question type" }
+      extra = definition.keys - [ "type", "instructions", criteria_key ]
+      raise ArgumentError, "Unknown question options: #{extra.join(', ')}" unless extra.empty?
+    end
 
     def answer_schema(definition)
       unless description?(definition["instructions"])

@@ -382,6 +382,40 @@ module Collavre
       end
     end
 
+    test "invalid question names and unknown keys fail before adapter selection" do
+      invalid = [
+        { "" => { type: :probability } },
+        { done: { type: :probability, unused: nil } },
+        { done: { type: :probability, options: { YES: "Yes", NO: "No" } } },
+        { status: { type: :choice, options: { DONE: "Done", WAIT: "Wait" }, criteria: {} } },
+        { score: { type: :score, levels: [ "Low", "High" ], options: {} } },
+        { done: "probability" },
+        { done: { type: :unknown } }
+      ]
+      %w[google typesafe].each do |vendor|
+        client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Invalid question reached native adapter" }) do
+          client.stub(:chat_decision, ->(*) { flunk "Invalid question reached chat adapter" }) do
+            invalid.each do |questions|
+              assert_raises(ArgumentError) { client.judge("Task", questions: questions) }
+            end
+          end
+        end
+      end
+    end
+
+    test "question names allow whitespace and type-specific keys" do
+      questions = {
+        " " => { type: :probability, instructions: nil, criteria: { yes: "Yes" } },
+        status: { type: :choice, instructions: "Select", options: { DONE: nil, WAIT: nil } },
+        rating: { type: :score, instructions: [], levels: [ "Low", "High" ] }
+      }
+      definitions = DecisionQuestions.new(questions)
+      assert_equal questions.deep_stringify_keys, definitions.definitions
+      assert_equal [ " ", "status", "rating" ],
+        definitions.schema.dig(:properties, :answers, :required)
+    end
+
     test "question instructions accept native description types" do
       [ nil, "", "Judge carefully", { "rubric" => "Done" }, [ "Done" ] ].each do |instructions|
         definitions = DecisionQuestions.new(done: { type: :probability, instructions: instructions })
