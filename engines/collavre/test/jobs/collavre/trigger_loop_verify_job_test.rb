@@ -63,6 +63,44 @@ module Collavre
       )
     end
 
+    test "keep evaluator filters context by the selected verifier current read permission" do
+      verifier = users(:two)
+      CreativeShare.create!(creative: @child, user: verifier, permission: :feedback)
+      visible = Creative.create!(description: "Visible context instructions", user: @human)
+      hidden = Creative.create!(description: "Private context secret", user: @human)
+      revoked = Creative.create!(description: "Revoked context secret", user: @human)
+      CreativeShare.create!(creative: visible, user: verifier, permission: :read)
+      share = CreativeShare.create!(creative: revoked, user: verifier, permission: :read)
+      CreativeShare.create!(creative: revoked, user: nil, permission: :read)
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      # Emulate revocation before the asynchronous cache invalidation runs.
+      share.update_columns(permission: :no_access)
+      assert revoked.has_permission?(verifier, :read), "The asynchronous cache still grants the revoked share"
+      @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, hidden.id ]))
+      data = @child.data.deep_dup
+      data["context_ids"] = [ visible.id, revoked.id ]
+      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Keep goal")
+      @child.update!(data: data)
+      client = Object.new
+      check_prompt = ->(messages) {
+        prompt = messages.first.fetch(:text)
+        assert_includes prompt, visible.description
+        assert_equal 1, prompt.scan(visible.description).size
+        assert_includes prompt, "Keep goal"
+        refute_includes prompt, hidden.description
+        refute_includes prompt, revoked.description
+      }
+      client.define_singleton_method(:chat) do |messages, &block|
+        check_prompt.call(messages)
+        block.call("VERIFIED")
+      end
+      job = TriggerLoopVerifyJob.new
+      job.stub(:pick_verifier_agent, verifier) do
+        AiClient.stub(:new, client) { job.perform(@task.id) }
+      end
+      assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "failed verification continuation dispatch preserves the retryable verification turn" do
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
@@ -175,6 +213,7 @@ module Collavre
 
     test "keep without a goal inherits the drop container instructions in both evaluators" do
       instruction = Creative.create!(description: "Stage acceptance instructions", user: @human)
+      CreativeShare.create!(creative: instruction, user: @ai_bot, permission: :read)
       @parent.update!(data: @parent.data.merge("context_ids" => [ instruction.id ]))
       data = @child.data.deep_dup
       data["trigger"]["loop"].merge!("source" => "keep", "goal" => "")
@@ -188,7 +227,7 @@ module Collavre
         verifier.perform(@task.id)
       end
       assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
-      instructions = TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child.trigger_loop_context)
+      instructions = TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child.trigger_loop_context, @ai_bot)
       assert_includes instructions, instruction.description
     end
 
@@ -203,7 +242,7 @@ module Collavre
       data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Deliver keep")
       @child.update!(data: data)
       job = TriggerLoopVerifyJob.new
-      assert_includes job.send(:collect_instructions, @child, @child), "Deliver keep"
+      assert_includes job.send(:collect_instructions, @child, @child, @ai_bot), "Deliver keep"
       job.send(:post_verification_failed, @child, @topic, @ai_bot, 2, 10, "Missing tests")
       refute_match(/@/, @child.comments.order(:id).last.content)
     end

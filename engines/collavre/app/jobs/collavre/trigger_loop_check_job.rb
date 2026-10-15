@@ -219,7 +219,7 @@ module Collavre
         return :continue
       end
 
-      instructions = collect_fallback_instructions(child_creative, parent_creative)
+      instructions = collect_fallback_instructions(child_creative, parent_creative, verifier)
 
       prompt = <<~PROMPT
         ## Task instructions:
@@ -278,20 +278,12 @@ module Collavre
     end
 
     # Collect instructions from context creatives for LLM evaluation
-    def collect_fallback_instructions(child_creative, parent_creative)
+    def collect_fallback_instructions(child_creative, parent_creative, verifier)
       parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
-      seen_ids = Set.new
+      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
+      contexts.each do |ctx|
+        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
 
-      parent_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      child_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
         desc = ctx.description.to_s.strip
         parts << desc if desc.present?
       end

@@ -62,6 +62,45 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "keep evaluator filters context by the selected verifier current read permission" do
+      verifier = users(:two)
+      CreativeShare.create!(creative: @child, user: verifier, permission: :feedback)
+      visible = Creative.create!(description: "Visible context instructions", user: @human)
+      hidden = Creative.create!(description: "Private context secret", user: @human)
+      revoked = Creative.create!(description: "Revoked context secret", user: @human)
+      CreativeShare.create!(creative: visible, user: verifier, permission: :read)
+      share = CreativeShare.create!(creative: revoked, user: verifier, permission: :read)
+      CreativeShare.create!(creative: revoked, user: nil, permission: :read)
+      PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
+      # Emulate revocation before the asynchronous cache invalidation runs.
+      share.update_columns(permission: :no_access)
+      assert revoked.has_permission?(verifier, :read), "The asynchronous cache still grants the revoked share"
+      @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, hidden.id ]))
+      data = @child.data.deep_dup
+      data["context_ids"] = [ visible.id, revoked.id ]
+      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Keep goal")
+      @child.update!(data: data)
+      @child.comments.create!(content: "Finished work", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
+      client = Object.new
+      check_prompt = ->(messages) {
+        prompt = messages.first.fetch(:text)
+        assert_includes prompt, visible.description
+        assert_equal 1, prompt.scan(visible.description).size
+        assert_includes prompt, "Keep goal"
+        refute_includes prompt, hidden.description
+        refute_includes prompt, revoked.description
+      }
+      client.define_singleton_method(:chat) do |messages, &block|
+        check_prompt.call(messages)
+        block.call("BLOCKED")
+      end
+      job = TriggerLoopCheckJob.new
+      job.stub(:pick_fallback_agent, verifier) do
+        AiClient.stub(:new, client) { job.perform(@task.id) }
+      end
+      assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "failed continuation and infrastructure dispatch preserve the retryable keep turn" do
       [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |response|
         data = @child.reload.data.deep_dup
@@ -405,7 +444,7 @@ module Collavre
       continuation = @child.comments.order(:id).last
       assert_includes continuation.content, I18n.t("collavre.trigger_loop.continue", iteration: 1, max: 3)
       refute_match(/@/, continuation.content)
-      assert_includes TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child), "Deliver the feature"
+      assert_includes TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child, @ai_bot), "Deliver the feature"
     end
 
     test "keep completion uses the shared verification job" do

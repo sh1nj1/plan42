@@ -126,3 +126,8 @@ If continuation, infrastructure-retry, or failed-verification dispatch raises,
 the new comment and tasks roll back and the accepted evaluator turn is restored,
 including its previous iteration and retry counters. The evaluator can retry
 that turn; recovery never overwrites a newer Pause or replacement loop.
+
+Status evaluators and completion verifiers include a configured context creative
+only when the selected verifier currently has read permission. These checks use
+authoritative shares, so revocation and explicit denial take effect even before
+the asynchronous permission cache refreshes. Readable contexts remain deduplicated.

@@ -31,7 +31,6 @@ module Collavre
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
-      instructions = collect_instructions(child_creative, parent_creative)
       verifier = pick_verifier_agent(parent_creative, task.agent_id)
 
       unless verifier
@@ -40,6 +39,7 @@ module Collavre
         return
       end
 
+      instructions = collect_instructions(child_creative, parent_creative, verifier)
       result = verify_completion(verifier, instructions, last_agent_comment.content.to_s, task)
 
       if result == :verified
@@ -75,27 +75,16 @@ module Collavre
     private
 
     # Collect instructions from context creatives of both parent and child
-    def collect_instructions(child_creative, parent_creative)
+    def collect_instructions(child_creative, parent_creative, verifier)
       parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
-      seen_ids = Set.new
+      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
+      contexts.each do |ctx|
+        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
 
-      # Parent's context creatives (trigger instructions, dev rules, etc.)
-      parent_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
         desc = ctx.description.to_s.strip
         parts << desc if desc.present?
       end
 
-      # Child's own context creatives (may have additional instructions)
-      child_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      # Child's own description (the task itself)
       child_desc = child_creative.description.to_s.strip
       parts << "Task: #{child_desc}" if child_desc.present?
 
