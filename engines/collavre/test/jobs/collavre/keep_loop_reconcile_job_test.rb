@@ -262,6 +262,20 @@ module Collavre
       assert_equal "running", config["state"]
     end
 
+    test "promoting an old waiter starts a fresh publication grace before enqueue" do
+      prepare_entry(:promotion)
+      @task.update_columns(updated_at: 1.hour.ago)
+      AiAgentJob.stub(:perform_later, ->(*) {
+        KeepLoopReconcileJob.perform_now
+        assert_equal "pending", @task.reload.status
+        assert_equal "running", config["state"]
+        false
+      }) { attempt_entry(:promotion) }
+      recover_after_grace
+      assert_equal "cancelled", @task.reload.status
+      assert_equal "awaiting_user", config["state"]
+    end
+
     private
 
     def config = @creative.reload.data.dig("trigger", "loop")
