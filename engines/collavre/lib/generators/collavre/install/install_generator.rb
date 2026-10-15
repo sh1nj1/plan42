@@ -22,7 +22,7 @@ module Collavre
       end
 
       def install_pdf_dependency
-        run "npm install pdfjs-dist@^6.4.299", abort_on_failure: true
+        run "npm install pdfjs-dist@4.8.69", abort_on_failure: true
       end
 
       def show_post_install

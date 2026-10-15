@@ -14,7 +14,7 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
     generator = self.class.generator_class.new([], {}, destination_root: destination_root)
     Rails.stub(:root, Pathname.new(destination_root)) do
       generator.stub(:run, ->(command, **options) {
-        assert_equal "npm install pdfjs-dist@^6.4.299", command
+        assert_equal "npm install pdfjs-dist@4.8.69", command
         assert_equal true, options[:abort_on_failure]
       }) { generator.invoke_all }
     end
@@ -33,7 +33,7 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
     generator = self.class.generator_class.new([], {}, destination_root: destination_root)
     Rails.stub(:root, Pathname.new(destination_root)) do
       generator.stub(:run, ->(command, **options) {
-        assert_equal "npm install pdfjs-dist@^6.4.299", command
+        assert_equal "npm install pdfjs-dist@4.8.69", command
         assert_equal true, options[:abort_on_failure]
       }) { generator.invoke_all }
     end
