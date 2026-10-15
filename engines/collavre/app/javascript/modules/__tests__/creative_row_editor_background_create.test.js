@@ -11,6 +11,7 @@ const saveMock = jest.fn()
 const alertDialogMock = jest.fn(() => Promise.resolve())
 const confirmDialogMock = jest.fn(() => Promise.resolve(true))
 let deletedAttachments = []
+let editorOptions = null
 
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
   createInlineEditor: createInlineEditorMock,
@@ -90,7 +91,7 @@ async function pressEnter() {
 describe('Enter on a new creative saves it in the background', () => {
   beforeAll(() => {
     defineTreeRowStub()
-    createInlineEditorMock.mockImplementation(() => ({
+    createInlineEditorMock.mockImplementation((container, options) => (editorOptions = options, {
       destroy: jest.fn(),
       load: jest.fn(),
       focus: jest.fn(),
@@ -676,6 +677,40 @@ describe('Enter on a new creative saves it in the background', () => {
     await flush()
 
     expect(template().parentElement).toBe(other)
+  })
+
+  test.each([
+    ['Enter', () => document.getElementById('inline-add').click(), (opened, existing) => opened.parentElement.previousElementSibling?.querySelector('.creative-tree') === existing],
+    ['Alt+Enter', () => editorOptions.onKeyDown({ key: 'Enter', altKey: true, preventDefault: jest.fn() }, {}), (opened, existing) => existing.contains(opened)],
+  ])('a click that waits out a pending create yields to a later %s whose save is still waiting', async (_key, add, placedFromExisting) => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve('{}') }))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const { tree: existing } = appendExistingRow(5)
+    clickRow(existing)
+    await flush()
+    type('edited existing')
+    window.creativeRowEditor.setUploadsPending(true)
+
+    clickRow(first)
+    await flush()
+    add()
+    await flush()
+
+    firstPost.resolve(created(77))
+    await flush()
+    expect(template().parentElement).toBe(existing)
+
+    window.creativeRowEditor.resolveUploadCompletion()
+    await flush()
+
+    const opened = editingTree()
+    expect(opened).not.toBe(first)
+    expect(opened).not.toBe(existing)
+    expect(placedFromExisting(opened, existing)).toBe(true)
+    expect(first.querySelector('.creative-row').style.display).not.toBe('none')
   })
 
   test('a move that waits out a pending create yields to a later click', async () => {

@@ -1375,11 +1375,12 @@ function setupEditorSession() {
       if (!currentTree) return;
 
       // Prevent multiple simultaneous calls to addNew (e.g., from Lexical onChange + keyboard event)
-      if (addNewInProgress) {
-        return;
-      }
+      if (addNewInProgress) return;
       addNewInProgress = true;
       setTimeout(() => { addNewInProgress = false; }, 300);
+      // Claimed before the awaits below so a click still waiting on a pending
+      // create yields to this Enter instead of rebinding the form under it.
+      editTickets.take();
 
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
@@ -1443,6 +1444,7 @@ function setupEditorSession() {
 
     async function addChild() {
       if (!currentTree) return;
+      editTickets.take();
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
