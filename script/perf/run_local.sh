@@ -45,12 +45,27 @@ stop_server() {
 }
 trap stop_server EXIT
 
+# Measure only a server this script started: anything already answering on
+# the port would run with its own capacity settings, not the requested ones.
+if [ -f "$PID_FILE" ]; then
+  if kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    echo "a perf server is already running (pid $(cat "$PID_FILE")); stop it first"; exit 1
+  fi
+  rm -f "$PID_FILE"
+fi
+if curl -s -o /dev/null "http://127.0.0.1:$PORT/up"; then
+  echo "port $PORT is already in use; set PERF_PORT to a free port"; exit 1
+fi
+
 bin/rails server -p "$PORT" -b 127.0.0.1 -P "$PID_FILE" >"$SERVER_LOG" 2>&1 &
+SERVER_PID=$!
 
 for _ in $(seq 1 60); do
+  kill -0 "$SERVER_PID" 2>/dev/null || { echo "server exited during boot; see $SERVER_LOG"; exit 1; }
   curl -fs "http://127.0.0.1:$PORT/up" >/dev/null 2>&1 && break
   sleep 1
 done
-curl -fs "http://127.0.0.1:$PORT/up" >/dev/null || { echo "server did not boot; see $SERVER_LOG"; exit 1; }
+kill -0 "$SERVER_PID" 2>/dev/null && curl -fs "http://127.0.0.1:$PORT/up" >/dev/null ||
+  { echo "server did not boot; see $SERVER_LOG"; exit 1; }
 
 PERF_BASE_URL="http://127.0.0.1:$PORT" bin/rails runner script/perf/multi_user_agents.rb
