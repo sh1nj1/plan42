@@ -112,6 +112,10 @@ bin/dev                                   # dev server on :3000
 bin/rake test && bin/rails test:system   # tests required before PR; pre-push tests are temporarily disabled
 ```
 
+`bin/dev` also starts the Solid Queue worker and recurring scheduler. Development
+jobs use the development database, including the minute-by-minute keep recovery
+sweep; run `bin/jobs` separately when starting Rails without `bin/dev`.
+
 System tests require a locally installed, trusted ChromeDriver on `PATH` or at
 `CHROMEDRIVER_PATH`. Install a driver compatible with your Chrome version through
 your trusted package manager or a verified Chrome for Testing distribution.

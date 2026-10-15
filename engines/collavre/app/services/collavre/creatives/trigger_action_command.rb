@@ -77,22 +77,41 @@ module Collavre
       end
 
       def transition_loop(allowed_states)
-        start_comment_id = creative.data&.dig("trigger", "loop", "start_comment_id")
+        snapshot = creative.data&.dig("trigger", "loop")&.deep_dup
         topic_id = control_topic_id(creative.data&.dig("trigger", "loop"))
         Comments::TopicMutation.call(topic_id, creative.id) do
           creative.with_lock do
             data = (creative.data || {}).deep_dup
             loop_data = data.dig("trigger", "loop")
             return unless loop_data && allowed_states.include?(loop_data["state"])
-            next unless control_topic_id(loop_data) == topic_id && loop_data["start_comment_id"] == start_comment_id
+            next unless control_admitted?(loop_data, snapshot)
 
             yield loop_data
-            loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1
+            advance_control!(data, loop_data)
             creative.update!(data: data)
             @transitioned_loop_data = loop_data
             post_continue_to_agent if action == "resume"
             post_restart_trigger if action == "restart"
           end
+        end
+      end
+
+      def advance_control!(data, loop_data)
+        loop_data["generation"] = KeepLoop.next_generation!(data) if loop_data["source"] == "keep"
+        loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1
+      end
+
+      def control_admitted?(current, snapshot)
+        return false unless snapshot
+
+        return false unless current.slice("state", "control_version", "source") == snapshot.slice("state", "control_version", "source")
+
+        if snapshot["source"] == "keep" && snapshot["generation"]
+          KeepLoop.admit!(creative, generation: snapshot["generation"], comment_id: snapshot["current_comment_id"])
+        else
+          # Drop and legacy controls retain their pre-generation anchor fence.
+          keys = %w[start_comment_id current_comment_id trigger_topic_id]
+          current.slice(*keys) == snapshot.slice(*keys)
         end
       end
 

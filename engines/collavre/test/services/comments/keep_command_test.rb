@@ -354,7 +354,7 @@ module Collavre
         comment.skip_dispatch = true
         comment.save!
         old_task = Task.new(trigger_event_payload: { "comment" => { "id" => comment.id - 1 } })
-        current_task = Task.new(trigger_event_payload: { "comment" => { "id" => comment.id } })
+        current_task = Task.new(trigger_event_payload: comment.dispatch_payload.deep_stringify_keys)
         refute @creative.reload.trigger_loop_task?(old_task)
         assert @creative.trigger_loop_task?(current_task)
       end

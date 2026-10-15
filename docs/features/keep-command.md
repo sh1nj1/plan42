@@ -145,6 +145,35 @@ and drop loops are preserved.
 
 ### Interrupted turns
 
+`Collavre::KeepLoopReconcileJob` runs every minute as a backstop for missing
+callbacks and discarded jobs. A running keep loop must have a live owner or
+be released to `awaiting_user` within the recovery grace plus one sweep interval.
+Recovery also covers a lost completion-verification job. It preserves iteration
+and retry counters and revalidates the loop snapshot under topic and creative
+locks before changing state.
+
+Set `keep_loop_reconcile_grace_seconds` through `SystemSetting` to tune the
+grace; the default is 900 seconds, allowing the ten-minute restoration sweep
+to run first. Active and waiting current-turn tasks, executable queue jobs,
+and fresh dispatch/restoration leases retain ownership. A promoted `pending`
+Task requires an executable job or a fresh publication grace; if its job is
+lost, recovery cancels the pending slot as well as releasing an unowned loop.
+Failed jobs and claims
+whose worker heartbeat expired do not. Expired dispatch reservations and
+abandoned restoration claims are retired. A queue lookup failure defers recovery
+rather than assuming there is no owner. Existing callbacks still release turns
+promptly.
+
+| State | Event | Result |
+| --- | --- | --- |
+| `running` | Current task, executable job, or fresh lease exists | Keep `running`; clear recovery observation |
+| `running` | No owner, grace has not elapsed | Keep `running`; observe the unchanged snapshot |
+| `running` | No owner after grace | `awaiting_user`; preserve counters |
+| `pending_verification` | Verification job is lost and grace expires | `awaiting_user`; preserve counters |
+| Any active state | Queue evidence unavailable | Preserve state and ownership records; retry next sweep |
+| Any active state | Pause or replacement wins before recovery | Preserve the newer snapshot |
+| Inactive state | Recovery sweep | No change |
+
 Stopping, failing, or escalating the last task serving the current keep turn
 changes a running loop to `awaiting_user`. Completing without a finalized reply
 (including a blank response whose placeholder is removed) also releases the turn
@@ -209,7 +238,49 @@ accepted keep job records its agent on the current turn until it reaches
 admission, so one sibling's refusal cannot release a turn while another routed
 agent's job is still queued. A refused restored job clears its
 restore claim and records refusal before deciding whether ownership remains.
-Admission uses the controls' topic-to-creative lock order; provider execution
+Admission uses `Collavre::KeepLoop.admit!(creative, generation:, comment_id:)`
+as the single identity check, under the controls' topic-to-creative lock order;
+provider execution
 runs after those admission locks have been released.
 Same-anchor payload rebuilding (including inline-login replay) retains that
 original identity; acquiring a different anchor uses the new comment's identity.
+
+### Generation identity
+
+Every keep dispatch records the loop's integer `generation`. Starting a keep
+loop, Restart, Pause, UI Resume, and a public-reply resume advance a counter in
+`data.trigger.keep_generation` and copy it to `data.trigger.loop.generation`.
+The counter survives loop/topic/comment deletion. Continuations keep the same
+generation and change the current comment identity.
+
+The invariant is: an older generation cannot enqueue new keep work, create or
+promote a Task, restore a dispatch, evaluate/verify a result, apply a stale
+control, or replay inline login. Task creation and loop transitions revalidate
+admission under the creative lock. Inline-login scheduling also checks identity,
+and execution revalidates it before creating agent work. External provider calls already admitted before Pause
+may finish; their obsolete results cannot advance the loop. State and control
+version checks protect an evaluation's expected transition within its generation.
+Queue reservations also carry generation, so a stale payload cannot replace or
+release the current reservation even if the comment anchor is reused.
+
+Legacy tuple identities and malformed/missing identities on the current keep
+turn are refused. Pause followed by Resume, or Restart from an eligible terminal
+state, issues a fresh integer generation for an existing legacy loop. Superseded
+restoration attempts record refusal and are excluded from later restore sweeps.
+
+| State | Event | Result |
+| --- | --- | --- |
+| Inactive or no loop | `/keep` | Increment generation; start `running` at iteration zero |
+| `running` or `pending_verification` | `/keep` | Refuse replacement until paused |
+| `running` | Continue/retry | Preserve generation; dispatch a new current comment |
+| `running` | DONE result | `pending_verification`; preserve generation |
+| `pending_verification` | Verification succeeds | `completed` |
+| `pending_verification` | Verification continues | `running`, or `max_reached` at the limit |
+| `running` | BLOCKED result or last owner refuses | `awaiting_user` |
+| `running` | Retry or iteration limit | `stuck` or `max_reached` |
+| `running` or `pending_verification` | Pause | Increment generation; `paused` |
+| Resumable state | UI Resume | Increment generation; `running`; preserve iteration |
+| `awaiting_user` | Public human reply in the loop topic | Increment generation; `running`; preserve iteration |
+| Restartable state | Restart | Increment generation; `running`; reset iteration and retries |
+| Any | Obsolete generation arrives | No agent execution or loop transition; retire obsolete restore records |
+| Any | Current loop comment/topic deleted | Remove loop; retain generation counter |

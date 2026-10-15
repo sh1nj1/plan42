@@ -14,9 +14,13 @@ module Collavre
         comment_id = comment_id(context)
         return unless comment_id
 
-        change(context.dig("creative", "id")) do |entry|
-          entry = { "comment_id" => comment_id, "agent_ids" => [] } unless entry&.dig("comment_id") == comment_id
-          entry.merge("agent_ids" => entry["agent_ids"] + [ agent.id ])
+        change(context.dig("creative", "id")) do |entry, creative|
+          generation = context.dig("comment", "keep_loop_generation")
+          next entry unless KeepLoop.admit!(creative, generation: generation, comment_id: comment_id)
+
+          entry = { "comment_id" => comment_id, "generation" => generation, "agent_ids" => [] } unless
+            entry&.dig("comment_id") == comment_id && entry["generation"] == generation
+          entry.merge("agent_ids" => entry["agent_ids"] + [ agent.id ], "reserved_at" => Time.current.iso8601(6))
         end
       end
 
@@ -26,7 +30,7 @@ module Collavre
         return unless comment_id
 
         change(context.dig("creative", "id")) do |entry|
-          next entry unless entry&.dig("comment_id") == comment_id
+          next entry unless entry&.dig("comment_id") == comment_id && entry["generation"] == context.dig("comment", "keep_loop_generation")
 
           ids = entry["agent_ids"].dup
           index = ids.index(agent.id)
@@ -37,7 +41,8 @@ module Collavre
 
       def pending?(creative, comment_id)
         entry = creative.data&.dig("trigger", KEY)
-        entry.present? && entry["comment_id"] == comment_id && entry["agent_ids"].present?
+        entry.present? && entry["agent_ids"].present? &&
+          KeepLoop.admit!(creative, generation: entry["generation"], comment_id: comment_id) && entry["comment_id"] == comment_id
       end
 
       # Restorations are owned by their covering task's claim instead.
@@ -55,7 +60,7 @@ module Collavre
         creative.with_lock do
           data = creative.data || {}
           trigger = data["trigger"] || {}
-          entry = yield(trigger[KEY])
+          entry = yield(trigger[KEY], creative)
           next if entry == trigger[KEY]
 
           entry ? trigger[KEY] = entry : trigger.delete(KEY)

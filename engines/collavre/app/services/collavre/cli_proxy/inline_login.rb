@@ -181,6 +181,13 @@ module Collavre
       end
 
       def validate_retry_routing!(payload)
+        generation = payload.dig("comment", "keep_loop_generation")
+        if KeepLoop.dispatch?(payload)
+          creative = Creative.find_by(id: payload.dig("creative", "id"))
+          fail_with!("cannot_retry") unless creative && KeepLoop.admit!(creative,
+            generation: generation, comment_id: payload.dig("comment", "id")) &&
+            creative.data.dig("trigger", "loop", "state") == "running"
+        end
         fail_with!("cannot_retry") unless ReplayRouting.permitted?(payload, agent)
       end
 

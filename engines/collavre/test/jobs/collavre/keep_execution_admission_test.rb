@@ -161,7 +161,7 @@ module Collavre
       @creative.update!(data: { "trigger" => { "loop" => replacement } })
       @context = Orchestration::TaskCoalescer.reanchor_payload(@context, @turn.reload)
       assert_equal 123, @context.dig("comment", "keep_restore_task_id")
-      assert_equal @config.slice("start_comment_id", "current_comment_id", "trigger_topic_id"), @context.dig("comment", "keep_loop_generation")
+      assert_equal @config["generation"], @context.dig("comment", "keep_loop_generation")
       assert_no_difference("Task.count") { assert_equal :rejected, dispatch }
       assert_equal replacement, @creative.reload.data.dig("trigger", "loop")
     end
@@ -200,9 +200,10 @@ module Collavre
       assert_nil @creative.reload.data.dig("trigger", "keep_queued_dispatches")
       Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
       next_context = @context.deep_merge("comment" => { "id" => @turn.id + 1 })
+      @creative.update!(data: @creative.reload.data.deep_merge("trigger" => { "loop" => { "current_comment_id" => @turn.id + 1 } }))
       Orchestration::KeepQueuedDispatches.reserve!(next_context, @agent)
       assert_equal({ "comment_id" => @turn.id + 1, "agent_ids" => [ @agent.id ] },
-        @creative.reload.data.dig("trigger", "keep_queued_dispatches"))
+        @creative.reload.data.dig("trigger", "keep_queued_dispatches").slice("comment_id", "agent_ids"))
       Orchestration::KeepQueuedDispatches.release!(@context, @agent)
       assert Orchestration::KeepQueuedDispatches.pending?(@creative.reload, @turn.id + 1)
     end
