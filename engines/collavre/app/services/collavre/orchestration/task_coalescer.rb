@@ -82,11 +82,11 @@ module Collavre
         # quotes. Enumerating the keys here means the list falls behind the
         # payload the ordinary door builds, silently, one key at a time.
         #
-        # Rebuilt, never merged onto: a key absent for this comment must be
-        # absent afterwards. Carrying the previous anchor's "from_ai" or its
-        # quoted comment forward is the same defect pointing the other way.
+        # Rebuild anchor attributes instead of inheriting "from_ai" or quoted
+        # comments from another turn. Keep identity belongs to the dispatch,
+        # so only a same-anchor rebuild preserves its original admission.
         moved = payload.merge(
-          comment.dispatch_payload.slice(:comment).deep_stringify_keys,
+          KeepDispatchAdmission.reanchor_comment(payload, comment),
           "chat" => SystemEvents::ContextBuilder.reanchor_chat(comment.content)
         )
         if previous_id && previous_id.to_i != comment.id

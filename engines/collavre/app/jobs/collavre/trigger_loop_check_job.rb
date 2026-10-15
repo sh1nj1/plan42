@@ -17,8 +17,8 @@ module Collavre
       return unless task&.creative
 
       child_creative = task.creative
-      parent_creative = child_creative.parent
-      return unless parent_creative&.drop_trigger_enabled?
+      parent_creative = child_creative.trigger_loop_context
+      return unless child_creative.trigger_loop_enabled?
 
       # Loop state is stored on the child creative (each child has its own loop)
       loop_config = child_creative.data&.dig("trigger", "loop")
@@ -37,19 +37,12 @@ module Collavre
         return
       end
 
-      status = evaluate_status(last_agent_comment, loop_config)
-
-      # LLM fallback: when agent doesn't use [STATUS: ...] tags, ask LLM
-      # to determine whether the work is actually done.
-      if status == :no_tag
-        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment, task)
-      end
+      status = evaluate_response(child_creative, parent_creative, last_agent_comment, task, loop_config)
 
       case status
       when :done
         # Transition to pending_verification and enqueue LLM verification
-        update_loop_data(child_creative, state: "pending_verification", infra_retry_count: 0)
-        TriggerLoopVerifyJob.perform_later(task.id)
+        enqueue_verification(child_creative, task)
       when :awaiting_user
         update_loop_data(child_creative, state: "awaiting_user", infra_retry_count: 0)
         post_system_notice(child_creative, topic, I18n.t(
@@ -73,9 +66,19 @@ module Collavre
           post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
         end
       end
+    rescue TriggerLoopHelpers::StaleLoopError
+      nil
     end
 
     private
+
+    def enqueue_verification(creative, task)
+      update_loop_data(creative, state: "pending_verification", infra_retry_count: 0)
+      raise ActiveJob::EnqueueError, "Verification enqueue rejected" if TriggerLoopVerifyJob.perform_later(task.id) == false
+    rescue StandardError
+      restore_retryable_loop_turn(creative)
+      raise
+    end
 
     # Detect infrastructure errors (timeout, connection failure, etc.)
     # These are NOT valid task results — the agent never actually worked.
@@ -134,6 +137,11 @@ module Collavre
       post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
     end
 
+    def evaluate_response(creative, context, comment, task, config)
+      status = evaluate_status(comment, config)
+      status == :no_tag ? llm_fallback_evaluate(creative, context, comment, task) : status
+    end
+
     def evaluate_status(comment, loop_config)
       content = comment.content.to_s
 
@@ -161,47 +169,39 @@ module Collavre
     end
 
     def post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
-      agent = find_trigger_agent(parent_creative)
-      return unless agent
+      agent = continuation_agent(child_creative, topic)
+      return if !agent && !child_creative.keep_loop?
 
-      content = "@#{agent.name}: #{I18n.t(
+      content = "#{"@#{agent.name}: " if agent}#{I18n.t(
         'collavre.trigger_loop.continue',
         iteration: iteration,
         max: max
       )}"
 
-      child_creative.comments.create!(
+      post_loop_instruction(child_creative,
         content: content,
         topic_id: topic.id,
         private: false,
-        user: child_creative.user,
-        skip_dispatch: false  # Let after_create_commit dispatch this
+        user: child_creative.user
       )
     end
 
     def post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
-      agent = find_trigger_agent(parent_creative)
-      return unless agent
+      agent = continuation_agent(child_creative, topic)
+      return if !agent && !child_creative.keep_loop?
 
-      content = "@#{agent.name}: #{I18n.t(
+      content = "#{"@#{agent.name}: " if agent}#{I18n.t(
         'collavre.trigger_loop.retry',
         iteration: iteration,
         max: max
       )}"
 
-      child_creative.comments.create!(
+      post_loop_instruction(child_creative,
         content: content,
         topic_id: topic.id,
         private: false,
-        user: child_creative.user,
-        skip_dispatch: false
+        user: child_creative.user
       )
-    end
-
-    def find_trigger_agent(creative)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
     end
 
     # LLM fallback: when the agent doesn't use [STATUS: ...] tags,
@@ -219,14 +219,14 @@ module Collavre
     PROMPT
 
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
-      verifier = pick_fallback_agent(parent_creative)
+      verifier = pick_fallback_agent(parent_creative, child_creative, task&.agent_id)
 
-      unless verifier
+      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
         # No AI agent available for fallback — default to continue
         return :continue
       end
 
-      instructions = collect_fallback_instructions(child_creative, parent_creative)
+      instructions = collect_fallback_instructions(child_creative, parent_creative, verifier)
 
       prompt = <<~PROMPT
         ## Task instructions:
@@ -271,34 +271,26 @@ module Collavre
 
     # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
     # fall back to the trigger agent itself.
-    def pick_fallback_agent(creative)
+    def pick_fallback_agent(creative, child_creative, task_agent_id = nil)
       ai_agents = creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select(&:ai_user?)
+                          .select { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
 
       return ai_agents.first if ai_agents.any?
 
-      # Fall back to write-permission agents (the trigger agent)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
+      # Prefer parent write agents before the independently authorized keep task agent.
+      task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
+      (creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
+              .find { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
     end
 
     # Collect instructions from context creatives for LLM evaluation
-    def collect_fallback_instructions(child_creative, parent_creative)
-      parts = []
-      seen_ids = Set.new
+    def collect_fallback_instructions(child_creative, parent_creative, verifier)
+      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
+      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
+      contexts.each do |ctx|
+        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
 
-      parent_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      child_creative.context_creatives.each do |ctx|
-        next if seen_ids.include?(ctx.id)
-        seen_ids.add(ctx.id)
         desc = ctx.description.to_s.strip
         parts << desc if desc.present?
       end

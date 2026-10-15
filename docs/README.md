@@ -15,6 +15,8 @@ thin agent entry point that indexes into this directory.
 - [permissions.md](permissions.md) — the permission system and the converged
   `CreativeSharesCache` / `PermissionFilter` architecture.
 
+- [features/keep-command.md](features/keep-command.md) — start bounded agent
+  loops with `/keep`, optional goals and agent selection, and shared trigger controls.
 - [workflow_rule_editor.md](workflow_rule_editor.md) — edit workflow rules,
   understand pin scope, and roll out routing through matching policies.
 

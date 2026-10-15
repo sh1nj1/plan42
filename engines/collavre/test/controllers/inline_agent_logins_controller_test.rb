@@ -30,6 +30,27 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
     ActiveJob::Base.queue_adapter = @previous_adapter
   end
 
+  test "replacement keep rejects an already scheduled inline login replay" do
+    config = Collavre::TriggerLoopConfig.build(@original.topic_id, source: "keep",
+      start_comment_id: @original.id, current_comment_id: @original.id)
+    @creative.update!(data: { "trigger" => { "loop" => config } })
+    payload = @task.trigger_event_payload.deep_dup
+    payload["comment"]["keep_loop_generation"] = config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+    payload["engine_login"].merge!("authorized" => true, "resumed" => true, "session_user_id" => @requester.id)
+    @task.update_columns(trigger_event_payload: payload)
+    replacement = @creative.comments.create!(user: @requester, topic_id: @original.topic_id, content: "Replacement", skip_dispatch: true)
+    next_config = config.merge("start_comment_id" => replacement.id, "current_comment_id" => replacement.id)
+    @creative.update!(data: { "trigger" => { "loop" => next_config } })
+
+    Collavre::AiAgentService.stub(:new, ->(*) { flunk "Superseded login replay must not execute" }) do
+      assert_no_difference "Collavre::Task.count" do
+        Collavre::InlineAgentReplayJob.perform_now(@reply.id, @requester.id, @task.id)
+      end
+    end
+    assert @task.reload.trigger_event_payload.dig("engine_login", "replay_abandoned")
+    assert_equal next_config, @creative.reload.data.dig("trigger", "loop")
+  end
+
   [ true, false ].each do |finish_before_broadcast|
     test "login card is broadcast once when task finishes #{finish_before_broadcast ? 'before' : 'after'} the queued replacement" do
       @task.update!(status: :running, trigger_event_payload: @task.trigger_event_payload.except("engine_login"))

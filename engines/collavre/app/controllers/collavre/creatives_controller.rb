@@ -164,7 +164,7 @@ module Collavre
             prompt_updated
           ].compact.max
 
-          trigger_loop_data = @creative.data&.dig("trigger", "loop")
+          trigger_loop_data = @creative.trigger_loop_status
           parent_trigger_enabled = @creative.parent&.drop_trigger_enabled? || false
           can_edit = @creative.has_permission?(Current.user, :write)
 
