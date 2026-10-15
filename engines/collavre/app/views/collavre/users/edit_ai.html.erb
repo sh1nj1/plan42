@@ -62,6 +62,7 @@
     <% if @read_only %>
       <% @available_tools.each do |tool| %>
         <p><strong><%= tool[:name] %></strong><br><%= tool[:description] %></p>
+        <%= render "collavre/users/tool_details", tool: tool %>
       <% end %>
     <% else %>
       <%= render "collavre/users/tool_selection", tools: @available_tools, field_name: "user[tools][]", selected: Array(@user.tools) %>

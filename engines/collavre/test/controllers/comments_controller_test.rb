@@ -1672,6 +1672,30 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "/compress", inbox.comments.order(:id).last.content
   end
 
+  test "create saves plain comments without building the MCP command list" do
+    ::Comments::McpCommandBuilder.stub(:new, ->(**) { flunk("Plain comments must not build MCP commands") }) do
+      assert_difference -> { @creative.comments.count }, 1 do
+        post creative_comments_path(@creative), params: { comment: { content: "Just a regular comment" } }
+      end
+    end
+
+    assert_response :created
+    comment = @creative.comments.order(:id).last
+    assert_equal "Just a regular comment", comment.content
+    assert_not comment.skip_dispatch
+  end
+
+  test "create still runs slash commands with leading whitespace" do
+    assert_difference -> { Topic.where(creative: @creative, name: "Slash Topic").count }, 1 do
+      post creative_comments_path(@creative), params: { comment: { content: %(  /topic "Slash Topic") } }
+    end
+
+    assert_response :created
+    comment = @creative.comments.order(:id).last
+    assert_includes comment.content, %(/topic "Slash Topic")
+    assert_includes comment.content, I18n.t("collavre.comments.topic_command.created", name: "Slash Topic")
+  end
+
   # Phase 1 shipped the cards with the guide link suppressed because no page
   # existed to link to. Now that /features/:key is routed, every card carries it.
   test "index links each feature card to its public guide page" do

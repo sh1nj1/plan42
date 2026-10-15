@@ -642,11 +642,10 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background-color: var(--border-drag-over);
 }
 
-creative-tree-row.chat-active .creative-row {
-    border: var(--border-1) solid var(--color-active);
-    border-radius: var(--radius-2);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--color-active) 25%, transparent),
-                0 0 14px color-mix(in srgb, var(--color-active) 12%, transparent);
+creative-tree-row.chat-active .creative-row,
+creative-tree-row.chat-active .creative-row:hover {
+    background-color: color-mix(in srgb, var(--color-active) 6%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-active);
 }
 
 .creative-row:hover,
@@ -654,6 +653,17 @@ creative-tree-row.chat-active .creative-row {
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
     background-color: var(--surface-hover);
+    border-radius: var(--radius-2);
+}
+
+creative-tree-row[is-title]:not(.chat-active) .creative-row,
+creative-tree-row[is-title]:not(.chat-active) .creative-row:hover {
+    background-color: transparent;
+}
+
+creative-tree-row.chat-active .creative-row.selected,
+creative-tree-row.chat-active .creative-row.selected:hover {
+    background-color: var(--border-drag-over);
 }
 
 .creative-progress {
@@ -1911,25 +1921,15 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 .creative-document-view .creative-row {
-    background-image: linear-gradient(to right, transparent, color-mix(in srgb, var(--text-muted) 16%, transparent));
-    background-size: var(--document-progress-width, 0%) 100%;
-    background-position: right;
-    background-repeat: no-repeat;
-    margin-block: 0;
-    border-radius: 0;
     padding: 3px 0;
-    /* Paint through the main gutter without shifting text or row controls. */
-    margin-right: calc(-1 * var(--main-inline-padding, 0px));
-    padding-right: var(--main-inline-padding, 0px);
 }
 
-/* Keep heading spacing inside the painted row so progress backgrounds join. */
 .creative-document-view .creative-row.level-1 {
-    padding-top: calc(1.4em + 3px);
+    margin-top: 1.4em;
 }
 
 .creative-document-view .creative-row.level-2 {
-    padding-top: calc(0.8em + 3px);
+    margin-top: 0.8em;
 }
 
 /* The text takes the whole row: the tree's cap leaves room for the row end,

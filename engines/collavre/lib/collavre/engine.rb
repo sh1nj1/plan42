@@ -1,5 +1,6 @@
 require "collavre/sensitive_request_silencer"
 require "collavre/hashed_access_token_lookup"
+require "collavre/bulk_job_enqueue"
 # Registers the ActionView hook that exposes `collavre_stylesheets` to hosts.
 require "collavre/stylesheets_helper"
 

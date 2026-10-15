@@ -5,7 +5,6 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { finishDirectCreativeSave } from './direct_creative_save_effects'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
@@ -889,7 +888,12 @@ function setupEditorSession() {
               completionCascadePending = false;
             }
 
-	    finishDirectCreativeSave({ lexicalEditor, deleteAttachment, persistProgress: shouldPersistProgress });
+            if (lexicalEditor && typeof lexicalEditor.getDeletedAttachments === 'function') {
+              const deletedIds = lexicalEditor.getDeletedAttachments();
+              if (deletedIds && deletedIds.length > 0) {
+                deletedIds.forEach(deleteAttachment);
+              }
+            }
             updateActionButtonStates();
             // Only announce "saved" when the current buffer still matches what we
             // just persisted. Text edits during the in-flight save keep isDirty

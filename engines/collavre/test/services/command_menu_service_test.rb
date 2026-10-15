@@ -167,5 +167,25 @@ module Collavre
       format_param = schema.find { |p| p[:name] == "format" }
       assert_nil format_param[:default_value], "Params without defaults should not have default_value"
     end
+
+    test "tool items show the localized summary and carry details for the more toggle" do
+      tools = [ { name: "cron_list", description: "List recurring scheduled jobs. Long LLM text.", params: nil } ]
+      McpService.stub(:available_tools, tools) do
+        I18n.with_locale(:ko) do
+          item = CommandMenuService.new(user: users(:one)).items.find { |i| i[:name] == "cron_list" }
+          assert_equal I18n.t("collavre.tool_descriptions.cron_list.summary"), item[:description]
+          assert_equal I18n.t("collavre.tool_descriptions.cron_list.details"), item[:details]
+        end
+      end
+    end
+
+    test "tool items without details omit the details key" do
+      tools = [ { "name" => "my_tool", "description" => "Does one thing.", "params" => nil } ]
+      McpService.stub(:available_tools, tools) do
+        item = CommandMenuService.new(user: users(:one)).items.find { |i| i[:name] == "my_tool" }
+        assert_equal "Does one thing.", item[:description]
+        assert_not item.key?(:details)
+      end
+    end
   end
 end

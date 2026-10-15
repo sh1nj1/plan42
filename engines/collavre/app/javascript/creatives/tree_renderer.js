@@ -1,5 +1,7 @@
-import { applyDisplayProgress, normalizeBoolean } from './row_properties'
 import { applyInlineDataset } from '../modules/creative_inline_dataset'
+function normalizeBoolean(value) {
+  return value === true || value === 'true' || value === ''
+}
 
 function setDatasetValue(element, key, value) {
   if (!element) return
@@ -236,7 +238,7 @@ function applyRowProperties(row, node) {
     dirty = true
   }
 
-  const inlinePayload = applyDisplayProgress(row, node)
+  const inlinePayload = node.inline_editor_payload || {}
   if (Object.prototype.hasOwnProperty.call(inlinePayload, 'description_raw_html')) {
     setDatasetValue(row, 'descriptionRawHtml', inlinePayload.description_raw_html ?? '')
   }
@@ -414,5 +416,3 @@ export function dispatchCreativeTreeUpdated(container) {
   const event = new CustomEvent('creative-tree:updated', { bubbles: true })
   container.dispatchEvent(event)
 }
-
-export { filteredTreeNodes } from './filtered_progress_sync'

@@ -665,6 +665,29 @@ module Collavre
           agent: agent, topic_id: topic.id
         )
       end
+
+      test "the delivery check shares the dispatch's resolver only for the unmodified context" do
+        topic = Topic.create!(name: "Resolver sharing", creative: @creative, user: @user, primary_agent_id: @ai_agent.id)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "topic" => { "id" => topic.id },
+          "comment" => { "id" => 1, "content" => "hello" },
+          "chat" => { "content" => "hello" }
+        }
+        resolvers = []
+        capture = ->(*_args, policy_resolver: nil) { resolvers << policy_resolver; nil }
+
+        DeliveryRecord.stub(:covering_task, capture) do
+          AiAgentJob.stub(:perform_later, ->(*) { nil }) do
+            AgentOrchestrator.dispatch("comment_created", context)
+            AgentOrchestrator.dispatch("comment_created", context, context_for: ->(_agent) { { "sender" => { "id" => 0 } } })
+          end
+        end
+
+        assert_equal 2, resolvers.size
+        assert_kind_of PolicyResolver, resolvers.first
+        assert_nil resolvers.last
+      end
     end
   end
 end

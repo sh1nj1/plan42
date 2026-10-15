@@ -91,8 +91,14 @@ module Collavre
         new(SystemEvents::ContextBuilder.new(context).build).has_creative_permission?(agent)
       end
 
-      def initialize(context)
+      # `policy_resolver` and `records` are the dispatch's own, when a dispatch
+      # builds this matcher, so the policies and records it reads are read once
+      # for the whole decision rather than once per component. Positional,
+      # because callers pass the context as a brace-less hash.
+      def initialize(context, policy_resolver = nil, records = nil)
         @context = context
+        @policy_resolver = policy_resolver
+        @records = records || DispatchRecords.new
       end
 
       # Returns Array of User (AI agents) that are qualified to respond
@@ -319,21 +325,21 @@ module Collavre
         return @matched_creative if defined?(@matched_creative)
 
         creative_id = @context.dig("creative", "id") || @context.dig(:creative, :id)
-        @matched_creative = creative_id && Creative.find_by(id: creative_id)
+        @matched_creative = creative_id && @records.find(Creative, creative_id)
       end
 
       def matched_topic
         return @matched_topic if defined?(@matched_topic)
 
         topic_id = @context.dig("topic", "id") || @context.dig(:topic, :id)
-        @matched_topic = topic_id && Topic.find_by(id: topic_id)
+        @matched_topic = topic_id && @records.find(Topic, topic_id)
       end
 
       def matched_comment
         return @matched_comment if defined?(@matched_comment)
 
         comment_id = @context.dig("comment", "id") || @context.dig(:comment, :id)
-        @matched_comment = comment_id && Comment.find_by(id: comment_id)
+        @matched_comment = comment_id && @records.find(Comment, comment_id)
       end
     end
   end

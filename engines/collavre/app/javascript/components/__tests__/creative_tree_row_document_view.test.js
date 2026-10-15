@@ -800,34 +800,3 @@ describe("creative-tree-row in tree view", () => {
     expect(hidden.hasAttribute("aria-label")).toBe(false);
   });
 });
-
-
-describe("document progress background", () => {
-  test.each([[0, 100], [0.9, 10], [1, 0], [-1, 100], [2, 0], [undefined, 0], [NaN, 0], [Infinity, 0]])("sizes the unfinished tail for %s", async (progress, width) => {
-    const { documentProgressStyle } = await import("../creative_tree_row_document_view.js");
-    const style = documentProgressStyle(progress);
-    expect(parseFloat(style.split(":")[1])).toBeCloseTo(width);
-  });
-
-  test.each([false, true])("reacts to dataset updates for title=%s", async (isTitle) => {
-    const row = await mountRow({ creativeId: "8", isTitle }, page().tree);
-    row.dataset.progressValue = "0.9";
-    await row.updateComplete;
-    expect(parseFloat(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width"))).toBeCloseTo(10);
-    row.dataset.progressValue = "1";
-    await row.updateComplete;
-    expect(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width")).toBe("0%");
-  });
-});
-
- test.each([false, true])("filtered progress drives the background for title=%s", async (isTitle) => {
-   const row = await mountRow({ creativeId: "8", isTitle, progressValue: 1, displayProgress: 0 }, page().tree);
-   expect(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width")).toBe("100%");
-   expect(row.progressValue).toBe(1);
-   row.dataset.displayProgress = "0.9";
-   await row.updateComplete;
-   expect(parseFloat(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width"))).toBeCloseTo(10);
-   row.removeAttribute("data-display-progress");
-   await row.updateComplete;
-   expect(row.querySelector(".creative-row").style.getPropertyValue("--document-progress-width")).toBe("0%");
- });

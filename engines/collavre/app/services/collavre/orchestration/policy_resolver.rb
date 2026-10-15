@@ -15,6 +15,11 @@ module Collavre
     #   resolver.arbitration_config
     #   # => { "strategy" => "primary_first", "max_responders" => 1 }
     #
+    # A resolver is a snapshot for one decision: the enabled policies are read
+    # once, on first use, and every answer it gives comes from that read.
+    # Build a new resolver for each dispatch or job step rather than keeping
+    # one around; nothing is cached across resolvers.
+    #
     class PolicyResolver
       # Default configurations when no policy is set
       DEFAULTS = {
@@ -70,9 +75,20 @@ module Collavre
 
       MODES = %w[off shadow on].freeze
 
-      def initialize(context, ignore_topic_primary: false)
+      # `records` is the dispatch's DispatchRecords, when it has one, so the
+      # topic the Matcher read is not read again for its primary agent.
+      # `policies` is shared by #ignoring_topic_primary; callers leave it out.
+      def initialize(context, ignore_topic_primary: false, records: nil, policies: nil)
         @context = context
         @ignore_topic_primary = ignore_topic_primary
+        @records = records
+        @policies = policies || Policies.new(context)
+      end
+
+      # The same decision without the topic's primary-agent pin, reading the
+      # policies this resolver has already loaded.
+      def ignoring_topic_primary
+        self.class.new(@context, ignore_topic_primary: true, records: @records, policies: @policies)
       end
 
       def workflow_routing_mode
@@ -90,8 +106,7 @@ module Collavre
         base = merge_policies("scheduling")
 
         # Layer agent-specific policies on top
-        agent_policies = OrchestratorPolicy.for_agent(agent.id, policy_type: "scheduling")
-        agent_policies.each do |policy|
+        @policies.for_agent(agent.id, "scheduling").each do |policy|
           base = base.merge(policy.config)
         end
 
@@ -171,6 +186,7 @@ module Collavre
 
         topic_id = @context.dig("topic", "id")
         return nil unless topic_id
+        return @records.find(Topic, topic_id)&.primary_agent_id if @records
 
         Topic.where(id: topic_id).pick(:primary_agent_id)
       end
@@ -227,7 +243,7 @@ module Collavre
         config = DEFAULTS[policy_type]&.dup || {}
 
         # Get applicable policies in priority order
-        policies = OrchestratorPolicy.for_context(@context, policy_type: policy_type)
+        policies = @policies.for_context(policy_type)
 
         # Merge each policy's config (later policies override earlier)
         policies.each do |policy|
@@ -235,6 +251,25 @@ module Collavre
         end
 
         config
+      end
+
+      # The enabled policies one decision reads: every context policy in a
+      # single query, and each agent's policies once per type.
+      class Policies
+        def initialize(context)
+          @context = context
+          @agent_policies = {}
+        end
+
+        def for_context(policy_type)
+          @by_type ||= OrchestratorPolicy.for_context_by_type(@context)
+          @by_type.fetch(policy_type, [])
+        end
+
+        def for_agent(agent_id, policy_type)
+          @agent_policies[[ agent_id, policy_type ]] ||=
+            OrchestratorPolicy.for_agent(agent_id, policy_type: policy_type).to_a
+        end
       end
     end
   end
