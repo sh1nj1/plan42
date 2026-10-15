@@ -43,8 +43,21 @@ module Collavre
         self.class.where(creative_id: creative_id, topic_id: topic_id, trigger_event_name: "comment_created")
             .where(status: ACTIVE_STATUSES + Orchestration::DeliveryRecord::RESTORABLE_STATUSES).where.not(id: id).any? do |task|
           task.creative = target
-          target.trigger_loop_task?(task) && (task.active? || task.send(:trigger_loop_completion_eligible?) ||
+          target.trigger_loop_task?(task) && (task.active? || task.send(:owned_loop_check?) ||
             Orchestration::DeliveryRecord.pending_restoration?(task, comment_id: target.data.dig("trigger", "loop", "current_comment_id")))
+        end
+      end
+
+      def owned_loop_check?
+        !trigger_event_payload&.dig("keep_check_enqueue_failed") && trigger_loop_completion_eligible?
+      end
+
+      def record_loop_check_publication(failed:)
+        task = self.class.find(id)
+        task.with_lock do
+          payload = (task.trigger_event_payload || {}).deep_dup
+          payload["keep_check_enqueue_failed"] = failed
+          task.update_columns(trigger_event_payload: payload)
         end
       end
 
@@ -79,22 +92,28 @@ module Collavre
         queue = cooldown.positive? ? TriggerLoopCheckJob.set(wait: cooldown.seconds) : TriggerLoopCheckJob
         job = queue.perform_later(id)
         raise ActiveJob::EnqueueError if snapshot&.dig("source") == "keep" && !job
+        record_loop_check_publication(failed: false) if snapshot&.dig("source") == "keep"
       rescue StandardError => error
         raise unless snapshot&.dig("source") == "keep"
 
-        recover_loop_check_enqueue(snapshot)
+        recover_loop_check_enqueue
         Rails.logger.error("[Task] Loop check enqueue failed for task #{id}: #{error.class}: #{error.message}")
       end
 
-      # The task is already committed; release only the exact turn we tried to queue.
-      def recover_loop_check_enqueue(snapshot)
-        creative.with_lock do
-          config = creative.data&.dig("trigger", "loop")
-          next unless config == snapshot && config["state"] == "running"
+      # The task is committed. Revalidate its durable identity rather than a
+      # possibly stale in-memory creative snapshot.
+      def recover_loop_check_enqueue
+        Comments::TopicMutation.call(topic_id, creative_id) do
+          creative.with_lock do
+            config = creative.data&.dig("trigger", "loop")
+            next unless creative.keep_loop? && config["state"] == "running" && creative.trigger_loop_task?(self.class.find(id))
+            record_loop_check_publication(failed: true)
+            next if surviving_keep_turn?(creative) || Orchestration::KeepQueuedDispatches.pending?(creative, config["current_comment_id"])
 
-          config["state"] = "awaiting_user"
-          config["control_version"] = config.fetch("control_version", 0) + 1
-          creative.update!(data: creative.data)
+            config["state"] = "awaiting_user"
+            config["control_version"] = config.fetch("control_version", 0) + 1
+            creative.update!(data: creative.data)
+          end
         end
       end
     end

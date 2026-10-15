@@ -53,12 +53,36 @@ module Collavre
         return reject_restore!(task, comment_id) unless decision
 
         if decision[:timing] == :delayed
-          enqueue_claimed(task, comment_id) do
+          enqueue_claimed(task, comment_id, context: context) do
             AiAgentJob.set(wait: decision[:delay]).perform_later(agent.id, event_name, context)
           end
         else
-          enqueue_claimed(task, comment_id) { AiAgentJob.perform_later(agent.id, event_name, context) }
+          enqueue_claimed(task, comment_id, context: context) { AiAgentJob.perform_later(agent.id, event_name, context) }
         end
+      end
+
+      def publish_restore_after_claim(task, comment_id, context:, &publication)
+        return publish_claimed_restore(task, comment_id, &publication) unless KeepLoop.dispatch?(context)
+
+        # The claim commits before another database can expose this job to a
+        # worker. Revalidate identity again if Pause wins before publication.
+        ActiveRecord.after_all_transactions_commit do
+          begin
+            publish_claimed_restore(task, comment_id) { KeepLoop.with_dispatch(context, &publication) }
+          rescue StandardError => error
+            Rails.logger.error("[DeliveryRecord] Restore publication failed for task #{task.id}: #{error.class}: #{error.message}")
+          end
+        end
+      end
+
+      def publish_claimed_restore(task, comment_id)
+        job = yield
+        raise ActiveJob::EnqueueError if !job || job == :rejected || (job.respond_to?(:successfully_enqueued?) && !job.successfully_enqueued?)
+        job
+      rescue StandardError => error
+        release_restore_claim!(task, comment_id)
+        reject_restore!(task, comment_id) if error.is_a?(ActiveJob::EnqueueError)
+        raise
       end
 
       def admitted_restore_decision(agent, context)

@@ -290,11 +290,10 @@ module Collavre
 
       task, admitted, current_context = nil, false, false
       # A queued row here is a waiter, and what speaks for it is settled now, with
-      # the row — not later, from whichever notices happen to be visible. Its
-      # notice is posted in a separate transaction below, so between the two this
-      # waiter is queued with nothing naming it, and a shared notice deleted in
-      # that window would read an opted-out waiter as one of its own and cancel a
-      # turn that was only deferred.
+      # the row, before the notice is posted below. Keep admission may wrap
+      # both operations in its creative transaction. Persisting the opt-out on
+      # the row keeps shared notice deletion from cancelling a deferred turn
+      # even when no notice is visible yet.
       # Counting occupants and claiming the slot must be ONE step. Two workers
       # starting within the same millisecond — the exact burst this job defends
       # against — otherwise both read an occupancy below the limit before either

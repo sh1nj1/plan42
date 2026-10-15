@@ -668,16 +668,10 @@ module Collavre
       # orphaned to anyone else looking, and the sweep is looking every ten
       # minutes. A claim released on failure is the whole difference between
       # this and a dispatch nobody comes back for.
-      def self.enqueue_claimed(task, comment_id)
+      def self.enqueue_claimed(task, comment_id, context: nil, &publication)
         return unless claim_restore!(task, comment_id)
 
-        begin
-          raise ActiveJob::EnqueueError unless yield
-        rescue StandardError => error
-          release_restore_claim!(task, comment_id)
-          reject_restore!(task, comment_id) if error.is_a?(ActiveJob::EnqueueError)
-          raise
-        end
+        publish_restore_after_claim(task, comment_id, context: context, &publication)
       end
       private_class_method :enqueue_claimed
 

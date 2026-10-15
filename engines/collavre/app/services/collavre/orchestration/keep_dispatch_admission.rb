@@ -65,7 +65,7 @@ module Collavre
         config = creative.data.dig("trigger", "loop")
         Task.where(creative_id: creative.id, topic_id: config["trigger_topic_id"], trigger_event_name: "comment_created").any? do |task|
           task.creative = creative
-          (creative.trigger_loop_task?(task) && (task.active? || task.send(:trigger_loop_completion_eligible?))) ||
+          (creative.trigger_loop_task?(task) && (task.active? || task.send(:owned_loop_check?))) ||
             DeliveryRecord.pending_restoration?(task, comment_id: comment_id)
         end || KeepQueuedDispatches.pending?(creative, comment_id)
       end

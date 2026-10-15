@@ -31,10 +31,7 @@ module Collavre
     [ false, true ].each do |rollback|
       test "all replay sources stay locked through #{rollback ? 'rollback' : 'commit'} of admission" do
         skip "Row-lock contention requires PostgreSQL" unless Comment.connection.adapter_name == "PostgreSQL"
-        login = Object.new
-        login.define_singleton_method(:task) { @task }
-        login.define_singleton_method(:agent) { @task.agent }
-        login.instance_variable_set(:@task, @task)
+        login = CliProxy::InlineLogin.new(@card, users(:one))
         validate = lambda do
           [ @merged, @anchor ].each { |source| assert source_locked?(source.id), "Validation must lock source #{source.id}" }
           @task.trigger_event_payload
@@ -70,6 +67,30 @@ module Collavre
         CliProxy::InlineReplayAdmission.call({}, @identity) { flunk "Missing source must not create a replay" }
       end
       assert_equal "cannot_retry", error.code
+    end
+
+    test "deleted task is rejected before taking nested turn locks" do
+      login = CliProxy::InlineLogin.new(@card, users(:one))
+      @task.delete
+      error = assert_raises(CliProxy::Client::Error) { login.with_locked_turn { flunk "Deleted turn admitted" } }
+      assert_equal "cannot_retry", error.code
+    end
+
+    test "login and restoration acquire topic creative and task in the same order" do
+      login = CliProxy::InlineLogin.new(@card, users(:one))
+      order = []
+      topic_lock = Comments::TopicMutation.method(:call)
+      Comments::TopicMutation.stub(:call, ->(*args, &block) {
+        order << :topic
+        topic_lock.call(*args, &block)
+      }) do
+        login.task.stub(:with_lock, ->(&block) {
+          order << :task
+          assert Creative.connection.transaction_open?
+          block.call
+        }) { login.with_locked_turn { order << :admitted } }
+      end
+      assert_equal [ :topic, :task, :admitted ], order
     end
 
     private

@@ -113,7 +113,7 @@ module Collavre
       end
 
       def resume!
-        task.with_lock do
+        with_locked_turn do
           return if data["resumed"]
           fail_with!("not_authorized") unless data["authorized"] && data["session_user_id"] == @user.id
           source = original_comment
@@ -129,7 +129,7 @@ module Collavre
       # there is no replay Task for comment cancellation to find during a delay.
       def replay_payload
         # Wait for resume!'s claim transaction before inspecting resumed.
-        task&.with_lock do
+        with_locked_turn do
           fail_with!("cannot_retry") unless manageable? && task.done? && data["retryable"] && data["resumed"]
           fail_with!("not_authorized") unless data["authorized"] && data["session_user_id"] == @user.id
 
@@ -139,6 +139,26 @@ module Collavre
           validate_retry_routing!(payload)
           payload
         end
+      end
+
+      # Admission, restoration, and controls all acquire these rows in this
+      # order. Session polling only locks Task and never acquires outer locks.
+      def with_locked_turn
+        scope = Task.find(task.id)
+        result = nil
+        applied = Comments::TopicMutation.call(scope.topic_id, scope.creative_id) do
+          creative = Creative.find(scope.creative_id)
+          creative.with_lock do
+            task.with_lock do
+              fail_with!("cannot_retry") unless task.topic_id == scope.topic_id && task.creative_id == scope.creative_id
+              result = yield
+            end
+          end
+        end
+        fail_with!("cannot_retry") unless applied
+        result
+      rescue ActiveRecord::RecordNotFound
+        fail_with!("cannot_retry")
       end
 
       # Cleanup must survive deletion of the reply card or initiating user.
