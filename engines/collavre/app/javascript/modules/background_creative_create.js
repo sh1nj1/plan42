@@ -19,6 +19,9 @@ const retryDeletes = new WeakMap()
 const holds = new WeakMap()
 const releases = new WeakMap()
 const inFlight = new Set()
+// A new row's own save (autosave, progress toggle) POSTs it too; a render
+// waits for it as for a background create. Settles true when it failed.
+const rowSaves = new Map()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
@@ -30,23 +33,32 @@ export function trackCreate(tree, promise) {
   return promise
 }
 
+export function trackNewRowSave(tree, promise) {
+  if (!tree || tree.dataset.id) return promise
+  const settled = promise.then((result) => result?.ok === false, () => true)
+  rowSaves.set(tree, settled)
+  settled.then(() => rowSaves.get(tree) === settled && rowSaves.delete(tree))
+  return promise
+}
+
 // A frame swap or page render would take rows still being created out of the
 // document, and with them the draft a failed create reopens from. The render
 // waits for those creates, including ones started while it waits; if one
 // fails it is dropped, so the row stays to retry. A render over a row whose
 // create had already failed goes ahead only once the user agrees to discard it.
 export function holdRenderForCreates(event, confirmDiscard) {
-  const pendingIn = () => [...inFlight].filter((tree) => event.target.contains(tree))
+  const pendingIn = () => [...new Set([...inFlight, ...rowSaves.keys()])].filter((tree) => event.target.contains(tree))
   const failedIn = () => [...event.target.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
   if (!event.detail?.resume || !(pendingIn().length || failedIn())) return
   event.preventDefault()
   const waited = new Set()
+  let saveFailed = false
   const settle = () => {
     const pending = pendingIn()
     if (pending.length) {
       pending.forEach((tree) => waited.add(tree))
-      Promise.all(pending.map((tree) => creates.get(tree))).then(settle)
-    } else if ([...waited].some((tree) => failedRows.has(tree))) {
+      Promise.all(pending.flatMap((tree) => [creates.get(tree), rowSaves.get(tree)?.then((failed) => { saveFailed ||= failed })])).then(settle)
+    } else if (saveFailed || [...waited].some((tree) => failedRows.has(tree))) {
       return
     } else if (!failedIn()) {
       event.detail.resume()

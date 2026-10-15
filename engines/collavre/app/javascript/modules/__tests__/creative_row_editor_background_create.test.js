@@ -1028,6 +1028,70 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(second.dataset.saveState).toBe('error')
   })
 
+  function toggleProgress() {
+    const progress = document.getElementById('inline-creative-progress')
+    progress.checked = !progress.checked
+    progress.dispatchEvent(new Event('change'))
+  }
+
+  test('a frame swap also waits for a save of the open new row started while it was paused', async () => {
+    const firstPost = deferred()
+    const secondPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise).mockImplementationOnce(() => secondPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+    const event = frameRender(document.getElementById('creatives'))
+
+    type('second creative')
+    toggleProgress()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    expect(saveMock).toHaveBeenCalledTimes(2)
+    expect(event.detail.resume).not.toHaveBeenCalled()
+
+    secondPost.resolve(created(78))
+    await flush()
+    expect(event.detail.resume).toHaveBeenCalled()
+  })
+
+  test('a frame swap is dropped when a save of the open new row started while it was paused fails', async () => {
+    const firstPost = deferred()
+    const secondPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise).mockImplementationOnce(() => secondPost.promise)
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    const event = frameRender(document.getElementById('creatives'))
+
+    type('second creative')
+    toggleProgress()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    secondPost.resolve({ ok: false, status: 500, clone: () => ({ json: () => Promise.resolve({}) }) })
+    await flush()
+
+    expect(event.detail.resume).not.toHaveBeenCalled()
+    expect(second.isConnected).toBe(true)
+    expect(template().parentElement).toBe(second)
+  })
+
+  test('a frame swap is not held by a save of the open row that has nothing to create', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+    const event = frameRender(document.getElementById('creatives'))
+
+    toggleProgress()
+    toggleProgress()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalled()
+  })
+
   test('a frame swap stays dropped when the failed row it waited for is reopened before it settles', async () => {
     const firstPost = deferred()
     const secondPost = deferred()

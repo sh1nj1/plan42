@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates, trackNewRowSave } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -869,11 +869,11 @@ function setupEditorSession() {
           }
         });
       }
-      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree)]).then(function () {
+      return trackNewRowSave(tree, Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree)]).then(function () {
         // Waiting for the previous row's id counts as saving, so an Enter
         // meanwhile joins this save rather than POSTing the row again.
         return saveQueue.runExclusive(() => applyDeferredAnchor(tree)?.then(performSave) ?? performSave());
-      }).finally(() => releaseFailedRows(tree));
+      }).finally(() => releaseFailedRows(tree)));
     }
 
     function adoptCreatedTree(tree, data, parentId, fallbackRow) {
