@@ -28,8 +28,13 @@ module Collavre
         assert_equal 10, @creative.reload.data.dig("trigger", "loop", "max_iterations")
       end
 
+      test "accepts the maximum limit" do
+        assert KeepService.new.call(max: 1000, topic_id: @topic.id)[:id]
+        assert_equal 1000, @creative.reload.data.dig("trigger", "loop", "max_iterations")
+      end
+
       test "rejects invalid limits without creating a comment or loop" do
-        [ 0, 51 ].each do |limit|
+        [ 0, 1001 ].each do |limit|
           assert_no_difference "Comment.count" do
             assert_raises(ArgumentError) { KeepService.new.call(max: limit, topic_id: @topic.id) }
           end
