@@ -1,3 +1,4 @@
+import { decorateAttachmentLinks } from "../lexical/attachment_presentation"
 import DOMPurify from 'dompurify'
 
 // Trusted YouTube embed origins. The server's `embed_youtube_iframe` helper
@@ -27,5 +28,9 @@ const PURIFY_CONFIG = {
 // Sanitize creative description HTML for client-side rendering while keeping the
 // server-generated YouTube preview iframe intact.
 export function sanitizeDescriptionHtml(html) {
-  return DOMPurify.sanitize(html ?? '', PURIFY_CONFIG)
+  const fragment = DOMPurify.sanitize(html ?? '', {...PURIFY_CONFIG, RETURN_DOM_FRAGMENT: true})
+  decorateAttachmentLinks(fragment)
+  const container = document.createElement('div')
+  container.append(fragment)
+  return container.innerHTML
 }
