@@ -14,14 +14,22 @@ module Collavre
         Comment.visible_to(user).without_approval_action
       end
 
-      def authorize!(task, user)
-        creative = task.creative || Creative.find_by(id: task.trigger_event_payload&.dig("creative", "id"))
-        TopicAuthorizer.authorize_creative!(creative, :read, user: user)
-        return if task.trigger_comment_id.nil?
-        trigger = visible_comments(user).find_by(id: task.trigger_comment_id)
-        raise PermissionDeniedError, I18n.t("collavre.tools.task_tracking.errors.unreadable_trigger") unless trigger
+      def effective_creative_id(task)
+        task.creative_id || task.trigger_event_payload&.dig("creative", "id")&.to_i
+      end
 
-        TopicAuthorizer.authorize_creative!(trigger.creative, :read, user: user)
+      def authorize_all!(tasks, user)
+        ids = tasks.map { |task| effective_creative_id(task) }.uniq
+        creatives = Creative.where(id: ids).index_by(&:id)
+        triggers = visible_comments(user).where(id: tasks.filter_map(&:trigger_comment_id)).includes(:creative).index_by(&:id)
+        (ids.map { |id| creatives[id] } + triggers.values.map(&:creative)).uniq.each do |creative|
+          TopicAuthorizer.authorize_creative!(creative, :read, user: user)
+        end
+        tasks.each do |task|
+          next if task.trigger_comment_id.nil?
+          trigger = triggers[task.trigger_comment_id]
+          raise PermissionDeniedError, I18n.t("collavre.tools.task_tracking.errors.unreadable_trigger") unless trigger
+        end
       end
 
       def visible_tasks(scope, user, creative_id:)
@@ -33,7 +41,7 @@ module Collavre
       def describe_all(tasks, user)
         replies = visible_comments(user).where(task_id: tasks.map(&:id)).order(:id).group_by(&:task_id)
         tasks.map do |task|
-          reply = replies[task.id]&.find { |comment| comment.creative_id == task.creative_id }
+          reply = replies[task.id]&.find { |comment| comment.creative_id == effective_creative_id(task) }
           describe(task, reply)
         end
       end

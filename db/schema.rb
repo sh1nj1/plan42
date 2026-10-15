@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_000002) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1045,6 +1045,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000001) do
     t.integer "task_id", null: false
     t.datetime "updated_at", null: false
     t.index ["task_id"], name: "index_task_actions_on_task_id"
+  end
+
+  create_table "task_merged_instructions", force: :cascade do |t|
+    t.bigint "task_id", null: false
+    t.bigint "comment_id", null: false
+    t.index ["comment_id", "task_id"], name: "index_task_merged_instructions_on_comment_id_and_task_id", unique: true
+    t.index ["task_id"], name: "index_task_merged_instructions_on_task_id"
   end
 
   create_table "tasks", force: :cascade do |t|

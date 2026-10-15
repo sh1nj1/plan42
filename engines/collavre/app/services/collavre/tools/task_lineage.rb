@@ -8,19 +8,9 @@ module Collavre
       module_function
 
       def for_comment(comment_id)
-        indexed = Task.where(trigger_comment_id: comment_id)
-        return indexed if indexed.exists?
-
-        # Only historical re-anchored rows need the JSON fallback.
-        Task.where(merged_condition, id: comment_id.to_s)
-      end
-
-      def merged_condition
-        if Task.connection.adapter_name == "PostgreSQL"
-          "EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(trigger_event_payload::jsonb -> 'merged_comment_ids', '[]'::jsonb)) AS merged(value) WHERE merged.value = :id)"
-        else
-          "EXISTS (SELECT 1 FROM json_each(trigger_event_payload, '$.merged_comment_ids') AS merged WHERE CAST(merged.value AS TEXT) = :id)"
-        end
+        Task.where(trigger_comment_id: comment_id).or(
+          Task.where(id: TaskMergedInstruction.where(comment_id: comment_id).select(:task_id))
+        )
       end
 
       def successors(tasks)

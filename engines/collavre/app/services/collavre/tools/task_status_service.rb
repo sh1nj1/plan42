@@ -23,7 +23,7 @@ module Collavre
         TaskTracking.invalid!(:choose_input) unless comment_id.present? ^ task_ids.present?
         roots = comment_id ? for_comment(comment_id, user) : for_ids(task_ids)
         tasks = TaskDescendants.collect(roots)
-        tasks.each { |task| TaskTracking.authorize!(task, user) }
+        TaskTracking.authorize_all!(tasks, user)
         successors = TaskLineage.successors(tasks)
         { comment_id: comment_id, status: aggregate(TaskLineage.effective_tasks(tasks, successors)),
           tasks: TaskTracking.describe_all(tasks, user).map { |row| row.merge(superseded_by_task_id: successors[row[:task_id]]) } }

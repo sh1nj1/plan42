@@ -220,11 +220,19 @@ module Collavre
         assert_raises(ArgumentError) { TaskStatusService.new.call(task_ids: task.id) }
       end
 
-      test "indexed instructions never invoke the legacy merged payload scan" do
-        task = make_task
-        TaskLineage.stub(:merged_condition, -> { flunk "Unexpected legacy scan" }) do
-          assert_equal [ task.id ], TaskLineage.for_comment(@comment.id).pluck(:id)
-        end
+      test "combines indexed roots and historical merged instructions" do
+        root = make_task(status: "done")
+        legacy = make_task(payload: { "merged_comment_ids" => [ @comment.id ] })
+        assert_equal "in_progress", TaskStatusService.new.call(comment_id: @comment.id)[:status]
+        assert_equal [ root.id, legacy.id ].sort, TaskLineage.for_comment(@comment.id).pluck(:id).sort
+        legacy.update!(trigger_event_payload: {})
+        assert_empty TaskMergedInstruction.where(task_id: legacy.id)
+      end
+
+      test "legacy payload creative resolves a visible reply" do
+        task = make_task(creative: nil, payload: { "creative" => { "id" => @creative.id } })
+        reply = @topic.comments.create!(creative: @creative, user: @owner, content: "Ready", task_id: task.id, skip_dispatch: true)
+        assert_equal reply.id, TaskStatusService.new.call(task_ids: task.id)[:tasks].sole[:reply_comment_id]
       end
 
       test "descendant query uses the causation expression index" do
@@ -235,11 +243,27 @@ module Collavre
         end
       end
 
-      test "PostgreSQL merged lookup compares both string and integer ids as text" do
-        Task.connection.stub(:adapter_name, "PostgreSQL") do
-          assert_includes TaskLineage.merged_condition, "jsonb_array_elements_text"
-          assert_includes TaskLineage.merged_condition, "merged.value = :id"
+      test "batch authorization does not query triggers once per task" do
+        tasks = 10.times.map { make_task }
+        queries = []
+        subscriber = ->(_name, _start, _finish, _id, data) { queries << data[:sql] if data[:sql].match?(/SELECT.*comments/i) }
+        ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+          TaskTracking.authorize_all!(tasks, @owner)
         end
+        assert_equal 1, queries.size
+      end
+
+      test "merged instruction index backfills historical payloads and cleans up deleted tasks" do
+        require Rails.root.join("engines/collavre/db/migrate/20261016000002_index_task_merged_instructions")
+        task = make_task
+        task.update_columns(trigger_event_payload: { "merged_comment_ids" => [ @comment.id.to_s, @comment.id, nil, "invalid" ] })
+        migration = IndexTaskMergedInstructions.new
+        migration.stub(:create_table, ->(*) { }) { migration.up }
+        assert_equal [ task.id ], TaskLineage.for_comment(@comment.id).pluck(:id)
+        assert_equal 1, TaskMergedInstruction.where(task_id: task.id).count
+        task.destroy!
+        assert_empty TaskMergedInstruction.where(task_id: task.id)
+        migration.stub(:drop_table, ->(table) { assert_equal :task_merged_instructions, table }) { migration.down }
       end
 
       private
