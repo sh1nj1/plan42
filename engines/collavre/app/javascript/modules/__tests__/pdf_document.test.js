@@ -129,3 +129,27 @@ test.each(['getPage', 'render'])('allows returning to a usable page after %s fai
   expect(viewer.querySelector('[data-ppt-next]').disabled).toBe(false)
   expect(viewer.querySelector('.media-loading').hidden).toBe(true)
 })
+
+
+test.each([true, false])('queued render determines error state after an earlier failure (success: %s)', async succeeds => {
+  const viewer = setup()
+  let rejectRender
+  const render = jest.fn()
+    .mockImplementationOnce(() => ({ promise: new Promise((resolve, reject) => { rejectRender = reject }) }))
+    .mockImplementation(() => ({ promise: succeeds ? Promise.resolve() : Promise.reject(new Error('Queued failure')) }))
+  const getPage = jest.fn().mockResolvedValue({
+    getViewport: ({ scale }) => ({ width: 400 * scale, height: 600 * scale }), render
+  })
+  const initialized = initializePdfDocument(viewer, async () => ({
+    getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage }) }), GlobalWorkerOptions: {}
+  }))
+  await settle()
+  window.dispatchEvent(new window.Event('resize'))
+  rejectRender(new Error('Earlier failure'))
+  await initialized
+  await settle()
+  expect(render).toHaveBeenCalledTimes(2)
+  expect(viewer.querySelector('[data-document-error]').hidden).toBe(succeeds)
+  expect(viewer.querySelector('.media-loading').hidden).toBe(true)
+  expect(Boolean(viewer.querySelector('canvas'))).toBe(succeeds)
+})

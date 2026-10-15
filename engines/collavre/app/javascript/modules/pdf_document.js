@@ -26,6 +26,8 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
         viewer.querySelector('[data-document-error]').hidden = true
         content.replaceChildren(canvas)
+      } catch {
+        failed()
       } finally {
         loading.hidden = true
         rendering = false
