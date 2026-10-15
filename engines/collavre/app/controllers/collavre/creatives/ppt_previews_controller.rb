@@ -3,6 +3,7 @@ module Collavre
     class PptPreviewsController < Collavre::ApplicationController
       allow_unauthenticated_access
       before_action :resume_session
+      before_action :enforce_creatives_login_policy
 
       def show
         creative = Creative.find(params[:creative_id])
@@ -16,6 +17,12 @@ module Collavre
         render layout: "collavre/slide"
       rescue PptRenderer::InvalidArchive, Zip::Error, Nokogiri::XML::SyntaxError
         render plain: t("collavre.ppt_viewer.invalid"), status: :unprocessable_entity
+      end
+
+      private
+
+      def enforce_creatives_login_policy
+        require_authentication if SystemSetting.creatives_login_required?
       end
     end
   end

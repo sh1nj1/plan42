@@ -51,6 +51,41 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "global login policy blocks anonymous public previews before rendering" do
+    CreativeShare.create!(creative: @creative, user: nil, permission: :read)
+    SystemSetting.create!(key: "creatives_login_required", value: "true")
+    sign_out
+
+    Collavre::PptPreview.stub :slides, ->(*) { flunk "Must require login before rendering" } do
+      get @path
+      assert_redirected_to collavre.new_session_path
+    end
+  end
+
+  test "global login policy allows authenticated previews" do
+    SystemSetting.create!(key: "creatives_login_required", value: "true")
+    Collavre::PptPreview.stub :slides, [ "Private" ] do
+      get @path
+      assert_response :success
+    end
+  end
+
+  test "linked creative embeds and serves the effective origins presentation" do
+    linked = Creative.create!(user: users(:one), origin: @creative)
+    assert_empty linked.files
+
+    get collavre.creatives_path(id: linked.id)
+    assert_response :success
+    assert_select "iframe.ppt-attachment-preview" do |frames|
+      assert_equal @path, frames.first["src"]
+    end
+
+    Collavre::PptPreview.stub :slides, [ "Linked presentation" ] do
+      get @path
+      assert_response :success
+    end
+  end
+
   test "attachments from another creative and missing attachments are rejected" do
     other = Creative.create!(user: users(:one), description: "Other")
     get collavre.creative_ppt_preview_path(other, @attachment)
