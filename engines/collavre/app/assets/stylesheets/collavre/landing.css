@@ -16,12 +16,6 @@
   scroll-behavior: smooth;
 }
 
-/* Preserve the feature index's existing geometry while hiding the main
-   background that shows through as strips beside its gray sections. */
-.landing-page > main:has(.features-index) {
-  background: transparent;
-}
-
 /* This file is linked only from layouts/collavre/landing.html.erb, which renders
    `<main><%= yield %></main>` and no app navigation — that lives in the host's
    application layout, which never loads this stylesheet. So a blanket
@@ -341,6 +335,25 @@
 /* ─── Features Grid ─────────────────────────────────────────────────────────── */
 .landing-features {
   background: var(--surface-bg);
+}
+
+/* Extend only the home feature band's paint across the viewport, preserving
+   the existing section and card geometry. */
+#features.landing-features {
+  position: relative;
+  isolation: isolate;
+}
+
+#features.landing-features::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--surface-bg);
+  z-index: -1;
+  pointer-events: none;
 }
 
 .landing-features-grid {
