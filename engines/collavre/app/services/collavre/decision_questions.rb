@@ -39,7 +39,7 @@ module Collavre
       value = case type
       when "choice"
         options = definition.fetch("options").keys.map(&:to_s)
-        raise ArgumentError, "A choice needs options" if options.empty?
+        raise ArgumentError, "A choice needs at least two options" if options.size < 2
         { type: "string", enum: options }
       when "probability" then { type: "number", minimum: 0, maximum: 1 }
       when "score" then score_schema(definition)

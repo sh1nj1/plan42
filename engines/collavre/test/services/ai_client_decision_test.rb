@@ -332,6 +332,21 @@ module Collavre
       end
     end
 
+    test "choice questions need at least two options before adapter selection" do
+      %w[google typesafe].each do |vendor|
+        client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Invalid choice reached native adapter" }) do
+          client.stub(:chat_decision, ->(*) { flunk "Invalid choice reached chat adapter" }) do
+            [ {}, { only: "Only option" } ].each do |options|
+              assert_raises(ArgumentError) do
+                client.judge("Task", questions: { status: { type: :choice, options: options } })
+              end
+            end
+          end
+        end
+      end
+    end
+
     test "invalid score scales fail before either decision adapter is called" do
       [ "google", "typesafe" ].each do |vendor|
         client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)

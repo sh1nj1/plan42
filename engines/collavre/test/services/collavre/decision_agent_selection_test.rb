@@ -32,6 +32,24 @@ module Collavre
       end
     end
 
+    test "summary jobs never replace an unavailable session agent" do
+      topic = @child.topics.create!(name: "Private", user: @human,
+        primary_agent: @chat, session_id: "private-session")
+      [ CompressJob.new, MergeCommentsJob.new ].each do |job|
+        assert_equal @chat, job.send(:resolve_ai_agent, @child, topic.id)
+      end
+      @chat.update!(llm_vendor: "typesafe")
+      @judge.update!(llm_vendor: "google")
+      [ @judge.id, nil ].each do |primary_id|
+        policy = Struct.new(:arbitration_config).new({ "primary_agent_id" => primary_id })
+        Orchestration::PolicyResolver.stub(:new, policy) do
+          [ CompressJob.new, MergeCommentsJob.new ].each do |job|
+            assert_nil job.send(:resolve_ai_agent, @child, topic.id)
+          end
+        end
+      end
+    end
+
     test "capability-only vendors are excluded from chat assignment surfaces" do
       capabilities = AiClient.vendor_capabilities.dup
       AiClient.stub(:vendor_capabilities, capabilities) do

@@ -12,10 +12,9 @@ module Collavre
       if topic_id.present?
         # Check topic's direct primary_agent_id first
         topic = Topic.find_by(id: topic_id)
-        if topic&.primary_agent_id.present?
-          agent = User.find_by(id: topic.primary_agent_id)
-          return agent if agent&.supports?(:chat)
-        end
+        agent = topic&.primary_agent
+        return agent if agent&.supports?(:chat)
+        return if topic&.session_id.present?
 
         # Fall back to policy-level config (creative/global scope)
         context = build_ai_agent_policy_context(creative, topic_id)
