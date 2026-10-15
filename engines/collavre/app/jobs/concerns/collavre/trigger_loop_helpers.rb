@@ -4,10 +4,15 @@ module Collavre
   module TriggerLoopHelpers
     extend ActiveSupport::Concern
 
+    class StaleLoopError < StandardError; end
+
     private
 
     # Resolve the task's current topic while excluding unrelated conversations.
     def trigger_completion_topic(task, loop_config)
+      @loop_start_comment_id = loop_config["start_comment_id"]
+      return unless task.creative.trigger_loop_task?(task)
+
       id = loop_config["trigger_topic_id"]
       return if id.present? && id != task.topic_id
 
@@ -52,6 +57,8 @@ module Collavre
         data = child_creative.data || {}
         trigger = data["trigger"] || {}
         loop_data = trigger["loop"] || {}
+        raise StaleLoopError if defined?(@loop_start_comment_id) && loop_data["start_comment_id"] != @loop_start_comment_id
+
         changes.each { |key, value| loop_data[key.to_s] = value }
         trigger["loop"] = loop_data
         data["trigger"] = trigger

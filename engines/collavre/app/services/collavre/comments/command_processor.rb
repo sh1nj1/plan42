@@ -27,6 +27,7 @@ module Collavre
 
       def static_commands
         [
+          Collavre::Comments::KeepCommand.new(comment: comment, user: user),
           Collavre::Comments::CalendarCommand.new(comment: comment, user: user),
           Collavre::Comments::TopicCommand.new(comment: comment, user: user),
           Collavre::Comments::CompressCommand.new(comment: comment, user: user)

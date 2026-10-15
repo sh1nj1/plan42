@@ -88,9 +88,9 @@ module Collavre
 
       def post_continue_to_agent
         parent, topic, agent = trigger_context
-        return log_missing_context("resume", topic) unless parent && topic && agent
+        return log_missing_context("resume", topic) unless parent && topic && (agent || @transitioned_loop_data["source"] == "keep")
 
-        content = "@#{agent.name}: #{I18n.t(
+        content = "#{"@#{agent.name}: " if agent}#{I18n.t(
           'collavre.trigger_loop.continue',
           iteration: @transitioned_loop_data["current_iteration"] || 0,
           max: @transitioned_loop_data["max_iterations"] || 10
@@ -101,15 +101,19 @@ module Collavre
 
       def post_restart_trigger
         parent, topic, agent = trigger_context
-        return log_missing_context("restart", topic) unless parent && topic && agent
+        return log_missing_context("restart", topic) unless parent && topic && (agent || @transitioned_loop_data["source"] == "keep")
 
-        content = "@#{agent.name}: #{restart_message(parent)}"
+        content = "#{"@#{agent.name}: " if agent}#{restart_message(parent)}"
         comment = create_trigger_comment(topic, content, skip_dispatch: true)
         scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
         Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end
 
       def restart_message(parent)
+        if @transitioned_loop_data["source"] == "keep"
+          return [ @transitioned_loop_data["goal"], I18n.t("collavre.trigger_loop.instructions") ].join("\n\n")
+        end
+
         trigger_text = I18n.t(
           "collavre.drop_trigger.child_entered",
           child_description: creative.creative_snippet,
@@ -120,8 +124,14 @@ module Collavre
       end
 
       def trigger_context
-        parent = creative.parent
-        [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write) ]
+        parent = creative.trigger_loop_context
+        loop_data = creative.data&.dig("trigger", "loop") || {}
+        if loop_data["source"] == "keep"
+          agent = creative.trigger_loop_agent
+          [ parent, creative.topics.find_by(id: loop_data["trigger_topic_id"]), agent ]
+        else
+          [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write) ]
+        end
       end
 
       def create_trigger_comment(topic, content, skip_dispatch:)

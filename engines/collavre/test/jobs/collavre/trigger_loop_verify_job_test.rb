@@ -63,6 +63,29 @@ module Collavre
       )
     end
 
+    test "verification abandons a superseded generation" do
+      job = TriggerLoopVerifyJob.new
+      job.stub(:pick_verifier_agent, @ai_bot) do
+        job.stub(:verify_completion, ->(*) {
+          data = @child.reload.data.deep_dup
+          data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 1000, "state" => "running")
+          @child.update!(data: data)
+          :verified
+        }) { job.perform(@task.id) }
+      end
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "keep verifier receives goal and retries without forcing the previous agent" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Deliver keep")
+      @child.update!(data: data)
+      job = TriggerLoopVerifyJob.new
+      assert_includes job.send(:collect_instructions, @child, @child), "Deliver keep"
+      job.send(:post_verification_failed, @child, @topic, @ai_bot, 2, 10, "Missing tests")
+      refute_match(/@/, @child.comments.order(:id).last.content)
+    end
+
     test "evaluator usage inherits causal requesters and uses evaluator ownership" do
       verifier = users(:two)
       verifier.update!(llm_vendor: "google", llm_model: "test", created_by_id: users(:three).id)

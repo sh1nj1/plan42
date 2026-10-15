@@ -17,8 +17,8 @@ module Collavre
       return unless task&.creative
 
       child_creative = task.creative
-      parent_creative = child_creative.parent
-      return unless parent_creative&.drop_trigger_enabled?
+      parent_creative = child_creative.trigger_loop_context
+      return unless child_creative.trigger_loop_enabled?
 
       # Loop state is stored on the child creative (each child has its own loop)
       loop_config = child_creative.data&.dig("trigger", "loop")
@@ -37,13 +37,7 @@ module Collavre
         return
       end
 
-      status = evaluate_status(last_agent_comment, loop_config)
-
-      # LLM fallback: when agent doesn't use [STATUS: ...] tags, ask LLM
-      # to determine whether the work is actually done.
-      if status == :no_tag
-        status = llm_fallback_evaluate(child_creative, parent_creative, last_agent_comment, task)
-      end
+      status = evaluate_response(child_creative, parent_creative, last_agent_comment, task, loop_config)
 
       case status
       when :done
@@ -73,7 +67,10 @@ module Collavre
           post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
         end
       end
+    rescue TriggerLoopHelpers::StaleLoopError
+      nil
     end
+
 
     private
 
@@ -134,6 +131,11 @@ module Collavre
       post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
     end
 
+    def evaluate_response(creative, context, comment, task, config)
+      status = evaluate_status(comment, config)
+      status == :no_tag ? llm_fallback_evaluate(creative, context, comment, task) : status
+    end
+
     def evaluate_status(comment, loop_config)
       content = comment.content.to_s
 
@@ -161,10 +163,10 @@ module Collavre
     end
 
     def post_continue_instruction(child_creative, topic, parent_creative, iteration, max)
-      agent = find_trigger_agent(parent_creative)
-      return unless agent
+      agent = child_creative.trigger_loop_agent
+      return if !agent && !child_creative.keep_loop?
 
-      content = "@#{agent.name}: #{I18n.t(
+      content = "#{"@#{agent.name}: " if agent}#{I18n.t(
         'collavre.trigger_loop.continue',
         iteration: iteration,
         max: max
@@ -180,10 +182,10 @@ module Collavre
     end
 
     def post_retry_instruction(child_creative, topic, parent_creative, iteration, max)
-      agent = find_trigger_agent(parent_creative)
-      return unless agent
+      agent = child_creative.trigger_loop_agent
+      return if !agent && !child_creative.keep_loop?
 
-      content = "@#{agent.name}: #{I18n.t(
+      content = "#{"@#{agent.name}: " if agent}#{I18n.t(
         'collavre.trigger_loop.retry',
         iteration: iteration,
         max: max
@@ -196,12 +198,6 @@ module Collavre
         user: child_creative.user,
         skip_dispatch: false
       )
-    end
-
-    def find_trigger_agent(creative)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
     end
 
     # LLM fallback: when the agent doesn't use [STATUS: ...] tags,
@@ -286,7 +282,7 @@ module Collavre
 
     # Collect instructions from context creatives for LLM evaluation
     def collect_fallback_instructions(child_creative, parent_creative)
-      parts = []
+      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
       seen_ids = Set.new
 
       parent_creative.context_creatives.each do |ctx|

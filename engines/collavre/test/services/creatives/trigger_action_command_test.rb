@@ -17,6 +17,42 @@ module Collavre
         clear_enqueued_jobs
       end
 
+      test "drop resume keeps targeting the container agent" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @container, user: agent, permission: :write)
+        topic = @child.topics.find_or_create_by!(name: "Drop Trigger") { |record| record.user = @user }
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(topic.id, state: "paused") } })
+        previous_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :test
+        assert command(action: "resume").call.success?
+        assert_match(/@#{Regexp.escape(agent.name)}:/, @child.comments.order(:id).last.content)
+      ensure
+        ActiveJob::Base.queue_adapter = previous_adapter
+      end
+
+      test "keep pause resume and restart reuse trigger actions with ambient routing" do
+        topic = @child.main_topic
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          topic.id, source: "keep", goal: "Ship the feature"
+        ) } })
+
+        assert command(action: "pause").call.success?
+        assert_equal "paused", @child.reload.data.dig("trigger", "loop", "state")
+        assert_difference -> { @child.comments.count }, 1 do
+          assert command(action: "resume").call.success?
+        end
+        refute_match(/@/, @child.comments.order(:id).last.content)
+
+        data = @child.data.deep_dup
+        data["trigger"]["loop"]["state"] = "completed"
+        @child.update!(data: data)
+        assert_difference -> { @child.comments.count }, 1 do
+          assert command(action: "restart").call.success?
+        end
+        assert_includes @child.comments.order(:id).last.content, "Ship the feature"
+        assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+      end
+
       test "rejects unknown actions" do
         result = command(action: "invalid").call
 

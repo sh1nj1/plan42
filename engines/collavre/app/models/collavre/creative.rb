@@ -211,6 +211,8 @@ module Collavre
     after_commit :enqueue_mcp_tools_sync, if: :mcp_tools_sync_pending?
 
     # --- Drop Trigger ---
+    include TriggerLoop
+
     def drop_trigger_enabled?
       data&.dig("trigger", "on_child_enter") == true
     end

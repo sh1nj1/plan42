@@ -19,18 +19,14 @@ module Collavre
       return unless task&.creative
 
       child_creative = task.creative
-      parent_creative = child_creative.parent
-      return unless parent_creative&.drop_trigger_enabled?
+      parent_creative = child_creative.trigger_loop_context
+      return unless child_creative.trigger_loop_enabled?
 
       loop_config = child_creative.data&.dig("trigger", "loop")
       return unless loop_config && loop_config["state"] == "pending_verification"
 
-      topic = Topic.find_by(id: task.topic_id)
+      topic = trigger_completion_topic(task, loop_config)
       return unless topic
-
-      # Only verify tasks from the loop's trigger topic (cross-topic guard)
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      return if trigger_topic_id.present? && trigger_topic_id != task.topic_id
 
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
@@ -47,7 +43,7 @@ module Collavre
       result = verify_completion(verifier, instructions, last_agent_comment.content.to_s, task)
 
       if result == :verified
-        update_loop_data(child_creative, state: "completed")
+        nil unless update_loop_data(child_creative, state: "completed")
       elsif result == :awaiting_user
         # Agent correctly paused to wait for user — do NOT re-loop
         update_loop_data(child_creative, state: "awaiting_user")
@@ -72,13 +68,16 @@ module Collavre
           post_verification_failed(child_creative, topic, task.agent, iteration, max, result)
         end
       end
+    rescue TriggerLoopHelpers::StaleLoopError
+      nil
     end
+
 
     private
 
     # Collect instructions from context creatives of both parent and child
     def collect_instructions(child_creative, parent_creative)
-      parts = []
+      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
       seen_ids = Set.new
 
       # Parent's context creatives (trigger instructions, dev rules, etc.)
@@ -176,9 +175,9 @@ module Collavre
     end
 
     def post_verification_failed(child_creative, topic, task_agent, iteration, max, reason)
-      return unless task_agent
+      task_agent = child_creative.trigger_loop_agent if child_creative.keep_loop?
 
-      content = "@#{task_agent.name}: #{I18n.t(
+      content = "#{"@#{task_agent.name}: " if task_agent}#{I18n.t(
         'collavre.trigger_loop.verification_failed',
         iteration: iteration,
         max: max,

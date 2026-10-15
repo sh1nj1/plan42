@@ -62,6 +62,60 @@ module Collavre
       Task.where(id: @task.id).update_all(status: "done")
     end
 
+    test "check abandons a superseded loop during evaluation" do
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+      job = TriggerLoopCheckJob.new
+      job.stub(:evaluate_response, ->(*) {
+        data = @child.reload.data.deep_dup
+        data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 1000)
+        @child.update!(data: data)
+        :continue
+      }) { job.perform(@task.id) }
+      assert_equal 0, @child.reload.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "an in flight drop evaluator cannot overwrite a new keep generation" do
+      job = TriggerLoopCheckJob.new
+      job.send(:trigger_completion_topic, @task, @child.data.dig("trigger", "loop"))
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 1000)
+      @child.update!(data: data)
+      assert_raises(TriggerLoopHelpers::StaleLoopError) do
+        job.send(:update_loop_data, @child, state: "completed")
+      end
+      assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "keep continues without a trigger parent or explicit agent" do
+      Creative.where(id: @child.id).update_all(parent_id: nil)
+      @child.reload
+      data = @child.data.deep_dup
+      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Deliver the feature")
+      @child.update!(data: data)
+      @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+
+      TriggerLoopCheckJob.perform_now(@task.id)
+
+      assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
+      continuation = @child.comments.order(:id).last
+      assert_includes continuation.content, I18n.t("collavre.trigger_loop.continue", iteration: 1, max: 3)
+      refute_match(/@/, continuation.content)
+      assert_includes TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child), "Deliver the feature"
+    end
+
+    test "keep completion uses the shared verification job" do
+      data = @child.data.deep_dup
+      data["trigger"]["loop"]["source"] = "keep"
+      @child.update!(data: data)
+      @parent.update!(data: {})
+      @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, topic: @topic, skip_dispatch: true)
+
+      TriggerLoopVerifyJob.stub(:perform_later, ->(id) { assert_equal @task.id, id }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+      assert_equal "pending_verification", @child.reload.data.dig("trigger", "loop", "state")
+    end
+
     test "evaluator usage inherits causal requesters and uses evaluator ownership" do
       verifier = users(:two)
       verifier.update!(llm_vendor: "google", llm_model: "test", created_by_id: users(:three).id)

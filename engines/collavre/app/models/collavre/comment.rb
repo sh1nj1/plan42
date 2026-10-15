@@ -168,6 +168,8 @@ module Collavre
     include ClaudeChannelPermission, CreationEvents, ImageCdnEviction
 
     attribute :skip_default_user, :boolean, default: false
+    include KeepLoop
+
     attribute :skip_dispatch, :boolean, default: false
     attribute :skip_link_preview, :boolean, default: false
     attribute :skip_notification_revision, :boolean, default: false
@@ -603,23 +605,7 @@ module Collavre
       # Post continue instruction outside lock (state already committed)
       return unless iteration # guard: lock block returned early
 
-      parent = creative.parent
-      return unless parent&.drop_trigger_enabled?
-
-      agent = parent.find_ai_agent(:write)
-      return unless agent
-
-      creative.comments.create!(
-        content: "@#{agent.name}: #{I18n.t(
-          'collavre.trigger_loop.user_resumed',
-          iteration: iteration,
-          max: max
-        )}",
-        topic_id: topic_id,
-        private: false,
-        user: creative.user,
-        skip_dispatch: false
-      )
+      post_loop_resume(iteration, max)
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \

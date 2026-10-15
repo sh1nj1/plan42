@@ -177,17 +177,7 @@ module Collavre
         # Only initialize if loop doesn't exist yet
         return if trigger["loop"].present?
 
-        trigger["loop"] = {
-          "state" => "running",
-          "current_iteration" => 0,
-          "max_iterations" => 10,
-          "completion_conditions" => [],
-          "stuck_conditions" => [],
-          "on_retry" => "continue",
-          "last_task_id" => nil,
-          "cooldown_seconds" => 10,
-          "trigger_topic_id" => topic&.id
-        }
+        trigger["loop"] = TriggerLoopConfig.build(topic&.id)
         data["trigger"] = trigger
         child.update!(data: data)
       end

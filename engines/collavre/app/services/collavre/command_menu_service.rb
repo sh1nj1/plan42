@@ -6,12 +6,18 @@ module Collavre
     end
 
     def items
-      built_in_items + mcp_items
+      [ keep_item ] + built_in_items + mcp_items
     end
 
     private
 
     attr_reader :user, :creative
+
+    def keep_item
+      { name: "keep", label: "/keep",
+        description: I18n.t("collavre.comments.keep_command.description"),
+        args: "[goal] [@agent:] [--max 10]" }
+    end
 
     def built_in_items
       [

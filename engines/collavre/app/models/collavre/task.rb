@@ -175,7 +175,7 @@ module Collavre
       # Pending and completed replays own completion instead of the login card.
       return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
       return false unless trigger_event_name == "comment_created"
-      return false unless creative&.parent&.drop_trigger_enabled?
+      return false unless creative&.trigger_loop_enabled? && creative.trigger_loop_task?(self)
 
       # Only trigger loop check for tasks in the loop's trigger topic
       # to avoid cross-topic contamination from unrelated AI conversations
