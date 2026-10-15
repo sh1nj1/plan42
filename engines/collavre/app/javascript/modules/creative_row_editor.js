@@ -314,7 +314,7 @@ function setupEditorSession() {
     // So is an action confirmed on the open row: the waiting click must not move
     // the editor while the dialog is up, or the action would hit the wrong row.
     const confirmForCurrent = (message, options) => editTickets.take() && confirmDialog(message, options);
-    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }), flushOpenRow);
+    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }), flushOpenRow, deleteAttachment);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
 
@@ -1144,6 +1144,7 @@ function setupEditorSession() {
       fillFailedDraftForm(form, tree, draft, { methodInput, parentInput, afterInput, beforeInput, childInput, originIdInput, descriptionInput, contentTypeInput, markdownSourceInput, markdownEditorInput });
       lexicalEditor.load(draft.snapshot.content, `new-${Date.now()}`);
       setProgressState(draft.snapshot.progress);
+      updateProgressInputAvailability(draft.snapshot.progress);
       originalProgress = 0;
       // A new creative always saves on close, so the draft just has to read as unsaved.
       isDirty = true;

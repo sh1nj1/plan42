@@ -766,6 +766,26 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(sentProgress.at(-1).at(-1)).toBe('1')
   })
 
+  test('a failed draft reopened after a completed row with children can change its progress', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    const { tree: parent, rowComponent } = appendExistingRow(7)
+    rowComponent.dataset.progressValue = '1'
+    rowComponent.setAttribute('has-children', 'true')
+    clickRow(parent)
+    await flush()
+    const progress = document.getElementById('inline-creative-progress')
+    expect(progress.disabled).toBe(true)
+
+    clickRow(first)
+    await flush()
+
+    expect(template().parentElement).toBe(first)
+    expect(progress.disabled).toBe(false)
+  })
+
   test('a click that waits out a pending create yields to a later click', async () => {
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)
@@ -1328,6 +1348,40 @@ describe('Enter on a new creative saves it in the background', () => {
 
     expect(confirmDialogMock).toHaveBeenCalledWith('Discard it?', { danger: true })
     expect(event.detail.resume).toHaveBeenCalled()
+  })
+
+  test.each([
+    ['deleted when the user discards it', true, ['/attachments/blob-1']],
+    ['kept for a retry when the user keeps it', false, []],
+  ])('attachments removed before a failed create are %s on a frame swap', async (_case, agreed, deletes) => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(agreed))
+    await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalledTimes(agreed ? 1 : 0)
+    expect(attachmentDeletes()).toEqual(deletes)
+  })
+
+  test('attachments removed before a reopened failed draft are deleted when the user discards it after it fails again', async () => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+    const first = await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+    clickRow(first)
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalledTimes(1)
+    expect(attachmentDeletes()).toEqual(['/attachments/blob-1'])
   })
 
   test('a frame swap over a reopened failed draft that cannot be saved again is dropped when the user keeps it', async () => {
