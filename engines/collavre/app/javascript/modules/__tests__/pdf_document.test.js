@@ -76,3 +76,27 @@ test('coalesces resizes during rendering and uses the latest container width', a
   await settle()
   expect(content.querySelector('canvas').width).toBe(700)
 })
+
+
+test('PDF entry point loads PDF.js and renders the document with the configured worker', async () => {
+  const viewer = setup()
+  viewer.classList.add('document-viewer')
+  const render = jest.fn().mockReturnValue({ promise: Promise.resolve() })
+  const getPage = jest.fn().mockResolvedValue({
+    getViewport: ({ scale }) => ({ width: 400 * scale, height: 600 * scale }), render
+  })
+  const getDocument = jest.fn().mockReturnValue({ promise: Promise.resolve({ numPages: 1, getPage }) })
+  const worker = {}
+  jest.unstable_mockModule('pdfjs-dist', () => ({ getDocument, GlobalWorkerOptions: worker }))
+  try {
+    await import('../../pdf_viewer.js')
+    await settle()
+    expect(getDocument).toHaveBeenCalledWith({ url: '/report.pdf' })
+    expect(worker.workerSrc).toBe('/worker.js')
+    expect(viewer.querySelector('canvas').width).toBe(600)
+    expect(viewer.querySelector('[data-ppt-counter]').textContent).toBe('1 / 1')
+    expect(viewer.querySelector('.media-loading').hidden).toBe(true)
+  } finally {
+    jest.unstable_unmockModule('pdfjs-dist')
+  }
+})

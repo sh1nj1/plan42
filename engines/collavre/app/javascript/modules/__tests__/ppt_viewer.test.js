@@ -68,6 +68,9 @@ test('hides unsupported fullscreen and initializes only viewer pages', () => {
 
 test('sizes the embedding frame from validated presentation dimensions', () => {
   const frame = document.createElement('iframe')
+  const wrapper = document.createElement('div')
+  wrapper.className = 'ppt-attachment-preview'
+  wrapper.append(frame)
   Object.defineProperty(window, 'frameElement', { configurable: true, value: frame })
   const viewer = setup()
   const slide = document.createElement('div')
@@ -78,6 +81,7 @@ test('sizes the embedding frame from validated presentation dimensions', () => {
     slide.dataset.pptHeight = height
     initializePptViewer(viewer)
     expect(frame.style.aspectRatio).toBe(`${width} / ${height}`)
+    expect(wrapper.style.aspectRatio).toBe(`${width} / ${height}`)
   }
   for (const [width, height] of [[0, 1], [1, -1], ['invalid', 1], [Infinity, 1], [1, 1e10]]) {
     frame.style.aspectRatio = ''
@@ -150,4 +154,19 @@ test('slide links open outside the iframe without changing download targets', ()
   expect(link.target).toBe('_blank')
   expect(link.rel).toBe('noopener noreferrer')
   expect(viewer.querySelector('a[href="/download"]').target).toBe('')
+})
+
+
+test('document viewers initialize fullscreen without presentation navigation', async () => {
+  setup()
+  const viewer = document.querySelector('.ppt-viewer').cloneNode(true)
+  viewer.classList.add('document-viewer')
+  viewer.querySelectorAll('.ppt-viewer-slide, [data-ppt-previous], [data-ppt-next], [data-ppt-counter]').forEach(element => element.remove())
+  viewer.requestFullscreen = jest.fn().mockResolvedValue(undefined)
+  document.body.replaceChildren(viewer)
+  initializePptViewer(viewer)
+  viewer.querySelector('[data-ppt-fullscreen]').click()
+  await tick()
+  expect(viewer.requestFullscreen).toHaveBeenCalledTimes(1)
+  expect(document.activeElement).toBe(viewer)
 })
