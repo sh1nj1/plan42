@@ -16,6 +16,14 @@
   scroll-behavior: smooth;
 }
 
+/* Landing sections span the viewport and constrain their own content with
+   .landing-container, so the application's boxed main must not apply. */
+.landing-page > main {
+  max-width: none;
+  padding: 0;
+  background: transparent;
+}
+
 /* This file is linked only from layouts/collavre/landing.html.erb, which renders
    `<main><%= yield %></main>` and no app navigation — that lives in the host's
    application layout, which never loads this stylesheet. So a blanket
