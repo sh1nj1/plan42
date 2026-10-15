@@ -25,6 +25,8 @@ module Collavre
       raise self.class::InvalidArchive if entries.any? { |entry| entry.size > self.class::MAX_ENTRY_BYTES }
       raise self.class::InvalidArchive if entries.sum(&:size) > self.class::MAX_TOTAL_BYTES
 
+      @inline_media_bytes = 0
+      @inline_media_cache = {}
       @read_bytes = 0
       @entry_cache = {}
       @xml_cache = {}

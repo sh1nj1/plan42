@@ -9,6 +9,7 @@ module Collavre
   class PptRenderer
     include PptShapeFills
     include PptMedia
+    include PptInlineMedia
     include PptDiagrams
     include PptConnectors
     include PptBackgrounds
@@ -53,10 +54,7 @@ module Collavre
 
     def picture_source(entry)
       if @inline_media
-        type = Marcel::MimeType.for(name: File.basename(entry.name))
-        return "" unless type&.start_with?("image/")
-
-        "data:#{type};base64,#{Base64.strict_encode64(read_entry(entry))}"
+        inline_picture_source(entry)
       else
         blob = blob_for(entry)
         "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
