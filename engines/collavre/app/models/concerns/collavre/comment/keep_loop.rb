@@ -65,7 +65,16 @@ module Collavre
         end
       end
 
-      def reconcile_loop_dispatch(agents)
+      def dispatch_loop_comment
+        agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload,
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self))
+        reconcile_loop_dispatch(agents)
+      rescue StandardError
+        reconcile_loop_dispatch([], notify: false)
+        raise
+      end
+
+      def reconcile_loop_dispatch(agents, notify: true)
         return unless creative.keep_loop?
 
         creative.with_lock do
@@ -77,6 +86,8 @@ module Collavre
           loop_data["state"] = "awaiting_user"
           creative.update!(data: data)
         end
+        return unless notify
+
         creative.comments.create!(content: I18n.t("collavre.comments.keep_command.no_agent"),
                                   topic_id: topic_id, skip_default_user: true)
       end

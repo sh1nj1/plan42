@@ -66,6 +66,37 @@ module Collavre
         assert_equal I18n.t("collavre.comments.keep_command.no_agent"), @creative.comments.order(:id).last.content
       end
 
+      test "initial dispatch failure leaves the committed keep recoverable and preserves the exception" do
+        comment = command("/keep finish")
+        KeepCommand.new(comment: comment, user: @user).call
+        failure = RuntimeError.new("orchestration unavailable")
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise failure }) do
+          assert_same failure, assert_raises(RuntimeError) { comment.save! }
+        end
+        assert Comment.exists?(comment.id)
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_equal comment.id, @creative.data.dig("trigger", "loop", "current_comment_id")
+        assert_empty Task.where(creative_id: @creative.id)
+        assert_nil KeepCommand.new(comment: command("/keep retry"), user: @user).call
+      end
+
+      test "dispatch failure does not overwrite a concurrent pause or replacement loop" do
+        comment = command("/keep finish")
+        KeepCommand.new(comment: comment, user: @user).call
+        comment.skip_dispatch = true
+        comment.save!
+        original = @creative.reload.data.dig("trigger", "loop")
+        [ { "state" => "paused" }, { "current_comment_id" => comment.id + 1 } ].each do |changes|
+          config = original.merge(changes)
+          @creative.update!(data: { "trigger" => { "loop" => config } })
+          comment.skip_dispatch = false
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise "dispatch failed" }) do
+            assert_raises(RuntimeError) { comment.send(:dispatch_to_orchestration) }
+          end
+          assert_equal config, @creative.reload.data.dig("trigger", "loop")
+        end
+      end
+
       test "rejects keep in the Inbox System topic where dispatch is suppressed" do
         @creative = Creative.create!(description: "Inbox", data: { "kind" => "inbox" }, user: @user)
         @topic = @creative.system_topic

@@ -546,8 +546,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self))
-      reconcile_loop_dispatch(agents)
+      dispatch_loop_comment
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \

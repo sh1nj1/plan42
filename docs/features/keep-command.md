@@ -84,6 +84,9 @@ Keep loops track the current trigger comment. Unrelated topic tasks and duplicat
 completions cannot advance that turn. If initial or continuation routing schedules
 no agent (including an Inbox-ineligible session agent), the loop enters
 `awaiting_user` and posts a notice instead of remaining running without a task.
+If initial dispatch raises, the current running keep turn also returns to
+`awaiting_user`, allowing Resume or a new `/keep`. The original dispatch error
+is still reported; a concurrent Pause or replacement turn is preserved.
 
 An explicit keep agent is the only routing target even when the goal mentions
 other agents; the displayed goal text is preserved. An active keep loop also
