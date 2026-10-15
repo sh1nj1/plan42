@@ -17,7 +17,9 @@ module Collavre
   # job gets the adapter's ordinary error handling.
   #
   # Jobs that the adapter can't bulk insert, or that defer themselves until
-  # after the surrounding transaction commits, keep the regular path.
+  # after the surrounding transaction commits, keep the regular path. So does
+  # everything on Rails versions before 8.1, where enqueue runs the callbacks
+  # around raw_enqueue itself and there is no _raw_enqueue to write with.
   module BulkJobEnqueue
     STATE_KEY = :collavre_bulk_job_enqueue
 
@@ -26,9 +28,15 @@ module Collavre
     module_function
 
     def collect(deferrable: [])
-      return yield if current
+      return yield if current || !supported?
 
       run_scope(Scope.new(deferrable.map(&:to_s).to_set, [])) { yield }
+    end
+
+    # Rails 8.1 moved the enqueue callbacks into raw_enqueue and the actual
+    # write into _raw_enqueue; collecting relies on that split.
+    def supported?
+      ActiveJob::Base.private_method_defined?(:_raw_enqueue)
     end
 
     def current

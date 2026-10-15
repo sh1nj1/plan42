@@ -244,6 +244,30 @@ module Collavre
       assert_nil BulkJobEnqueue.current
     end
 
+    test "keeps the regular path when Active Job lacks the Rails 8.1 enqueue split" do
+      enqueue_calls = 0
+      original = SolidQueue::Job.method(:enqueue)
+      SolidQueue::Job.stub(:enqueue, ->(job) { enqueue_calls += 1; original.call(job) }) do
+        BulkJobEnqueue.stub(:supported?, false) do
+          bulk_calls = count_bulk_calls do
+            BulkJobEnqueue.collect(deferrable: DEFERRABLE) do
+              assert_nil BulkJobEnqueue.current
+              RecordingJob.perform_later("a")
+              RecordingJob.perform_later("b")
+            end
+          end
+          assert_equal 0, bulk_calls
+        end
+      end
+
+      assert_equal 2, enqueue_calls
+      assert_equal [ [ :before, "a" ], [ :after, "a", true, true ], [ :before, "b" ], [ :after, "b", true, true ] ], EVENTS
+    end
+
+    test "detects the Rails 8.1 enqueue split on the bundled Rails" do
+      assert BulkJobEnqueue.supported?
+    end
+
     private
 
     def new_jobs
