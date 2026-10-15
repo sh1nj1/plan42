@@ -231,8 +231,9 @@ generation and change the current comment identity.
 
 The invariant is: an older generation cannot enqueue new keep work, create or
 promote a Task, restore a dispatch, evaluate/verify a result, apply a stale
-control, or replay inline login. Admission and the corresponding writes share
-the creative transaction. External provider calls already admitted before Pause
+control, or replay inline login. Task creation and loop transitions revalidate
+admission under the creative lock. Inline-login scheduling also checks identity,
+and execution revalidates it before creating agent work. External provider calls already admitted before Pause
 may finish; their obsolete results cannot advance the loop. State and control
 version checks protect an evaluation's expected transition within its generation.
 Queue reservations also carry generation, so a stale payload cannot replace or
