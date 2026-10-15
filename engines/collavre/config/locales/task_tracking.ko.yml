@@ -1,0 +1,12 @@
+ko:
+  collavre:
+    tools:
+      task_tracking:
+        errors:
+          current_user_required: "현재 사용자가 필요합니다."
+          unreadable_trigger: "작업 지시를 읽을 권한이 없습니다."
+          invalid_status: "상태는 active, finished, all 중 하나여야 합니다."
+          invalid_limit: "조회 개수는 1~100이어야 합니다."
+          choose_input: "comment_id 또는 task_ids 중 하나만 입력하세요."
+          invalid_ids: "태스크 ID를 1~100개 입력하세요."
+          too_many_tasks: "추적 가능한 태스크 200개를 초과했습니다. 더 작은 태스크 그룹으로 조회하세요."

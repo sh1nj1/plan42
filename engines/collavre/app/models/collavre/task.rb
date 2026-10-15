@@ -13,6 +13,7 @@ module Collavre
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
+    before_validation :assign_trigger_comment_id
     validates :name, presence: true
 
     enum :status, {
@@ -161,6 +162,10 @@ module Collavre
     end
 
     private
+
+    def assign_trigger_comment_id
+      self.trigger_comment_id = trigger_event_payload&.dig("comment", "id")
+    end
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
