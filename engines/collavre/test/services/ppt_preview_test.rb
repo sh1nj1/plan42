@@ -58,6 +58,16 @@ class PptPreviewTest < ActiveSupport::TestCase
     end
   end
 
+  test "unknown inline media types are skipped without reading" do
+    with_inline_image do |renderer, entry|
+      Marcel::MimeType.stub :for, nil do
+        renderer.stub :read_entry, ->(*) { flunk "Must skip unknown media" } do
+          assert_equal "", renderer.send(:picture_source, entry)
+        end
+      end
+    end
+  end
+
   test "rejects inline media before encoding beyond the remaining output budget" do
     with_inline_image do |renderer, entry|
       renderer.instance_variable_set(:@inline_media_bytes, Collavre::PptRenderer::MAX_RENDERED_BYTES - 25)
