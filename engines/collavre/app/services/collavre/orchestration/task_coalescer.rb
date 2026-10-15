@@ -206,6 +206,7 @@ module Collavre
             locked.values.select { |t| t.id != keep.id && t.status == "queued" }
           )
           siblings = reject_other_workspace_principals(keep, siblings)
+          siblings = siblings.reject { |task| KeepLoop.dispatch?(task.trigger_event_payload) }
           comment_ids = siblings.flat_map { |t| trigger_comment_ids(t) }
 
           absorbed_ids = supersede!(keep, siblings)
@@ -257,7 +258,7 @@ module Collavre
       end
 
       def independent_trigger?(task)
-        task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
+        KeepLoop.dispatch?(task.trigger_event_payload) || task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
       end
 
       def foldable_survivor?(task)
