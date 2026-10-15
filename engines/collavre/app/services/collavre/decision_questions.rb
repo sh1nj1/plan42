@@ -39,7 +39,7 @@ module Collavre
       value = case type
       when "choice"
         choice_schema(definition)
-      when "probability" then { type: "number", minimum: 0, maximum: 1 }
+      when "probability" then probability_schema(definition)
       when "score" then score_schema(definition)
       else raise ArgumentError, "Unsupported question type: #{type}"
       end
@@ -49,17 +49,39 @@ module Collavre
     def choice_schema(definition)
       options = definition.fetch("options")
       raise ArgumentError, "A choice needs at least two options" if options.size < 2
-      unless options.values.all? { |value| value.nil? || [ String, Hash, Array ].any? { |type| value.is_a?(type) } }
+      unless options.values.all? { |value| description?(value) }
         raise ArgumentError, "Choice descriptions must be text, a Hash, an Array, or nil"
       end
 
       { type: "string", enum: options.keys.map(&:to_s) }
     end
 
+    def description?(value)
+      value.nil? || [ String, Hash, Array ].any? { |type| value.is_a?(type) }
+    end
+
+    def probability_schema(definition)
+      criteria = definition["criteria"]
+      validate_probability_criteria!(criteria) unless criteria.nil?
+      { type: "number", minimum: 0, maximum: 1 }
+    end
+
+    def validate_probability_criteria!(criteria)
+      unless criteria.is_a?(Hash) && (criteria.keys - %w[yes no true false]).empty?
+        raise ArgumentError, "Probability criteria must describe yes and no"
+      end
+
+      outcomes = criteria.keys.map { |key| %w[yes true].include?(key) }
+      raise ArgumentError, "Probability criteria contain duplicate outcomes" unless outcomes.uniq.size == outcomes.size
+      unless criteria.values.all? { |value| description?(value) }
+        raise ArgumentError, "Probability descriptions must be text, a Hash, an Array, or nil"
+      end
+    end
+
     def score_schema(definition)
       levels = definition.fetch("levels")
-      unless levels.is_a?(Array) && levels.all? { |level| level.is_a?(String) && level.present? }
-        raise ArgumentError, "Score levels must be nonblank descriptions"
+      unless levels.is_a?(Array) && levels.all? { |level| description?(level) }
+        raise ArgumentError, "Score levels must be an Array of descriptions"
       end
 
       count = levels.size

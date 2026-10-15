@@ -378,13 +378,46 @@ module Collavre
         client.stub(:native_decision, ->(*) { flunk "Invalid scale reached native adapter" }) do
           client.stub(:chat_decision, ->(*) { flunk "Invalid scale reached chat adapter" }) do
             [ [], [ "only" ], Array.new(11, "level"), "ok", nil, { low: "low", high: "high" },
-              [ nil, nil ], [ "low", 1 ], [ "low", "" ], [ "low", "  " ] ].each do |levels|
+              [ "low", 1 ], [ "low", false ] ].each do |levels|
               assert_raises(ArgumentError) do
                 client.judge("Task", questions: { rating: { type: :score, levels: levels } })
               end
             end
           end
         end
+      end
+    end
+
+    test "score levels accept native structured descriptions" do
+      [ [ { max: 10 }, { min: 11 } ], [ [ "low" ], [ "high" ] ], [ nil, nil ], [ "", "  " ] ].each do |levels|
+        definitions = DecisionQuestions.new(rating: { type: :score, levels: levels })
+        assert_equal 1, definitions.schema.dig(:properties, :answers, :properties, "rating", :properties, "score", :maximum)
+        assert_equal levels.map { |level| level.is_a?(Hash) ? level.stringify_keys : level },
+          definitions.definitions.fetch("rating").fetch("levels")
+      end
+    end
+
+    test "invalid probability criteria fail before either decision adapter is called" do
+      %w[google typesafe].each do |vendor|
+        client = AiClient.new(vendor: vendor, model: "test", system_prompt: nil)
+        client.stub(:native_decision, ->(*) { flunk "Invalid criteria reached native adapter" }) do
+          client.stub(:chat_decision, ->(*) { flunk "Invalid criteria reached chat adapter" }) do
+            [ "yes", [], false, 1, { yes: 1, no: 0 }, { yes: false }, { maybe: "Maybe" },
+              { yes: "Yes", true: "Also yes" }, { no: "No", false: "Also no" } ].each do |criteria|
+              assert_raises(ArgumentError) do
+                client.judge("Task", questions: { done: { type: :probability, criteria: criteria } })
+              end
+            end
+          end
+        end
+      end
+    end
+
+    test "probability criteria accept optional native descriptions and outcome aliases" do
+      [ nil, {}, { yes: "Yes", no: "No" }, { true => { max: 10 }, false => [ "No" ] },
+        { yes: nil }, { no: "" }, { true: "Yes", no: "No" } ].each do |criteria|
+        definitions = DecisionQuestions.new(done: { type: :probability, criteria: criteria })
+        assert_equal "number", definitions.schema.dig(:properties, :answers, :properties, "done", :properties, "probability", :type)
       end
     end
 
