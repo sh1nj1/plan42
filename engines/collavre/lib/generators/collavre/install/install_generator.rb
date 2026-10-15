@@ -48,7 +48,7 @@ module Collavre
         content = File.read(build_script)
 
         unless content.include?("nodePaths:")
-          content = content.sub(/(\bbundle:\s*true,)/, "\\1\n    nodePaths: [require('path').join(process.cwd(), 'node_modules')],")
+          content = content.sub(/\bbundle:\s*true\s*(?:,|(?=\}))/, "bundle: true,\n    nodePaths: [require('path').join(process.cwd(), 'node_modules')],")
           File.write(build_script, content)
         end
 

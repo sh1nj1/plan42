@@ -41,20 +41,22 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
 
     assert_file "script/build.cjs", /nodePaths: \[require\('path'\)\.join\(process\.cwd\(\), 'node_modules'\)\]/
   end
-  test "updates dependency resolution when Collavre is already configured" do
-    FileUtils.mkdir_p(File.join(destination_root, "script"))
-    File.write(File.join(destination_root, "script/build.cjs"), "// collavre\nconst config = { bundle: true, };\n")
-    generator = self.class.generator_class.new([], {}, destination_root: destination_root)
-    Rails.stub(:root, Pathname.new(destination_root)) do
-      2.times { generator.install_build_script }
-    end
+  [ "bundle: true,", "bundle: true", "bundle: true\n" ].each do |bundle_property|
+    test "updates configured dependency resolution with #{bundle_property.inspect}" do
+      FileUtils.mkdir_p(File.join(destination_root, "script"))
+      File.write(File.join(destination_root, "script/build.cjs"), "// collavre\nconst config = { #{bundle_property} };\n")
+      generator = self.class.generator_class.new([], {}, destination_root: destination_root)
+      Rails.stub(:root, Pathname.new(destination_root)) do
+        2.times { generator.install_build_script }
+      end
 
-    content = File.read(File.join(destination_root, "script/build.cjs"))
-    assert_equal 1, content.scan("nodePaths:").size
-    script = File.join(destination_root, "script/build.cjs")
-    File.write(script, "#{content}\nconsole.log(JSON.stringify(config.nodePaths));")
-    output, status = Open3.capture2e("node", script, chdir: destination_root)
-    assert status.success?, output
-    assert_equal [ File.join(destination_root, "node_modules") ], JSON.parse(output)
+      content = File.read(File.join(destination_root, "script/build.cjs"))
+      assert_equal 1, content.scan("nodePaths:").size
+      script = File.join(destination_root, "script/build.cjs")
+      File.write(script, "#{content}\nconsole.log(JSON.stringify(config.nodePaths));")
+      output, status = Open3.capture2e("node", script, chdir: destination_root)
+      assert status.success?, output
+      assert_equal [ File.join(destination_root, "node_modules") ], JSON.parse(output)
+    end
   end
 end
