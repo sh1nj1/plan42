@@ -175,3 +175,14 @@ Completion verification filters candidates by current read access to the loop
 creative before preferring a different agent. If every alternative is denied,
 an authorized task agent can still verify the result, including an explicitly
 selected agent shared only on the child rather than the drop container.
+
+Keep dispatches revalidate their recorded generation, current turn, running state,
+and current agent access when the queued job starts, including delayed restores
+and promoted waiters. Paused or superseded jobs do not start agent work. An
+execution-time refusal returns the unchanged turn to `awaiting_user` when no
+other task or pending restoration owns it. A refused restored job clears its
+restore claim and records refusal before deciding whether ownership remains.
+Admission uses the controls' topic-to-creative lock order; provider execution
+runs after those admission locks have been released.
+Same-anchor payload rebuilding (including inline-login replay) retains that
+original identity; acquiring a different anchor uses the new comment's identity.

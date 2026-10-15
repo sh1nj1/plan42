@@ -36,6 +36,9 @@ module Collavre
           next unless config["source"] == "keep" && config["state"] == "running"
           next unless config.slice(*generation.keys) == generation
 
+          context["comment"] = context.fetch("comment").merge(
+            "keep_loop_generation" => generation, "keep_restore_task_id" => task.id
+          )
           begin
             yield
           rescue StandardError => failure
