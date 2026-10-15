@@ -110,7 +110,7 @@ module Collavre
           end
           next if candidate.nil?
 
-          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending")
+          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending", updated_at: Time.current)
           claimed = candidate.reload if updated > 0
         end
 

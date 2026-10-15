@@ -51,6 +51,21 @@ module Collavre
       end
     end
 
+    test "duplicate check cannot evaluate the previous task between continuation turns" do
+      @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => {
+        "current_comment_id" => nil, "current_iteration" => 2, "max_iterations" => 3
+      } }))
+      before = @creative.reload.data.deep_dup
+      # Internal continuation snapshot checks still admit the nil anchor.
+      assert KeepLoop.admit!(@creative, generation: 4, comment_id: nil)
+      refute KeepLoop.task?(@creative, @task)
+      AiClient.stub(:new, ->(*) { flunk "Previous turn evaluated during continuation gap" }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+      assert_equal before, @creative.reload.data
+      assert_empty enqueued_jobs.select { |job| job[:job] == TriggerLoopVerifyJob }
+    end
+
     test "admission rejects legacy malformed absent and wrong-turn identities" do
       [ nil, false, 0, -1, "4", 3, { "start_comment_id" => @turn.id } ].each do |generation|
         refute KeepLoop.admit!(@creative, generation: generation, comment_id: @turn.id)

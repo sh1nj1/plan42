@@ -6,13 +6,12 @@ module Collavre
     module RestoredDispatchAdmission
       def reject_restore!(task, comment_id)
         creative = Creative.find_by(id: task.creative_id)
-        recorded_keep = task.trigger_event_payload&.dig(KeepDispatchRestoration::KEY)&.key?(comment_id.to_s)
-        return unless recorded_keep || (creative&.keep_loop? && creative.data.dig("trigger", "loop", "current_comment_id") == comment_id.to_i)
-
         Task.transaction do
           row = Task.lock.find_by(id: task.id)
           payload = row&.trigger_event_payload
           next unless payload.is_a?(Hash)
+          recorded_keep = payload.dig(KeepDispatchRestoration::KEY)&.key?(comment_id.to_s)
+          next unless recorded_keep || (creative&.keep_loop? && creative.data.dig("trigger", "loop", "current_comment_id") == comment_id.to_i)
           next if restored_ids_in(payload).include?(comment_id.to_i)
 
           rejected = (rejected_restore_ids_in(payload) + [ comment_id.to_i ]).uniq.sort
