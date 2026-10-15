@@ -6,10 +6,10 @@ en:
         details: Requires the Creative to have a connected GitHub repository.
       github_pr_details:
         summary: Get a GitHub pull request's title, body, author, and changed files.
-        details: Requires the Creative to have a connected GitHub repository.
+        details: The PR body is truncated to 2,000 characters, so the end of a long description may be missing. Requires the Creative to have a connected GitHub repository.
       github_pr_diff:
         summary: Get the diff of a GitHub pull request.
-        details: Returns the combined patch of the changed files, truncated to max_length characters (default 10,000), so later files may be cut off in large PRs. Requires the Creative to have a connected GitHub repository.
+        details: Returns the combined patch of the changed files that have a text patch; files without one (such as binary or very large files) are left out. The result is truncated to max_length characters (default 10,000), so later files may be cut off in large PRs. Requires the Creative to have a connected GitHub repository.
       pr_monitor:
         summary: Follow a GitHub pull request in a topic.
         details: PR comments, review comments, and reviews are posted into the topic as chat messages. Calling it again for the same PR does not add a duplicate.
