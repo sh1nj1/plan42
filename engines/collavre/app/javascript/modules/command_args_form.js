@@ -7,6 +7,8 @@
  * and builds the final command string to insert into the textarea.
  */
 
+import { keepGoalText } from './keep_goal_text.js'
+
 const OVERLAY_ID = 'command-args-overlay'
 const DIALOG_ID = 'command-args-dialog'
 const MENTION_DEBOUNCE_MS = 200
@@ -370,7 +372,7 @@ export default class CommandArgsForm {
   _buildKeepText(command, values) {
     const agentName = values.agent_name?.trim().replace(/^@/, '').replace(/:$/, '').trim()
     return [command.label, values.max != null ? `--max ${values.max}` : null,
-      agentName ? `@${agentName}:` : null, values.goal].filter(Boolean).join(' ')
+      agentName ? `@${agentName}:` : null, keepGoalText(values.goal)].filter(Boolean).join(' ')
   }
 
   _buildCompressText(command, values) {

@@ -315,6 +315,29 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.parsed_body.map { |u| u["id"] }, @admin.id
   end
 
+  test "keep agent eligibility is filtered in SQL before the result limit" do
+    creative = Creative.create!(user: @regular_user, description: "SQL picker")
+    agent = users(:ai_bot)
+    CreativeShare.create!(creative: creative, user: agent, permission: :feedback)
+    scope = Collavre::Creatives::KeepAgentScope.new(creative)
+    queries = []
+    capture = ->(*args) { queries << args.last[:sql] if args.last[:sql].match?(/SELECT/i) }
+    result = nil
+    ActiveRecord::Base.uncached do
+      ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+        result = scope.apply(User.ai_agents).limit(1).pluck(:id)
+      end
+    end
+    assert_equal [ agent.id ], result
+    assert_equal 2, queries.size
+    assert_match(/LIMIT/, queries.last)
+    assert_match(/IN \(SELECT/, queries.last)
+
+    creative.update!(user: agent)
+    CreativeSharesCache.where(creative: creative, user: agent).update_all(permission: :no_access)
+    assert_includes Collavre::Creatives::KeepAgentScope.new(creative).apply(User.ai_agents).pluck(:id), agent.id
+  end
+
   test "keep agent search honors inherited linked public and denied permissions" do
     sign_in_as(@regular_user, password: "password")
     origin = Creative.create!(user: @regular_user, description: "Origin")

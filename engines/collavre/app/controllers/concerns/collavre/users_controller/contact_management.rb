@@ -39,8 +39,7 @@ module Collavre
     def keep_agent_scope(scope, creative)
       return scope.none unless creative
 
-      eligible_ids = scope.ai_agents.select { |agent| creative.has_permission?(agent, :feedback) }.map(&:id)
-      scope.where(id: eligible_ids)
+      Creatives::KeepAgentScope.new(creative).apply(scope.ai_agents)
     end
 
     def empty_global_search?(term, creative)

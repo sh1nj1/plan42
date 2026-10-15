@@ -5,13 +5,15 @@ is satisfied, user input is needed, or the iteration limit is reached.
 
 Selecting `/keep` from the command menu opens a parameter popup for the maximum
 iterations, agent, and goal. All fields are optional; leaving them blank uses
-the defaults described below. Submitting the popup inserts the command into the
-discussion input, ready to send.
+the defaults described below. Confirming the popup immediately submits the command and starts the loop.
+There is no separate send step.
 
 ```text
 /keep [--max 10] [@agent:] [goal]
 ```
 
+- Use `--` before a goal beginning with `@name:`, `--max`, or `--` to preserve it
+  as literal goal text. The popup adds this separator automatically.
 - `goal` is optional. Omit it to follow the creative's existing context and
   trigger instructions.
 - `@agent:` optionally selects an AI agent by mention. Without it, normal

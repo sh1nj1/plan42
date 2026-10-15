@@ -162,6 +162,11 @@ describe('CommandArgsForm keep command', () => {
     [{ agent_name: '   ', goal: 'Fix bugs' }, '/keep Fix bugs'],
     [{ max: '8', agent_name: '@Agent Name:', goal: 'Fix bugs\nThen verify' },
       '/keep --max 8 @Agent Name: Fix bugs\nThen verify'],
+    ...['@Vrex: investigate', '--max 1 investigate', '-- investigate', '--'].map(goal => [
+      { goal }, `/keep -- ${goal}`
+    ]),
+    [{ max: '5', agent_name: 'Vrex', goal: '@Other: investigate' },
+      '/keep --max 5 @Vrex: -- @Other: investigate'],
     [{ max: '1' }, '/keep --max 1'],
     [{ max: '50' }, '/keep --max 50'],
     [{ max: '1e1' }, '/keep --max 10']
