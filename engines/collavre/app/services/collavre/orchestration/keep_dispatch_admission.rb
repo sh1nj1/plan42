@@ -28,6 +28,9 @@ module Collavre
           next unless creative
 
           creative.with_lock do
+            # This job no longer needs its queued reservation to hold the turn.
+            KeepQueuedDispatches.release!(context, agent)
+            creative.reload
             next unless current?(creative, generation)
 
             result = Creatives::PermissionChecker.current_allowed?(creative.id, agent, :feedback) ? yield : :rejected
@@ -66,7 +69,7 @@ module Collavre
           task.creative = creative
           (creative.trigger_loop_task?(task) && (task.active? || task.send(:trigger_loop_completion_eligible?))) ||
             DeliveryRecord.pending_restoration?(task, comment_id: comment_id)
-        end
+        end || KeepQueuedDispatches.pending?(creative, comment_id)
       end
     end
   end

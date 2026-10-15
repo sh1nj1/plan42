@@ -111,10 +111,16 @@ module Collavre
 
       def enqueue_agent_job(agent, context, decision, require_enqueue_ack:)
         queue = decision[:timing] == :delayed ? AiAgentJob.set(wait: decision[:delay]) : AiAgentJob
-        job = queue.perform_later(agent.id, @event_name, context)
-        # Child publication must remain recoverable when an adapter rejects
-        # enqueue without raising. Keep the legacy array API's default behavior.
-        raise ActiveJob::EnqueueError if require_enqueue_ack && !(job && job.successfully_enqueued?)
+        KeepQueuedDispatches.reserve!(context, agent)
+        begin
+          job = queue.perform_later(agent.id, @event_name, context)
+          # Child publication must remain recoverable when an adapter rejects
+          # enqueue without raising. Keep the legacy array API's default behavior.
+          raise ActiveJob::EnqueueError if require_enqueue_ack && !(job && job.successfully_enqueued?)
+        rescue StandardError
+          KeepQueuedDispatches.release!(context, agent)
+          raise
+        end
       end
     end
   end
