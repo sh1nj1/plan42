@@ -420,6 +420,101 @@ module Collavre
         assert dispatched
       end
 
+      test "keep detaches quoted review metadata before routing" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        author = agent.dup
+        author.email = "keep-review-author@example.com"
+        author.name = "KeepReviewAuthor"
+        author.save!
+        CreativeShare.create!(creative: @creative, user: author, permission: :feedback)
+        quoted = @creative.comments.create!(content: "Original", user: author, topic: @topic, skip_dispatch: true)
+        comment = command("/keep @#{agent.name}: finish")
+        comment.quoted_comment = quoted
+        comment.review_type = :review
+        assert_nil KeepCommand.new(comment: comment, user: @user).call
+        assert_nil comment.quoted_comment_id
+        assert_nil comment.review_type
+        comment.skip_dispatch = true
+        comment.save!
+        payload = comment.reload.dispatch_payload
+        assert_equal [ agent ], Orchestration::Matcher.new(SystemEvents::ContextBuilder.new(payload).build).match
+        assert_not comment.review_message?
+        assert_equal "Original", quoted.reload.content
+      end
+
+      test "pause after reply transition prevents resume dispatch" do
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user"
+        ) } })
+        response = command("Proceed")
+        original = response.method(:post_loop_resume)
+        pause = lambda do |*args|
+          @creative.with_lock do
+            data = @creative.data.deep_dup
+            data["trigger"]["loop"]["state"] = "paused"
+            @creative.update!(data: data)
+          end
+          original.call(*args)
+        end
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Paused reply must not dispatch" }) do
+          response.stub(:post_loop_resume, pause) do
+            assert_no_difference -> { @creative.comments.count } do
+              response.send(:resume_trigger_loop_if_awaiting)
+            end
+          end
+        end
+        assert_equal "paused", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
+      test "reply resume rejects changed control version even after running is restored" do
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user"
+        ) } })
+        response = command("Proceed")
+        original = response.method(:post_loop_resume)
+        change_version = lambda do |*args|
+          @creative.with_lock do
+            data = @creative.data.deep_dup
+            config = data["trigger"]["loop"]
+            config["control_version"] = config.fetch("control_version", 0) + 1
+            @creative.update!(data: data)
+          end
+          original.call(*args)
+        end
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale reply must not dispatch" }) do
+          response.stub(:post_loop_resume, change_version) do
+            assert_no_difference -> { @creative.comments.count } do
+              response.send(:resume_trigger_loop_if_awaiting)
+            end
+          end
+        end
+        assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
+      test "agent permission loss between reply transition and dispatch restores awaiting user" do
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @topic.id, source: "keep", state: "awaiting_user", agent_id: agent.id
+        ) } })
+        response = command("Proceed")
+        original = response.method(:post_loop_resume)
+        revoke = lambda do |*args|
+          CreativeShare.where(creative: @creative, user: agent).destroy_all
+          CreativeSharesCache.where(creative: @creative, user: agent).delete_all
+          original.call(*args)
+        end
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Unavailable agent must not dispatch" }) do
+          response.stub(:post_loop_resume, revoke) do
+            assert_no_difference -> { @creative.comments.count } do
+              response.send(:resume_trigger_loop_if_awaiting)
+            end
+          end
+        end
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
       private
 
       def command(content)

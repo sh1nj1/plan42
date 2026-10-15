@@ -583,6 +583,7 @@ module Collavre
       # Use pessimistic lock to prevent duplicate resume from concurrent comments
       iteration = nil
       max = nil
+      snapshot = nil
       creative.with_lock do
         loop_data = creative.data&.dig("trigger", "loop")
         return unless loop_data && loop_data["state"] == "awaiting_user"
@@ -603,12 +604,13 @@ module Collavre
         trigger["loop"] = loop_cfg
         data["trigger"] = trigger
         creative.update!(data: data)
+        snapshot = loop_cfg.deep_dup
       end
 
-      # Post continue instruction outside lock (state already committed)
+      # Revalidate the committed turn under topic -> creative lock order.
       return unless iteration # guard: lock block returned early
 
-      post_loop_resume(iteration, max)
+      post_loop_resume(iteration, max, snapshot)
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \

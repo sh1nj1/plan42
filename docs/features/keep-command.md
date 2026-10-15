@@ -97,3 +97,9 @@ state-update lock is released.
 Status evaluation and completion verification use the accepted task's linked
 reply. Later responses from the same agent in the topic cannot replace that
 result; a missing linked reply does not fall back to unrelated comments.
+
+Keep commands detach quoted-comment and review metadata before saving. They
+start ordinary loop turns rather than reviewing or replacing the quoted reply.
+Human-reply resumes revalidate the saved loop snapshot under topic and creative
+locks before creating and dispatching their continuation, so Pause or a newer
+control version invalidates a resume already in flight.

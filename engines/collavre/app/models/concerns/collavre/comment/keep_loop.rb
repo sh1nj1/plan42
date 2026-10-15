@@ -60,7 +60,22 @@ module Collavre
                                   topic_id: topic_id, skip_default_user: true)
       end
 
-      def post_loop_resume(iteration, max)
+      def post_loop_resume(iteration, max, snapshot)
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          creative.with_lock do
+            next unless creative.data&.dig("trigger", "loop") == snapshot
+            next unless snapshot["state"] == "running"
+            if creative.keep_loop_agent_unavailable?
+              creative.update!(data: creative.data.deep_merge("trigger" => { "loop" => { "state" => "awaiting_user" } }))
+              next
+            end
+
+            create_loop_resume(iteration, max)
+          end
+        end
+      end
+
+      def create_loop_resume(iteration, max)
         return unless creative.trigger_loop_enabled?
 
         agent = creative.trigger_loop_agent

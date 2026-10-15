@@ -47,6 +47,7 @@ module Collavre
       end
 
       def prepare_loop(text, agent, limit)
+        @comment.assign_attributes(quoted_comment: nil, review_type: nil)
         @comment.topic ||= @comment.creative.main_topic
         @comment.keep_loop_options = { "goal" => text.strip, "agent_id" => agent&.id,
                                        "max_iterations" => limit.to_i }
