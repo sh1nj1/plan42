@@ -15,6 +15,7 @@ class Collavre::StylesheetsHelperTest < ActionView::TestCase
 
   test "collavre_stylesheets renders every engine stylesheet" do
     html = collavre_stylesheets
+    assert_select Nokogiri::HTML.fragment(html), 'link[href*="collavre/attachment_card"]', count: 1
 
     Collavre::StylesheetsHelper::COLLAVRE_STYLESHEETS.each do |sheet|
       assert_includes html, sheet
