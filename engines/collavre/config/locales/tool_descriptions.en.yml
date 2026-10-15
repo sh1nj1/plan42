@@ -110,6 +110,16 @@ en:
       collavre_source_search:
         summary: Search Collavre's source code for text.
         details: Case-insensitive literal search that returns file paths, line numbers, and matching lines. Pass a directory or file to narrow it.
+      task_status:
+        summary: Check task status by instruction message or task IDs.
+        details: |-
+          Includes delegated and replacement tasks and returns an aggregate status with visible reply previews. Requires read permission.
+          Tasks may not exist yet after posting a message. A completed agent turn does not guarantee that the requested work is complete; check the reply too.
+      topic_tasks:
+        summary: List tasks in a topic and their current status.
+        details: |-
+          Filter by active, finished, or all tasks and limit the number returned. Requires read permission on the topic.
+          Returns task IDs, agents, trigger message IDs, timestamps, and visible reply previews for tracking work.
       topic_branch:
         summary: Start a new topic with copies of selected messages.
         details: |-
