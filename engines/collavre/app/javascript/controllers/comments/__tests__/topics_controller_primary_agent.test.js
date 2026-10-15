@@ -65,6 +65,13 @@ describe('TopicsController#setTopicPrimaryAgent', () => {
     jest.clearAllMocks()
   })
 
+  test('default topic avatar contains only an escaped initial', () => {
+    const wrapper = document.createElement('div')
+    wrapper.innerHTML = controller.renderAgentAvatar({ ...AGENT, default_avatar: true, initial: '<G>' })
+    expect(wrapper.querySelector('img')).toBeNull()
+    expect(wrapper.querySelector('.avatar-initial').textContent).toBe('<G>')
+  })
+
   test('renders the agent avatar from the PATCH response without any broadcast', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

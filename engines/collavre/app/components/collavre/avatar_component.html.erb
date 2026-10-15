@@ -1,5 +1,6 @@
 <div class="avatar-wrapper" style="width: <%= size %>px; height: <%= size %>px;">
-  <%= image_tag avatar_url,
+  <% unless default_avatar? %>
+    <%= image_tag avatar_url,
                 alt: '',
                 width: size,
                 height: size,
@@ -7,9 +8,10 @@
                 title: email,
                 style: 'border-radius:50%;vertical-align:middle;',
                 data: data %>
+  <% end %>
   <% if default_avatar? %>
-    <span class="avatar-initial" style="font-size: <%= (size / 2.0).round %>px;">
+    <%= content_tag :span, class: "avatar-initial #{classes}", title: email, data: data, style: "font-size: #{(size / 2.0).round}px;" do %>
       <%= initial %>
-    </span>
+    <% end %>
   <% end %>
 </div>

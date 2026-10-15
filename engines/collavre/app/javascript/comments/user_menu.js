@@ -14,11 +14,15 @@ function avatarElement(user, size, classes) {
   image.dataset.userId = user.id
   image.dataset.userName = user.name
   if (user.email) image.dataset.email = user.email
-  wrapper.appendChild(image)
+  if (!user.default_avatar) wrapper.appendChild(image)
 
   if (user.default_avatar) {
     const initial = document.createElement('span')
-    initial.className = 'avatar-initial'
+    initial.className = `avatar-initial ${classes}`
+    initial.title = user.name
+    initial.dataset.userId = user.id
+    initial.dataset.userName = user.name
+    if (user.email) initial.dataset.email = user.email
     initial.style.fontSize = `${Math.round(size / 2)}px`
     initial.textContent = user.initial
     wrapper.appendChild(initial)

@@ -21,6 +21,7 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
     })
     get creative_comment_activity_log_path(@creative, @comment), params: { locale: :en }
     assert_response :success
+    assert_select ".activity-name", text: "Model request"
     assert_select ".activity-log-yaml", text: /reasoning_source: local_default/
     assert_select ".activity-log-yaml", text: /codex_fast_mode_configured: true/
   end
@@ -41,7 +42,7 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".activity-log-duration", count: 0
     assert_select ".activity-time .activity-execution-time", text: "(1분 23초)"
-    assert_select ".activity-name", text: "LLM"
+    assert_select ".activity-name", text: "에이전트 활동"
     assert_select ".activity-time", text: /전\s*\(1분 23초\)/
     assert_select ".activity-log-yaml", text: /<script>alert\(1\)<\/script>/
     assert_select ".activity-log-yaml script", count: 0
@@ -86,7 +87,7 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_select ".activity-log-duration", count: 0
       assert_select ".activity-time .activity-execution-time", text: "(20s)", count: with_logs ? 1 : 0
-      assert_select ".activity-name", text: "Review LLM", count: with_logs ? 1 : 0
+      assert_select ".activity-name", text: "Agent activity", count: with_logs ? 1 : 0
       assert_equal 83, Collavre::TaskExecutionTime.seconds(original_task)
       assert_not Collavre::Comment.exists?(placeholder.id)
     end
@@ -100,7 +101,7 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".activity-execution-time", count: 1
     assert_select ".activity-log-item:first-child" do
-      assert_select ".activity-name", text: "Latest LLM"
+      assert_select ".activity-name", text: "Agent activity"
       assert_select ".activity-time", text: /ago\s*\(1m 23s\)/
       assert_select ".activity-execution-time[role='note'][title]", text: "(1m 23s)" do |elements|
         assert_equal "Execution time: 1m 23s", elements.first["aria-label"]

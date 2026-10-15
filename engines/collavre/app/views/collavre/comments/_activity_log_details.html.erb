@@ -6,7 +6,7 @@
         <div class="activity-log-item">
           <details>
             <summary class="activity-log-summary">
-              <span class="activity-name"><%= log.activity %></span>
+              <span class="activity-name"><%= activity_log_name(log.activity) %></span>
               <span class="activity-time">
                 <%= t("collavre.comments.activity_logs.time_ago", time: time_ago_in_words(log.created_at)) %>
                 <% if index.zero? && execution_time %>

@@ -56,11 +56,27 @@ module Collavre
           assert_equal "created", data[:action]
           assert data[:topic][:primary_agent].present?, "Expected primary_agent in broadcast"
           assert_equal @ai_agent.id, data[:topic][:primary_agent][:id]
+          assert_equal true, data[:topic][:primary_agent][:default_avatar]
+          assert_equal "T", data[:topic][:primary_agent][:initial]
         }) do
           TopicCommand.new(comment: comment, user: @user).call
         end
 
         assert broadcast_called
+      end
+
+      test "broadcasts default avatar metadata when assigning an existing topic" do
+        comment = create_comment('/topic "Test Topic" @TestAgent: ')
+        broadcast = nil
+
+        TopicsChannel.stub(:broadcast_to, ->(_creative, data) { broadcast = data }) do
+          TopicCommand.new(comment: comment, user: @user).call
+        end
+
+        assert_equal "updated", broadcast[:action]
+        assert_equal @ai_agent.id, broadcast[:topic][:primary_agent][:id]
+        assert_equal true, broadcast[:topic][:primary_agent][:default_avatar]
+        assert_equal "T", broadcast[:topic][:primary_agent][:initial]
       end
 
       test "does not broadcast when topic already exists" do

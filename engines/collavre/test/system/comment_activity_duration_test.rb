@@ -52,12 +52,12 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     end
     within("#comment_#{@logged.id}") do
       open_activity_log
-      assert_selector ".activity-name", text: "LLM"
+      assert_selector ".activity-name", text: "Agent activity"
       assert_no_selector ".activity-log-duration, .activity-execution-time"
     end
   end
 
-  test "long activity names and timing fit a narrow dark panel" do
+  test "unknown activity fallback and timing fit a narrow dark panel" do
     @reply.activity_logs.first.update!(activity: "LongActivity" * 20)
     visit collavre.creatives_path(id: @creative.id)
     find("button[name='show-comments-btn'][data-creative-id='#{@creative.id}']").click
