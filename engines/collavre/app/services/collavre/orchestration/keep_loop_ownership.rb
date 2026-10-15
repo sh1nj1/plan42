@@ -45,7 +45,8 @@ module Collavre
 
       def reservation
         entry = @creative.data.dig("trigger", KeepQueuedDispatches::KEY)
-        entry if entry&.dig("comment_id") == @comment_id
+        entry if entry&.dig("comment_id") == @comment_id &&
+          KeepLoop.admit!(@creative, generation: entry["generation"], comment_id: @comment_id)
       end
 
       def reservation_time
@@ -127,8 +128,7 @@ module Collavre
 
           generation = context.dig("comment", "keep_loop_generation")
           context.dig("creative", "id") == @creative.id && context.dig("comment", "id") == @comment_id &&
-            generation&.slice("start_comment_id", "current_comment_id", "trigger_topic_id") ==
-              @config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+            KeepLoop.admit!(@creative, generation: generation, comment_id: context.dig("comment", "id"))
         when "Collavre::TriggerLoopCheckJob", "Collavre::TriggerLoopVerifyJob"
           owns_task?(args.first)
         when "Collavre::InlineAgentReplayJob"

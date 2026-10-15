@@ -5,7 +5,6 @@ module Collavre
     # Keep job admission shares the controls' topic -> creative lock order.
     # Only task creation is locked; agent execution happens after commit.
     module KeepDispatchAdmission
-      GENERATION_KEYS = %w[start_comment_id current_comment_id trigger_topic_id].freeze
       module_function
 
       # Rebuilding the same anchor must not turn stale keep work into ordinary work.
@@ -20,7 +19,7 @@ module Collavre
 
       def call(context, agent)
         generation = context&.dig("comment", "keep_loop_generation")
-        return yield unless generation
+        return yield unless KeepLoop.dispatch?(context)
 
         result = :rejected
         Comments::TopicMutation.call(context.dig("topic", "id"), context.dig("creative", "id")) do
@@ -31,7 +30,7 @@ module Collavre
             # This job no longer needs its queued reservation to hold the turn.
             KeepQueuedDispatches.release!(context, agent)
             creative.reload
-            next unless current?(creative, generation)
+            next unless current?(creative, generation, context.dig("comment", "id"))
 
             result = Creatives::PermissionChecker.current_allowed?(creative.id, agent, :feedback) ? yield : :rejected
             release_rejected(creative, context) if result == :rejected || !result
@@ -40,10 +39,9 @@ module Collavre
         result
       end
 
-      def current?(creative, generation)
-        config = creative.data&.dig("trigger", "loop") || {}
-        config["source"] == "keep" && config["state"] == "running" &&
-          generation.keys.sort == GENERATION_KEYS.sort && config.slice(*GENERATION_KEYS) == generation
+      def current?(creative, generation, comment_id)
+        creative.data&.dig("trigger", "loop", "state") == "running" &&
+          KeepLoop.admit!(creative, generation: generation, comment_id: comment_id)
       end
 
       def release_rejected(creative, context)
@@ -54,7 +52,7 @@ module Collavre
           DeliveryRecord.reject_restore!(covering, comment_id)
           creative.reload
         end
-        return unless current?(creative, context.dig("comment", "keep_loop_generation"))
+        return unless current?(creative, context.dig("comment", "keep_loop_generation"), comment_id)
         return if owned?(creative, comment_id)
 
         config = creative.data.dig("trigger", "loop")

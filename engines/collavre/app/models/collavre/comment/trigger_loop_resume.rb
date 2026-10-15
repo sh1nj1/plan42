@@ -66,6 +66,7 @@ module Collavre
           end
 
           loop_cfg = data["trigger"]["loop"]
+          loop_cfg["generation"] = Collavre::KeepLoop.next_generation!(data) if loop_cfg["source"] == "keep"
           loop_cfg["state"] = "running"
           creative.update!(data: data)
           [ loop_cfg["current_iteration"] || 0, loop_cfg["max_iterations"] || 10, loop_cfg.deep_dup ]

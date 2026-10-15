@@ -34,6 +34,13 @@ module Collavre
       end
 
       def enqueue_reserved_decision(decision, context, require_enqueue_ack, ordinary_delivery, &published)
+        result = KeepLoop.with_dispatch(context) do
+          enqueue_current_decision(decision, context, require_enqueue_ack, ordinary_delivery, &published)
+        end
+        result unless result == :rejected
+      end
+
+      def enqueue_current_decision(decision, context, require_enqueue_ack, ordinary_delivery, &published)
         agent = decision[:agent]
         log_decision(decision)
         if decision[:timing] == :rejected
