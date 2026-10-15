@@ -44,15 +44,19 @@ export function trackNewRowSave(tree, promise) {
 // A frame swap or page render would take rows still being created out of the
 // document, and with them the draft a failed create reopens from. The render
 // waits for those creates, including ones started while it waits; if one
-// fails it is dropped, so the row stays to retry. A render over a row whose
-// create had already failed goes ahead only once the user agrees to discard it.
-export function holdRenderForCreates(event, confirmDiscard) {
+// fails it is dropped, so the row stays to retry. Unsaved edits in the open row
+// are saved before it goes ahead (flushOpenRow settles true when that save
+// failed). A render over a row whose create had already failed, or whose edits
+// could not be saved, goes ahead only once the user agrees to discard it.
+export function holdRenderForCreates(event, confirmDiscard, flushOpenRow) {
   const pendingIn = () => [...new Set([...inFlight, ...rowSaves.keys()])].filter((tree) => event.target.contains(tree))
   const failedIn = () => [...event.target.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
   if (!event.detail?.resume || !(pendingIn().length || failedIn())) return
   event.preventDefault()
   const waited = new Set()
   let saveFailed = false
+  const discard = () => confirmDiscard().then((agreed) => agreed && event.detail.resume())
+  const flushOpen = () => flushOpenRow(event.target)?.then((failed) => (failed ? discard() : settle()))
   const settle = () => {
     const pending = pendingIn()
     if (pending.length) {
@@ -60,10 +64,12 @@ export function holdRenderForCreates(event, confirmDiscard) {
       Promise.all(pending.flatMap((tree) => [creates.get(tree), rowSaves.get(tree)?.then((failed) => { saveFailed ||= failed })])).then(settle)
     } else if (saveFailed || [...waited].some((tree) => failedRows.has(tree))) {
       return
+    } else if (flushOpen()) {
+      return
     } else if (!failedIn()) {
       event.detail.resume()
     } else {
-      confirmDiscard().then((discard) => discard && event.detail.resume())
+      discard()
     }
   }
   settle()

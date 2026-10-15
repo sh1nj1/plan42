@@ -307,7 +307,8 @@ function setupEditorSession() {
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
-    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }));
+    const flushOpenRow = (target) => (isDirty || pendingSave) && target.contains(currentTree) && !creativeSaveSnapshotIsEmpty(captureBufferSnapshot()) ? saveForm(currentTree, parentInput.value).then(isFailedSaveResult, () => true) : null;
+    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }), flushOpenRow);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
 

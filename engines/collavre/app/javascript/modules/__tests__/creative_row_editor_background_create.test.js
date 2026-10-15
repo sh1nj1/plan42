@@ -104,7 +104,7 @@ describe('Enter on a new creative saves it in the background', () => {
     document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
     saveMock.mockReset()
     alertDialogMock.mockClear()
-    confirmDialogMock.mockClear()
+    confirmDialogMock.mockReset().mockImplementation(() => Promise.resolve(true))
     deletedAttachments = []
     global.fetch = jest.fn(() => Promise.resolve({ ok: true }))
     buildEditorDom(document.getElementById('center-frame'), { saveFailedMessage: 'Save failed' })
@@ -1138,6 +1138,41 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(event.detail.resume).toHaveBeenCalled()
   })
 
+  test.each([
+    ['saves an edit made while the open new row was being created before it renders', created(78), true],
+    ['asks before discarding an edit made while the open new row was being created that could not be saved', { ok: false, status: 500, clone: () => ({ json: () => Promise.resolve({}) }) }, false],
+  ])('a frame swap %s', async (_name, patchResult, resumes) => {
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
+    const firstPost = deferred()
+    const secondPost = deferred()
+    const patch = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementationOnce(() => secondPost.promise)
+      .mockImplementationOnce(() => patch.promise)
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    const event = frameRender(document.getElementById('creatives'))
+
+    type('second creative')
+    toggleProgress()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    type('second creative, edited')
+    secondPost.resolve(created(78))
+    await flush()
+    expect(event.detail.resume).not.toHaveBeenCalled()
+    expect(saveMock).toHaveBeenCalledTimes(3)
+    expect(saveMock.mock.calls[2][1]).toBe('PATCH')
+    expect(sentField(saveMock.mock.calls[2], 'creative[description]')).toContain('second creative, edited')
+
+    patch.resolve(patchResult)
+    await flush()
+    expect(event.detail.resume).toHaveBeenCalledTimes(resumes ? 1 : 0)
+    expect(confirmDialogMock).toHaveBeenCalledTimes(resumes ? 0 : 1)
+    expect(second.isConnected).toBe(true)
+  })
+
   test('a frame swap stays dropped when the failed row it waited for is reopened before it settles', async () => {
     const firstPost = deferred()
     const secondPost = deferred()
@@ -1209,8 +1244,8 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(event.detail.resume).toHaveBeenCalled()
   })
 
-  test('a frame swap over a row whose create already failed is dropped when the user keeps it', async () => {
-    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+  test('a frame swap over a reopened failed draft that cannot be saved again is dropped when the user keeps it', async () => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
     confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
     const first = await startNewRow('first creative')
     await pressEnter()
@@ -1221,9 +1256,27 @@ describe('Enter on a new creative saves it in the background', () => {
     const event = frameRender(document.getElementById('creatives'))
     await flush()
 
-    expect(confirmDialogMock).toHaveBeenCalled()
+    expect(saveMock).toHaveBeenCalledTimes(2)
+    expect(confirmDialogMock).toHaveBeenCalledTimes(1)
     expect(event.detail.resume).not.toHaveBeenCalled()
     expect(template().parentElement).toBe(first)
+  })
+
+  test('a frame swap over a reopened failed draft saves it and renders once it is created', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(80)))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    clickRow(first)
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+
+    expect(first.dataset.id).toBe('80')
+    expect(confirmDialogMock).not.toHaveBeenCalled()
+    expect(event.detail.resume).toHaveBeenCalledTimes(1)
   })
 
   test('a frame swap after a create succeeded renders at once', async () => {
