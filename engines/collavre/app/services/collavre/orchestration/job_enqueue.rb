@@ -73,7 +73,10 @@ module Collavre
         # was scheduled*: DropTriggerJob#dispatch_trigger raises
         # DispatchFailedError on an empty result and retries a trigger that
         # was covered, three times, and calls the job failed at the end of it.
-        covering = DeliveryRecord.covering_task(agent, comment_id, context, @event_name)
+        # A per-agent override may change what the policies are keyed on, so
+        # only the unmodified dispatch context shares the dispatch's resolver.
+        resolver = policy_resolver if context.equal?(@context)
+        covering = DeliveryRecord.covering_task(agent, comment_id, context, @event_name, policy_resolver: resolver)
         if covering && DeliveryRecord.claim_drop!(covering, comment_id)
           Rails.logger.info(
             "[AgentOrchestrator] Dropping dispatch: comment #{comment_id} was already " \

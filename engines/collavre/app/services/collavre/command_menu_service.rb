@@ -71,13 +71,15 @@ module Collavre
         defaults = tool_defaults_for(tool_name)
         apply_defaults_to_schema(schema, defaults) if defaults.present?
 
+        text = ToolDescription.for(tool_name, tool[:description] || tool["description"])
         {
           name: tool_name,
           label: "/#{tool_name}",
-          description: tool[:description] || tool["description"],
+          description: text[:summary],
+          details: text[:details],
           args: format_args(raw_params),
           input_schema: schema
-        }
+        }.compact
       end
     end
 

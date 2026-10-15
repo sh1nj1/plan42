@@ -184,9 +184,11 @@ module Collavre
     def load_available_tools
       system_names = Collavre::McpToolRegistry.system_names
       Collavre::McpService.available_tools(Current.user).map do |tool|
+        text = Collavre::ToolDescription.for(tool[:name], tool[:description])
         {
           name: tool[:name],
-          description: tool[:description],
+          description: text[:summary],
+          details: text[:details],
           parameters: tool[:params],
           custom: !system_names.include?(tool[:name])
         }

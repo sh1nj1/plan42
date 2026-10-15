@@ -166,7 +166,7 @@ module Collavre
     include Broadcastable
     include Notifiable
     include Approvable
-    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction
+    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction, BulkFollowUpJobs
 
     attribute :skip_default_user, :boolean, default: false
 
@@ -184,7 +184,7 @@ module Collavre
     include DispatchRevocation
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
-    after_create_commit :resume_trigger_loop_if_awaiting, unless: :skip_dispatch
+    include TriggerLoopResume
 
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
@@ -547,7 +547,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
+      agents = SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(self))
       reconcile_loop_dispatch(agents)
     rescue StandardError => e
       Rails.logger.error(
@@ -572,50 +572,6 @@ module Collavre
     def assign_default_user
       return if skip_default_user
       self.user ||= Collavre.current_user
-    end
-
-    # When a human user comments in a trigger topic that is awaiting user input,
-    # auto-resume the trigger loop so the agent can continue working.
-    def resume_trigger_loop_if_awaiting
-      return unless public_human_loop_reply?
-      return unless creative
-
-      # Use pessimistic lock to prevent duplicate resume from concurrent comments
-      iteration = nil
-      max = nil
-      snapshot = nil
-      creative.with_lock do
-        loop_data = creative.data&.dig("trigger", "loop")
-        return unless loop_data && loop_data["state"] == "awaiting_user"
-        return if id.present? && loop_data["current_comment_id"] == id
-        return if creative.keep_loop_agent_unavailable?
-
-        # Only resume if this comment is in the trigger topic
-        trigger_topic_id = loop_data["trigger_topic_id"]
-        return if trigger_topic_id.present? && trigger_topic_id != topic_id
-
-        # Transition to running and post continue instruction atomically
-        data = creative.data || {}
-        trigger = data["trigger"] || {}
-        loop_cfg = trigger["loop"] || {}
-        iteration = loop_cfg["current_iteration"] || 0
-        max = loop_cfg["max_iterations"] || 10
-        loop_cfg["state"] = "running"
-        trigger["loop"] = loop_cfg
-        data["trigger"] = trigger
-        creative.update!(data: data)
-        snapshot = loop_cfg.deep_dup
-      end
-
-      # Revalidate the committed turn under topic -> creative lock order.
-      return unless iteration # guard: lock block returned early
-
-      post_loop_resume(iteration, max, snapshot)
-    rescue StandardError => e
-      Rails.logger.error(
-        "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
-        "#{e.class} #{e.message}"
-      )
     end
 
     def use_origin_creative
