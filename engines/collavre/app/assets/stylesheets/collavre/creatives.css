@@ -653,7 +653,12 @@ creative-tree-row.chat-active .creative-row:hover {
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
     background-color: var(--surface-hover);
-    border-radius: 5px;
+    border-radius: var(--radius-2);
+}
+
+creative-tree-row.chat-active .creative-row.selected,
+creative-tree-row.chat-active .creative-row.selected:hover {
+    background-color: var(--border-drag-over);
 }
 
 .creative-progress {

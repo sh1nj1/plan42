@@ -307,12 +307,10 @@ body.dark-mode #comments-popup {
               0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
 }
 
-
 @media (prefers-color-scheme: dark) {
   body:not(.light-mode):not(.dark-mode) #comments-popup {
     box-shadow: var(--shadow-3),
                 0 0 8px color-mix(in srgb, var(--color-active) 45%, transparent),
                 0 0 20px color-mix(in srgb, var(--color-active) 25%, transparent);
   }
-
 }

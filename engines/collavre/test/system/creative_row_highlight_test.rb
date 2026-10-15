@@ -33,5 +33,25 @@ class CreativeRowHighlightTest < ApplicationSystemTestCase
     assert_equal styles.fetch("background"), page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).backgroundColor")
     assert_equal "5px", page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).borderRadius")
     assert_match(/inset/, page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).boxShadow"))
+
+    %w[light-mode dark-mode].each do |theme|
+      page.execute_script("document.body.classList.remove('light-mode', 'dark-mode'); document.body.classList.add(arguments[0])", theme)
+      page.execute_script("document.querySelector('#highlight-fixture .creative-row').classList.add('selected')")
+      [ true, false ].each do |hovered|
+        hovered ? row.hover : find("body").hover
+        expected = page.evaluate_script(<<~JS)
+          (() => {
+            const probe = document.createElement('div');
+            probe.style.backgroundColor = 'var(--border-drag-over)';
+            document.body.appendChild(probe);
+            const color = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return color;
+          })()
+        JS
+        assert_equal expected, page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).backgroundColor")
+        assert_equal styles.fetch("shadow"), page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).boxShadow")
+      end
+    end
   end
 end
