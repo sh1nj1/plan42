@@ -175,6 +175,20 @@ module Collavre
       assert_equal [ @development.id, @goal.id ], @feature_a.ordered_context_ids
     end
 
+    test "an inherited pin of self does not take a visible context's slot" do
+      @features.update!(data: { "context_ids" => [ @feature_a.id, @goal.id ] })
+      @feature_a.update!(data: { "context_ids" => [ @rnd.id ], "context_order" => [ @goal.id, @rnd.id ] })
+
+      assert_equal [ @goal.id, @rnd.id ], @feature_a.ordered_context_ids
+    end
+
+    test "an ancestor pin of an intermediate creative stays visible below it" do
+      @project.update!(data: { "context_ids" => [ @features.id, @goal.id ] })
+
+      assert_equal [ @features.id, @goal.id ], @feature_a.ordered_context_ids
+      assert_equal [ @goal.id ], @features.ordered_context_ids
+    end
+
     test "inherited_ordered_context_ids is empty without a parent" do
       assert_empty @project.inherited_ordered_context_ids
     end

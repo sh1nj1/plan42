@@ -46,7 +46,7 @@ module Collavre
       # and only contexts newly added on this creative follow its own saved
       # order (they may sit between inherited ones).
       def ordered_context_ids
-        arranged_context_ids - [ id ]
+        arranged_context_ids(Set.new, id)
       end
 
       # Contexts arranged by ancestors; their order cannot be changed here.
@@ -73,12 +73,14 @@ module Collavre
 
       protected
 
-      def arranged_context_ids(visited_ids = Set.new)
+      # +hidden_id+ (the viewing creative itself) is dropped before slots are
+      # assigned, so a hidden inherited ID cannot take a visible context's slot.
+      def arranged_context_ids(visited_ids = Set.new, hidden_id = nil)
         return [] if visited_ids.include?(id)
 
         visited_ids.add(id)
-        inherited = parent&.arranged_context_ids(visited_ids) || []
-        arrange_own_contexts(inherited, context_id_list(context_ids) - inherited)
+        inherited = (parent&.arranged_context_ids(visited_ids) || []) - [ hidden_id ]
+        arrange_own_contexts(inherited, context_id_list(context_ids) - inherited - [ hidden_id ])
       end
 
       private
