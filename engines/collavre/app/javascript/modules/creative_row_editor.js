@@ -1045,7 +1045,11 @@ function setupEditorSession() {
       if (!typeEditor.needsFlush(pendingSave, saveQueue.saving)) return apiQueue.waitFor(waitForServer ? `creative_${editCreativeId}` : null);
       // The buffer is what is being saved, so show it now instead of waiting on the server.
       revealCreativeRow(tree, captureBufferSnapshot());
-      return typeEditor.flush(() => waitForServer ? saveForm(tree, parentId) : requestSave(tree, parentId));
+      const flushBuffer = () => typeEditor.flush(() => waitForServer ? saveForm(tree, parentId) : requestSave(tree, parentId));
+      if (!saveQueue.saving) return flushBuffer();
+      // An in-flight save swallows the next request without sending it, so let it
+      // settle first and then save the edits made since.
+      return saveQueue.promise.then((result) => isFailedSaveResult(result) || !typeEditor.needsFlush(isDirty || pendingSave, false) ? result : flushBuffer());
     }
 
     // Tears the session down for a row that is already gone from the DOM, so

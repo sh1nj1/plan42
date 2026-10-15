@@ -25,6 +25,7 @@ jest.unstable_mockModule('../../lib/utils/dialog', () => ({
 }))
 
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
+const { default: apiQueue } = await import('../../lib/api/queue_manager')
 const {
   buildEditorDom, defineTreeRowStub, renderEmptyState, flush,
 } = await import('./support/inline_editor_dom')
@@ -92,6 +93,69 @@ describe('revealing the row as soon as the editor closes', () => {
 
     expect(row.style.display).toBe('')
     expect(rowComponent.descriptionHtml).toContain('first creative')
+  })
+
+  async function closeDuringAutosave(text, editAfter) {
+    const created = deferred()
+    saveMock.mockImplementation(() => created.promise)
+    const enqueue = jest.spyOn(apiQueue, 'enqueue').mockReturnValue('queued')
+    const rendered = await startNewRow(text)
+    const textarea = document.getElementById('markdown-editor-textarea')
+    jest.useFakeTimers()
+    textarea.dispatchEvent(new Event('input'))
+    jest.advanceTimersByTime(5000)
+    jest.useRealTimers()
+    await flush()
+    if (editAfter) {
+      document.getElementById('inline-creative-description').value = `<p>${editAfter}</p>`
+      textarea.value = editAfter
+      textarea.dispatchEvent(new Event('input'))
+    }
+    document.getElementById('inline-close').click()
+    await flush()
+    return { ...rendered, created, enqueue }
+  }
+
+  test('saves edits made while an autosave is in flight once it settles', async () => {
+    const { created, enqueue, rowComponent } = await closeDuringAutosave('first', 'first and more')
+    expect(rowComponent.descriptionHtml).toContain('first and more')
+
+    created.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify({ id: 77 })) })
+    await flush()
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(1)
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    const { path, method, body } = enqueue.mock.calls[0][0]
+    expect(path).toBe('/creatives/77')
+    expect(method).toBe('PATCH')
+    expect(JSON.stringify(body)).toContain('first and more')
+    enqueue.mockRestore()
+  })
+
+  test('does not save again when nothing changed during the in-flight autosave', async () => {
+    const { created, enqueue, row } = await closeDuringAutosave('first')
+    created.resolve({ ok: true, text: () => Promise.resolve(JSON.stringify({ id: 78 })) })
+    await flush()
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(1)
+    expect(enqueue).not.toHaveBeenCalled()
+    expect(row.style.display).toBe('')
+    enqueue.mockRestore()
+  })
+
+  test('reopens the draft without a second save when the in-flight autosave fails', async () => {
+    const { created, enqueue, tree, row } = await closeDuringAutosave('first', 'first and more')
+    created.resolve({ ok: false, status: 500 })
+    await flush()
+    await flush()
+
+    const template = document.getElementById('inline-edit-form')
+    expect(enqueue).not.toHaveBeenCalled()
+    expect(row.style.display).toBe('none')
+    expect(template.parentElement).toBe(tree)
+    enqueue.mockRestore()
   })
 
   test('hides the row again and reopens the draft when the create fails', async () => {
