@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -867,7 +867,7 @@ function setupEditorSession() {
       }
       return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree), applyDeferredAnchor(tree)]).then(function () {
         return saveQueue.runExclusive(performSave);
-      });
+      }).finally(() => releaseFailedRows(tree));
     }
 
     function adoptCreatedTree(tree, data, parentId, fallbackRow) {

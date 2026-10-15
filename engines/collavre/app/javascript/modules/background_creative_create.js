@@ -10,6 +10,8 @@ const anchors = new WeakMap()
 const failedDrafts = new WeakMap()
 const dependents = new WeakMap()
 const retryDeletes = new WeakMap()
+const holds = new WeakMap()
+const releases = new WeakMap()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
@@ -17,9 +19,10 @@ export function trackCreate(tree, promise) {
   return promise
 }
 
-// The row's in-flight background create, if any.
+// The row's in-flight background create, if any, or for a failed row the
+// create of the row that took over its slot: its retry slot depends on it.
 export function pendingCreate(tree) {
-  return creates.get(tree)
+  return creates.get(tree) || holds.get(tree)
 }
 
 // Waits out a row's background create; true when there is no row to open the
@@ -27,7 +30,7 @@ export function pendingCreate(tree) {
 // to reopen.
 export async function cannotEdit(tree) {
   if (!tree) return true
-  const create = creates.get(tree)
+  const create = pendingCreate(tree)
   if (!create) return false
   await create
   return !tree.dataset.id && !failedDrafts.has(tree)
@@ -74,6 +77,8 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
     failed(error)
     return { ...fallback, failedTrees: [...(fallback.failedTrees || []), tree] }
+  } finally {
+    releaseFailedRows(tree)
   }
 }
 
@@ -88,9 +93,24 @@ export function takeRetryDeletedIds(tree) {
 // A row that takes over the slot of failed rows above it records them, so
 // once it is created they retry in front of it rather than in the old slot,
 // which the server would now place after it when that slot is a before_id.
+// Until that create settles, the failed rows hold off reopening.
 function adoptAnchor(tree, anchor) {
-  if (anchor.failedTrees) dependents.set(tree, anchor.failedTrees)
+  const failedTrees = anchor.failedTrees
+  if (!failedTrees) return anchor
+  dependents.set(tree, failedTrees)
+  const settled = new Promise((resolve) => releases.set(tree, () => {
+    failedTrees.forEach((failedTree) => holds.get(failedTree) === settled && holds.delete(failedTree))
+    resolve()
+  }))
+  failedTrees.forEach((failedTree) => holds.set(failedTree, settled))
   return anchor
+}
+
+// Called once a row's create settles, after a success has retargeted the
+// failed rows above it.
+export function releaseFailedRows(tree) {
+  releases.get(tree)?.()
+  releases.delete(tree)
 }
 
 // Each failed row keeps the rows below it in screen order, from the first

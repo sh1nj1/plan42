@@ -409,6 +409,58 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(sentField(retry, 'before_id')).toBe('')
   })
 
+  test('a failed row reopened while the row below it is still being created retries in front of it', async () => {
+    const secondPost = deferred()
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => secondPost.promise)
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    clickRow(first)
+    await flush()
+    expect(template().parentElement).not.toBe(first)
+    secondPost.resolve(created(85))
+    await flush()
+    expect(template().parentElement).toBe(first)
+    document.getElementById('inline-close').click()
+    await flush()
+
+    const retry = saveMock.mock.calls.at(-1)
+    expect(sentField(retry, 'creative[description]')).toContain('first creative')
+    expect(sentField(retry, 'before_id')).toBe('85')
+    expect(sentField(retry, 'after_id')).toBe('')
+  })
+
+  test('a failed row reopened while the row below it is being created keeps its slot when that create fails too', async () => {
+    const secondPost = deferred()
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => secondPost.promise)
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-after-id').value = '5'
+    await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    clickRow(first)
+    await flush()
+    secondPost.resolve({ ok: false, status: 500 })
+    await flush()
+    expect(template().parentElement).toBe(first)
+    document.getElementById('inline-close').click()
+    await flush()
+
+    expect(sentField(saveMock.mock.calls.at(-1), 'after_id')).toBe('5')
+  })
+
   test('a completed failed draft keeps its completion when another row reset the baseline', async () => {
     const sentProgress = []
     saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
