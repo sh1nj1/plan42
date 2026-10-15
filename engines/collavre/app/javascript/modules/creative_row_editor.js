@@ -865,8 +865,10 @@ function setupEditorSession() {
           }
         });
       }
-      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree), applyDeferredAnchor(tree)]).then(function () {
-        return saveQueue.runExclusive(performSave);
+      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree)]).then(function () {
+        // Waiting for the previous row's id counts as saving, so an Enter
+        // meanwhile joins this save rather than POSTing the row again.
+        return saveQueue.runExclusive(() => applyDeferredAnchor(tree)?.then(performSave) ?? performSave());
       }).finally(() => releaseFailedRows(tree));
     }
 

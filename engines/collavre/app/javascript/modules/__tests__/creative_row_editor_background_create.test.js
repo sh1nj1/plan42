@@ -108,6 +108,35 @@ describe('Enter on a new creative saves it in the background', () => {
     document.getElementById('metadata-popup').style.display = 'none'
   })
 
+  test('Enter while a save waits for the previous id joins that save instead of creating the row twice', async () => {
+    const firstPost = deferred()
+    const sent = []
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementation((url, method, body) => {
+        sent.push(new FormData(body))
+        return Promise.resolve(created(78))
+      })
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    type('second creative')
+    const progress = document.getElementById('inline-creative-progress')
+    progress.checked = true
+    progress.dispatchEvent(new Event('change'))
+    await flush()
+
+    await pressEnter()
+    expect(saveMock).toHaveBeenCalledTimes(1)
+
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0].get('creative[description]')).toBe('<p>second creative</p>')
+    expect(sent[0].get('after_id')).toBe('77')
+    expect(second.dataset.id).toBe('78')
+    expect(template().parentElement).not.toBe(second)
+  })
+
   test('opens the next row and shows the previous one while its POST is in flight', async () => {
     const pending = deferred()
     saveMock.mockImplementation(() => pending.promise)
@@ -457,6 +486,26 @@ describe('Enter on a new creative saves it in the background', () => {
     const retry = await retryFailedRow(first)
     expect(sentField(retry, 'creative[description]')).toContain('first creative')
     expect(sentField(retry, 'before_id')).toBe('82')
+  })
+
+  test('failed rows sharing a before anchor retried bottom-up keep their on-screen order', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(90)))
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-before-id').value = '6'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    expect(sentField(await retryFailedRow(second), 'before_id')).toBe('6')
+    const retry = await retryFailedRow(first)
+    expect(sentField(retry, 'creative[description]')).toContain('first creative')
+    expect(sentField(retry, 'before_id')).toBe('90')
+    expect(sentField(retry, 'after_id')).toBe('')
   })
 
   test('a failed row reopened while the row below it is still being created retries in front of it', async () => {
