@@ -61,18 +61,23 @@ module Tools
         reject_closed_topic!(topic)
         reject_unrunnable_self_dispatch!(topic, user, principal)
 
-        comment = topic.comments.create!(
+        comment = topic.comments.build(
           creative: topic.creative,
           content: content,
           user: user,
           private: false,
           skip_dispatch: user.ai_user?
         )
+        prepare_comment!(comment)
+        comment.save!
         selection = prepare_selection(comment, principal, envelope) if user.ai_user?
         reject_selected_self_route!(selection&.agents, user, principal)
 
         comment
       end
+    end
+
+    def prepare_comment!(comment)
     end
 
     def reject_closed_topic!(topic)
@@ -120,7 +125,8 @@ module Tools
       SystemEvents::Dispatcher.dispatch(
         "comment_created", payload, source: "a2a",
         selection: selection, context_for: context_for,
-        scheduling_hooks: scheduling_hooks(user, comment)
+        scheduling_hooks: scheduling_hooks(user, comment),
+        require_enqueue_ack: comment.keep_loop_options.present?
       )
     end
 
