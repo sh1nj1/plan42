@@ -5,6 +5,8 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
+import { trackCreate, pendingCreate, cannotEdit, postNewCreative, deferRowAnchor, takeDeferredAnchor } from './background_creative_create'
+import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
@@ -644,6 +646,7 @@ function setupEditorSession() {
       // close still owns it. The initiating switch continues below after its
       // own hideCurrent() resolves; only later, competing clicks are ignored.
       if (closeSaveInProgress) return;
+      if (pendingCreate(tree) && await cannotEdit(tree)) return;
 
       if (currentTree === tree) {
         await hideCurrent();
@@ -706,26 +709,6 @@ function setupEditorSession() {
     function showRow(tree) {
       const row = tree.querySelector('.creative-row');
       if (row) row.style.display = '';
-    }
-
-    function insertRow(tree, data) {
-      if (tree.querySelector('.creative-row')) return;
-      const row = document.createElement('div');
-      row.className = 'creative-row';
-      row.style.display = 'none';
-      // TODO: remove DRY, use template or copy existing dom
-      row.innerHTML = `
-  <div class="creative-row-start">
-    <div class="creative-row-actions">
-      <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="${data.id}">
-        <!-- ok -->
-      </button>
-      <div class="creative-divider" style="width: 6px;"></div>
-    </div>
-    <a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a>
-  </div>
-  <div class="creative-row-end"><span class="creative-progress-incomplete">0%</span></div>`;
-      tree.insertBefore(row, tree.firstChild);
     }
 
     function refreshRow(tree) {
@@ -845,41 +828,7 @@ function setupEditorSession() {
               form.action = `/creatives/${data.id}`;
               methodInput.value = 'patch';
               form.dataset.creativeId = data.id;
-              if (tree) {
-                tree.id = `creative-${data.id}`;
-                tree.dataset.id = data.id;
-                tree.dataset.parentId = parentId || '';
-                const rowEl = treeRowElement(tree) || currentRowElement;
-                if (rowEl) {
-                  rowEl.setAttribute('creative-id', data.id);
-                  rowEl.creativeId = data.id;
-                  const creativeLink = `/creatives/${data.id}`;
-                  rowEl.setAttribute('link-url', creativeLink);
-                  rowEl.linkUrl = creativeLink;
-                  const levelValue = tree.dataset.level;
-                  if (levelValue) {
-                    rowEl.setAttribute('level', levelValue);
-                    rowEl.level = Number(levelValue);
-                  }
-                  if (parentId) {
-                    rowEl.setAttribute('parent-id', parentId);
-                    rowEl.parentId = parentId;
-                    rowEl.removeAttribute('is-root');
-                    rowEl.isRoot = false;
-                  } else {
-                    rowEl.removeAttribute('parent-id');
-                    rowEl.parentId = null;
-                    rowEl.setAttribute('is-root', '');
-                    rowEl.isRoot = true;
-                  }
-                  rowEl.canWrite = true;
-                  rowEl.setAttribute('can-write', '');
-                  rowEl.requestUpdate?.();
-                }
-                insertRow(tree, data);
-              }
-              const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
-              if (parentTree) refreshRow(parentTree);
+              adoptCreatedTree(tree, data, parentId, currentRowElement);
             } else if (method === 'PATCH') {
               refreshRow(tree);
             }
@@ -913,9 +862,50 @@ function setupEditorSession() {
           }
         });
       }
-      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree)]).then(function () {
+      return Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree), applyDeferredAnchor(tree)]).then(function () {
         return saveQueue.runExclusive(performSave);
       });
+    }
+
+    function adoptCreatedTree(tree, data, parentId, fallbackRow) {
+      bindPersistedTree(tree, data, parentId, fallbackRow);
+      const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
+      if (parentTree) refreshRow(parentTree);
+    }
+
+    function applyDeferredAnchor(tree) {
+      return takeDeferredAnchor(tree)?.then(({ afterId, beforeId }) => {
+        if (form.dataset.creativeId) return;
+        afterInput.value = afterId;
+        beforeInput.value = beforeId;
+      });
+    }
+
+    // Enter on a new creative: paint its row from the buffer, release the
+    // editor, and POST in the background so the next row opens at once.
+    // Returns the anchor promise the next row is positioned after, or null when
+    // the blocking path must handle it (empty, uploading, typed, or mid-save).
+    function createInBackground(tree, parentId) {
+      if (uploadsPending || saveQueue.saving || typeEditor.value !== undefined) return null;
+      const snapshot = captureBufferSnapshot();
+      if (creativeSaveSnapshotIsEmpty(snapshot)) return null;
+      const body = new FormData(form);
+      if (!snapshot.persistProgress) body.delete('creative[progress]');
+      const request = { action: form.action, body, deletedIds: lexicalEditor.getDeletedAttachments?.() || [] };
+      revealCreativeRow(tree, snapshot);
+      tree.dataset.saveState = 'pending';
+      isDirty = false;
+      pendingSave = false;
+      saveQueue.cancelTimer();
+      currentTree = null;
+      currentRowElement = null;
+      template.style.display = 'none';
+      document.dispatchEvent(new CustomEvent('creative-editing:stop', { detail: { creativeId: null } }));
+      return trackCreate(tree, postNewCreative(tree, request, { afterId: afterInput.value, beforeId: beforeInput.value }, {
+        save: creativesApi.save,
+        created: (data) => { adoptCreatedTree(tree, data, parentId, null); restoreRowDraggable(tree); request.deletedIds.forEach(deleteAttachment); },
+        failed: () => form.dataset.saveFailedMessage && alertDialog(form.dataset.saveFailedMessage),
+      }));
     }
 
     // The save request resolves with the raw Response (see creativesApi.save),
@@ -1295,7 +1285,8 @@ function setupEditorSession() {
     async function move(delta) {
       if (!currentTree) return;
       const target = nextEditorTree(currentTree, delta);
-      if (!target) return;
+      // A row still being created has no id to load the editor from yet.
+      if (await cannotEdit(target)) return;
 
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
@@ -1381,7 +1372,7 @@ function setupEditorSession() {
       // there was no id to report. addChild() has always relied on hideCurrent()
       // for this.
 
-      const handleAddNew = () => {
+      const handleAddNew = (anchor) => {
         const prevCreativeId = prev.dataset.id;
 
         const childContainer = document.getElementById('creative-children-' + prevCreativeId);
@@ -1400,15 +1391,17 @@ function setupEditorSession() {
           // real root are treated identically, and a real parent id is kept.
           parentId = prev.dataset.parentId || '';
           container = treeContainerElement(prev);
-          afterId = prev.dataset.id;
+          afterId = anchor || prev.dataset.id;
           insertBefore = nodeAfterTreeBlock(prev);
         }
         startNew(parentId, container, insertBefore, beforeId, afterId);
       };
 
       if (wasNew) {
-        // For new creatives, still need to save or cleanup
-        beforeNewOrMove(wasNew, prev, prevParent).then(handleAddNew).finally(() => {
+        // A new creative with content saves in the background; anything else
+        // (empty, uploading, ...) still saves or cleans up before moving on.
+        const anchor = createInBackground(prev, prevParent);
+        (anchor ? Promise.resolve() : beforeNewOrMove(wasNew, prev, prevParent)).then(() => handleAddNew(anchor)).finally(() => {
           addNewInProgress = false;
         });
       } else {
@@ -1759,7 +1752,7 @@ function setupEditorSession() {
           form.dataset.creativeId = '';
           parentInput.value = parentId || '';
           beforeInput.value = beforeId || '';
-          afterInput.value = afterId || '';
+          deferRowAnchor(newTree, afterId, afterInput);
           if (childInput) childInput.value = childId || '';
           resetOriginTracking();
           deactivateMarkdownMode();
