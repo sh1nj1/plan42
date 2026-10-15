@@ -114,16 +114,21 @@ module Collavre
 
     test "loop evaluators omit topic session routing while retaining usage attribution" do
       task = Task.new(creative: @child, agent: @chat, topic_id: @child.main_topic.id)
+      sessions = []
       [ TriggerLoopCheckJob.new, TriggerLoopVerifyJob.new ].each do |job|
         factory = lambda do |**options|
-          assert_equal({ user: @chat, usage_source_task: task }, options.fetch(:context))
+          context = options.fetch(:context).dup
+          sessions << context.delete(:evaluation_session_id)
+          assert_equal({ user: @chat, usage_source_task: task }, context)
           assert_equal "Evaluate only", options.fetch(:system_prompt)
           :evaluator
         end
         AiClient.stub(:new, factory) do
-          assert_equal :evaluator, job.send(:decision_client, @chat, task, "Evaluate only")
+          2.times { assert_equal :evaluator, job.send(:decision_client, @chat, task, "Evaluate only") }
         end
       end
+      assert sessions.all?(&:present?)
+      assert_equal 4, sessions.uniq.size
     end
 
     test "native decisions are preferred and feedback permission includes write" do

@@ -21,7 +21,7 @@ module Collavre
         vendor: verifier.llm_vendor, model: verifier.llm_model, system_prompt: system_prompt,
         llm_api_key: verifier.llm_api_key.presence || verifier.creator&.llm_api_key,
         gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { user: verifier, usage_source_task: task }
+        context: { user: verifier, usage_source_task: task, evaluation_session_id: SecureRandom.uuid }
       )
     end
 
