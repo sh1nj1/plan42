@@ -256,8 +256,6 @@ export default class extends Controller {
       this.element.dataset.creativeId === (creativeId || button.dataset.creativeId)
     ) {
       if (this.isDocked()) {
-		// Workspace navigation replaces the title after chat has already opened.
-		this._markChatActiveRow(creativeId || button.dataset.creativeId)
         if (userRequestedOpen) {
           // Already loaded for this creative — expand only, so the draft and
           // subscriptions survive.
@@ -265,7 +263,8 @@ export default class extends Controller {
         } else if (highlightId) {
           this.reloadDockedHighlight(creativeId, highlightId)
         }
-        return
+        // Workspace navigation replaces the title after chat has already opened.
+        return this._markChatActiveRow(this.element.dataset.creativeId)
       }
       this.close()
       return

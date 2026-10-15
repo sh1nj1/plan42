@@ -398,27 +398,27 @@ describe('CommentsPopupController', () => {
     })
 
     test('workspace navigation restores chat highlighting on the replacement title without reopening chat', async () => {
-		const popup = document.getElementById('comments-popup')
-		const trigger = document.getElementById('trigger-btn')
-		popup.dataset.docked = 'true'
-		await controller.open(trigger)
-		const open = jest.spyOn(controller, 'open')
-		const title = document.createElement('creative-tree-row')
-		title.setAttribute('creative-id', '123')
-		title.setAttribute('is-title', '')
-		container.appendChild(title)
+        const popup = document.getElementById('comments-popup')
+        const trigger = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        await controller.open(trigger)
+        const open = jest.spyOn(controller, 'open')
+        const title = document.createElement('creative-tree-row')
+        title.setAttribute('creative-id', '123')
+        title.setAttribute('is-title', '')
+        container.appendChild(title)
 
-		controller.handleCreativeClick({ detail: { button: trigger, creativeId: '123', workspaceSync: true } })
+        controller.handleCreativeClick({ detail: { button: trigger, creativeId: '123', workspaceSync: true } })
 
-		expect(title.classList.contains('chat-active')).toBe(true)
-		expect(open).not.toHaveBeenCalled()
+        expect(title.classList.contains('chat-active')).toBe(true)
+        expect(open).not.toHaveBeenCalled()
 
-		const replacement = title.cloneNode(false)
-		replacement.classList.remove('chat-active')
-		title.replaceWith(replacement)
-		controller.handleCreativeClick({ detail: { button: trigger, creativeId: '123', workspaceSync: true } })
-		expect(replacement.classList.contains('chat-active')).toBe(true)
-		expect(open).not.toHaveBeenCalled()
+        const replacement = title.cloneNode(false)
+        replacement.classList.remove('chat-active')
+        title.replaceWith(replacement)
+        controller.handleCreativeClick({ detail: { button: trigger, creativeId: '123', workspaceSync: true } })
+        expect(replacement.classList.contains('chat-active')).toBe(true)
+        expect(open).not.toHaveBeenCalled()
     })
 
     test('same-creative workspace deep links reload only the highlighted comment window', () => {
