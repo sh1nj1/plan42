@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 require "test_helper"
+require "active_support/testing/constant_stubbing"
 
 module Collavre
   class ActiveStorageAccessTest < ActionDispatch::IntegrationTest
+    include ActiveSupport::Testing::ConstantStubbing
+
     PNG = File.binread(Collavre::Engine.root.join("test/fixtures/files/small.png"))
 
     setup do
@@ -45,6 +48,18 @@ module Collavre
         io: StringIO.new('<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20"/></svg>'),
         filename: "image.svg", content_type: "image/svg+xml"
       ).tap { |blob| @creative.files.attach(blob) }
+    end
+
+    test "SVG streaming is not prepended again after its module is reloaded" do
+      proxy = Class.new(ActiveStorage::Blobs::ProxyController)
+      original_ancestors = proxy.ancestors
+
+      stub_const(ActiveStorage::Blobs, :ProxyController, proxy) do
+        stub_const(Collavre, :SvgStreaming, Module.new) do
+          3.times { ActiveStorageAccess.install! }
+          assert_equal original_ancestors, proxy.ancestors
+        end
+      end
     end
 
     test "private SVG previews require permission and render inline for the owner" do

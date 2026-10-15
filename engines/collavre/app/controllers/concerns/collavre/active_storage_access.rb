@@ -18,7 +18,7 @@ module Collavre
     def self.install!
       SERVING_CONTROLLERS.each { |name| install_once(name.constantize, ServeAuthorization) }
       ActiveStorage::Blobs::ProxyController.prepend(Collavre::SvgStreaming) unless
-        ActiveStorage::Blobs::ProxyController.ancestors.include?(Collavre::SvgStreaming)
+        ActiveStorage::Blobs::ProxyController.ancestors.any? { |ancestor| ancestor.name == Collavre::SvgStreaming.name }
       install_once(ActiveStorage::DirectUploadsController, UploadAuthentication)
       install_once(ActiveStorage::DiskController, OriginOnly)
     end
