@@ -32,8 +32,8 @@ module Collavre
       super(svg_image_blob(blob), **options)
     end
 
-    def send_blob_byte_range_data(blob, range_header, **options)
-      super(svg_image_blob(blob), range_header, **options)
+    def send_blob_byte_range_data(blob, range_header, disposition: params[:disposition], **options)
+      super(svg_image_blob(blob), range_header, disposition: disposition, **options)
     end
   end
 end

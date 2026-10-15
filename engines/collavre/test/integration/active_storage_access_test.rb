@@ -114,6 +114,7 @@ module Collavre
           headers: bearer(@owner).merge("Range" => "bytes=0-9")
       assert_response :partial_content
       assert_equal svg_blob.download.byteslice(0, 10), response.body
+      assert_match(/\Ainline;/, response.headers["Content-Disposition"])
       assert_equal "image/svg+xml", response.media_type
       assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
     end
@@ -125,6 +126,19 @@ module Collavre
       assert_response :success
       assert_match(/\Aattachment;/, response.headers["Content-Disposition"])
       assert_equal "image/svg+xml", response.media_type
+    end
+
+    test "SVG range downloads preserve explicit attachment disposition" do
+      get url_helpers.rails_blob_path(svg_blob, disposition: "attachment", only_path: true), headers: bearer(@owner)
+      assert_response :redirect
+      get response.location, headers: bearer(@owner).merge("Range" => "bytes=0-9")
+      assert_response :partial_content
+      assert_match(/\Aattachment;/, response.headers["Content-Disposition"])
+      assert_equal svg_blob.download.byteslice(0, 10), response.body
+      assert_equal "bytes 0-9/#{svg_blob.byte_size}", response.headers["Content-Range"]
+      assert_equal "image/svg+xml", response.media_type
+      assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
+      assert_equal "nosniff", response.headers["X-Content-Type-Options"]
     end
 
     test "anonymous requests for a private blob get 404 on every endpoint" do
