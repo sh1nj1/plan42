@@ -82,19 +82,23 @@ module Collavre
       rescue StandardError => error
         raise unless snapshot&.dig("source") == "keep"
 
-        recover_loop_check_enqueue(snapshot)
+        recover_loop_check_enqueue
         Rails.logger.error("[Task] Loop check enqueue failed for task #{id}: #{error.class}: #{error.message}")
       end
 
-      # The task is already committed; release only the exact turn we tried to queue.
-      def recover_loop_check_enqueue(snapshot)
-        creative.with_lock do
-          config = creative.data&.dig("trigger", "loop")
-          next unless config == snapshot && config["state"] == "running"
+      # The task is committed. Revalidate its durable identity rather than a
+      # possibly stale in-memory creative snapshot.
+      def recover_loop_check_enqueue
+        Comments::TopicMutation.call(topic_id, creative_id) do
+          creative.with_lock do
+            config = creative.data&.dig("trigger", "loop")
+            next unless creative.keep_loop? && config["state"] == "running" && creative.trigger_loop_task?(self.class.find(id))
+            next if surviving_keep_turn?(creative) || Orchestration::KeepQueuedDispatches.pending?(creative, config["current_comment_id"])
 
-          config["state"] = "awaiting_user"
-          config["control_version"] = config.fetch("control_version", 0) + 1
-          creative.update!(data: creative.data)
+            config["state"] = "awaiting_user"
+            config["control_version"] = config.fetch("control_version", 0) + 1
+            creative.update!(data: creative.data)
+          end
         end
       end
     end

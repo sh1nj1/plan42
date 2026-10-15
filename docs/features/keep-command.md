@@ -260,3 +260,16 @@ restoration attempts record refusal and are excluded from later restore sweeps.
 | Restartable state | Restart | Increment generation; `running`; reset iteration and retries |
 | Any | Obsolete generation arrives | No agent execution or loop transition; retire obsolete restore records |
 | Any | Current loop comment/topic deleted | Remove loop; retain generation counter |
+
+### Restoration transaction boundaries
+
+Keep restoration, inline-login replay, and controls take locks in topic →
+creative → Task order. A restore claim is persisted within admission, then the
+job is published after all primary-database transactions commit. Rollback
+publishes no job. Publication rechecks generation and the current turn, so a
+Pause between claim commit and publication retires the obsolete restore.
+A refused enqueue clears the claim and records refusal; queue exceptions clear
+the claim for a later retry. Reconciliation covers a process exit between commit
+and publication. Completion-check enqueue recovery uses the persisted Task's
+identity and preserves live sibling owners rather than comparing an old memory
+snapshot of the loop.

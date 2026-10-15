@@ -14,8 +14,18 @@ module Collavre
       ) } })
       @task = Task.create!(name: "Keep turn", status: "running", creative: @creative, topic_id: @topic.id,
                           agent: @agent, trigger_event_name: "comment_created",
-                          trigger_event_payload: { "comment" => { "id" => @turn.id } })
+                          trigger_event_payload: @turn.reload.dispatch_payload.deep_stringify_keys)
       @creative.comments.create!(content: "finished [STATUS: DONE]", user: @agent, topic: @topic, task: @task, skip_dispatch: true)
+    end
+
+    test "enqueue failure revalidates durable identity despite an old creative snapshot" do
+      @task.creative = Creative.find(@creative.id)
+      @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "control_version" => 9 } }))
+      TriggerLoopCheckJob.stub(:perform_later, false) { @task.done! }
+      config = @creative.reload.data.dig("trigger", "loop")
+      assert_equal "awaiting_user", config["state"]
+      assert_equal 10, config["control_version"]
+      assert_equal 0, config["current_iteration"]
     end
 
     [ 0, 10 ].each do |cooldown|
@@ -67,7 +77,9 @@ module Collavre
           config = @creative.reload.data.dig("trigger", "loop").deep_dup
           case change
           when "paused" then config["state"] = "paused"
-          when "replacement" then config["start_comment_id"] = @turn.id + 1
+          when "replacement"
+            config["start_comment_id"] = @turn.id + 1
+            config["generation"] += 1
           when "next_turn" then config["current_comment_id"] = @turn.id + 1
           end
           @creative.update!(data: { "trigger" => { "loop" => config } })
