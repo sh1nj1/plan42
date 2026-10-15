@@ -642,11 +642,10 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background-color: var(--border-drag-over);
 }
 
-creative-tree-row.chat-active .creative-row {
-    border: var(--border-1) solid var(--color-active);
-    border-radius: var(--radius-2);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--color-active) 25%, transparent),
-                0 0 14px color-mix(in srgb, var(--color-active) 12%, transparent);
+creative-tree-row.chat-active .creative-row,
+creative-tree-row.chat-active .creative-row:hover {
+    background-color: color-mix(in srgb, var(--color-active) 6%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-active);
 }
 
 .creative-row:hover,
@@ -654,6 +653,17 @@ creative-tree-row.chat-active .creative-row {
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
     background-color: var(--surface-hover);
+    border-radius: var(--radius-2);
+}
+
+creative-tree-row[is-title]:not(.chat-active) .creative-row,
+creative-tree-row[is-title]:not(.chat-active) .creative-row:hover {
+    background-color: transparent;
+}
+
+creative-tree-row.chat-active .creative-row.selected,
+creative-tree-row.chat-active .creative-row.selected:hover {
+    background-color: var(--border-drag-over);
 }
 
 .creative-progress {
