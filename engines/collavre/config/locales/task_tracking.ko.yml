@@ -10,3 +10,4 @@ ko:
           choose_input: "comment_id 또는 task_ids 중 하나만 입력하세요."
           invalid_ids: "태스크 ID를 1~100개 입력하세요."
           too_many_tasks: "추적 가능한 태스크 200개를 초과했습니다. 더 작은 태스크 그룹으로 조회하세요."
+          invalid_lineage: "태스크 대체 연결이 올바르지 않아 완료 여부를 판단할 수 없습니다."

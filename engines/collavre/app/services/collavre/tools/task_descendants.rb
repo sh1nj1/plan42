@@ -13,9 +13,9 @@ module Collavre
         frontier = roots
         loop do
           events = frontier.filter_map { |task| SystemEvents::Envelope.in(task.trigger_event_payload)&.id }.uniq
-          break if events.empty?
-
-          frontier = children(events).where.not(id: tasks.keys).limit(MAX_TASKS + 1).to_a
+          successor_ids = TaskLineage.successor_ids!(frontier)
+          related = children(events).or(Task.where(id: successor_ids))
+          frontier = related.where.not(id: tasks.keys).limit(MAX_TASKS + 1).to_a
           break if frontier.empty?
           TaskTracking.invalid!(:too_many_tasks) if tasks.size + frontier.size > MAX_TASKS
 

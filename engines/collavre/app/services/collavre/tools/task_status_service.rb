@@ -10,7 +10,7 @@ module Collavre
       extend ToolMeta
 
       tool_name "task_status"
-      tool_description "Check an instruction by comment_id or explicit task_ids (exactly one). Includes descendants via event causation, checking read permissions for every task. not_started means no task exists yet; it does not prove dispatch will occur. needs_attention takes priority over in_progress. cancelled is reported separately. done only means all agent turns ended successfully; inspect replies to judge the requested outcome. Returns at most 200 tasks; larger chains raise an error."
+      tool_description "Check an instruction by comment_id or explicit task_ids (exactly one). Follows merged instructions and superseded tasks. Includes descendants via event causation, checking read permissions for every task. not_started means no task exists yet; it does not prove dispatch will occur. needs_attention takes priority over in_progress. cancelled is reported separately. done only means all agent turns ended successfully; inspect replies to judge the requested outcome. Returns at most 200 tasks; larger chains raise an error."
       tool_param :comment_id, description: "Instruction comment id returned by topic_message_create.", required: false
       tool_param :task_ids, description: "Task ids, comma-separated or an array (maximum 100).", required: false
 
@@ -24,8 +24,9 @@ module Collavre
         roots = comment_id ? for_comment(comment_id, user) : for_ids(task_ids)
         tasks = TaskDescendants.collect(roots)
         tasks.each { |task| TaskTracking.authorize!(task, user) }
-        { comment_id: comment_id, status: aggregate(tasks),
-          tasks: TaskTracking.describe_all(tasks, user) }
+        successors = TaskLineage.successors(tasks)
+        { comment_id: comment_id, status: aggregate(TaskLineage.effective_tasks(tasks, successors)),
+          tasks: TaskTracking.describe_all(tasks, user).map { |row| row.merge(superseded_by_task_id: successors[row[:task_id]]) } }
       end
 
       private
@@ -33,7 +34,7 @@ module Collavre
       def for_comment(id, user)
         comment = TaskTracking.visible_comments(user).find(id)
         TopicAuthorizer.authorize_creative!(comment.creative, :read, user: user)
-        Task.where(trigger_comment_id: id).includes(:agent).limit(TaskDescendants::MAX_TASKS + 1).to_a.tap do |tasks|
+        TaskLineage.for_comment(id).includes(:agent).limit(TaskDescendants::MAX_TASKS + 1).to_a.tap do |tasks|
           TaskTracking.invalid!(:too_many_tasks) if tasks.size > TaskDescendants::MAX_TASKS
         end
       end

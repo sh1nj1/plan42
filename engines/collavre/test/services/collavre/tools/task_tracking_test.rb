@@ -16,11 +16,11 @@ module Collavre
 
       teardown { Current.reset }
 
-      test "tracks trigger on create and when payload changes" do
+      test "preserves original instruction when payload anchor changes" do
         task = make_task
         assert_equal @comment.id, task.trigger_comment_id
         task.update!(trigger_event_payload: {})
-        assert_nil task.reload.trigger_comment_id
+        assert_equal @comment.id, task.reload.trigger_comment_id
         assert_nil make_task(payload: nil).trigger_comment_id
       end
 
@@ -185,6 +185,50 @@ module Collavre
         @comment.update_columns(creative_id: hidden.id, topic_id: nil)
         assert_raises(PermissionDeniedError) { TaskStatusService.new.call(task_ids: task.id) }
         assert_empty TopicTasksService.new.call(topic_id: @topic.id)[:tasks]
+      end
+
+      test "follows superseded tasks to a running and then completed survivor" do
+        original = make_task(status: "queued")
+        replacement = make_task(status: "queued")
+        Orchestration::TaskCoalescer.coalesce!(replacement)
+        assert original.reload.cancelled?
+        result = TaskStatusService.new.call(task_ids: original.id)
+        assert_equal "in_progress", result[:status]
+        assert_equal replacement.id, result[:tasks].find { |row| row[:task_id] == original.id }[:superseded_by_task_id]
+        replacement.update!(status: "done")
+        assert_equal "done", TaskStatusService.new.call(task_ids: original.id)[:status]
+        assert_equal "done", TaskStatusService.new.call(comment_id: @comment.id)[:status]
+      end
+
+      test "finds reanchored and historical merged instructions" do
+        task = make_task
+        replacement = @topic.comments.create!(creative: @creative, user: @owner, content: "Next", skip_dispatch: true)
+        context = Orchestration::TaskCoalescer.absorb_into_payload(
+          Orchestration::TaskCoalescer.reanchor_payload(task.trigger_event_payload, replacement), [ @comment.id ])
+        task.update!(trigger_event_payload: context)
+        assert_equal @comment.id, task.reload.trigger_comment_id
+        assert_equal [ task.id ], TaskStatusService.new.call(comment_id: @comment.id)[:tasks].pluck(:task_id)
+        # A legacy backfill only knows the current anchor; JSON retains the original.
+        task.update_columns(trigger_comment_id: replacement.id)
+        assert_equal "in_progress", TaskStatusService.new.call(comment_id: @comment.id)[:status]
+      end
+
+      test "invalid or missing replacement targets never report done" do
+        task = make_task(status: "cancelled")
+        action = task.task_actions.create!(action_type: "superseded", status: "done",
+          payload: { "superseded_by_task_id" => 999999999 })
+        assert_raises(ActiveRecord::RecordNotFound) { TaskStatusService.new.call(task_ids: task.id) }
+        action.update!(payload: {})
+        assert_raises(ActiveRecord::RecordNotFound) { TaskStatusService.new.call(task_ids: task.id) }
+        action.update!(payload: { "superseded_by_task_id" => task.id })
+        assert_raises(ArgumentError) { TaskStatusService.new.call(task_ids: task.id) }
+      end
+
+      test "PostgreSQL merged lookup compares both string and integer ids as text" do
+        Task.connection.stub(:adapter_name, "PostgreSQL") do
+          assert_includes TaskLineage.merged_condition, "jsonb_array_elements_text"
+          assert_includes TaskLineage.merged_condition, "merged.value = :id"
+        end
       end
 
       private

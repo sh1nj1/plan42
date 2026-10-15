@@ -164,7 +164,7 @@ module Collavre
     private
 
     def assign_trigger_comment_id
-      self.trigger_comment_id = trigger_event_payload&.dig("comment", "id")
+      self.trigger_comment_id ||= trigger_event_payload&.dig("comment", "id")
     end
 
     def became_terminal?
