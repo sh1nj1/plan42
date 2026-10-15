@@ -2,7 +2,7 @@ import { updateRemovalButtons, destroyedIdsForRemoval, promotesChildrenToRoot as
 import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
 import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
-import { updateQueuedCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
+import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
 import creativesApi from '../lib/api/creatives'
@@ -1018,7 +1018,7 @@ function setupEditorSession() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = typeEditor.needsFlush(pendingSave, saveQueue.saving) ? typeEditor.flush(() => waitForServer ? saveForm(tree, parentId) : requestSave(tree, parentId)) : apiQueue.waitFor(waitForServer ? `creative_${editCreativeId}` : null);
+        const p = flushOnClose(tree, parentId, editCreativeId, waitForServer);
         return p.then((result) => {
           if (isFailedSaveResult(result)) {
             recoverFromFailedSave();
@@ -1049,6 +1049,13 @@ function setupEditorSession() {
 
       const closePromise = uploadsPending ? waitForUploads().then(finalizeHide) : finalizeHide();
       return Promise.resolve(closePromise).finally(() => { closeSaveInProgress = false; });
+    }
+
+    function flushOnClose(tree, parentId, editCreativeId, waitForServer) {
+      if (!typeEditor.needsFlush(pendingSave, saveQueue.saving)) return apiQueue.waitFor(waitForServer ? `creative_${editCreativeId}` : null);
+      // The buffer is what is being saved, so show it now instead of waiting on the server.
+      revealCreativeRow(tree, captureBufferSnapshot());
+      return typeEditor.flush(() => waitForServer ? saveForm(tree, parentId) : requestSave(tree, parentId));
     }
 
     // Tears the session down for a row that is already gone from the DOM, so
@@ -1142,6 +1149,19 @@ function setupEditorSession() {
       }
     }
 
+    function captureBufferSnapshot(contentType = contentTypeInput?.value) {
+      if (markdownMode) syncMarkdownToForm();
+      return captureQueuedCreativeSaveSnapshot({
+        content: descriptionInput.value,
+        contentType,
+        markdownSource: markdownSourceInput?.value,
+        markdownEditor: markdownEditorInput?.value,
+        progress: readProgressValue(),
+        persistProgress: progressValueChanged(),
+        originId: originIdInput?.value,
+      });
+    }
+
     async function queueSaveIfDirty(tree = currentTree) {
       // Check both isDirty (text changes) and pendingSave (progress/structure changes)
       if (!isDirty && !pendingSave) return;
@@ -1161,16 +1181,7 @@ function setupEditorSession() {
       // Both editor surfaces persist Markdown now. The textarea surface
       // (markdownMode) syncs its value to the hidden fields here; the rich
       // surface already kept them current via onLexicalChange/applyCreativeData.
-      if (markdownMode) syncMarkdownToForm();
-      let snapshot = captureQueuedCreativeSaveSnapshot({
-        content: descriptionInput.value,
-        contentType: contentTypeInput?.value,
-        markdownSource: markdownSourceInput?.value,
-        markdownEditor: markdownEditorInput?.value,
-        progress: readProgressValue(),
-        persistProgress: progressValueChanged(),
-        originId: originIdInput?.value,
-      });
+      let snapshot = captureBufferSnapshot();
       const isMarkdownSave = snapshot.contentType === 'markdown';
       const position = queuedCreativePosition(tree);
       const startCreativeId = creativeId;
@@ -1188,18 +1199,7 @@ function setupEditorSession() {
       // Markdown saves regenerate description from creative[markdown_source] server-side,
       // so we must re-sync and re-capture the latest textarea value too — otherwise edits
       // made during the upload wait get overwritten by the stale pre-wait source.
-      if (form.dataset.creativeId === startCreativeId) {
-        if (markdownMode) syncMarkdownToForm();
-        snapshot = captureQueuedCreativeSaveSnapshot({
-          content: descriptionInput.value,
-          contentType: snapshot.contentType,
-          markdownSource: markdownSourceInput?.value,
-          markdownEditor: markdownEditorInput?.value,
-          progress: readProgressValue(),
-          persistProgress: progressValueChanged(),
-          originId: originIdInput?.value,
-        });
-      }
+      if (form.dataset.creativeId === startCreativeId) snapshot = captureBufferSnapshot(snapshot.contentType);
 
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]

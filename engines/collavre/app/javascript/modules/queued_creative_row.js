@@ -1,4 +1,5 @@
 import { treeRowElement } from './creative_row_editor_helpers'
+import { creativeSaveSnapshotIsEmpty } from './creative_save_state'
 
 const revisions = new WeakMap()
 const retryAttachmentIds = new WeakMap()
@@ -35,6 +36,16 @@ export function updateQueuedCreativeRow(tree, snapshot) {
   row.dataset.markdownEditor = markdown ? snapshot.markdownEditor : ''
   row.parentId = tree.dataset.parentId || null
   row.requestUpdate?.()
+}
+
+// Paint and show the row from the buffer being saved, so closing the editor
+// never leaves a blank gap while the request (a POST for a new creative) is in
+// flight. A failed save re-hides the row and reopens the editor on the draft.
+export function revealCreativeRow(tree, snapshot) {
+  const row = tree.querySelector('.creative-row')
+  if (!row || creativeSaveSnapshotIsEmpty(snapshot)) return
+  updateQueuedCreativeRow(tree, snapshot)
+  row.style.display = ''
 }
 
 export function queuedCreativeStatus(tree) {
