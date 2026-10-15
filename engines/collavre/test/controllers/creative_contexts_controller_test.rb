@@ -195,4 +195,41 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     refute @features.reload.data.key?("context_order")
   end
+
+  test "PATCH update_contexts drops a removed context from context_order so re-adding appends it" do
+    @features.update!(data: {
+      "context_ids" => [ @development.id, @project.id, @feature_a.id ],
+      "context_order" => [ @development.id, @project.id, @feature_a.id ]
+    })
+
+    patch update_contexts_creative_path(@features), params: { context_ids: [ @project.id, @feature_a.id ] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+    assert_response :success
+    assert_equal [ @project.id, @feature_a.id ], @features.reload.data["context_order"]
+
+    patch update_contexts_creative_path(@features), params: { context_ids: [ @project.id, @feature_a.id, @development.id ] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+    assert_response :success
+    assert_equal [ @project.id, @feature_a.id, @development.id ], @features.reload.ordered_context_ids
+  end
+
+  test "PATCH update_contexts merges into the latest data instead of a stale copy" do
+    @features.update!(data: { "context_ids" => [ @development.id, @project.id ] })
+    stale = Collavre::Creative.find(@features.id)
+    # Another tab removes a context after this request loaded the creative.
+    concurrent_removal = lambda do |*|
+      Collavre::Creative.find_by(id: @features.id).update!(data: { "context_ids" => [ @project.id ] })
+      true
+    end
+
+    Collavre::Creative.stub(:find, stale) do
+      stale.stub(:has_permission?, concurrent_removal) do
+        patch update_contexts_creative_path(@features), params: { context_order: [ @project.id ] },
+          headers: { "ACCEPT" => "application/json" }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal({ "context_ids" => [ @project.id ], "context_order" => [ @project.id ] }, @features.reload.data)
+  end
 end

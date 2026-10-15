@@ -467,8 +467,6 @@ export default class extends Controller {
             preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
     }
 
-    // Reordering covers inherited contexts too: the whole arranged list is saved as this
-    // creative's context_order, which drives both the chip order and prompt injection order.
     handleReorderDrop({ el, ids: draggedIds, hit }) {
         const draggedId = Number(draggedIds[0])
         const targetId = Number(el.dataset.contextId)
@@ -486,16 +484,12 @@ export default class extends Controller {
             if (!insertBefore) newIndex += 1
             ids.splice(newIndex, 0, draggedId)
             return ids
-        }, ids => this._updateContextOrder(ids))
+        }, ids => this._patchContexts({ context_order: ids }))
     }
 
     // --- API calls ---
     async _updateContextIds(ids) {
         return this._patchContexts({ context_ids: ids })
-    }
-
-    async _updateContextOrder(ids) {
-        return this._patchContexts({ context_order: ids })
     }
 
     async _saveDisabledState() {

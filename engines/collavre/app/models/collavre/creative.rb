@@ -74,6 +74,7 @@ module Collavre
     include Publishable
     include Describable
     include RealtimeBroadcastable
+    include Contextual
     include HistoryTrackable, CreativeHistoryTopic, CreativeReservedTopics, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
@@ -215,72 +216,6 @@ module Collavre
 
     def drop_trigger_enabled?
       data&.dig("trigger", "on_child_enter") == true
-    end
-
-    # --- Context IDs ---
-    # Returns the directly-configured context creative IDs for this creative.
-    def context_ids
-      data.is_a?(Hash) ? Array(data["context_ids"]) : []
-    end
-
-    # Returns the directly-configured disabled context IDs for this creative.
-    def disabled_context_ids
-      data.is_a?(Hash) ? Array(data["disabled_context_ids"]) : []
-    end
-
-    # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
-    def effective_context_ids(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      own = context_ids
-      parent_ctx = parent&.effective_context_ids(visited_ids) || []
-      (own + parent_ctx).uniq
-    end
-
-    # Returns the effective disabled context IDs: own + inherited from ancestors (deduplicated).
-    def effective_disabled_context_ids(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      own = disabled_context_ids
-      parent_disabled = parent&.effective_disabled_context_ids(visited_ids) || []
-      (own + parent_disabled).uniq
-    end
-
-    # Returns the user-arranged context order saved on this creative.
-    def context_order
-      data.is_a?(Hash) ? Array(data["context_order"]).map(&:to_i) : []
-    end
-
-    # Returns the nearest saved context order (self first, then ancestors).
-    def effective_context_order(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      order = context_order
-      order.any? ? order : (parent&.effective_context_order(visited_ids) || [])
-    end
-
-    # Returns effective context IDs (excluding self) in the order shown in the
-    # chat context bar and injected into AI prompts: inherited contexts, then
-    # own ones, rearranged by the nearest saved context order. IDs absent from
-    # that order keep their relative position after the arranged ones.
-    def ordered_context_ids
-      own = context_ids - [ id ]
-      ids = ((effective_context_ids - own) + own).uniq - [ id ]
-      order = effective_context_order
-      return ids if order.empty?
-
-      rank = order.each_with_index.to_h
-      ids.each_with_index.sort_by { |cid, index| [ rank.fetch(cid, order.size), index ] }.map(&:first)
-    end
-
-    # Returns context creatives (excludes self to avoid duplication).
-    def context_creatives
-      ids = effective_context_ids
-      ids -= [ id ]
-      Creative.where(id: ids)
     end
 
     # Compatibility helper: ancestry gem exposes `subtree_ids`, while

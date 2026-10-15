@@ -65,7 +65,7 @@ test('form and unauthorized drops never add contexts', () => {
 })
 
 test('context reorder saves the full arranged order, including inherited contexts', async () => {
-  controller._updateContextOrder = jest.fn().mockResolvedValue()
+  controller._patchContexts = jest.fn().mockResolvedValue(true)
   const values = {}
   const source = popup.querySelector('[data-context-id="10"]')
   const target = popup.querySelector('[data-context-id="20"]')
@@ -75,30 +75,24 @@ test('context reorder saves the full arranged order, including inherited context
   expect(drag('dragover', source, values).defaultPrevented).toBe(false)
   drag('drop', target, values, 10)
   await Promise.resolve()
-  expect(controller._updateContextOrder).toHaveBeenCalledWith([20, 10, 99])
+  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [20, 10, 99] })
   expect(controller._updateContextIds).not.toHaveBeenCalled()
   drag('dragend', source, values)
   expect(source.classList.contains('context-dragging')).toBe(false)
 })
 
 test('inherited context can be moved before own contexts', async () => {
-  controller._updateContextOrder = jest.fn().mockResolvedValue()
+  controller._patchContexts = jest.fn().mockResolvedValue(true)
   await controller.handleReorderDrop({ el: popup.querySelector('[data-context-id="10"]'), ids: ['99'], hit: 'left' })
-  expect(controller._updateContextOrder).toHaveBeenCalledWith([99, 10, 20])
+  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [99, 10, 20] })
 })
 
 test('reorder ignores unknown or self-targeted drops', async () => {
-  controller._updateContextOrder = jest.fn().mockResolvedValue()
+  controller._patchContexts = jest.fn().mockResolvedValue(true)
   const target = popup.querySelector('[data-context-id="10"]')
   await controller.handleReorderDrop({ el: target, ids: ['10'], hit: 'left' })
   await controller.handleReorderDrop({ el: target, ids: ['555'], hit: 'left' })
-  expect(controller._updateContextOrder).not.toHaveBeenCalled()
-})
-
-test('context order is sent as context_order', async () => {
-  controller._patchContexts = jest.fn().mockResolvedValue(true)
-  await controller._updateContextOrder([20, 10])
-  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [20, 10] })
+  expect(controller._patchContexts).not.toHaveBeenCalled()
 })
 
 test('leaving an empty popup restores hidden context list', () => {
@@ -256,15 +250,15 @@ test('context drag cancelled before its animation frame does not restore stale f
 })
 
 test('reordering before a context keeps inherited items in the order and ignores missing IDs', async () => {
-  controller._updateContextOrder = jest.fn().mockResolvedValue()
+  controller._patchContexts = jest.fn().mockResolvedValue(true)
   const target = popup.querySelector('[data-context-id="10"]')
   await controller.handleReorderDrop({ el: target, ids: ['20'], hit: 'left' })
-  expect(controller._updateContextOrder).toHaveBeenCalledWith([20, 10, 99])
-  controller._updateContextOrder.mockClear()
+  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [20, 10, 99] })
+  controller._patchContexts.mockClear()
   for (const id of ['0', '10', '123']) {
     await controller.handleReorderDrop({ el: target, ids: [id], hit: 'left' })
   }
-  expect(controller._updateContextOrder).not.toHaveBeenCalled()
+  expect(controller._patchContexts).not.toHaveBeenCalled()
   expect(controller._updateContextIds).not.toHaveBeenCalled()
 })
 
