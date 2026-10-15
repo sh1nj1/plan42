@@ -1,3 +1,6 @@
+import { applyCreativeSaveResponse } from './creative_save_state'
+import { cacheSavedMarkdownSource } from './queued_creative_row'
+
 // Enter on a brand-new creative POSTs it in the background so the next row
 // opens at once. Until that POST returns there is no id to position the next
 // row after, so the next row carries a deferred anchor instead: a promise of
@@ -6,6 +9,7 @@ const creates = new WeakMap()
 const anchors = new WeakMap()
 const failedDrafts = new WeakMap()
 const dependents = new WeakMap()
+const retryDeletes = new WeakMap()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
@@ -41,7 +45,7 @@ export function takeFailedDraft(tree) {
 
 // Resolves with the anchor for the row after this one: the new id, or on
 // failure the slot this row asked for, so the next row still lands there.
-export async function postNewCreative(tree, { action, body, snapshot }, fallback, { save, created, failed }) {
+export async function postNewCreative(tree, { action, body, snapshot, deletedIds = [] }, fallback, { save, created, failed }) {
   const anchor = await takeDeferredAnchor(tree)
   if (anchor) {
     Object.assign(fallback, anchor)
@@ -53,6 +57,7 @@ export async function postNewCreative(tree, { action, body, snapshot }, fallback
     const data = response.ok ? JSON.parse((await response.text()) || '{}') : {}
     if (!data.id) throw new Error(`Failed to create creative: ${response.status}`)
     delete tree.dataset.saveState
+    applyCreativeSaveResponse(snapshot, data, { applyCachedMarkdownSource: cacheSavedMarkdownSource(tree) })
     created(data)
     return { afterId: String(data.id), beforeId: '' }
   } catch (error) {
@@ -60,9 +65,18 @@ export async function postNewCreative(tree, { action, body, snapshot }, fallback
     // has already moved on. Opening the row again restores the draft.
     tree.dataset.saveState = 'error'
     failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
+    retryDeletes.set(tree, [...takeRetryDeletedIds(tree), ...deletedIds])
     failed(error)
     return { ...fallback, failedTrees: [...(fallback.failedTrees || []), tree] }
   }
+}
+
+// Attachments removed from a draft whose create failed: the editor drained
+// them into that request, so they wait here until a create of the row succeeds.
+export function takeRetryDeletedIds(tree) {
+  const ids = retryDeletes.get(tree) || []
+  retryDeletes.delete(tree)
+  return ids
 }
 
 // A row that takes over the slot of failed rows above it records them, so

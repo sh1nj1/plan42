@@ -2,10 +2,10 @@ import { updateRemovalButtons, destroyedIdsForRemoval, promotesChildrenToRoot as
 import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
 import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
 import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
-import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
+import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -809,6 +809,7 @@ function setupEditorSession() {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
             const applied = applyCreativeSaveResponse(snapshot, data, {
+              applyCachedMarkdownSource: cacheSavedMarkdownSource(tree),
               currentMarkdownSource: markdownMode ? markdownTextarea?.value : undefined,
               applyCurrentMarkdownSource: (source) => {
                 markdownTextarea.value = source;
@@ -871,6 +872,7 @@ function setupEditorSession() {
 
     function adoptCreatedTree(tree, data, parentId, fallbackRow) {
       bindPersistedTree(tree, data, parentId, fallbackRow);
+      takeRetryDeletedIds(tree).forEach(deleteAttachment);
       const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
       if (parentTree) refreshRow(parentTree);
     }
@@ -1283,13 +1285,7 @@ function setupEditorSession() {
               markdownTextarea.value = source;
               syncMarkdownToForm();
             },
-            applyCachedMarkdownSource: (source, savedSource) => {
-              const row = onSuccessTree ? treeRowElement(onSuccessTree) : null;
-              if (row && row.dataset.markdownSource === savedSource) {
-                row.dataset.markdownSource = source;
-                row.requestUpdate?.();
-              }
-            },
+            applyCachedMarkdownSource: cacheSavedMarkdownSource(onSuccessTree),
           });
           if (canApplyToCurrentEditor && applied.currentApplied) {
             originalContent = applied.snapshot.content;

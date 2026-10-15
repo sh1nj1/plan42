@@ -48,6 +48,18 @@ export function revealCreativeRow(tree, snapshot) {
   row.style.display = ''
 }
 
+// Swaps the source the server rewrote (e.g. data: URIs moved to blobs) into
+// the row cache, unless the row has moved on from the source that was saved.
+export function cacheSavedMarkdownSource(tree) {
+  return (source, savedSource) => {
+    const row = treeRowElement(tree)
+    if (row && row.dataset.markdownSource === savedSource) {
+      row.dataset.markdownSource = source
+      row.requestUpdate?.()
+    }
+  }
+}
+
 export function queuedCreativeStatus(tree) {
   return tree?.dataset.saveState || ''
 }

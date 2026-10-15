@@ -9,6 +9,7 @@ import { jest } from '@jest/globals'
 const createInlineEditorMock = jest.fn()
 const saveMock = jest.fn()
 const alertDialogMock = jest.fn(() => Promise.resolve())
+let deletedAttachments = []
 
 jest.unstable_mockModule('../lexical_inline_editor', () => ({
   createInlineEditor: createInlineEditorMock,
@@ -92,7 +93,7 @@ describe('Enter on a new creative saves it in the background', () => {
       load: jest.fn(),
       focus: jest.fn(),
       reset: jest.fn(),
-      getDeletedAttachments: jest.fn(() => []),
+      getDeletedAttachments: jest.fn(() => deletedAttachments.splice(0)),
     }))
   })
 
@@ -100,6 +101,8 @@ describe('Enter on a new creative saves it in the background', () => {
     document.body.innerHTML = '<div id="creatives"></div><div id="center-frame"></div>'
     saveMock.mockReset()
     alertDialogMock.mockClear()
+    deletedAttachments = []
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true }))
     buildEditorDom(document.getElementById('center-frame'), { saveFailedMessage: 'Save failed' })
     initializeCreativeRowEditor()
     document.getElementById('metadata-popup').style.display = 'none'
@@ -490,6 +493,61 @@ describe('Enter on a new creative saves it in the background', () => {
 
     expect(template().parentElement).toBe(stray)
     expect(field('inline-after-id')).toBe('stale')
+  })
+
+  const attachmentDeletes = () => global.fetch.mock.calls
+    .filter(([, options]) => options?.method === 'DELETE').map(([url]) => url)
+
+  test('attachments removed before a failed create are deleted once its retry succeeds', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(81)))
+    const first = await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+    expect(attachmentDeletes()).toEqual([])
+
+    // A retry that fails again still holds on to them.
+    clickRow(first)
+    await flush()
+    await pressEnter()
+    await flush()
+    expect(first.dataset.saveState).toBe('error')
+    expect(attachmentDeletes()).toEqual([])
+
+    await retryFailedRow(first)
+
+    expect(first.dataset.id).toBe('81')
+    expect(attachmentDeletes()).toEqual(['/attachments/blob-1'])
+  })
+
+  async function createMarkdownRow(finish) {
+    saveMock.mockImplementation(() => Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ id: 77, markdown_source: '![x](/blobs/1)' })),
+    }))
+    const first = await startNewRow('')
+    document.getElementById('inline-toggle-markdown').click()
+    await flush()
+    type('![x](data:image/png;base64,AAAA)')
+    await finish()
+    await flush()
+    return first
+  }
+
+  test('a background create caches the Markdown source the server rewrote', async () => {
+    const first = await createMarkdownRow(pressEnter)
+
+    expect(first.dataset.id).toBe('77')
+    expect(first.parentElement.dataset.markdownSource).toBe('![x](/blobs/1)')
+  })
+
+  test('closing a new Markdown row caches the Markdown source the server rewrote', async () => {
+    const first = await createMarkdownRow(() => document.getElementById('inline-close').click())
+
+    expect(first.dataset.id).toBe('77')
+    expect(first.parentElement.dataset.markdownSource).toBe('![x](/blobs/1)')
   })
 
   test('an upload in progress keeps the blocking save', async () => {
