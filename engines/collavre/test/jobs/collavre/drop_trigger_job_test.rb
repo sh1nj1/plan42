@@ -26,8 +26,8 @@ module Collavre
       Current.reset
     end
 
-    test "drop startup replaces terminal keep state and stays idempotent" do
-      %w[completed max_reached stuck].each do |state|
+    test "drop startup replaces inactive keep state and stays idempotent" do
+      %w[completed max_reached stuck paused awaiting_user idle].each do |state|
         @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
           @child.main_topic.id, source: "keep", state: state, goal: "Old goal"
         ) } })
@@ -41,6 +41,15 @@ module Collavre
         assert_nil loop_data["goal"]
         job.send(:initialize_trigger_loop, @child, @child.main_topic)
         assert_equal loop_data, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "drop startup preserves active keep loops" do
+      %w[running pending_verification].each do |state|
+        existing = TriggerLoopConfig.build(@child.main_topic.id, source: "keep", state: state, goal: "Active goal")
+        @child.update!(data: { "trigger" => { "loop" => existing } })
+        DropTriggerJob.new.send(:initialize_trigger_loop, @child, @child.main_topic)
+        assert_equal existing, @child.reload.data.dig("trigger", "loop")
       end
     end
 

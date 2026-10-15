@@ -3,7 +3,7 @@ en:
     comments:
       keep_command:
         not_authorized: "You need write permission to start a keep loop."
-        invalid_max: "Use --max with a positive integer (default: 10)."
+        invalid_max: "Use --max with an integer from 1 to 50 (default: 10)."
         description: "Continue until the goal or trigger instructions are satisfied."
         private_not_supported: "Start /keep in a public message; loop goals and progress are shared with creative readers."
         already_running: "A loop is already running. Pause it before starting /keep."

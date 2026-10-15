@@ -35,12 +35,37 @@ module Collavre
       end
 
       test "rejects invalid limits without changing loop state" do
-        %w[0 -1 abc 1.5].each do |limit|
+        %w[0 -1 abc 1.5 51 100000].each do |limit|
           comment = command("/keep --max #{limit}")
           assert_equal I18n.t("collavre.comments.keep_command.invalid_max"),
                        KeepCommand.new(comment: comment, user: @user).call
           assert_nil comment.keep_loop_options
         end
+      end
+
+      test "accepts the maximum limit" do
+        comment = command("/keep --max 50 finish")
+        assert_nil KeepCommand.new(comment: comment, user: @user).call
+        assert_equal 50, comment.keep_loop_options["max_iterations"]
+      end
+
+      test "preserves max options inside the goal" do
+        agent = User.create!(email: "max-keep@example.com", name: "MaxKeep", password: "password123",
+                             llm_vendor: "openai", llm_model: "gpt-4", searchable: true)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+        [ "document the --max flag", "document --max 5", "@#{agent.name}: document --max 5" ].each do |goal|
+          comment = command("/keep #{goal}")
+          assert_nil KeepCommand.new(comment: comment, user: @user).call
+          assert_equal 10, comment.keep_loop_options["max_iterations"]
+          assert_equal goal.sub(/\A@.*?: /, ""), comment.keep_loop_options["goal"]
+        end
+      end
+
+      test "rejects a leading max option without a value" do
+        comment = command("/keep --max")
+        assert_equal I18n.t("collavre.comments.keep_command.invalid_max"),
+                     KeepCommand.new(comment: comment, user: @user).call
+        assert_nil comment.keep_loop_options
       end
 
       test "does not handle other commands" do

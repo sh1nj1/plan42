@@ -175,8 +175,8 @@ module Collavre
         trigger = data["trigger"] || {}
 
         existing = trigger["loop"]
-        terminal_keep = existing && existing["source"] == "keep" && %w[completed max_reached stuck].include?(existing["state"])
-        return if existing.present? && !terminal_keep
+        inactive_keep = existing && existing["source"] == "keep" && !%w[running pending_verification].include?(existing["state"])
+        return if existing.present? && !inactive_keep
 
         trigger["loop"] = TriggerLoopConfig.build(topic&.id)
         data["trigger"] = trigger

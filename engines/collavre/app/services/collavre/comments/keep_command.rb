@@ -14,8 +14,8 @@ module Collavre
         return message("not_authorized") unless @comment.creative.has_permission?(@user, :write)
 
         text = @comment.content.to_s.strip.sub(/\A\/keep\s*/i, "")
-        limit = text.slice!(/(?:\A|\s)--max\s+\S+/)&.split&.last || "10"
-        return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/)
+        limit = text.slice!(/\A--max(?:\s+\S+)?(?=\s|\z)/)&.split&.last || "10"
+        return message("invalid_max") unless limit.match?(/\A[1-9]\d*\z/) && limit.to_i <= 50
 
         text = text.strip
         agent = leading_agent(text)

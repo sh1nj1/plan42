@@ -11,14 +11,15 @@ is satisfied, user input is needed, or the iteration limit is reached.
   trigger instructions.
 - `@agent:` optionally selects an AI agent by mention. Without it, normal
   speaking and workflow routing rules choose who responds.
-- `--max` accepts a positive integer and defaults to `10` iterations.
+- `--max` accepts an integer from 1 to 50 and defaults to `10` iterations.
+  It is parsed only before the agent or goal; later occurrences remain goal text.
 - The author needs write permission on the creative. Private `/keep` comments
   are rejected; loop instructions and continuation comments are public.
 
 For example:
 
 ```text
-/keep Fix the failing login tests --max 5
+/keep --max 5 Fix the failing login tests
 /keep --max 10 @Astra: Prepare the release
 /keep
 ```
@@ -53,6 +54,7 @@ option. Mentions inside the goal remain part of the goal.
 An active loop (`running` or `pending_verification`) must be paused before
 starting another `/keep`. Restart continues the stored loop source, goal, topic,
 and routing; restarting a completed keep loop under a drop container restarts
-that keep loop. A fresh drop trigger after a completed, max-reached, or stuck
-keep loop starts a drop loop. Keep loops under drop containers inherit the
-container context for verification and status evaluation.
+that keep loop. A fresh drop trigger replaces any keep loop except one that is
+`running` or `pending_verification`, including paused or user-blocked keep loops.
+Keep loops under drop containers inherit the container context for verification
+and status evaluation.
