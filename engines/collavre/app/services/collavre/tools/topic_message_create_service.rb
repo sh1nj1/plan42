@@ -125,7 +125,8 @@ module Tools
       SystemEvents::Dispatcher.dispatch(
         "comment_created", payload, source: "a2a",
         selection: selection, context_for: context_for,
-        scheduling_hooks: scheduling_hooks(user, comment)
+        scheduling_hooks: scheduling_hooks(user, comment),
+        require_enqueue_ack: comment.keep_loop_options.present?
       )
     end
 

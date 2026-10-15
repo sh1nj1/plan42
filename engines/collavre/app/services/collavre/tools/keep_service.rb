@@ -22,6 +22,14 @@ module Collavre
       class MessageService < TopicMessageCreateService
         private
 
+        def dispatch_agent_message(comment, user, principal, selection, envelope)
+          agents = super
+          comment.send(:reconcile_loop_dispatch, agents)
+        rescue StandardError
+          comment.send(:reconcile_loop_dispatch, [], notify: false)
+          raise
+        end
+
         def prepare_comment!(comment)
           TopicAuthorizer.authorize_write!(comment.topic)
           error = Comments::KeepCommand.new(comment: comment, user: Current.user).call

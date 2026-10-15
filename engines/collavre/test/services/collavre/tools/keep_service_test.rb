@@ -68,6 +68,7 @@ module Collavre
         Current.user = agent
         events = []
         SystemEvents::Dispatcher.stub(:dispatch, ->(event, payload, **options) {
+          assert options[:require_enqueue_ack]
           events << options[:source]
           []
         }) do
@@ -75,6 +76,31 @@ module Collavre
         end
         assert_equal [ "a2a" ], events
         assert_equal @topic.id, @creative.reload.data.dig("trigger", "loop", "trigger_topic_id")
+      end
+
+      test "AI dispatch without eligible agents pauses the loop" do
+        prepare_ai_caller
+        SystemEvents::Dispatcher.stub(:dispatch, []) do
+          KeepService.new.call(topic_id: @topic.id)
+        end
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
+      test "AI dispatch exceptions pause the loop and propagate" do
+        prepare_ai_caller
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { raise "dispatch failed" }) do
+          error = assert_raises(RuntimeError) { KeepService.new.call(topic_id: @topic.id) }
+          assert_equal "dispatch failed", error.message
+        end
+        assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      end
+
+      test "AI dispatch with an accepted agent keeps the loop running" do
+        prepare_ai_caller
+        SystemEvents::Dispatcher.stub(:dispatch, [ users(:two) ]) do
+          KeepService.new.call(topic_id: @topic.id)
+        end
+        assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
       end
 
       test "missing topic and closed topics cannot initialize a loop" do
@@ -100,6 +126,13 @@ module Collavre
         schema = ToolSchema::Builder.build(KeepService)
         assert_equal "topic_id", schema[:params].last[:name].to_s
         assert schema[:params].last[:required]
+      end
+      private
+
+      def prepare_ai_caller
+        agent = users(:ai_bot)
+        CreativeShare.create!(creative: @creative, user: agent, permission: :write)
+        Current.user = agent
       end
     end
   end
