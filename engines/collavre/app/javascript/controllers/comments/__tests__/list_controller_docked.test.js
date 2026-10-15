@@ -6,6 +6,21 @@ import { jest } from '@jest/globals'
 import CommentsListController from '../list_controller'
 
 describe('CommentsListController docked startup', () => {
+  test.each([undefined, '<div>불러오는 중...</div>'])('search shows configured loading markup or the default spinner: %s', (loadingText) => {
+    const controller = Object.create(CommentsListController.prototype)
+    controller.flushPendingRead = jest.fn()
+    controller.resetState = jest.fn()
+    controller.loadInitialComments = jest.fn()
+    controller.listTarget = document.createElement('div')
+    Object.defineProperty(controller, 'element', { value: { dataset: { loadingText } } })
+
+    controller.applySearchQuery('invoice')
+
+    expect(controller.listTarget.innerHTML).toBe(loadingText || '<div class="loading-spinner">Loading...</div>')
+    expect(controller.manualSearchQuery).toBe('invoice')
+    expect(controller.loadInitialComments).toHaveBeenCalledTimes(1)
+  })
+
   test('ignores a repeated topic selection while a deep link is loading', () => {
     const controller = Object.create(CommentsListController.prototype)
     controller.currentTopicId = '12'
