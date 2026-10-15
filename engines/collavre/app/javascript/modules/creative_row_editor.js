@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, pendingCreate, cannotEdit, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, isMarkdownSourceDraft, fillFailedDraftForm } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -274,6 +274,7 @@ function setupEditorSession() {
     // "no editor" state lets another row or Add reuse the form while the old
     // save still owns its completion and recovery callbacks.
     let closeSaveInProgress = false;
+    const editTickets = createEditTickets();
     let originalContent = '';
     let originalProgress = 0;
     let originalOriginId = '';
@@ -646,7 +647,8 @@ function setupEditorSession() {
       // close still owns it. The initiating switch continues below after its
       // own hideCurrent() resolves; only later, competing clicks are ignored.
       if (closeSaveInProgress) return;
-      if (pendingCreate(tree) && await cannotEdit(tree)) return;
+      const wait = editTickets.waitToEdit(tree);
+      if (wait && await wait) return;
 
       if (currentTree === tree) {
         await hideCurrent();
@@ -1308,7 +1310,7 @@ function setupEditorSession() {
       if (!currentTree) return;
       const target = nextEditorTree(currentTree, delta);
       // A row still being created has no id to load the editor from yet.
-      if (await cannotEdit(target)) return;
+      if (await editTickets.waitToEdit(target)) return;
 
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
@@ -1698,6 +1700,7 @@ function setupEditorSession() {
       // failure. Starting a new row here would replace that buffer and let the
       // stale completion mutate the newer session.
       if (closeSaveInProgress) return;
+      editTickets.take();
       resetOriginTracking();
       const performStart = () => {
         typeEditor.load();
@@ -1795,11 +1798,7 @@ function setupEditorSession() {
           }));
         };
 
-        if (rowComponent.updateComplete) {
-          rowComponent.updateComplete.then(finalizeSetup);
-        } else {
-          requestAnimationFrame(finalizeSetup);
-        }
+        if (rowComponent.updateComplete) rowComponent.updateComplete.then(finalizeSetup); else requestAnimationFrame(finalizeSetup);
       };
 
       if (currentTree) {

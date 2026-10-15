@@ -5,6 +5,7 @@
 const creates = new WeakMap()
 const anchors = new WeakMap()
 const failedDrafts = new WeakMap()
+const dependents = new WeakMap()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
@@ -58,7 +59,39 @@ export async function postNewCreative(tree, { action, body, snapshot }, fallback
     tree.dataset.saveState = 'error'
     failedDrafts.set(tree, { snapshot, afterId: fallback.afterId, beforeId: fallback.beforeId })
     failed(error)
-    return fallback
+    return { ...fallback, failedTrees: [...(fallback.failedTrees || []), tree] }
+  }
+}
+
+// A row that takes over the slot of failed rows above it records them, so
+// once it is created they retry in front of it rather than in the old slot,
+// which the server would now place after it when that slot is a before_id.
+function adoptAnchor(tree, anchor) {
+  if (anchor.failedTrees) dependents.set(tree, anchor.failedTrees)
+  return anchor
+}
+
+export function retargetFailedDrafts(tree, id) {
+  for (const failedTree of dependents.get(tree) || []) {
+    const draft = failedDrafts.get(failedTree)
+    if (draft) Object.assign(draft, { afterId: '', beforeId: String(id) })
+  }
+  dependents.delete(tree)
+}
+
+// Each edit request takes a ticket. waitToEdit() is falsy when nothing is in
+// flight on the row; otherwise it resolves true when the request must be
+// dropped: no row, a row left uneditable, or a later request that took over
+// the editor while this one waited.
+export function createEditTickets() {
+  let latest = 0
+  return {
+    take: () => ++latest,
+    waitToEdit(tree) {
+      const ticket = ++latest
+      if (!tree) return true
+      return pendingCreate(tree) && cannotEdit(tree).then((blocked) => blocked || ticket !== latest)
+    },
   }
 }
 
@@ -77,8 +110,9 @@ export function deferRowAnchor(tree, afterId, afterInput) {
 // Hands the deferred anchor to the first save that needs it.
 export function takeDeferredAnchor(tree) {
   const anchor = tree ? anchors.get(tree) : undefined
-  if (anchor) anchors.delete(tree)
-  return anchor
+  if (!anchor) return undefined
+  anchors.delete(tree)
+  return anchor.then((resolved) => adoptAnchor(tree, resolved))
 }
 
 // Markdown authored in the source textarea reopens there; anything else

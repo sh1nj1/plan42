@@ -4,6 +4,7 @@
 import { jest } from '@jest/globals'
 import {
   trackCreate, pendingCreate, cannotEdit, postNewCreative, deferRowAnchor, takeDeferredAnchor,
+  createEditTickets,
 } from '../background_creative_create'
 
 describe('background creative create bookkeeping', () => {
@@ -20,16 +21,20 @@ describe('background creative create bookkeeping', () => {
     expect(pendingCreate(tree)).toBeUndefined()
   })
 
-  test('defers a promised anchor and hands it out once', () => {
+  test('defers a promised anchor and hands it out once', async () => {
     const tree = {}
     const input = { value: 'stale' }
-    const anchor = Promise.resolve({ afterId: '1', beforeId: '' })
-
-    deferRowAnchor(tree, anchor, input)
+    deferRowAnchor(tree, Promise.resolve({ afterId: '1', beforeId: '' }), input)
 
     expect(input.value).toBe('')
-    expect(takeDeferredAnchor(tree)).toBe(anchor)
+    await expect(takeDeferredAnchor(tree)).resolves.toEqual({ afterId: '1', beforeId: '' })
     expect(takeDeferredAnchor(tree)).toBeUndefined()
+  })
+
+  test('an edit request on a missing row is dropped, one with nothing in flight goes ahead', () => {
+    const tickets = createEditTickets()
+    expect(tickets.waitToEdit(null)).toBe(true)
+    expect(tickets.waitToEdit({ dataset: { id: '1' } })).toBeFalsy()
   })
 
   test('writes a plain after_id straight through and drops any older deferral', () => {
@@ -64,7 +69,7 @@ describe('background creative create bookkeeping', () => {
       failed,
     })
 
-    expect(result).toBe(fallback)
+    expect(result).toEqual({ afterId: '3', beforeId: '', failedTrees: [tree] })
     expect(failed).toHaveBeenCalled()
     expect(tree.dataset.saveState).toBe('error')
   })

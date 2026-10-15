@@ -283,6 +283,102 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(first.dataset.id).toBe('81')
   })
 
+  function clickRow(tree) {
+    document.dispatchEvent(new CustomEvent('creative-edit-click', {
+      detail: { treeElement: tree }, cancelable: true,
+    }))
+  }
+
+  async function retryFailedRow(tree) {
+    clickRow(tree)
+    await flush()
+    document.getElementById('inline-close').click()
+    await flush()
+    return saveMock.mock.calls[saveMock.mock.calls.length - 1]
+  }
+
+  test('a failed before-positioned row retries in front of the row that took its slot', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(80)))
+      .mockImplementationOnce(() => Promise.resolve(created(81)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-before-id').value = '6'
+    await pressEnter()
+    await flush()
+    type('second creative')
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(sentField(saveMock.mock.calls[1], 'before_id')).toBe('6')
+
+    const retry = await retryFailedRow(first)
+
+    expect(sentField(retry, 'creative[description]')).toContain('first creative')
+    expect(sentField(retry, 'after_id')).toBe('')
+    expect(sentField(retry, 'before_id')).toBe('80')
+  })
+
+  test('failed rows chained by Enter all retry in front of the next row created', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(82)))
+      .mockImplementation(() => Promise.resolve(created(90)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-before-id').value = '6'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    type('third creative')
+    await flush()
+    await pressEnter()
+    await flush()
+    expect(sentField(saveMock.mock.calls[2], 'before_id')).toBe('6')
+
+    expect(sentField(await retryFailedRow(first), 'before_id')).toBe('82')
+    expect(sentField(await retryFailedRow(second), 'before_id')).toBe('82')
+  })
+
+  test('a click that waits out a pending create yields to a later click', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const other = document.createElement('div')
+    other.className = 'creative-tree'
+    document.getElementById('creatives').appendChild(other)
+
+    clickRow(first)
+    await flush()
+    clickRow(other)
+    await flush()
+    expect(template().parentElement).toBe(other)
+
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(template().parentElement).toBe(other)
+  })
+
+  test('a move that waits out a pending create yields to a later click', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+    const other = document.createElement('div')
+    other.className = 'creative-tree'
+    document.getElementById('creatives').appendChild(other)
+
+    document.getElementById('inline-move-up').click()
+    await flush()
+    clickRow(other)
+    await flush()
+
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(template().parentElement).toBe(other)
+  })
+
   async function failThenReopen(prepare) {
     saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
       .mockImplementationOnce(() => Promise.resolve(created(81)))
