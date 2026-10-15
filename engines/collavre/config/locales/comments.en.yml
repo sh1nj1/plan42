@@ -265,6 +265,10 @@ en:
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
       activity_logs:
+        names:
+          llm_query: "Model request"
+          tool_execution: "Tool execution"
+          other: "Agent activity"
         duration: "Execution time: %{duration}"
         inline_duration: "(%{duration})"
         duration_hint: "Latest attempt: from start to model response completion, or reply persistence for delegated agents. Excludes queue time, earlier retries, and follow-up dispatch."
