@@ -363,9 +363,7 @@ export default class CommandArgsForm {
   _buildTopicText(command, values) {
     const parts = [command.label]
     if (values.topic_name) parts.push(`"${values.topic_name}"`)
-    if (values.agent_name) {
-      parts.push(values.agent_name)
-    }
+    if (values.agent_name) parts.push(values.agent_name)
     return parts.join(' ')
   }
 
