@@ -28,6 +28,7 @@ jest.unstable_mockModule('../../lib/utils/dialog', () => ({
 }))
 
 const { initializeCreativeRowEditor } = await import('../creative_row_editor')
+const { default: creativesApi } = await import('../../lib/api/creatives')
 const {
   buildEditorDom, defineTreeRowStub, renderEmptyState, appendExistingRow, flush,
 } = await import('./support/inline_editor_dom')
@@ -786,5 +787,69 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(saveMock).toHaveBeenCalledTimes(1)
     expect(saveMock.mock.calls[0][2]).toBeInstanceOf(HTMLFormElement)
     expect(first.dataset.id).toBe('77')
+  })
+
+  test('a background create refreshes the created row and asks for the deferred reload', async () => {
+    const refetch = jest.fn()
+    document.addEventListener('creative-sync:refetch', refetch)
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+    creativesApi.get.mockClear()
+
+    firstPost.resolve(created(77))
+    await flush()
+    document.removeEventListener('creative-sync:refetch', refetch)
+
+    expect(creativesApi.get).toHaveBeenCalledWith('77')
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  function frameRender(frame) {
+    const event = new CustomEvent('turbo:before-frame-render', {
+      bubbles: true, cancelable: true, detail: { resume: jest.fn() },
+    })
+    frame.dispatchEvent(event)
+    return event
+  }
+
+  test('a frame swap waits for a background create in it to settle', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+
+    const event = frameRender(document.getElementById('creatives'))
+    expect(event.defaultPrevented).toBe(true)
+    expect(frameRender(document.getElementById('center-frame')).defaultPrevented).toBe(false)
+    await flush()
+    expect(event.detail.resume).not.toHaveBeenCalled()
+
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalled()
+  })
+
+  test('a frame swap is dropped when the create it waited for fails, so the draft can be retried', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+
+    const event = frameRender(document.getElementById('creatives'))
+    firstPost.resolve({ ok: false, status: 500 })
+    await flush()
+
+    expect(event.detail.resume).not.toHaveBeenCalled()
+    expect(first.isConnected).toBe(true)
+    expect(first.dataset.saveState).toBe('error')
+  })
+
+  test('a frame swap with no background create in flight renders at once', async () => {
+    await startNewRow('first creative')
+
+    expect(frameRender(document.getElementById('creatives')).defaultPrevented).toBe(false)
   })
 })

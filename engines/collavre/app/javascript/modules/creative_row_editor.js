@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -307,6 +307,8 @@ function setupEditorSession() {
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
+    globalListeners.add(document, 'turbo:before-frame-render', holdRenderForCreates);
+    globalListeners.add(document, 'turbo:before-render', holdRenderForCreates);
 
     // Registered with the module-level teardown so a workspace frame swap —
     // which rebuilds the session without ever calling hideCurrent()/move() on
@@ -909,7 +911,7 @@ function setupEditorSession() {
       document.dispatchEvent(new CustomEvent('creative-editing:stop', { detail: { creativeId: null } }));
       return trackCreate(tree, postNewCreative(tree, request, { afterId: afterInput.value, beforeId: beforeInput.value }, {
         save: creativesApi.save,
-        created: (data) => { adoptCreatedTree(tree, data, parentId, null); restoreRowDraggable(tree); request.deletedIds.forEach(deleteAttachment); },
+        created: (data) => { adoptCreatedTree(tree, data, parentId, null); restoreRowDraggable(tree); refreshRow(tree); request.deletedIds.forEach(deleteAttachment); },
         failed: () => form.dataset.saveFailedMessage && alertDialog(form.dataset.saveFailedMessage),
       }));
     }

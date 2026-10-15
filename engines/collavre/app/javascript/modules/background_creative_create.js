@@ -14,11 +14,29 @@ const chains = new WeakMap()
 const retryDeletes = new WeakMap()
 const holds = new WeakMap()
 const releases = new WeakMap()
+const inFlight = new Set()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
-  promise.finally(() => creates.delete(tree))
+  inFlight.add(tree)
+  promise.finally(() => {
+    creates.delete(tree)
+    inFlight.delete(tree)
+  })
   return promise
+}
+
+// A frame swap or page render would take rows still being created out of the
+// document, and with them the draft a failed create reopens from. The render
+// waits for those creates; if one fails it is dropped, so the row stays to
+// retry.
+export function holdRenderForCreates(event) {
+  const pending = [...inFlight].filter((tree) => event.target.contains(tree))
+  if (!pending.length || !event.detail?.resume) return
+  event.preventDefault()
+  Promise.all(pending.map((tree) => creates.get(tree))).then(() => {
+    if (!pending.some((tree) => failedDrafts.has(tree))) event.detail.resume()
+  })
 }
 
 // The row's in-flight background create, if any, or for a failed row the
@@ -81,6 +99,8 @@ export async function postNewCreative(tree, { action, body, snapshot, deletedIds
     delete tree.dataset.saveState
     applyCreativeSaveResponse(snapshot, data, { applyCachedMarkdownSource: cacheSavedMarkdownSource(tree) })
     created(data)
+    // A reload deferred while the row was pending has nothing else to release it.
+    document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
     return { afterId: String(data.id), beforeId: '' }
   } catch (error) {
     // The row keeps showing the text; flag it and say so, since the editor
