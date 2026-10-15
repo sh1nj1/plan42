@@ -1500,6 +1500,36 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(creativesApi.linkExisting).toHaveBeenCalledWith('9', 42)
   })
 
+  test('a click that waits out a pending create yields to opening the inline link picker on the open row', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    linkPicker.open.mockClear()
+    const modal = document.createElement('div')
+    modal.id = 'link-creative-modal'
+    document.body.appendChild(modal)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const { tree: existing } = appendExistingRow(9)
+    clickRow(existing)
+    await flush()
+
+    clickRow(first)
+    await flush()
+    const textarea = document.getElementById('markdown-editor-textarea')
+    textarea.value = 'see\n/creative'
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
+    textarea.dispatchEvent(new Event('input'))
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    modal.remove()
+
+    expect(linkPicker.open).toHaveBeenCalledTimes(1)
+    expect(template().parentElement).toBe(existing)
+    linkPicker.open.mock.calls[0][1]({ id: 42, label: 'Target' })
+    expect(textarea.value).toBe('see\n[Target](/creatives/42) ')
+  })
+
   test('a link picked after the editor moved on still goes to the row the picker was opened on', async () => {
     creativesApi.linkExisting.mockClear()
     linkPicker.open.mockClear()

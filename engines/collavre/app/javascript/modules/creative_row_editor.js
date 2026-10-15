@@ -1887,8 +1887,9 @@ function setupEditorSession() {
         if (markdownPreview) markdownPreview.innerHTML = renderMarkdown(md);
       }, 300);
 
+      // Like the toolbar picker, an opened inline picker is a later edit request.
       const triggerRange = markdownCreativeCommandRange(md, markdownTextarea.selectionStart);
-      if (triggerRange) openCreativeLinkPicker(markdownTextarea, { triggerRange });
+      if (triggerRange && openCreativeLinkPicker(markdownTextarea, { triggerRange })) editTickets.take();
     }
 
     // Intercepts Shift+Enter via capture-phase keydown on Lexical's root element.
