@@ -311,6 +311,9 @@ function setupEditorSession() {
     // Closing is a later edit request too: a click still waiting on a pending
     // create must not reopen the editor after it.
     const closeByUser = (event) => editTickets.take() && hideCurrent(event);
+    // So is an action confirmed on the open row: the waiting click must not move
+    // the editor while the dialog is up, or the action would hit the wrong row.
+    const confirmForCurrent = (message, options) => editTickets.take() && confirmDialog(message, options);
     const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }), flushOpenRow);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
@@ -1992,7 +1995,7 @@ function setupEditorSession() {
         const isArchived = row?.hasAttribute('archived');
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
-        if (await confirmDialog(confirmMsg)) {
+        if (await confirmForCurrent(confirmMsg)) {
           const releaseTreeReload = holdCreativeTreeReload();
           // Flush the editor BEFORE the archive request goes out, not after it has
           // landed. The row is about to be removed (or the tree re-rendered), so a
@@ -2098,17 +2101,9 @@ function setupEditorSession() {
       });
     }
 
-    if (deleteBtn) {
-      deleteBtn.addEventListener('click', async function () {
-        if (await confirmDialog(deleteBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
-      });
-    }
-
-    if (deleteWithChildrenBtn) {
-      deleteWithChildrenBtn.addEventListener('click', async function () {
-        if (await confirmDialog(deleteWithChildrenBtn.dataset.confirm, { danger: true })) deleteCurrent(true);
-      });
-    }
+    [[deleteBtn, false], [deleteWithChildrenBtn, true], [unlinkBtn, false]].forEach(([button, withChildren]) => button?.addEventListener('click', async function () {
+      if (await confirmForCurrent(button.dataset.confirm, { danger: true })) deleteCurrent(withChildren);
+    }));
 
     // Exposed for tests and for the document view (creative_tree_row_document_view.js)
     window.creativeRowEditor = {
@@ -2142,18 +2137,12 @@ function setupEditorSession() {
       linkBtn.addEventListener('click', linkExistingCreative);
     }
 
-    if (unlinkBtn) {
-      unlinkBtn.addEventListener('click', async function () {
-        if (await confirmDialog(unlinkBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
-      });
-    }
-
     if (unconvertBtn) {
       unconvertBtn.addEventListener('click', async function () {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
         const confirmText = unconvertBtn.dataset.confirm;
-        if (confirmText && !(await confirmDialog(confirmText))) return;
+        if (confirmText && !(await confirmForCurrent(confirmText))) return;
         const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
         unconvertBtn.disabled = true;
         saveForm(currentTree, parentInput.value)

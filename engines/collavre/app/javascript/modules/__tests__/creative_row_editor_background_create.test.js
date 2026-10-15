@@ -21,6 +21,8 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({
     save: saveMock,
     get: jest.fn(() => new Promise(() => {})),
     children: jest.fn(() => Promise.resolve([])),
+    destroy: jest.fn(() => new Promise(() => {})),
+    archive: jest.fn(() => new Promise(() => {})),
   },
 }))
 jest.unstable_mockModule('../../lib/utils/dialog', () => ({
@@ -838,6 +840,38 @@ describe('Enter on a new creative saves it in the background', () => {
     await flush()
 
     expect(first.contains(form)).toBe(false)
+    expect(first.querySelector('.creative-row').style.display).not.toBe('none')
+  })
+
+  test.each([
+    ['Delete', 'inline-delete', 'destroy', ['9', false]],
+    ['Delete with children', 'inline-delete-with-children', 'destroy', ['9', true]],
+    ['Archive', 'inline-archive', 'archive', ['9']],
+  ])('a click that waits out a pending create yields to %s confirmed on the open row', async (_name, buttonId, call, args) => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementation(() => Promise.resolve({ ok: true, text: () => Promise.resolve('{}') }))
+    creativesApi[call].mockClear()
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const { tree: existing } = appendExistingRow(9)
+    clickRow(existing)
+    await flush()
+    const confirmation = deferred()
+    confirmDialogMock.mockImplementationOnce(() => confirmation.promise)
+
+    clickRow(first)
+    await flush()
+    document.getElementById(buttonId).click()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    expect(template().parentElement).toBe(existing)
+    confirmation.resolve(true)
+    await flush()
+
+    expect(creativesApi[call]).toHaveBeenCalledTimes(1)
+    expect(creativesApi[call]).toHaveBeenCalledWith(...args)
     expect(first.querySelector('.creative-row').style.display).not.toBe('none')
   })
 
