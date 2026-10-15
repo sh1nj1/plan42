@@ -6,7 +6,8 @@ module Collavre
     module RestoredDispatchAdmission
       def reject_restore!(task, comment_id)
         creative = Creative.find_by(id: task.creative_id)
-        return unless creative&.keep_loop? && creative.data.dig("trigger", "loop", "current_comment_id") == comment_id.to_i
+        recorded_keep = task.trigger_event_payload&.dig(KeepDispatchRestoration::KEY)&.key?(comment_id.to_s)
+        return unless recorded_keep || (creative&.keep_loop? && creative.data.dig("trigger", "loop", "current_comment_id") == comment_id.to_i)
 
         Task.transaction do
           row = Task.lock.find_by(id: task.id)
