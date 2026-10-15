@@ -253,17 +253,25 @@ module Collavre
         assert_equal @topic, comment.topic
       end
 
-      test "human response resumes a blocked keep loop using normal routing" do
+      test "ambient keep replies dispatch only one synthetic continuation" do
         @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
           @topic.id, source: "keep", state: "awaiting_user"
         ) } })
         response = command("You can proceed")
-        SystemEvents::Dispatcher.stub(:dispatch, [ users(:ai_bot) ]) do
-          response.save!
-          response.send(:resume_trigger_loop_if_awaiting)
+        dispatched = []
+        SystemEvents::Dispatcher.stub(:dispatch, lambda { |_event, payload, **_options|
+          dispatched << payload
+          [ users(:ai_bot) ]
+        }) do
+          assert_difference -> { @creative.comments.count }, 2 do
+            response.save!
+          end
         end
+        resume = @creative.comments.order(:id).last
+        assert_equal [ resume.id ], dispatched.map { |payload| payload.dig(:comment, :id) }
         assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
-        refute_match(/@/, @creative.comments.order(:id).last.content)
+        assert_equal resume.id, @creative.data.dig("trigger", "loop", "current_comment_id")
+        refute_match(/@/, resume.content)
       end
 
       test "keep appears in command menu in both languages" do
@@ -529,11 +537,9 @@ module Collavre
         end
       end
 
-      test "ordinary dispatched reply cannot also resume a newly blocked keep" do
-        agent = users(:ai_bot)
-        CreativeShare.create!(creative: @creative, user: agent, permission: :feedback)
+      test "ordinary dispatched reply cannot also resume a newly blocked ambient keep" do
         @creative.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
-          @topic.id, source: "keep", state: "running", agent_id: agent.id
+          @topic.id, source: "keep", state: "running"
         ) } })
         response = command("Proceed")
         refute response.send(:blocked_keep_reply?)

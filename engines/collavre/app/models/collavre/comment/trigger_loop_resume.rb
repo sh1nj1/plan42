@@ -58,8 +58,8 @@ module Collavre
           next unless trigger_loop_resumable?(data)
           next if creative.keep_loop_agent_unavailable?
           # A public reply already sent through ordinary routing must not also
-          # resume a newly blocked explicit keep turn.
-          if @keep_reply_dispatch_checked && creative.keep_loop? && data.dig("trigger", "loop", "agent_id").present?
+          # resume a newly blocked keep turn.
+          if @keep_reply_dispatch_checked && creative.keep_loop?
             next unless data.dig("trigger", "loop") == @blocked_keep_reply_snapshot
           end
 

@@ -37,7 +37,7 @@ module Collavre
         config = Creative.where(id: creative_id).pick(:data)&.dig("trigger", "loop")
         @blocked_keep_reply_snapshot = config.deep_dup if config && config["state"] == "awaiting_user"
         config && config["state"] == "awaiting_user" && config["trigger_topic_id"] == topic_id &&
-          config["source"] == "keep" && config["agent_id"].present?
+          config["source"] == "keep"
       end
 
       def track_loop_turn

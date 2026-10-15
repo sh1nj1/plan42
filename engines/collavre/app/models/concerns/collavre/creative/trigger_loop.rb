@@ -3,6 +3,15 @@
 module Collavre
   class Creative
     module TriggerLoop
+      def trigger_loop_control_target
+        origin = effective_origin(Set.new)
+        origin.keep_loop? ? origin : self
+      end
+
+      def trigger_loop_status
+        trigger_loop_control_target.data&.dig("trigger", "loop")
+      end
+
       def keep_loop?
         data&.dig("trigger", "loop", "source") == "keep"
       end

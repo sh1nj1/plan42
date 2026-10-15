@@ -41,9 +41,10 @@ Infrastructure retries do not consume iterations and stop as `stuck` after
 three consecutive infrastructure failures.
 
 Reply publicly in the loop's topic to continue work waiting for user input.
-Private replies are saved without resuming the loop. For an explicitly selected
-agent, the public reply skips ordinary dispatch; only the synthetic resume turn
-is dispatched to that agent, even if the reply mentions another agent.
+Private replies are saved without resuming the loop. Public keep replies skip ordinary
+dispatch; only the synthetic resume turn is dispatched, using normal routing
+when no agent was selected. An explicitly selected agent remains the only target,
+even if the reply mentions another agent.
 Resume keeps
 the iteration count; Restart resets it and reuses the saved goal and agent
 selection. An omitted agent continues to use normal routing after either action.
@@ -51,6 +52,8 @@ selection. An omitted agent continues to use normal routing after either action.
 Each creative stores one loop in `data.trigger.loop`, shared across topics.
 Starting another `/keep` replaces an inactive loop, including a previous
 drop-trigger loop. Keep loops do not require a drop-enabled parent container.
+Linked creative views show and control the effective origin's keep loop; controls require write
+permission on that origin.
 
 Agent selection uses only a leading `@name:` token after `/keep` or its `--max`
 option. Mentions inside the goal remain part of the goal. A leading selector

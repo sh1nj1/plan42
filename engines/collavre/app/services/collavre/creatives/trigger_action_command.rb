@@ -16,7 +16,7 @@ module Collavre
       end
 
       def initialize(creative:, user:, action:, enabled: nil)
-        @creative = creative
+        @creative = %w[pause resume restart].include?(action) ? creative.trigger_loop_control_target : creative
         @user = user
         @action = action
         @enabled = enabled
