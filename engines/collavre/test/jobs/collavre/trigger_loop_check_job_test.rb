@@ -44,7 +44,7 @@ module Collavre
             "stuck_conditions" => [ "need help" ],
             "on_retry" => "continue",
             "cooldown_seconds" => 0,
-            "trigger_topic_id" => @topic.id
+            "generation" => 1, "trigger_topic_id" => @topic.id
           }
         }
       })
@@ -55,7 +55,7 @@ module Collavre
         name: "Response to comment_created",
         status: "running",
         trigger_event_name: "comment_created",
-        trigger_event_payload: { "comment" => { "id" => 999 } },
+        trigger_event_payload: { "comment" => { "id" => 999, "keep_loop_generation" => 1 } },
         agent_id: @ai_bot.id,
         creative_id: @child.id,
         topic_id: @topic.id
@@ -121,7 +121,7 @@ module Collavre
     end
 
     test "verification enqueue recovery preserves a newer control snapshot" do
-      [ { "state" => "paused" }, { "start_comment_id" => 1000 } ].each do |change|
+      [ { "state" => "paused" }, { "start_comment_id" => 1000, "generation" => 2 } ].each do |change|
         config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, start_comment_id: 999)
         @child.update!(data: { "trigger" => { "loop" => config } })
         @child.comments.where(task_id: @task.id).destroy_all
@@ -168,7 +168,7 @@ module Collavre
       PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       @child.comments.create!(content: "Work needs input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       selected = []
       client = Object.new
@@ -229,7 +229,7 @@ module Collavre
       turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id)
       @child.update!(data: { "trigger" => { "loop" => config } })
-      payload = { "comment" => { "id" => turn.id - 1 }, Orchestration::DeliveryRecord::KEY => [ turn.id ],
+      payload = { "comment" => { "id" => turn.id - 1, "keep_loop_generation" => 1 }, Orchestration::DeliveryRecord::KEY => [ turn.id ],
                   Orchestration::DeliveryRecord::DROPPED_KEY => [ turn.id ] }
       Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: payload)
       @task.reload.update!(status: "cancelled")
@@ -242,7 +242,7 @@ module Collavre
       turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
       @child.update!(data: { "trigger" => { "loop" => config } })
-      payload = { "comment" => { "id" => 999 }, Orchestration::DeliveryRecord::DROPPED_KEY => [ turn.id ] }
+      payload = { "comment" => { "id" => 999, "keep_loop_generation" => 1 }, Orchestration::DeliveryRecord::DROPPED_KEY => [ turn.id ] }
       Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: payload)
       @task.reload.update!(status: "cancelled")
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
@@ -260,7 +260,7 @@ module Collavre
     test "keep fallback evaluates with the authorized child-only task agent" do
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "agent_id" => @ai_bot.id } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999, "agent_id" => @ai_bot.id } }))
       @child.comments.create!(content: "Work needs your input", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       selected = []
       client = Object.new
@@ -277,7 +277,7 @@ module Collavre
       share = CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       job = TriggerLoopCheckJob.new
       assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep" } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       assert_equal @ai_bot, job.send(:pick_fallback_agent, @parent, @child, @ai_bot.id)
       other = users(:two)
       other.update_columns(llm_vendor: "google", llm_model: "test")
@@ -305,7 +305,7 @@ module Collavre
     end
 
     test "missing reply recovery does not overwrite a concurrent pause or replacement" do
-      [ { "state" => "paused" }, { "start_comment_id" => 1000 } ].each do |change|
+      [ { "state" => "paused" }, { "start_comment_id" => 1000, "generation" => 2 } ].each do |change|
         config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, start_comment_id: 999)
         @child.update!(data: { "trigger" => { "loop" => config } })
         job = TriggerLoopCheckJob.new
@@ -328,7 +328,7 @@ module Collavre
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read), "Cached grant must remain stale for this regression"
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Private keep goal")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Private keep goal")
       @child.update!(data: data)
       job = TriggerLoopCheckJob.new
       AiClient.stub(:new, ->(*) { flunk "Denied verifier received loop content" }) do
@@ -354,7 +354,7 @@ module Collavre
       @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, hidden.id ]))
       data = @child.data.deep_dup
       data["context_ids"] = [ visible.id, revoked.id ]
-      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Keep goal")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Keep goal")
       @child.update!(data: data)
       @child.comments.create!(content: "Finished work", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       client = Object.new
@@ -380,7 +380,7 @@ module Collavre
     test "rejected continuation enqueue restores the accepted keep turn" do
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "agent_id" => @ai_bot.id,
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "agent_id" => @ai_bot.id,
         "current_comment_id" => 999, "start_comment_id" => 999)
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
@@ -394,7 +394,7 @@ module Collavre
     test "failed continuation and infrastructure dispatch preserve the retryable keep turn" do
       [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |response|
         data = @child.reload.data.deep_dup
-        data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999,
+        data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999,
           "start_comment_id" => 999, "current_iteration" => 0, "infra_retry_count" => 0)
         @child.update!(data: data)
         @child.comments.create!(content: response, user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
@@ -417,7 +417,7 @@ module Collavre
       turn = @child.comments.create!(content: "Keep working", user: @human, topic: @topic, skip_dispatch: true)
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: turn.id, start_comment_id: turn.id)
       @child.update!(data: { "trigger" => { "loop" => config } })
-      @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => turn.id } })
+      @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => turn.id, "keep_loop_generation" => 1 } })
       placeholder = @child.comments.create!(content: "Thinking", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       assert_nil AiAgent::ResponseFinalizer.new(task: @task, agent: @ai_bot, original_comment: turn,
         reply_comment: placeholder, response_content: "  ").finalize
@@ -442,7 +442,7 @@ module Collavre
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
       @child.update!(data: { "trigger" => { "loop" => config } })
       survivor = Task.create!(name: "Other owner", status: "running", agent: @ai_bot, creative: @child,
-        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 999 } })
+        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 999, "keep_loop_generation" => 1 } })
       @task.update_columns(status: "running")
       @task.reload.update!(status: "done")
       assert_equal config, @child.reload.data.dig("trigger", "loop")
@@ -454,11 +454,11 @@ module Collavre
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999, cooldown_seconds: 0)
       [ { "retryable" => true }, { "replay_completed" => true }, { "replay_abandoned" => true } ].each do |login|
         @child.update!(data: { "trigger" => { "loop" => config.deep_dup } })
-        @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999 }, "engine_login" => login })
+        @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999, "keep_loop_generation" => 1 }, "engine_login" => login })
         TriggerLoopCheckJob.stub(:perform_later, ->(*) { true }) { @task.reload.update!(status: "done") }
         assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
       end
-      @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999 } })
+      @task.update_columns(status: "running", trigger_event_payload: { "comment" => { "id" => 999, "keep_loop_generation" => 1 } })
       @task.task_actions.create!(action_type: "review_updated", status: "done", payload: {})
       TriggerLoopCheckJob.stub(:perform_later, ->(*) { true }) { @task.reload.update!(status: "done") }
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
@@ -467,7 +467,7 @@ module Collavre
     test "terminal unsuccessful tasks release only the persisted current keep turn" do
       %w[cancelled failed escalated].each do |status|
         data = @child.reload.data.deep_dup
-        data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+        data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
         @child.update!(data: data)
         # The worker/controller may have loaded the creative before keep started.
         Task.where(id: @task.id).update_all(status: "running")
@@ -497,7 +497,7 @@ module Collavre
       [ Orchestration::TaskCoalescer::PAYLOAD_KEY, Orchestration::DeliveryRecord::DROPPED_KEY ].each do |key|
         config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
         @child.update!(data: { "trigger" => { "loop" => config } })
-        Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: { "comment" => { "id" => 1 }, key => [ 999 ] })
+        Task.where(id: @task.id).update_all(status: "running", trigger_event_payload: { "comment" => { "id" => 1, "keep_loop_generation" => 1 }, key => [ 999 ] })
         @task.reload.update!(status: "cancelled")
         assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
       end
@@ -537,18 +537,20 @@ module Collavre
       end
     end
 
-    test "coalescing the current keep task leaves the surviving turn running" do
+    test "current keep task remains independent of an ordinary queued turn" do
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
       @child.update!(data: { "trigger" => { "loop" => config } })
       Task.where(id: @task.id).update_all(status: "queued")
-      survivor = Task.create!(name: "Surviving turn", status: "queued", agent: @ai_bot, creative: @child,
+      ordinary = Task.create!(name: "Ordinary turn", status: "queued", agent: @ai_bot, creative: @child,
         topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000 } })
-      assert_includes Orchestration::TaskCoalescer.coalesce!(survivor), @task.id
-      assert_equal "cancelled", @task.reload.status
+      assert_empty Orchestration::TaskCoalescer.coalesce!(ordinary)
+      assert_equal "queued", @task.reload.status
       assert_equal config, @child.reload.data.dig("trigger", "loop")
-      assert @child.trigger_loop_task?(survivor.reload)
-      survivor.update!(status: "cancelled")
+      assert @child.trigger_loop_task?(@task)
+      assert_not @child.trigger_loop_task?(ordinary.reload)
+      @task.update!(status: "cancelled")
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+      assert_equal "queued", ordinary.reload.status
     end
 
     test "another active or completed keep turn retains loop ownership after a sibling stops" do
@@ -557,7 +559,7 @@ module Collavre
         @child.update!(data: { "trigger" => { "loop" => config } })
         Task.where(id: @task.id).update_all(status: "running")
         survivor = Task.create!(name: "Ambient sibling", status: status, agent: @ai_bot, creative: @child,
-          topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 999 } })
+          topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 999, "keep_loop_generation" => 1 } })
         @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: survivor, topic: @topic, skip_dispatch: true) if status == "done"
         @task.reload.update!(status: "cancelled")
         assert_equal config, @child.reload.data.dig("trigger", "loop")
@@ -587,7 +589,7 @@ module Collavre
         assert_equal reply, TriggerLoopCheckJob.new.send(:find_last_agent_comment, @child, @topic, @task)
       end
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
       assert_equal "running", @child.reload.data.dig("trigger", "loop", "state")
@@ -629,14 +631,14 @@ module Collavre
       test "abandoned keep replay only yields to #{status} current_turn=#{current_turn}" do
         @topic.update!(name: "Ordinary discussion")
         @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => {
-          "source" => "keep", "start_comment_id" => 999, "current_comment_id" => 999
+          "source" => "keep", "generation" => 1, "start_comment_id" => 999, "current_comment_id" => 999
         } }))
         @task.reload.update!(trigger_event_payload: {
-          "comment" => { "id" => 999 }, "engine_login" => { "replay_abandoned" => true }
+          "comment" => { "id" => 999, "keep_loop_generation" => 1 }, "engine_login" => { "replay_abandoned" => true }
         })
         newer = @task.dup
         newer.assign_attributes(status: "running", created_at: @task.created_at + 1.second,
-          trigger_event_payload: { "comment" => { "id" => current_turn ? 999 : 1000 } })
+          trigger_event_payload: { "comment" => { "id" => current_turn ? 999 : 1000, "keep_loop_generation" => 1 } })
         newer.save!
         if status == "done"
           newer.update_columns(status: "done")
@@ -654,11 +656,11 @@ module Collavre
 
     test "keep ignores unrelated tasks and consumes each current turn once" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 900, "current_comment_id" => 999)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "start_comment_id" => 900, "current_comment_id" => 999)
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       unrelated = Task.create!(name: "Unrelated", status: "running", created_at: @task.created_at, agent: @ai_bot, creative: @child, topic_id: @topic.id,
-                               trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000 } })
+                               trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000, "keep_loop_generation" => 1 } })
       TriggerLoopCheckJob.perform_now(unrelated.id)
       assert_equal 0, @child.reload.data.dig("trigger", "loop", "current_iteration")
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) do
@@ -673,9 +675,9 @@ module Collavre
 
     test "keep follows its current comment when deferred tasks are reanchored" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
-      @task.update!(trigger_event_payload: { "comment" => { "id" => 1000 }, "merged_comment_ids" => [ 999 ] })
+      @task.update!(trigger_event_payload: { "comment" => { "id" => 1000, "keep_loop_generation" => 1 }, "merged_comment_ids" => [ 999 ] })
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
       assert_equal 1, @child.reload.data.dig("trigger", "loop", "current_iteration")
@@ -683,11 +685,11 @@ module Collavre
 
     test "keep advances a covering task only when its dispatch was dropped" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       @task.reload
-      payload = { "comment" => { "id" => 998 }, Orchestration::DeliveryRecord::KEY => [ 999 ] }
+      payload = { "comment" => { "id" => 998, "keep_loop_generation" => 1 }, Orchestration::DeliveryRecord::KEY => [ 999 ] }
       @task.update!(trigger_event_payload: payload)
       assert_not @child.trigger_loop_task?(@task), "history alone must not claim the loop turn"
       assert_not @task.send(:trigger_loop_completion_eligible?)
@@ -703,7 +705,7 @@ module Collavre
 
     test "new continuation invalidates an evaluator before any state change" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       job = TriggerLoopCheckJob.new
       job.send(:trigger_completion_topic, @task, data.dig("trigger", "loop"))
@@ -717,7 +719,7 @@ module Collavre
 
     test "competing completions for the same keep comment advance only once" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "current_comment_id" => 999)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       job = TriggerLoopCheckJob.new
@@ -732,7 +734,7 @@ module Collavre
     test "keep retains its authorized selected agent on continuation" do
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
       @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
-        @topic.id, source: "keep", agent_id: @ai_bot.id
+        @topic.id, source: "keep", current_comment_id: 999, agent_id: @ai_bot.id
       ) } })
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
       SystemEvents::Dispatcher.stub(:dispatch, [ @ai_bot ]) { TriggerLoopCheckJob.perform_now(@task.id) }
@@ -761,7 +763,7 @@ module Collavre
       [ "[STATUS: CONTINUE]", "Connection timed out" ].each do |content|
         [ @ai_bot.id, -1 ].each do |agent_id|
           @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
-            @topic.id, source: "keep", agent_id: agent_id
+            @topic.id, source: "keep", current_comment_id: 999, agent_id: agent_id
           ) } })
           CreativeShare.where(creative: @parent, user: @ai_bot).update_all(permission: :read)
           @child.comments.create!(content: content, user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
@@ -779,7 +781,7 @@ module Collavre
       job = TriggerLoopCheckJob.new
       job.stub(:evaluate_response, ->(*) {
         data = @child.reload.data.deep_dup
-        data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 1000)
+        data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "start_comment_id" => 1000)
         @child.update!(data: data)
         :continue
       }) { job.perform(@task.id) }
@@ -790,7 +792,7 @@ module Collavre
       job = TriggerLoopCheckJob.new
       job.send(:trigger_completion_topic, @task, @child.data.dig("trigger", "loop"))
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "start_comment_id" => 1000)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "start_comment_id" => 1000)
       @child.update!(data: data)
       assert_raises(TriggerLoopHelpers::StaleLoopError) do
         job.send(:update_loop_data, @child, state: "completed")
@@ -802,7 +804,7 @@ module Collavre
       Creative.where(id: @child.id).update_all(parent_id: nil)
       @child.reload
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "goal" => "Deliver the feature")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Deliver the feature")
       @child.update!(data: data)
       @child.comments.create!(content: "[STATUS: CONTINUE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
 
@@ -817,7 +819,7 @@ module Collavre
 
     test "keep completion uses the shared verification job" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"]["source"] = "keep"
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       @parent.update!(data: {})
       @child.comments.create!(content: "[STATUS: DONE]", user: @ai_bot, task: @task, topic: @topic, skip_dispatch: true)
@@ -1623,7 +1625,7 @@ module Collavre
         name: "Response to comment_created",
         status: "running",
         trigger_event_name: "comment_created",
-        trigger_event_payload: { "comment" => { "id" => 888 } },
+        trigger_event_payload: { "comment" => { "id" => 888, "keep_loop_generation" => 1 } },
         agent_id: @ai_bot.id,
         creative_id: @child.id,
         topic_id: other_topic.id

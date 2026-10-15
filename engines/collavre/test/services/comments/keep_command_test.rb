@@ -32,6 +32,26 @@ module Collavre
                      Orchestration::Matcher.new(SystemEvents::ContextBuilder.new(comment.reload.dispatch_payload).build).match.map(&:id).sort
       end
 
+      test "goal separator preserves reserved leading tokens without selecting an agent" do
+        [ "@#{users(:ai_bot).name}: investigate", "--max 1 investigate", "-- investigate", "--" ].each do |goal|
+          comment = command("/keep -- #{goal}")
+          assert_nil KeepCommand.new(comment: comment, user: @user).call
+          assert_equal goal, comment.keep_loop_options["goal"]
+          assert_nil comment.keep_loop_options["agent_id"]
+          assert_equal 10, comment.keep_loop_options["max_iterations"]
+        end
+      end
+
+      test "separator after explicit options preserves goal and routing" do
+        agent = users(:ai_bot)
+        CreativeShare.find_or_create_by!(creative: @creative, user: agent).update!(permission: :feedback)
+        comment = command("/keep --max 5 @#{agent.name}: -- @Other: investigate")
+        assert_nil KeepCommand.new(comment: comment, user: @user).call
+        assert_equal "@Other: investigate", comment.keep_loop_options["goal"]
+        assert_equal agent.id, comment.keep_loop_options["agent_id"]
+        assert_equal 5, comment.keep_loop_options["max_iterations"]
+      end
+
       test "no-agent notice is created outside the creative lock block" do
         comment = command("/keep finish")
         KeepCommand.new(comment: comment, user: @user).call
@@ -334,7 +354,7 @@ module Collavre
         comment.skip_dispatch = true
         comment.save!
         old_task = Task.new(trigger_event_payload: { "comment" => { "id" => comment.id - 1 } })
-        current_task = Task.new(trigger_event_payload: { "comment" => { "id" => comment.id } })
+        current_task = Task.new(trigger_event_payload: comment.dispatch_payload.deep_stringify_keys)
         refute @creative.reload.trigger_loop_task?(old_task)
         assert @creative.trigger_loop_task?(current_task)
       end

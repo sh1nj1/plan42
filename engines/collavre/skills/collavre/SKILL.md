@@ -172,3 +172,21 @@ commands or bypass owner approval.
 - **Description format**: Written as Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Plain text is stored as-is.
 
 For detailed MCP tool parameters, see [references/tool-reference.md](references/tool-reference.md).
+
+### Start a keep loop
+
+```bash
+collavre tool run keep --max 10 --goal "Complete the task" --topic_id 123
+```
+
+The tool schema is `keep(max, agent_name, goal, topic_id)`: `topic_id` is
+the final, required parameter; the others are optional. No `creative_id` is
+needed. Omit `agent_name` to use normal topic routing. Requires write permission.
+
+```json
+{"action":"run","tool_name":"keep","arguments":{"max":10,"goal":"Complete the task","topic_id":123}}
+```
+
+This uses the same bounded loop as `/keep` in chat. Archived and reserved
+topics and a second active loop are rejected. Agents cannot start work in
+the topic they are currently handling.

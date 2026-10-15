@@ -28,16 +28,16 @@ module Collavre
       def self.with_locked_login(identity)
         comment_id, user_id, task_id = identity
         task = Task.find(task_id)
-        task.with_lock do
-          comment = Comment.find(comment_id)
-          raise ActiveRecord::RecordNotFound unless comment.task_id == task.id
+        comment = Comment.find(comment_id)
+        raise ActiveRecord::RecordNotFound unless comment.task_id == task.id
 
-          # Match admission's topic-before-comment order (including Main topics)
-          # so a move/delete cannot slip between reading the source and creating
-          # its Task. SQLite serializes the writes in this transaction instead.
-          Orchestration::TopicSlot.lock!(task.topic_id, task.creative_id)
-          lock_sources!(task.trigger_event_payload)
-          yield InlineLogin.new(comment, User.find(user_id))
+        login = InlineLogin.new(comment, User.find(user_id))
+        login.with_locked_turn do
+          comment.reload
+          raise ActiveRecord::RecordNotFound unless comment.task_id == login.task.id
+
+          lock_sources!(login.task.trigger_event_payload)
+          yield login
         end
       rescue ActiveRecord::RecordNotFound
         reject!

@@ -14,8 +14,18 @@ module Collavre
       ) } })
       @task = Task.create!(name: "Keep turn", status: "running", creative: @creative, topic_id: @topic.id,
                           agent: @agent, trigger_event_name: "comment_created",
-                          trigger_event_payload: { "comment" => { "id" => @turn.id } })
+                          trigger_event_payload: @turn.reload.dispatch_payload.deep_stringify_keys)
       @creative.comments.create!(content: "finished [STATUS: DONE]", user: @agent, topic: @topic, task: @task, skip_dispatch: true)
+    end
+
+    test "enqueue failure revalidates durable identity despite an old creative snapshot" do
+      @task.creative = Creative.find(@creative.id)
+      @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "control_version" => 9 } }))
+      TriggerLoopCheckJob.stub(:perform_later, false) { @task.done! }
+      config = @creative.reload.data.dig("trigger", "loop")
+      assert_equal "awaiting_user", config["state"]
+      assert_equal 10, config["control_version"]
+      assert_equal 0, config["current_iteration"]
     end
 
     [ 0, 10 ].each do |cooldown|
@@ -42,15 +52,52 @@ module Collavre
       test "acknowledged check enqueue with cooldown #{cooldown} keeps ownership" do
         @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "cooldown_seconds" => cooldown } }))
         before = @creative.data.dig("trigger", "loop").deep_dup
-        previous_adapter = TriggerLoopCheckJob.queue_adapter
         adapter = ActiveJob::QueueAdapters::TestAdapter.new
-        TriggerLoopCheckJob.queue_adapter = adapter
-        @task.done!
-        assert_equal [ [ @task.id ] ], adapter.enqueued_jobs.map { |job| job[:args] }
-        assert_equal before, @creative.reload.data.dig("trigger", "loop")
-      ensure
-        TriggerLoopCheckJob.queue_adapter = previous_adapter
+        TriggerLoopCheckJob.stub(:queue_adapter, adapter) do
+          @task.done!
+          assert_equal [ [ @task.id ] ], adapter.enqueued_jobs.map { |job| job[:args] }
+          assert_equal before, @creative.reload.data.dig("trigger", "loop")
+        end
       end
+    end
+
+    [ false, :raise ].each do |outcome|
+      test "all sibling check publications #{outcome} release the keep turn" do
+        sibling = @task.dup
+        sibling.save!
+        @creative.comments.create!(content: "finished", user: @agent, topic: @topic, task: sibling, skip_dispatch: true)
+        enqueue = ->(*) { outcome == :raise ? raise(ActiveJob::EnqueueError, "queue unavailable") : false }
+        TriggerLoopCheckJob.stub(:perform_later, enqueue) do
+          @task.done!
+          assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+          sibling.done!
+        end
+        config = @creative.reload.data.dig("trigger", "loop")
+        assert_equal "awaiting_user", config["state"]
+        assert_equal 1, config["control_version"]
+        assert_equal 0, config["current_iteration"]
+      end
+    end
+
+    test "acknowledged terminal sibling retains the turn after another enqueue fails" do
+      sibling = @task.dup
+      sibling.save!
+      @creative.comments.create!(content: "finished", user: @agent, topic: @topic, task: sibling, skip_dispatch: true)
+      TriggerLoopCheckJob.stub(:perform_later, Object.new) { @task.done! }
+      TriggerLoopCheckJob.stub(:perform_later, false) { sibling.done! }
+      assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "successful retry clears failed publication ownership marker" do
+      sibling = @task.dup
+      sibling.save!
+      @creative.comments.create!(content: "finished", user: @agent, topic: @topic, task: sibling, skip_dispatch: true)
+      TriggerLoopCheckJob.stub(:perform_later, false) { @task.done! }
+      assert @task.reload.trigger_event_payload["keep_check_enqueue_failed"]
+      TriggerLoopCheckJob.stub(:perform_later, Object.new) { @task.send(:check_trigger_loop_completion) }
+      assert_equal false, @task.reload.trigger_event_payload["keep_check_enqueue_failed"]
+      TriggerLoopCheckJob.stub(:perform_later, false) { sibling.done! }
+      assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
     end
 
     test "drop check enqueue exception still propagates without changing state" do
@@ -69,7 +116,9 @@ module Collavre
           config = @creative.reload.data.dig("trigger", "loop").deep_dup
           case change
           when "paused" then config["state"] = "paused"
-          when "replacement" then config["start_comment_id"] = @turn.id + 1
+          when "replacement"
+            config["start_comment_id"] = @turn.id + 1
+            config["generation"] += 1
           when "next_turn" then config["current_comment_id"] = @turn.id + 1
           end
           @creative.update!(data: { "trigger" => { "loop" => config } })

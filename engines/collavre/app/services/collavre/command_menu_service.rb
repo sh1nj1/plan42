@@ -16,7 +16,12 @@ module Collavre
     def keep_item
       { name: "keep", label: "/keep",
         description: I18n.t("collavre.comments.keep_command.description"),
-        args: I18n.t("collavre.comments.keep_command.args") }
+        args: I18n.t("collavre.comments.keep_command.args"),
+        input_schema: [
+          { name: "max", type: "integer", minimum: 1, maximum: 50, required: false, description: I18n.t("collavre.comments.keep_command.max_hint") },
+          { name: "agent_name", type: "string", format: "keep_agent", required: false, description: I18n.t("collavre.comments.keep_command.agent_hint") },
+          { name: "goal", type: "string", required: false, description: I18n.t("collavre.comments.keep_command.goal_hint") }
+        ] }
     end
 
     def built_in_items
@@ -64,7 +69,7 @@ module Collavre
     def mcp_items
       Collavre::McpService.available_tools(user).filter_map do |tool|
         tool_name = tool[:name] || tool["name"]
-        next unless tool_name
+        next if tool_name.blank? || tool_name == "keep"
 
         raw_params = tool[:params] || tool["params"]
         schema = normalize_params(raw_params)

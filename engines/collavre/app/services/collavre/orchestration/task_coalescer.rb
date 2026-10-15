@@ -202,7 +202,7 @@ module Collavre
 
           # Status is re-checked against the locked rows too: a sibling promoted
           # or cancelled since the id read above is no longer ours to supersede.
-          siblings = reject_review_triggers(
+          siblings = reject_independent_triggers(
             locked.values.select { |t| t.id != keep.id && t.status == "queued" }
           )
           siblings = reject_other_workspace_principals(keep, siblings)
@@ -256,8 +256,10 @@ module Collavre
         end
       end
 
+      # A keep dispatch owns one generation and comment, so folding or moving
+      # its anchor would remove the evidence admission and completion require.
       def independent_trigger?(task)
-        task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
+        KeepLoop.dispatch?(task.trigger_event_payload) || task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
       end
 
       def foldable_survivor?(task)
@@ -312,8 +314,10 @@ module Collavre
       end
 
       # One query for the whole burst rather than review_trigger? per sibling.
-      def reject_review_triggers(siblings)
-        siblings = siblings.reject { |task| task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) }
+      def reject_independent_triggers(siblings)
+        siblings = siblings.reject do |task|
+          KeepLoop.dispatch?(task.trigger_event_payload) || task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
+        end
         anchors = siblings.filter_map { |t| (t.trigger_event_payload || {}).dig("comment", "id") }
         review_ids = Comment.review_message_ids(anchors).to_set
         return siblings if review_ids.empty?

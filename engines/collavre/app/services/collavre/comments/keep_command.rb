@@ -24,7 +24,7 @@ module Collavre
         return message("agent_not_authorized") unless valid_agent_selection?(text, agent)
 
         text = text.sub(/\A@#{Regexp.escape(agent.name)}:\s*/i, "") if agent
-        prepare_loop(text, agent, limit)
+        prepare_loop(text.sub(/\A--(?:\s|\z)/, ""), agent, limit)
         nil
       end
 

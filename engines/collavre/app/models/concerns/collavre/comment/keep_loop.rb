@@ -31,7 +31,7 @@ module Collavre
         config = creative&.data&.dig("trigger", "loop")
         return unless config && config["source"] == "keep" && config["current_comment_id"] == id
 
-        config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+        config["generation"] || 0
       end
 
       def loop_dispatch_chat
@@ -156,7 +156,8 @@ module Collavre
 
           data = (creative.data || {}).deep_dup
           data["trigger"] ||= {}
-          data["trigger"]["loop"] = TriggerLoopConfig.build(topic_id, source: "keep", start_comment_id: id, current_comment_id: id, **keep_loop_options)
+          generation = Collavre::KeepLoop.next_generation!(data)
+          data["trigger"]["loop"] = TriggerLoopConfig.build(topic_id, source: "keep", generation: generation, start_comment_id: id, current_comment_id: id, **keep_loop_options)
           creative.update!(data: data)
         end
       end

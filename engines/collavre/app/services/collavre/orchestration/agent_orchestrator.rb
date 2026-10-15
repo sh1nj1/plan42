@@ -110,7 +110,7 @@ module Collavre
           end
           next if candidate.nil?
 
-          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending")
+          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending", updated_at: Time.current)
           claimed = candidate.reload if updated > 0
         end
 
@@ -411,7 +411,8 @@ module Collavre
       # payload is filtered by: public_only, no approval surface, and still in
       # this turn's creative/topic.
       def self.fixed_reply_anchor?(task, context)
-        task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_anchor?(context)
+        KeepLoop.dispatch?(context) ||
+          task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_anchor?(context)
       end
       private_class_method :fixed_reply_anchor?
 

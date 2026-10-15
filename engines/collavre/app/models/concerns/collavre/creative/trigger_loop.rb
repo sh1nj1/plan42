@@ -32,6 +32,8 @@ module Collavre
 
       def trigger_loop_task?(task)
         loop_data = data&.dig("trigger", "loop") || {}
+        return Collavre::KeepLoop.task?(self, task) if loop_data["source"] == "keep"
+
         if loop_data.key?("current_comment_id")
           payload = task.trigger_event_payload || {}
           ids = [ payload.dig("comment", "id") ] + Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
