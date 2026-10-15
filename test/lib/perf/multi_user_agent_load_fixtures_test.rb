@@ -56,6 +56,18 @@ module Perf
       assert_equal 1, Collavre::OrchestratorPolicy.for_agent(fixtures.agents.first.id, policy_type: "scheduling").count
     end
 
+    test "keeps polling while a posted turn has no task yet" do
+      load = MultiUserAgentLoad.new(base_url: "http://127.0.0.1:1", users: 1, agents: 2, timeout: 30)
+      polls = [ { "t1" => "missing", "t2" => "done" }, { "t1" => "done", "t2" => "done" } ]
+
+      outcomes = load.stub(:turn_statuses, ->(*) { polls.shift }) do
+        load.stub(:sleep, nil) { load.send(:wait_for_turns, nil, [ { tag: "t1" }, { tag: "t2" } ], 0) }
+      end
+
+      assert_equal({ "done" => 2 }, outcomes)
+      assert_empty polls
+    end
+
     test "matches a message to its exact tag" do
       load = MultiUserAgentLoad.new(base_url: "http://127.0.0.1:1", users: 1, agents: 10)
       run_id = load.instance_variable_get(:@run_id)

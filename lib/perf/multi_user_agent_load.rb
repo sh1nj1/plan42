@@ -106,11 +106,15 @@ module Perf
       loop do
         # rails runner wraps the script in the query cache; polling must not hit it.
         statuses = ActiveRecord::Base.uncached { turn_statuses(fixtures, posts, started_at) }
-        settled = statuses.size == posts.size && statuses.values.none? { |s| Collavre::Task::ACTIVE_STATUSES.include?(s) }
-        return statuses.values.tally if settled || monotonic > deadline
+        return statuses.values.tally if settled?(statuses) || monotonic > deadline
 
         sleep 1
       end
+    end
+
+    # A turn still queued has no task yet, so "missing" keeps the loop waiting.
+    def settled?(statuses)
+      statuses.values.none? { |s| s == "missing" || Collavre::Task::ACTIVE_STATUSES.include?(s) }
     end
 
     # Final status per posted message: the task answering it, or "missing".
