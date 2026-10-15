@@ -199,6 +199,12 @@ export function deferRowAnchor(tree, afterId, afterInput) {
   afterInput.value = afterId || ''
 }
 
+// A row moved to another parent or slot before its first save is placed by
+// its new siblings; the row it was opened after no longer applies.
+export function dropDeferredAnchor(tree) {
+  anchors.delete(tree)
+}
+
 // Hands the deferred anchor to the first save that needs it.
 export function takeDeferredAnchor(tree) {
   const anchor = tree ? anchors.get(tree) : undefined

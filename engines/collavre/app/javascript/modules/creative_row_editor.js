@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, postNewCreative, deferRowAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -514,6 +514,7 @@ function setupEditorSession() {
     }
 
     function persistStructureChange(newParentId, { beforeId = '', afterId = '' } = {}) {
+      dropDeferredAnchor(currentTree);
       parentInput.value = newParentId || '';
       beforeInput.value = beforeId || '';
       afterInput.value = afterId || '';

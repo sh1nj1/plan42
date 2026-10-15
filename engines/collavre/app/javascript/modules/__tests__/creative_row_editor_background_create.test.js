@@ -223,6 +223,29 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(second.dataset.id).toBe('78')
   })
 
+  test('a row moved up a level before its first save is placed where it now sits, not after the row above it', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementationOnce(() => Promise.resolve(created(78)))
+    const first = await startNewRow('nested creative')
+    appendExistingRow(5)
+    first.dataset.parentId = '5'
+    document.getElementById('inline-parent-id').value = '5'
+    await pressEnter()
+    type('second creative')
+
+    document.getElementById('inline-level-up').click()
+    document.getElementById('inline-close').click()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(2)
+    expect(sentField(saveMock.mock.calls[1], 'creative[parent_id]')).toBe('')
+    expect(sentField(saveMock.mock.calls[1], 'after_id')).toBe('5')
+    expect(sentField(saveMock.mock.calls[1], 'before_id')).toBe('')
+  })
+
   test('a failed create keeps the text, says so, and the next row takes its slot', async () => {
     saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
       .mockImplementationOnce(() => Promise.resolve(created(80)))
