@@ -716,7 +716,7 @@ function setupEditorSession() {
       globalListeners.add(document.body, 'click', createDelegatedClickHandler({
         template,
         startNew,
-        hideCurrent,
+        hideCurrent: () => closeByUser(),
         handleEditButtonClick,
       }));
     }
@@ -2285,7 +2285,7 @@ function setupEditorSession() {
           // stays canonical; we only flip the authoring surface to rich so it
           // reopens in Lexical, and render it to HTML for the editor view.
           const confirmMsg = toggleMarkdownBtn.dataset.confirmToRichtext;
-          if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
+          if (confirmMsg && !(await confirmForCurrent(confirmMsg))) return;
           const md = markdownTextarea?.value || '';
           const html = md ? renderMarkdown(md) : '';
           deactivateMarkdownMode();
@@ -2306,7 +2306,7 @@ function setupEditorSession() {
           const currentHtml = descriptionInput.value || '';
           if (!isHtmlEmpty(currentHtml)) {
             const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
-            if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
+            if (confirmMsg && !(await confirmForCurrent(confirmMsg))) return;
           }
           const existingMarkdown = markdownSourceInput ? markdownSourceInput.value : '';
           activateMarkdownMode(existingMarkdown);

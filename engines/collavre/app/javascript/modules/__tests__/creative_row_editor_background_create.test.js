@@ -850,6 +850,7 @@ describe('Enter on a new creative saves it in the background', () => {
     ['the close button', () => document.getElementById('inline-close').click()],
     ['Escape', () => editorOptions.onKeyDown({ key: 'Escape', preventDefault: jest.fn() }, {})],
     ['Escape in the markdown source', () => document.getElementById('markdown-editor-textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))],
+    ['the outer add button', () => document.querySelector('.new-root-creative-btn').click()],
   ])('a click that waits out a pending create yields to closing the editor with %s', async (_name, close) => {
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)
@@ -897,6 +898,41 @@ describe('Enter on a new creative saves it in the background', () => {
 
     expect(creativesApi[call]).toHaveBeenCalledTimes(1)
     expect(creativesApi[call]).toHaveBeenCalledWith(...args)
+    expect(first.querySelector('.creative-row').style.display).not.toBe('none')
+  })
+
+  test.each([
+    ['to Markdown', 'confirmToMarkdown', () => {
+      document.getElementById('inline-creative-description').value = '<p>existing creative</p>'
+    }],
+    ['back to rich text', 'confirmToRichtext', () => document.getElementById('inline-toggle-markdown').click()],
+  ])('a click that waits out a pending create yields to the markdown toggle %s confirmed on the open row', async (_name, confirmKey, prepare) => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const { tree: existing } = appendExistingRow(9)
+    clickRow(existing)
+    await flush()
+    prepare()
+    await flush()
+    const toggle = document.getElementById('inline-toggle-markdown')
+    toggle.dataset[confirmKey] = 'Switch?'
+    const confirmation = deferred()
+    confirmDialogMock.mockImplementationOnce(() => confirmation.promise)
+
+    clickRow(first)
+    await flush()
+    toggle.click()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    expect(template().parentElement).toBe(existing)
+    confirmation.resolve(true)
+    await flush()
+
+    expect(confirmDialogMock.mock.calls.at(-1)[0]).toBe('Switch?')
+    expect(template().parentElement).toBe(existing)
     expect(first.querySelector('.creative-row').style.display).not.toBe('none')
   })
 
