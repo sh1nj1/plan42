@@ -656,6 +656,11 @@ creative-tree-row.chat-active .creative-row:hover {
     border-radius: var(--radius-2);
 }
 
+creative-tree-row[is-title]:not(.chat-active) .creative-row,
+creative-tree-row[is-title]:not(.chat-active) .creative-row:hover {
+    background-color: transparent;
+}
+
 creative-tree-row.chat-active .creative-row.selected,
 creative-tree-row.chat-active .creative-row.selected:hover {
     background-color: var(--border-drag-over);

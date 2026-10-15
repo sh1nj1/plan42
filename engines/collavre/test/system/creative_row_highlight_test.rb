@@ -1,6 +1,29 @@
 require_relative "../application_system_test_case"
 
 class CreativeRowHighlightTest < ApplicationSystemTestCase
+  test "inactive title rows keep transparent backgrounds on hover and when archived" do
+    visit "/session/new"
+    page.execute_script(<<~JS)
+      const fixture = document.createElement('creative-tree-row');
+      fixture.id = 'inactive-title-fixture';
+      fixture.isTitle = true;
+      fixture.style.cssText = 'position: fixed; top: 100px; left: 100px; width: 400px; z-index: 99999';
+      document.body.appendChild(fixture);
+    JS
+    row = find("#inactive-title-fixture .creative-row")
+
+    %w[light-mode dark-mode].each do |theme|
+      page.execute_script("document.body.classList.remove('light-mode', 'dark-mode'); document.body.classList.add(arguments[0])", theme)
+      [ false, true ].each do |archived|
+        page.execute_script("document.querySelector('#inactive-title-fixture').toggleAttribute('archived', arguments[0])", archived)
+        [ false, true ].each do |hovered|
+          hovered ? row.hover : find("body").hover
+          assert_equal "rgba(0, 0, 0, 0)", page.evaluate_script("getComputedStyle(document.querySelector('#inactive-title-fixture .creative-row')).backgroundColor")
+        end
+      end
+    end
+  end
+
   [ false, true ].each do |title|
     test "chat highlight uses an inset accent and tint without changing #{title ? 'title' : 'regular'} row geometry" do
       visit "/session/new"
