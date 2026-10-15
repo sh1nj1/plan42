@@ -3,6 +3,11 @@
 Post `/keep` in a creative's discussion to continue agent work until the goal
 is satisfied, user input is needed, or the iteration limit is reached.
 
+Selecting `/keep` from the command menu opens a parameter popup for the maximum
+iterations, agent, and goal. All fields are optional; leaving them blank uses
+the defaults described below. Submitting the popup inserts the command into the
+discussion input, ready to send.
+
 ```text
 /keep [--max 10] [@agent:] [goal]
 ```
