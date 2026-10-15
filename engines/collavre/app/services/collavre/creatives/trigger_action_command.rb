@@ -102,6 +102,8 @@ module Collavre
       end
 
       def control_admitted?(current, snapshot)
+        return false unless snapshot
+
         return false unless current.slice("state", "control_version", "source") == snapshot.slice("state", "control_version", "source")
 
         if snapshot["source"] == "keep" && snapshot["generation"]
