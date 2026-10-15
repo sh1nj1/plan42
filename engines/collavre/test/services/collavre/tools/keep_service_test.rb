@@ -77,6 +77,25 @@ module Collavre
         assert_equal @topic.id, @creative.reload.data.dig("trigger", "loop", "trigger_topic_id")
       end
 
+      test "missing topic and closed topics cannot initialize a loop" do
+        assert_raises(ActiveRecord::RecordNotFound) { KeepService.new.call }
+        @topic.archive!
+        assert_no_difference "Comment.count" do
+          assert_raises(ArgumentError) { KeepService.new.call(topic_id: @topic.id) }
+        end
+        assert_nil @creative.reload.data["trigger"]
+      end
+
+      test "cannot replace an active loop" do
+        KeepService.new.call(goal: "Original", topic_id: @topic.id)
+        original = @creative.reload.data.dig("trigger", "loop")
+        @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "state" => "running" } }))
+        assert_no_difference "Comment.count" do
+          assert_raises(ActiveRecord::RecordInvalid) { KeepService.new.call(goal: "Replacement", topic_id: @topic.id) }
+        end
+        assert_equal original["goal"], @creative.reload.data.dig("trigger", "loop", "goal")
+      end
+
       test "schema places required topic id last" do
         schema = ToolSchema::Builder.build(KeepService)
         assert_equal "topic_id", schema[:params].last[:name].to_s

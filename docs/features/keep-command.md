@@ -37,6 +37,20 @@ For example:
 Use the last form when the existing context already describes the work.
 The loop stays in the command's topic, defaulting to Main when none is selected.
 
+External agents can start the same loop with the `keep` tool through the CLI
+or `meta_tool`. Its schema is `keep(max, agent_name, goal, topic_id)`;
+`topic_id` is the final, required parameter and determines the creative, so
+no `creative_id` is needed. The other parameters are optional, with the same
+iteration limit and defaults as `/keep`. Supply `agent_name` without `@` or `:`.
+
+```bash
+collavre tool run keep --max 5 --goal "Fix the failing login tests" --topic_id 123
+```
+
+For `meta_tool`, use `{"action":"run","tool_name":"keep","arguments":{"topic_id":123}}`.
+The tool requires write permission, rejects archived and reserved topics, and
+prevents agents from starting work in the topic they are currently handling.
+
 ## Shared drop-trigger lifecycle
 
 `/keep` starts a loop directly. A drop trigger starts one when a creative enters
