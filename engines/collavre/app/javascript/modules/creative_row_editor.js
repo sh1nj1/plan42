@@ -308,6 +308,9 @@ function setupEditorSession() {
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
     const flushOpenRow = (target) => (isDirty || pendingSave) && target.contains(currentTree) && !creativeSaveSnapshotIsEmpty(captureBufferSnapshot()) ? saveForm(currentTree, parentInput.value).then(isFailedSaveResult, () => true) : null;
+    // Closing is a later edit request too: a click still waiting on a pending
+    // create must not reopen the editor after it.
+    const closeByUser = (event) => editTickets.take() && hideCurrent(event);
     const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }), flushOpenRow);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
@@ -1879,7 +1882,7 @@ function setupEditorSession() {
       if (!editorInstance) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        hideCurrent();
+        closeByUser();
         return;
       }
       if (event.key === 'Enter' && event.altKey) {
@@ -1958,9 +1961,7 @@ function setupEditorSession() {
       });
     }
 
-    if (closeBtn) {
-      closeBtn.addEventListener('click', hideCurrent);
-    }
+    closeBtn?.addEventListener('click', closeByUser);
 
     upBtn.addEventListener('click', function () {
       // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
@@ -2311,7 +2312,7 @@ function setupEditorSession() {
       markdownTextarea.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') {
           event.preventDefault();
-          hideCurrent();
+          closeByUser();
           return;
         }
         // Shift+Enter → add new sibling (same as Lexical)

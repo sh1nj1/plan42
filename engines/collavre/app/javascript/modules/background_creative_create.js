@@ -37,7 +37,11 @@ export function trackNewRowSave(tree, promise) {
   if (!tree || tree.dataset.id) return promise
   const settled = promise.then((result) => result?.ok === false, () => true)
   rowSaves.set(tree, settled)
-  settled.then(() => rowSaves.get(tree) === settled && rowSaves.delete(tree))
+  settled.then((failed) => {
+    // Like a failed create, the unsaved row holds later renders until saved.
+    if (failed) failedRows.add(tree)
+    if (rowSaves.get(tree) === settled) rowSaves.delete(tree)
+  })
   return promise
 }
 

@@ -819,6 +819,28 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(first.querySelector('.creative-row').style.display).not.toBe('none')
   })
 
+  test.each([
+    ['the close button', () => document.getElementById('inline-close').click()],
+    ['Escape', () => editorOptions.onKeyDown({ key: 'Escape', preventDefault: jest.fn() }, {})],
+    ['Escape in the markdown source', () => document.getElementById('markdown-editor-textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))],
+  ])('a click that waits out a pending create yields to closing the editor with %s', async (_name, close) => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    const form = template()
+
+    clickRow(first)
+    await flush()
+    close()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(first.contains(form)).toBe(false)
+    expect(first.querySelector('.creative-row').style.display).not.toBe('none')
+  })
+
   test('a move that waits out a pending create yields to a later click', async () => {
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)
@@ -1120,6 +1142,36 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(event.detail.resume).not.toHaveBeenCalled()
     expect(second.isConnected).toBe(true)
     expect(template().parentElement).toBe(second)
+  })
+
+  test.each([
+    ['is dropped when the user keeps it', false, false],
+    ['renders once the save goes through', true, true],
+  ])('a later frame swap over an open new row whose save failed during an earlier one %s', async (_name, retryOk, resumes) => {
+    const firstPost = deferred()
+    const secondPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise).mockImplementationOnce(() => secondPost.promise)
+      .mockImplementation(() => Promise.resolve(retryOk ? created(79) : { ok: false, status: 500, clone: () => ({ json: () => Promise.resolve({}) }) }))
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    frameRender(document.getElementById('creatives'))
+    type('second creative')
+    toggleProgress()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    secondPost.resolve({ ok: false, status: 500, clone: () => ({ json: () => Promise.resolve({}) }) })
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    expect(event.defaultPrevented).toBe(true)
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(3)
+    expect(confirmDialogMock).toHaveBeenCalledTimes(resumes ? 0 : 1)
+    expect(event.detail.resume).toHaveBeenCalledTimes(resumes ? 1 : 0)
+    expect(second.isConnected).toBe(true)
   })
 
   test('a frame swap is not held by a save of the open row that has nothing to create', async () => {
