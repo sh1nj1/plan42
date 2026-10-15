@@ -59,7 +59,16 @@ See [permissions.md](permissions.md) for the full permission architecture.
 ```ruby
 creative.description              # Plain markdown text
 creative.comments                 # Has-many comments (images attached to comments)
+creative.files                    # Active Storage has_many_attached files
 ```
+
+Attached `.pptx` files appear as inline slide viewers on the Creative page.
+`Collavre::PptRenderer` renders slide HTML without creating creatives;
+`Collavre::PptImporter` reuses it when persisting imported slides.
+`Collavre::PptPreview` caches rendered HTML for seven days by blob key and locale.
+The preview endpoint checks Creative read permission on every request and returns
+`Cache-Control: private, no-store`; cached rendering never bypasses authorization.
+Preview images are embedded in the rendered HTML rather than uploaded as new blobs.
 
 ## Tree Operations
 

@@ -7,6 +7,7 @@
 *   **Progress Tracking**: Visualize progress with value ranges (0.0 - 1.0). Parent progress is calculated from children.
 *   **Visual Boundaries**: Clear distinction of creative areas and child regions.
 *   **Styles**: Auto-styling for top-level creatives (h1, h2, h3).
+*   **PowerPoint Attachments**: View attached `.pptx` files inline without importing creatives. Use previous/next buttons or ←/→ to navigate slides; select Fullscreen to present and Esc to exit (where the browser supports fullscreen).
 
 ### Creative Page Menu
 *   **New Creative**: Add creative with '+' button.
