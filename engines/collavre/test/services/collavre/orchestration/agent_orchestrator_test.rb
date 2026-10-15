@@ -604,18 +604,21 @@ module Collavre
       # resolved mentioned_user — so the revalidation has to rebuild the context
       # or an explicitly invited agent would be cancelled by an unrelated pin.
       test "dequeue_next_for_topic keeps a waiter the latest comment still mentions" do
-        topic = Topic.create!(name: "Mentioned while waiting", creative: @creative, user: @user)
-        other = build_agent
-        Comment.create!(
-          creative: @creative, user: @user, content: "@#{other.name}: your turn", topic: topic
-        )
+        # This test asserts routing eligibility, not provider execution.
+        AiAgentJob.stub(:perform_later, true) do
+          topic = Topic.create!(name: "Mentioned while waiting", creative: @creative, user: @user)
+          other = build_agent
+          Comment.create!(
+            creative: @creative, user: @user, content: "@#{other.name}: your turn", topic: topic
+          )
 
-        queued_task = queued_task_for(other, topic)
-        topic.set_primary_agent!(@ai_agent)
+          queued_task = queued_task_for(other, topic)
+          topic.set_primary_agent!(@ai_agent)
 
-        AgentOrchestrator.dequeue_next_for_topic(topic.id)
+          AgentOrchestrator.dequeue_next_for_topic(topic.id)
 
-        assert_not_equal "cancelled", queued_task.reload.status
+          assert_not_equal "cancelled", queued_task.reload.status
+        end
       end
 
       test "dequeue_next_for_topic drains to the next waiter after cancelling an excluded one" do
