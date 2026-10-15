@@ -38,13 +38,27 @@ function renderCommand(command, moreLabel) {
 
 // "More" expands a tool's details in place. Handled in the capture phase so the
 // item's own touchstart/touchend/click never see it and the command is not chosen.
+// touchstart is left uncancelled so a swipe starting on the button still scrolls;
+// touchend toggles only when the finger stayed within the tap threshold.
+const TAP_THRESHOLD_PX = 10
+
 function bindDetailsToggle(list, labels, onToggle) {
+  let touchStartY = null
   const toggle = (event) => {
     const button = event.target.closest?.('[data-command-more]')
     if (!button || !list.contains(button)) return
-    event.preventDefault()
     event.stopPropagation()
-    if (event.type === 'touchstart') return
+    if (event.type === 'touchstart') {
+      touchStartY = event.touches[0].clientY
+      return
+    }
+    if (event.type === 'touchend') {
+      const moved = touchStartY === null ||
+        Math.abs(event.changedTouches[0].clientY - touchStartY) >= TAP_THRESHOLD_PX
+      touchStartY = null
+      if (moved) return
+    }
+    event.preventDefault()
     const expanded = button.getAttribute('aria-expanded') === 'true'
     button.setAttribute('aria-expanded', String(!expanded))
     button.textContent = expanded ? labels.more : labels.less

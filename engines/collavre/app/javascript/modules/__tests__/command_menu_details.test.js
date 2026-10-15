@@ -74,22 +74,43 @@ describe('command menu details toggle', () => {
     expect(button.textContent).toBe('더보기')
   })
 
+  const touchOn = (button) => (type, clientY) => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    event.touches = [{ clientY }]
+    event.changedTouches = [{ clientY }]
+    button.dispatchEvent(event)
+    return event
+  }
+
   test('tapping more toggles on touchend and does not select the item', async () => {
     const { textarea, menu } = await open()
-    const button = menu.querySelector('[data-command-more]')
-    const touch = (type) => {
-      const event = new Event(type, { bubbles: true, cancelable: true })
-      event.touches = [{ clientY: 0 }]
-      event.changedTouches = [{ clientY: 0 }]
-      button.dispatchEvent(event)
-      return event
-    }
+    const touch = touchOn(menu.querySelector('[data-command-more]'))
 
-    touch('touchstart')
-    const end = touch('touchend')
+    const start = touch('touchstart', 0)
+    expect(start.defaultPrevented).toBe(false)
+    const end = touch('touchend', 4)
     expect(end.defaultPrevented).toBe(true)
     expect(menu.querySelector('.command-details').hidden).toBe(false)
     expect(textarea.value).toBe('/')
+  })
+
+  test('swiping from more scrolls without toggling or selecting the item', async () => {
+    const { textarea, menu } = await open()
+    const touch = touchOn(menu.querySelector('[data-command-more]'))
+
+    const start = touch('touchstart', 0)
+    const end = touch('touchend', 100)
+    expect(start.defaultPrevented).toBe(false)
+    expect(end.defaultPrevented).toBe(false)
+    expect(menu.querySelector('.command-details').hidden).toBe(true)
+    expect(textarea.value).toBe('/')
+    expect(menu.style.display).toBe('block')
+  })
+
+  test('touchend without a matching touchstart does not toggle', async () => {
+    const { menu } = await open()
+    touchOn(menu.querySelector('[data-command-more]'))('touchend', 0)
+    expect(menu.querySelector('.command-details').hidden).toBe(true)
   })
 
   test('clicking elsewhere on the item still selects the command', async () => {
