@@ -22,6 +22,28 @@ module Perf
       end
     end
 
+    test "lets every agent run one turn per user at once" do
+      fixtures = prepare
+      resolver = Collavre::Orchestration::PolicyResolver.new({})
+
+      fixtures.agents.each do |agent|
+        config = resolver.scheduling_config_for(agent)
+        assert_equal 2, config["max_concurrent_jobs"]
+        assert_equal 20, config["rate_limit_per_minute"]
+      end
+      prepare
+      assert_equal 1, Collavre::OrchestratorPolicy.for_agent(fixtures.agents.first.id, policy_type: "scheduling").count
+    end
+
+    test "matches a message to its exact tag" do
+      load = MultiUserAgentLoad.new(base_url: "http://127.0.0.1:1", users: 1, agents: 10)
+      run_id = load.instance_variable_get(:@run_id)
+
+      assert_equal "#{run_id}-u1-a10", load.send(:tag_of, "load check #{run_id}-u1-a10")
+      assert_equal "#{run_id}-u1-a1", load.send(:tag_of, "load check #{run_id}-u1-a1")
+      assert_nil load.send(:tag_of, "load check PERF-other-u1-a1")
+    end
+
     test "reuses its rows and points agents at the current fake endpoint" do
       first = prepare
       second = prepare(gateway_url: "http://127.0.0.1:10/v1")

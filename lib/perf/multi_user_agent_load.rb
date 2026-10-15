@@ -119,14 +119,19 @@ module Perf
       comment_tags = Collavre::Comment.where(creative_id: fixtures.workspaces.map(&:id))
                                       .where("created_at >= ?", started_at - 1)
                                       .pluck(:id, :content)
-                                      .to_h { |id, content| [ id, tags.find { |tag| content.include?(tag) } ] }
-                                      .compact
+                                      .to_h { |id, content| [ id, tag_of(content) ] }
+                                      .select { |_id, tag| tags.include?(tag) }
       tasks = Collavre::Task.where(agent_id: fixtures.agents.map(&:id)).where("created_at >= ?", started_at - 1)
       by_tag = tasks.each_with_object({}) do |task, result|
         tag = comment_tags[task.trigger_event_payload&.dig("comment", "id")]
         result[tag] = task.status if tag
       end
       tags.to_h { |tag| [ tag, by_tag.fetch(tag, "missing") ] }
+    end
+
+    # The whole tag, so "-a1" never claims an "-a10" message.
+    def tag_of(content)
+      content.to_s[/#{Regexp.escape(@run_id)}-u\d+-a\d+(?!\d)/]
     end
 
     def build_report(posts, llm, probes, outcomes)
@@ -190,7 +195,20 @@ module Perf
                                 gateway_url: @gateway_url, system_prompt: "You are a load-test agent. Reply briefly.",
                                 tools: [], searchable: false)
         agent.save!
+        allow_one_turn_per_user!(agent)
         agent
+      end
+
+      # Every user drives every agent at once, so each agent must be allowed
+      # one turn per user; the default per-agent cap (5) would otherwise make
+      # the run fail as soon as the scheduler enforces it.
+      def allow_one_turn_per_user!(agent)
+        policy = Collavre::OrchestratorPolicy.find_or_initialize_by(scope_type: "User", scope_id: agent.id,
+                                                                    policy_type: "scheduling")
+        policy.update!(enabled: true, config: policy.config.merge(
+          "max_concurrent_jobs" => @user_count,
+          "rate_limit_per_minute" => [ @user_count, Collavre::Orchestration::PolicyResolver::DEFAULTS.dig("scheduling", "rate_limit_per_minute") ].max
+        ))
       end
 
       def workspace(user)
