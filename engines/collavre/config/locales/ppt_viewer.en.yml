@@ -12,3 +12,7 @@ en:
       fullscreen: "Fullscreen"
       fullscreen_error: "Unable to enter fullscreen."
       invalid: "Unable to display this document."
+      document_controls: "Document controls"
+      page_navigation: "Page navigation"
+      previous_page: "Previous page"
+      next_page: "Next page"

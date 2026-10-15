@@ -12,3 +12,7 @@ ko:
       fullscreen: "전체화면"
       fullscreen_error: "전체화면을 시작할 수 없습니다."
       invalid: "이 문서를 표시할 수 없습니다."
+      document_controls: "문서 제어"
+      page_navigation: "페이지 탐색"
+      previous_page: "이전 페이지"
+      next_page: "다음 페이지"

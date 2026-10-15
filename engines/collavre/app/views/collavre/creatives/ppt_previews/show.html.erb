@@ -1,4 +1,5 @@
-<div class="ppt-viewer <%= "document-viewer" unless @slides %>" tabindex="0" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+<% navigation_key = @slides ? "navigation" : (@document ? "document_controls" : "page_navigation") %>
+<div class="ppt-viewer <%= "document-viewer" unless @slides %>" tabindex="0" aria-label="<%= t("collavre.ppt_viewer.#{navigation_key}") %>">
   <div id="slide-view">
     <div id="slide-content">
       <% if @slides %>
@@ -14,14 +15,14 @@
       <% end %>
     </div>
   </div>
-  <nav id="slide-controls" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+  <nav id="slide-controls" aria-label="<%= t("collavre.ppt_viewer.#{navigation_key}") %>">
     <% if @slides || @blob.filename.extension.downcase == "pdf" %>
-    <button type="button" data-ppt-previous aria-label="<%= t('collavre.ppt_viewer.previous') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+    <button type="button" data-ppt-previous aria-label="<%= t(@slides ? "collavre.ppt_viewer.previous" : "collavre.ppt_viewer.previous_page") %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
     <% end %>
     <%= link_to t("collavre.ppt_viewer.download"), main_app.rails_storage_proxy_path(@blob, disposition: "attachment"), download: @blob.filename, class: "ppt-viewer-download" %>
     <% if @slides || @blob.filename.extension.downcase == "pdf" %>
     <span data-ppt-counter aria-live="polite"></span>
-    <button type="button" data-ppt-next aria-label="<%= t('collavre.ppt_viewer.next') %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+    <button type="button" data-ppt-next aria-label="<%= t(@slides ? "collavre.ppt_viewer.next" : "collavre.ppt_viewer.next_page") %>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
     <% end %>
     <% if @blob.filename.extension.downcase == "pdf" %>
       <button type="button" data-pdf-zoom><%= t("collavre.ppt_viewer.zoom") %></button>

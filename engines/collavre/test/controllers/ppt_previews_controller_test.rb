@@ -151,6 +151,27 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".media-loading[role=status]"
   end
 
+  test "preview accessibility labels describe documents pages and slides in both locales" do
+    { en: [ "Document controls", "Page navigation", "Previous page", "Next page", "Slide navigation" ],
+      ko: [ "문서 제어", "페이지 탐색", "이전 페이지", "다음 페이지", "슬라이드 탐색" ] }.each do |locale, labels|
+      users(:one).update!(locale: locale)
+      %w[md html pdf pptx].each do |extension|
+        @blob.update!(filename: "document.#{extension}")
+        Collavre::PptPreview.stub :slides, [ "Slide" ] do
+          get @path, params: { locale: locale }
+        end
+        assert_response :success
+        navigation = extension == "pptx" ? labels[4] : (extension == "pdf" ? labels[1] : labels[0])
+        assert_select ".ppt-viewer[aria-label=?]", navigation
+        assert_select "nav[aria-label=?]", navigation
+        if extension == "pdf"
+          assert_select "[data-ppt-previous][aria-label=?]", labels[2]
+          assert_select "[data-ppt-next][aria-label=?]", labels[3]
+        end
+      end
+    end
+  end
+
   test "document size limit is applied before downloading" do
     @blob.update!(filename: "large.md", byte_size: 10.megabytes + 1)
     get @path
