@@ -453,11 +453,14 @@ module Collavre
       # topic, creative and trigger event — so a dispatch in another
       # creative, or a different event over the same comment, is a different
       # question and not an answer to this one.
-      def self.covering_task(agent, comment_id, context, trigger_event_name)
+      #
+      # `policy_resolver` is the dispatch's own, when the caller has one for
+      # this same context, so the policies are not read a second time.
+      def self.covering_task(agent, comment_id, context, trigger_event_name, policy_resolver: nil)
         return if Workflow::DispatchIdentity.valid?(context, agent.id)
         return nil if agent.nil? || comment_id.blank?
         return nil unless context.is_a?(Hash) && context.key?("topic")
-        return nil unless PolicyResolver.new(context).drop_delivered_dispatches_for?(agent)
+        return nil unless (policy_resolver || PolicyResolver.new(context)).drop_delivered_dispatches_for?(agent)
         # A review request is bound to the comment it quotes and can only run as
         # its own turn: AiAgentService and ReviewHandler read review behaviour
         # off the anchor, never off the history window. Having been read as

@@ -156,5 +156,61 @@ module Collavre
       assert_includes policies, enabled_policy
       assert_equal 1, policies.count
     end
+
+    test "for_context_by_type reads every context policy in one query, grouped by type" do
+      OrchestratorPolicy.create!(policy_type: "arbitration", config: {})
+      OrchestratorPolicy.create!(policy_type: "scheduling", scope_type: "Creative", scope_id: @creative.id, config: {})
+      OrchestratorPolicy.create!(policy_type: "matching", scope_type: "Topic", scope_id: @topic.id, config: {})
+      context = { "creative" => { "id" => @creative.id }, "topic" => { "id" => @topic.id } }
+
+      grouped = nil
+      assert_queries_match(/orchestrator_policies/, count: 1) do
+        grouped = OrchestratorPolicy.for_context_by_type(context)
+      end
+
+      assert_equal %w[arbitration matching scheduling], grouped.keys.sort
+    end
+
+    test "for_context_by_type orders scope levels before priority" do
+      topic_policy = OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Topic", scope_id: @topic.id,
+                                                priority: 1, config: {})
+      creative_policy = OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Creative",
+                                                   scope_id: @creative.id, priority: 5, config: {})
+      global_late = OrchestratorPolicy.create!(policy_type: "arbitration", priority: 900, config: {})
+      global_early = OrchestratorPolicy.create!(policy_type: "arbitration", priority: 10, config: {})
+      context = { "creative" => { "id" => @creative.id }, "topic" => { "id" => @topic.id } }
+
+      assert_equal [ global_early, global_late, creative_policy, topic_policy ],
+                   OrchestratorPolicy.for_context(context, policy_type: "arbitration")
+    end
+
+    test "for_context_by_type breaks equal priorities by id" do
+      first = OrchestratorPolicy.create!(policy_type: "arbitration", priority: 10, config: {})
+      second = OrchestratorPolicy.create!(policy_type: "arbitration", priority: 10, config: {})
+
+      assert_equal [ first, second ], OrchestratorPolicy.for_context({}, policy_type: "arbitration")
+    end
+
+    test "for_context_by_type leaves out other scopes and disabled policies" do
+      other_creative = creatives(:root_parent)
+      other_topic = Topic.create!(name: "Other Topic", creative: @creative, user: @user)
+      kept = OrchestratorPolicy.create!(policy_type: "arbitration", config: {})
+      OrchestratorPolicy.create!(policy_type: "arbitration", enabled: false, config: {})
+      OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Creative", scope_id: other_creative.id, config: {})
+      OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Topic", scope_id: other_topic.id, config: {})
+      OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "User", scope_id: @ai_agent.id, config: {})
+      context = { "creative" => { "id" => @creative.id }, "topic" => { "id" => @topic.id } }
+
+      assert_equal [ kept ], OrchestratorPolicy.for_context(context, policy_type: "arbitration")
+    end
+
+    test "for_context_by_type reads only global policies without a creative or topic" do
+      global = OrchestratorPolicy.create!(policy_type: "arbitration", config: {})
+      OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Creative", scope_id: @creative.id, config: {})
+      OrchestratorPolicy.create!(policy_type: "arbitration", scope_type: "Topic", scope_id: @topic.id, config: {})
+
+      assert_equal({ "arbitration" => [ global ] }, OrchestratorPolicy.for_context_by_type({}))
+      assert_equal [], OrchestratorPolicy.for_context({}, policy_type: "scheduling")
+    end
   end
 end
