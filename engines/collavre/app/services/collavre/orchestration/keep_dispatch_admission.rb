@@ -30,7 +30,7 @@ module Collavre
           creative.with_lock do
             next unless current?(creative, generation)
 
-            result = Matcher.permits_creative_access?(context, agent) ? yield : :rejected
+            result = Creatives::PermissionChecker.current_allowed?(creative.id, agent, :feedback) ? yield : :rejected
             release_rejected(creative, context) if result == :rejected || !result
           end
         end

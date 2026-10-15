@@ -18,7 +18,7 @@ module Collavre
     end
 
     test "execution time permission rejection releases the current keep turn" do
-      Orchestration::Matcher.stub(:permits_creative_access?, false) { dispatch }
+      Creatives::PermissionChecker.stub(:current_allowed?, false) { dispatch }
       assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
       assert_equal 0, Task.where(creative: @creative, topic_id: @topic.id).count
     end
@@ -102,7 +102,7 @@ module Collavre
 
     test "resumed waiter losing permission releases the current turn" do
       waiter = task_for("pending")
-      Orchestration::Matcher.stub(:permits_creative_access?, false) { AiAgentJob.new.perform(waiter) }
+      Creatives::PermissionChecker.stub(:current_allowed?, false) { AiAgentJob.new.perform(waiter) }
       assert_equal "cancelled", waiter.reload.status
       assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
     end
@@ -137,8 +137,21 @@ module Collavre
 
     test "revoked creative access is rechecked without trusting the enqueue snapshot" do
       CreativeShare.find_by!(creative: @creative, user: @agent).update!(permission: "no_access")
-      CreativeSharesCache.where(creative: @creative, user: @agent).delete_all
-      assert_no_difference("Task.count") { assert_equal :rejected, dispatch }
+      CreativeSharesCache.where(creative: @creative, user: @agent).update_all(permission: :feedback)
+      assert @creative.reload.has_permission?(@agent, :feedback)
+      AiAgentService.stub(:new, ->(*) { flunk "Revoked dispatch executed" }) do
+        assert_no_difference("Task.count") { assert_equal :rejected, dispatch }
+      end
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "read-only current access rejects a waiter despite stale feedback cache" do
+      waiter = task_for("pending")
+      CreativeShare.find_by!(creative: @creative, user: @agent).update!(permission: "read")
+      CreativeSharesCache.where(creative: @creative, user: @agent).update_all(permission: :feedback)
+      assert @creative.reload.has_permission?(@agent, :feedback)
+      AiAgentService.stub(:new, ->(*) { flunk "Revoked waiter executed" }) { AiAgentJob.new.perform(waiter) }
+      assert_equal "cancelled", waiter.reload.status
       assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
     end
 
