@@ -26,7 +26,7 @@ module Collavre
         answer = payload.fetch("answers").fetch(name)
         type = definition.fetch("type").to_s
         value = answer.fetch(type)
-        validate_value!(value, definition)
+        validate_value!(value, definition, source: source)
         [ name, { type => value } ]
       end
       { "answers" => answers, "reason" => payload.fetch("reason", "").to_s, "source" => source }
@@ -60,14 +60,14 @@ module Collavre
       { type: "integer", minimum: 0, maximum: count - 1 }
     end
 
-    def validate_value!(value, definition)
+    def validate_value!(value, definition, source:)
       type = definition.fetch("type").to_s
       valid = if type == "choice"
         definition.fetch("options").key?(value)
       else
         maximum = type == "probability" ? 1 : definition.fetch("levels").size - 1
         value.is_a?(Numeric) && value.finite? && value.between?(0, maximum) &&
-          (type != "score" || value.is_a?(Integer))
+          (type != "score" || source == "judge" || value.is_a?(Integer))
       end
       raise ArgumentError, "Invalid decision answer" unless valid
     end

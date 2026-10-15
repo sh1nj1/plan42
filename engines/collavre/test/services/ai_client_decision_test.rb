@@ -78,6 +78,30 @@ module Collavre
       assert_equal 8, client.last_input_tokens
     end
 
+    test "native decisions preserve weighted fractional scores" do
+      levels = %w[low medium high]
+      answer = RubyLLM::Score.new(score: 1.37, levels: levels,
+        probabilities: { 0 => 0.1, 1 => 0.43, 2 => 0.47 }, confidence: 0.9)
+      judgment = OpenStruct.new(answers: { rating: answer }, tokens: RubyLLM::Tokens.new(input: 8, output: 1))
+      context = Object.new
+      context.define_singleton_method(:judge) { |*, **| judgment }
+      client = AiClient.new(vendor: "typesafe", model: "jev-latest", system_prompt: nil)
+      client.stub(:build_llm_context, context) do
+        result = client.judge("Task", questions: { rating: { type: :score, levels: levels } })
+        assert_equal 1.37, result.dig("answers", "rating", "score")
+        assert_equal "judge", result["source"]
+      end
+    end
+
+    test "native weighted scores still require finite values within bounds" do
+      definitions = DecisionQuestions.new(rating: { type: :score, levels: %w[low high] })
+      [ -0.1, 1.1, Float::NAN, Float::INFINITY, "0.5", nil ].each do |score|
+        assert_raises(ArgumentError) do
+          definitions.normalize({ answers: { rating: { score: score } } }, source: "judge")
+        end
+      end
+    end
+
     test "ordinary OpenAI models judge through structured chat without calling Decisions" do
       %w[gpt-4 gpt-4o gpt-5 unknown-model].each do |model|
         client = AiClient.new(vendor: "openai", model: model, system_prompt: nil)
@@ -335,12 +359,12 @@ module Collavre
       end
     end
 
-    test "score answers require integer level indices for every decision source" do
+    test "chat score answers require integer level indices" do
       definitions = DecisionQuestions.new(rating: { type: :score, levels: %w[low high] })
       schema = definitions.schema.dig(:properties, :answers, :properties, "rating", :properties, "score")
       assert_equal "integer", schema[:type]
 
-      %w[native chat adapter].each do |source|
+      %w[chat adapter].each do |source|
         [ 0.5, 1.0, -1, 2, "1", nil ].each do |score|
           assert_raises(ArgumentError) do
             definitions.normalize({ answers: { rating: { score: score } } }, source: source)
