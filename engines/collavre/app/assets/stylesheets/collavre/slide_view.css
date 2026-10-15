@@ -99,7 +99,7 @@
     bottom: 0;
     left: 0;
     right: 0;
-    height: 20vh;
+    height: 20dvh;
     background: var(--border-color);
     align-items: center;
     justify-content: center;
