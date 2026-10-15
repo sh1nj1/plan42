@@ -26,7 +26,7 @@ module Collavre
 
       def message(agent, rejection)
         if rejection == :chat_not_supported
-          "#{agent.display_name} does not support chat, so it cannot be pinned as primary agent."
+          I18n.t("collavre.topics.agent_chat_not_supported", name: agent.display_name)
         elsif rejection == :session_agent_outside_session_topic
           "#{agent.display_name} is a session agent and can only be pinned to its own session topic."
         else

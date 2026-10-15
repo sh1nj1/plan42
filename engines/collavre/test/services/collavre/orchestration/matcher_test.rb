@@ -547,6 +547,37 @@ module Collavre
         assert_equal [ @ai_agent ], Matcher.new(context).match
       end
 
+      test "capability registration invalidates ordinary pins for routing and waiting assignments" do
+        other = build_agent(routing_expression: "true")
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Registry change", user: @user)
+        topic.set_primary_agent!(@ai_agent)
+        context = { "event_name" => "comment_created", "creative" => { "id" => @creative.id },
+                    "topic" => { "id" => topic.id } }
+
+        AiClient.stub(:vendor_capabilities, AiClient.vendor_capabilities.dup) do
+          AiClient.register_vendor_capabilities(@ai_agent.llm_vendor, capabilities: [ :judge ])
+          assert_equal [ other ], Matcher.new(context).match
+          assert Matcher.permits_assignment?(context, other)
+          assert_equal @ai_agent.id, topic.reload.primary_agent_id
+        end
+      end
+
+      test "capability registration keeps session topic routing exclusive" do
+        other = build_agent(routing_expression: "true")
+        grant_feedback(other)
+        topic = @creative.topics.create!(name: "Registry session", user: @user,
+                                         primary_agent: @ai_agent, session_id: "registry-session")
+        context = { "event_name" => "comment_created", "creative" => { "id" => @creative.id },
+                    "topic" => { "id" => topic.id } }
+
+        AiClient.stub(:vendor_capabilities, AiClient.vendor_capabilities.dup) do
+          AiClient.register_vendor_capabilities(@ai_agent.llm_vendor, capabilities: [ :judge ])
+          assert_empty Matcher.new(context).match
+          assert_not Matcher.permits_assignment?(context, other)
+        end
+      end
+
       test "topic primary agent responds even when its own routing expression is false" do
         @ai_agent.update!(routing_expression: 'event_name == "never_fires"')
         topic = @creative.topics.create!(name: "Assigned false expr", user: @user)
