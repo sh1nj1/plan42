@@ -338,6 +338,55 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(sentField(await retryFailedRow(second), 'before_id')).toBe('82')
   })
 
+  test('chained failed rows retried out of order keep their on-screen order', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(83)))
+      .mockImplementationOnce(() => Promise.resolve(created(91)))
+      .mockImplementationOnce(() => Promise.resolve(created(92)))
+      .mockImplementation(() => Promise.resolve(created(93)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-before-id').value = '6'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    const third = await pressEnter()
+    type('third creative')
+    await flush()
+    await pressEnter()
+    type('fourth creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    expect(sentField(await retryFailedRow(second), 'before_id')).toBe('83')
+    expect(sentField(await retryFailedRow(third), 'before_id')).toBe('83')
+    expect(sentField(await retryFailedRow(first), 'before_id')).toBe('91')
+  })
+
+  test('a failed row skips a successor that was removed before its retry', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(82)))
+      .mockImplementationOnce(() => Promise.resolve(created(90)))
+      .mockImplementation(() => Promise.resolve(created(91)))
+    const first = await startNewRow('first creative')
+    document.getElementById('inline-before-id').value = '6'
+    const second = await pressEnter()
+    type('second creative')
+    await flush()
+    await pressEnter()
+    type('third creative')
+    await flush()
+    await pressEnter()
+    await flush()
+
+    await retryFailedRow(second)
+    second.remove()
+    expect(sentField(await retryFailedRow(first), 'before_id')).toBe('82')
+  })
+
   test('a click that waits out a pending create yields to a later click', async () => {
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)

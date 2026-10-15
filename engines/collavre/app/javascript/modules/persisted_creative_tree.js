@@ -10,7 +10,7 @@ export function bindPersistedTree(tree, data, parentId, fallbackRow) {
   const rowEl = treeRowElement(tree) || fallbackRow
   if (rowEl) bindRowComponent(rowEl, data.id, tree.dataset.level, parentId)
   insertRow(tree, data)
-  retargetFailedDrafts(tree, data.id)
+  retargetFailedDrafts(tree)
 }
 
 function bindRowComponent(rowEl, id, levelValue, parentId) {

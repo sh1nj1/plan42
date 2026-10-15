@@ -34,6 +34,8 @@ export async function cannotEdit(tree) {
 export function takeFailedDraft(tree) {
   const draft = failedDrafts.get(tree)
   failedDrafts.delete(tree)
+  const next = draft?.successors?.find((successor) => successor.isConnected && successor.dataset.id)
+  if (next) Object.assign(draft, { afterId: '', beforeId: next.dataset.id })
   return draft
 }
 
@@ -71,11 +73,15 @@ function adoptAnchor(tree, anchor) {
   return anchor
 }
 
-export function retargetFailedDrafts(tree, id) {
-  for (const failedTree of dependents.get(tree) || []) {
+// Each failed row keeps the rows below it in screen order, from the first
+// row created after it, and retries in front of the first one that still has
+// an id by then, so failed rows retried in any order land in the order shown.
+export function retargetFailedDrafts(tree) {
+  const failedTrees = dependents.get(tree) || []
+  failedTrees.forEach((failedTree, index) => {
     const draft = failedDrafts.get(failedTree)
-    if (draft) Object.assign(draft, { afterId: '', beforeId: String(id) })
-  }
+    if (draft && !draft.successors) draft.successors = [...failedTrees.slice(index + 1), tree]
+  })
   dependents.delete(tree)
 }
 
