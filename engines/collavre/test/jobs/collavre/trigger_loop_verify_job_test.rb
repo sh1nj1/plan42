@@ -67,7 +67,7 @@ module Collavre
     test "keep verification falls back to an authorized child-only task agent" do
       CreativeShare.where(creative: @parent, user: @ai_bot).destroy_all
       CreativeShare.create!(creative: @child, user: @ai_bot, permission: :feedback)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "agent_id" => @ai_bot.id } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999, "agent_id" => @ai_bot.id } }))
       job = TriggerLoopVerifyJob.new
       selected = []
       job.stub(:verify_completion, ->(agent, *) { selected << agent.id; :awaiting_user }) { job.perform(@task.id) }
@@ -86,7 +86,7 @@ module Collavre
       PermissionCacheJob.perform_now(:propagate_share, creative_share_id: share.id)
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(denied, :read)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1 } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       job = TriggerLoopVerifyJob.new
       selected = []
       job.stub(:verify_completion, ->(agent, *) { selected << agent.id; :awaiting_user }) do
@@ -101,7 +101,7 @@ module Collavre
       denied.update_columns(llm_vendor: "google", llm_model: "test")
       CreativeShare.create!(creative: @parent, user: denied, permission: :feedback)
       CreativeShare.create!(creative: @child, user: denied, permission: :no_access)
-      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1 } }))
+      @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "source" => "keep", "generation" => 1, "current_comment_id" => 999 } }))
       job = TriggerLoopVerifyJob.new
       selected = []
       job.stub(:verify_completion, ->(agent, *) { selected << agent.id; :awaiting_user }) do
@@ -119,7 +119,7 @@ module Collavre
       share.update_columns(permission: :no_access)
       assert @child.has_permission?(@ai_bot, :read), "Cached grant must remain stale for this regression"
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "Private keep goal")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Private keep goal")
       @child.update!(data: data)
       job = TriggerLoopVerifyJob.new
       AiClient.stub(:new, ->(*) { flunk "Denied verifier received loop content" }) do
@@ -144,7 +144,7 @@ module Collavre
       @parent.update!(data: @parent.data.merge("context_ids" => [ visible.id, hidden.id ]))
       data = @child.data.deep_dup
       data["context_ids"] = [ visible.id, revoked.id ]
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "Keep goal")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Keep goal")
       @child.update!(data: data)
       client = Object.new
       check_prompt = ->(messages) {
@@ -202,7 +202,7 @@ module Collavre
 
     test "pause after failed verification transition prevents the next turn" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999)
       @child.update!(data: data)
       job = TriggerLoopVerifyJob.new
       original = job.method(:continuation_agent)
@@ -253,7 +253,7 @@ module Collavre
 
     test "failed verification does not reroute an unavailable selected agent" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "agent_id" => -1)
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "agent_id" => -1)
       @child.update!(data: data)
       job = TriggerLoopVerifyJob.new
       job.stub(:pick_verifier_agent, @ai_bot) do
@@ -268,7 +268,7 @@ module Collavre
       job.stub(:pick_verifier_agent, @ai_bot) do
         job.stub(:verify_completion, ->(*) {
           data = @child.reload.data.deep_dup
-          data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "start_comment_id" => 1000, "state" => "running")
+          data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "start_comment_id" => 1000, "state" => "running")
           @child.update!(data: data)
           :verified
         }) { job.perform(@task.id) }
@@ -281,7 +281,7 @@ module Collavre
       CreativeShare.create!(creative: instruction, user: @ai_bot, permission: :read)
       @parent.update!(data: @parent.data.merge("context_ids" => [ instruction.id ]))
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "")
       @child.update!(data: data)
       assert_equal @parent, @child.trigger_loop_context
       verifier = TriggerLoopVerifyJob.new
@@ -304,7 +304,7 @@ module Collavre
 
     test "keep verifier receives goal and retries without forcing the previous agent" do
       data = @child.data.deep_dup
-      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "goal" => "Deliver keep")
+      data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Deliver keep")
       @child.update!(data: data)
       job = TriggerLoopVerifyJob.new
       assert_includes job.send(:collect_instructions, @child, @child, @ai_bot), "Deliver keep"
