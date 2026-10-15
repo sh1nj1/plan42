@@ -84,7 +84,7 @@ module Collavre
             data = (creative.data || {}).deep_dup
             loop_data = data.dig("trigger", "loop")
             return unless loop_data && allowed_states.include?(loop_data["state"])
-            next unless loop_data == snapshot && control_admitted?(snapshot)
+            next unless control_admitted?(loop_data, snapshot)
 
             yield loop_data
             advance_control!(data, loop_data)
@@ -101,10 +101,16 @@ module Collavre
         loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1
       end
 
-      def control_admitted?(snapshot)
-        return true unless snapshot["source"] == "keep" && snapshot["generation"]
+      def control_admitted?(current, snapshot)
+        return false unless current.slice("state", "control_version", "source") == snapshot.slice("state", "control_version", "source")
 
-        KeepLoop.admit!(creative, generation: snapshot["generation"], comment_id: snapshot["current_comment_id"])
+        if snapshot["source"] == "keep" && snapshot["generation"]
+          KeepLoop.admit!(creative, generation: snapshot["generation"], comment_id: snapshot["current_comment_id"])
+        else
+          # Drop and legacy controls retain their pre-generation anchor fence.
+          keys = %w[start_comment_id current_comment_id trigger_topic_id]
+          current.slice(*keys) == snapshot.slice(*keys)
+        end
       end
 
       def control_topic_id(loop_data)

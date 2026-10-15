@@ -77,6 +77,7 @@ module Collavre
           operation = command(action: action)
           replacement = @child.data.deep_dup
           replacement["trigger"]["loop"]["start_comment_id"] = 200
+          replacement["trigger"]["loop"]["generation"] += 1
           original = Comments::TopicMutation.method(:call)
           intercepted = false
           Comments::TopicMutation.stub(:call, lambda { |topic_id, creative_id, &block|
@@ -104,6 +105,7 @@ module Collavre
         replacement_topic = @child.topics.create!(name: "Replacement", user: @user)
         replacement = @child.data.deep_dup
         replacement["trigger"]["loop"]["trigger_topic_id"] = replacement_topic.id
+        replacement["trigger"]["loop"]["generation"] += 1
         Creative.where(id: @child.id).update_all(data: replacement)
         locked_topics = []
         original = Comments::TopicMutation.method(:call)
@@ -300,6 +302,19 @@ module Collavre
           assert_equal 42, @child.data.dig("trigger", "loop", "max_iterations")
           assert_equal(action == "pause" ? "paused" : "running", @child.data.dig("trigger", "loop", "state"))
         end
+      end
+
+      test "keep controls preserve concurrently updated iteration settings" do
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", current_comment_id: 999
+        ) } })
+        stale = Creative.find(@child.id)
+        latest = @child.data.deep_merge("kind" => "project", "trigger" => { "loop" => { "max_iterations" => 42 } })
+        Creative.where(id: @child.id).update_all(data: latest)
+        assert command(creative: stale, action: "pause").call.success?
+        assert_equal "paused", @child.reload.data.dig("trigger", "loop", "state")
+        assert_equal 42, @child.data.dig("trigger", "loop", "max_iterations")
+        assert_equal "project", @child.creative_type
       end
 
       test "stale pause cannot overwrite a newly completed loop" do
