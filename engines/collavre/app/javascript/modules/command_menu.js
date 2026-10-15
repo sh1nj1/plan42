@@ -4,6 +4,13 @@ import CommandArgsForm from './command_args_form'
 import { openCreativeLinkPicker } from './creative_link_picker'
 
 let commandMenuInitialized = false
+
+const escapeHtml = (value) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
 let commandSubmissionSequence = 0
 
 if (!commandMenuInitialized) {
@@ -99,7 +106,11 @@ if (!commandMenuInitialized) {
           : ''
         const args = command.args ? `<span class="command-args">${command.args}</span>` : ''
         const description = command.description
-          ? `<div class="command-description">${command.description}</div>`
+          ? `<div class="command-description">${escapeHtml(command.description)}</div>`
+          : ''
+        const details = command.details
+          ? `<button type="button" class="command-more" data-command-more aria-expanded="false">${escapeHtml(moreLabel)}</button>
+             <div class="command-details" hidden>${escapeHtml(command.details)}</div>`
           : ''
         return `
           <div class="command-item">
@@ -108,6 +119,7 @@ if (!commandMenuInitialized) {
             ${args}
           </div>
           ${description}
+          ${details}
         `
       },
       onSelect: (command) => {
@@ -130,6 +142,27 @@ if (!commandMenuInitialized) {
         textarea.focus()
       }
     })
+
+    // "More" expands a tool's details in place. Handled in the capture phase so
+    // the item's own click/touchend never sees it and the command is not chosen.
+    const moreLabel = menu.dataset.moreLabel || 'More'
+    const lessLabel = menu.dataset.lessLabel || 'Less'
+    const toggleDetails = (event) => {
+      const button = event.target.closest?.('[data-command-more]')
+      if (!button || !list.contains(button)) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.type !== 'click' && event.type !== 'touchend') return
+      const body = button.nextElementSibling
+      const expanded = button.getAttribute('aria-expanded') === 'true'
+      button.setAttribute('aria-expanded', String(!expanded))
+      button.textContent = expanded ? moreLabel : lessLabel
+      if (body) body.hidden = expanded
+      popupMenu.reposition()
+    }
+    list.addEventListener('click', toggleDetails, true)
+    list.addEventListener('touchend', toggleDetails, true)
+    list.addEventListener('touchstart', toggleDetails, true)
 
     function currentTopicIdFromController(popupEl) {
       // Prefer the form controller's locally-cached topic id — the same value

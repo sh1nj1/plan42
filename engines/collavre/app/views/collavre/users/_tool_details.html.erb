@@ -1,0 +1,7 @@
+<%# locals: (tool:) %>
+<% if tool[:details].present? %>
+  <details class="ml-4 tool-details">
+    <summary class="text-muted small" style="cursor: pointer;"><%= t('collavre.tool_categories.more') %></summary>
+    <div class="small text-muted mt-1 tool-details-body"><%= simple_format(tool[:details]) %></div>
+  </details>
+<% end %>

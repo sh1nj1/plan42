@@ -1,0 +1,20 @@
+en:
+  collavre:
+    tool_descriptions:
+      github_pr_commits:
+        summary: Get the commit messages of a GitHub pull request.
+        details: Requires the Creative to have a connected GitHub repository.
+      github_pr_details:
+        summary: Get a GitHub pull request's title, body, author, and changed files.
+        details: Requires the Creative to have a connected GitHub repository.
+      github_pr_diff:
+        summary: Get the diff of a GitHub pull request.
+        details: Returns the patch for every changed file. Requires the Creative to have a connected GitHub repository.
+      pr_monitor:
+        summary: Follow a GitHub pull request in a topic.
+        details: PR comments, review comments, and reviews are posted into the topic as chat messages. Calling it again for the same PR does not add a duplicate.
+      pr_state_set:
+        summary: Fix a monitored pull request's state when GitHub's update was missed.
+        details: |-
+          Without a state, the tool resynchronizes from GitHub, which is the preferred form. Pass a state only when no GitHub account is connected for the repository.
+          Marking the PR merged or closed posts the closing message and stops monitoring; reopening resumes it.

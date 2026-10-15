@@ -1,0 +1,146 @@
+en:
+  collavre:
+    tool_descriptions:
+      meta_tool:
+        summary: Inspect and run registered tools through one interface.
+        details: Lists, searches, describes, and runs tools by name. Agents use it to discover user-defined Ruby tools and run them after the owner approves.
+      approval_request:
+        summary: Pause the agent's turn and ask a person to approve or deny.
+        details: |-
+          The agent asks a concrete question; the approver defaults to the author of the triggering message.
+          The agent receives approved or denied, the reason, and who decided. A denial is a normal result and the agent should reconsider its plan.
+          Requests do not expire automatically.
+      creative_attach_files_service:
+        summary: Attach agent-written text (markdown, HTML, SVG) to a Creative.
+        details: |-
+          The content is stored as a file, embedded in the Creative, and returned with a download URL that works only for people who can read the Creative.
+          Binary files on disk (PNG, MP4, PDF) are uploaded with the CLI `collavre attach` instead.
+          Requires write permission. Under a review policy, a draft is stored in History for approval.
+      creative_batch_service:
+        summary: Create, update, and delete several Creatives in one call.
+        details: |-
+          All operations run in a single transaction: if one fails, nothing is applied.
+          Deleting archives the Creative, so it can be recovered from History.
+          Under a review policy, a draft is stored in History for approval.
+      creative_create_service:
+        summary: Create a new Creative (task or content block) under a parent.
+        details: |-
+          Creatives form a tree, and a parent's progress is calculated from its children.
+          The description is written in Markdown.
+          A fenced Ruby code block using the ToolMeta DSL defines a new tool, which becomes available after owner approval.
+          Under a review policy, a draft is stored in History for approval.
+      creative_import_service:
+        summary: Import a Markdown document as a tree of Creatives.
+        details: |-
+          Headings become nested Creatives, and bullet lists become children by indentation.
+          Tables, code blocks, and inline images are supported.
+          Under a review policy, a draft is stored in History for approval.
+      creative_link_service:
+        summary: Link existing Creatives below a parent.
+        details: |-
+          New links are appended in the given order; an existing link to the same origin is reused.
+          Requires read permission on the sources and write permission on the destination. Under a review policy, a draft is stored for approval.
+      creative_list_attachments_service:
+        summary: List a Creative's attachments with download URLs.
+        details: Returns each attachment's filename, content type, size, and a URL that works only for people who can read the Creative. Requires read permission.
+      creative_remove_attachment_service:
+        summary: Remove one attachment from a Creative.
+        details: |-
+          Removes the attachment from the description and deletes the file once nothing else uses it.
+          Requires write permission. Under a review policy, a draft is stored in History for approval.
+      creative_reorder_service:
+        summary: Reorder the direct children of a Creative.
+        details: |-
+          Pass every direct child ID exactly once, in the new order. Missing, extra, or duplicate IDs are rejected and nothing changes.
+          Requires write permission on the parent and every child. For a linked Creative, the origin's children are reordered.
+          Under a review policy, a draft is stored in History for approval.
+      creative_retrieval_service:
+        summary: Find Creatives by ID or search text.
+        details: |-
+          Without an ID or query, returns the root Creatives.
+          The result is a compact Markdown tree of IDs, titles, and progress. Raise the level to read deeper into the tree.
+      creative_unlink_service:
+        summary: Remove linked Creatives, keeping their origins.
+        details: |-
+          Only linked Creatives can be removed this way; ordinary Creative IDs are rejected.
+          All removals succeed or fail together. Under a review policy, a draft is stored for approval.
+      creative_update_service:
+        summary: Edit a Creative's content, complete it, or move it.
+        details: |-
+          Changes a Creative's description, marks a leaf Creative 100% complete, or moves it to another parent.
+          Only leaf Creatives can be completed, and only to 100%; parent progress is calculated from children.
+          Editing a Ruby tool's code requires owner approval again.
+          Under a review policy, a draft is stored in History for approval.
+      cron_cancel:
+        summary: Cancel a scheduled job.
+        details: Deletes the job by its key. Requires write permission on the job's Creative.
+      cron_create:
+        summary: Schedule a message to post to a topic on a cron schedule.
+        details: |-
+          Posts the message to the Creative's topic (creating the topic if needed) and starts the agents.
+          Jobs repeat by default; set once to run only the first time.
+          Schedules use cron syntax, e.g. '*/5 * * * *' every 5 minutes or '0 9 * * *' daily at 9am.
+      cron_list:
+        summary: List scheduled jobs.
+        details: Shows the jobs on Creatives you can read. Pass a Creative ID to see only its jobs.
+      cron_update:
+        summary: Change a scheduled job's schedule, message, or description.
+        details: Requires write permission on the job's Creative.
+      preview_attach:
+        summary: Show a development preview server link in a topic.
+        details: |-
+          Adds a chip with the preview URL and a running/stopped badge to the topic.
+          Call it after starting a preview server. Calling it again for the same worktree does not add a duplicate.
+      preview_detach:
+        summary: Mark a development preview as stopped.
+        details: The chip stays visible with a stopped badge until someone dismisses it. Calling it on a stopped or missing preview does nothing.
+      collavre_source_list:
+        summary: Browse Collavre's source directories and files.
+        details: Without a path, lists the readable roots (app code, engines, locales, routes). Pass a directory path to list its entries.
+      collavre_source_read:
+        summary: Read a Collavre source file with line numbers.
+        details: Returns up to 400 lines per call; use start_line and end_line to page.
+      collavre_source_search:
+        summary: Search Collavre's source code for text.
+        details: Case-insensitive literal search that returns file paths, line numbers, and matching lines. Pass a directory or file to narrow it.
+      topic_branch:
+        summary: Start a new topic with copies of selected messages.
+        details: |-
+          The original messages stay in the source topic. Use it to restart a conversation that has grown too long, or to split one that drifted into two subjects.
+          Up to 100 messages per branch. Approval prompts cannot be copied.
+          To move messages instead of copying them, use topic_create. Requires feedback permission or higher.
+      topic_create:
+        summary: Create a topic (conversation thread) on a Creative.
+        details: |-
+          Work in different topics runs in parallel; work in the same topic waits its turn. Use one topic per independent piece of work.
+          A primary agent is pinned exclusively: only that agent answers in the topic. The agent needs feedback permission or higher.
+          Passing message IDs moves those messages into the new topic. Requires write permission.
+      topic_list:
+        summary: List a Creative's topics, or describe topics by ID.
+        details: |-
+          Returns each topic's name, archive state, primary agent, and message count and size, so you can judge how much there is to read.
+          Requires read permission. Unknown or unreadable IDs are reported as errors without failing the call.
+      topic_message_create:
+        summary: Post a message to an existing topic.
+        details: |-
+          Typically used after topic_create to give the topic's primary agent its first instruction. Messages in different topics can run in parallel.
+          The caller remains the author. An agent cannot post to the topic it is currently handling.
+          Requires feedback permission or higher. Archived, History, and System topics do not accept messages.
+      topic_messages:
+        summary: Read messages from one or more topics, with paging.
+        details: |-
+          Reads from the newest end, shown oldest to newest by default. Several topics can be read in one call, each paged separately.
+          The response is capped by a character budget; truncated topics report where to continue.
+          Private messages you cannot see and approval prompts are always excluded. Requires read permission.
+      topic_move:
+        summary: Move a topic and all its messages to another Creative.
+        details: |-
+          The topic keeps its ID, messages, and archive state. The primary agent stays pinned if it can still respond at the destination.
+          Permissions do not move: people who could read the source may lose access.
+          Requires admin permission on the current Creative and write permission on the destination. Main, System, and live session topics cannot be moved.
+      topic_update:
+        summary: Rename, archive, or change the primary agent of a topic.
+        details: |-
+          Archive a topic once its conversation is finished; it leaves the sidebar but keeps every message.
+          The primary agent is pinned exclusively; pass "none" to clear it.
+          Renaming requires admin permission; archiving and pin changes require write permission. Main and System topics cannot be renamed or archived.
