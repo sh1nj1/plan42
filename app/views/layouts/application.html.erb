@@ -77,7 +77,7 @@
         <%= render "collavre/comments/comments_popup", docked: true, creative: @parent_creative %>
       </div>
     <% else %>
-      <main class="<%= class_names('public-creative-main': Current.user.nil? && creative_index_page?) %>">
+      <main class="<%= class_names('public-creative-main': Current.user.nil? && controller_path == "collavre/creatives" && action_name.in?(%w[index public_page])) %>">
         <%= yield %>
       </main>
     <% end %>
