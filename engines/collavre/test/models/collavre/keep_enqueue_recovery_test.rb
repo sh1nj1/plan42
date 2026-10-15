@@ -14,7 +14,7 @@ module Collavre
       ) } })
       @task = Task.create!(name: "Keep turn", status: "running", creative: @creative, topic_id: @topic.id,
                           agent: @agent, trigger_event_name: "comment_created",
-                          trigger_event_payload: { "comment" => { "id" => @turn.id } })
+                          trigger_event_payload: @turn.reload.dispatch_payload.deep_stringify_keys)
       @creative.comments.create!(content: "finished [STATUS: DONE]", user: @agent, topic: @topic, task: @task, skip_dispatch: true)
     end
 
@@ -67,7 +67,9 @@ module Collavre
           config = @creative.reload.data.dig("trigger", "loop").deep_dup
           case change
           when "paused" then config["state"] = "paused"
-          when "replacement" then config["start_comment_id"] = @turn.id + 1
+          when "replacement"
+            config["start_comment_id"] = @turn.id + 1
+            config["generation"] += 1
           when "next_turn" then config["current_comment_id"] = @turn.id + 1
           end
           @creative.update!(data: { "trigger" => { "loop" => config } })

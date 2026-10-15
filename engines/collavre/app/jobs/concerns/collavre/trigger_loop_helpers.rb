@@ -12,6 +12,7 @@ module Collavre
     def trigger_completion_topic(task, loop_config)
       @loop_original_data = loop_config.deep_dup
       @loop_start_comment_id = loop_config["start_comment_id"]
+      @loop_generation = loop_config["generation"] if loop_config["source"] == "keep"
       @loop_expected_state = loop_config["state"]
       @loop_control_version = loop_config["control_version"]
       @loop_current_comment_id = loop_config["current_comment_id"]
@@ -62,7 +63,7 @@ module Collavre
         data = child_creative.data || {}
         trigger = data["trigger"] || {}
         loop_data = trigger["loop"] || {}
-        validate_loop_snapshot!(loop_data)
+        validate_loop_snapshot!(loop_data, child_creative)
         apply_loop_changes(loop_data, changes)
         trigger["loop"] = loop_data
         data["trigger"] = trigger
@@ -71,14 +72,17 @@ module Collavre
       end
     end
 
-    def validate_loop_snapshot!(loop_data)
-      raise StaleLoopError if defined?(@loop_start_comment_id) && loop_data["start_comment_id"] != @loop_start_comment_id
-
+    def validate_loop_snapshot!(loop_data, creative)
+      if defined?(@loop_generation)
+        raise StaleLoopError unless KeepLoop.admit!(creative, generation: @loop_generation, comment_id: @loop_current_comment_id)
+      elsif defined?(@loop_start_comment_id) && loop_data["start_comment_id"] != @loop_start_comment_id
+        raise StaleLoopError
+      end
       if defined?(@loop_expected_state)
         raise StaleLoopError unless loop_data["state"] == @loop_expected_state && loop_data["control_version"] == @loop_control_version
       end
 
-      if defined?(@loop_current_comment_id) && loop_data["current_comment_id"] != @loop_current_comment_id
+      if !defined?(@loop_generation) && defined?(@loop_current_comment_id) && loop_data["current_comment_id"] != @loop_current_comment_id
         raise StaleLoopError
       end
     end
@@ -96,7 +100,7 @@ module Collavre
     def post_loop_instruction(creative, **attributes)
       Comments::TopicMutation.call(attributes.fetch(:topic_id), creative.id) do
         creative.with_lock do
-          validate_loop_snapshot!(creative.data&.dig("trigger", "loop") || {})
+          validate_loop_snapshot!(creative.data&.dig("trigger", "loop") || {}, creative)
           comment = creative.comments.create!(**attributes, loop_continuation: true, skip_dispatch: true)
           agents = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
             source: "comment_callback", require_enqueue_ack: creative.keep_loop?)
@@ -114,7 +118,7 @@ module Collavre
 
       creative.with_lock do
         config = creative.data&.dig("trigger", "loop") || {}
-        validate_loop_snapshot!(config)
+        validate_loop_snapshot!(config, creative)
         restored = @loop_original_data.merge("control_version" => config.fetch("control_version", 0) + 1)
         data = creative.data.deep_dup
         data["trigger"]["loop"] = restored

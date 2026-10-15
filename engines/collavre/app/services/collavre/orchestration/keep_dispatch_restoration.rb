@@ -20,7 +20,7 @@ module Collavre
         config = Creative.where(id: task.creative_id).pick(:data)&.dig("trigger", "loop")
         return unless config && config["source"] == "keep" && config["current_comment_id"] == comment_id
 
-        config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+        config["generation"] || 0
       end
 
       def with_current_keep_restore(task, context)
@@ -33,8 +33,11 @@ module Collavre
         error = nil
         result = creative.with_lock do
           config = creative.data&.dig("trigger", "loop") || {}
-          next unless config["source"] == "keep" && config["state"] == "running"
-          next unless config.slice(*generation.keys) == generation
+          unless config["state"] == "running" && KeepLoop.admit!(creative,
+            generation: generation, comment_id: context.dig("comment", "id"))
+            reject_restore!(task, context.dig("comment", "id"))
+            next
+          end
 
           context["comment"] = context.fetch("comment").merge(
             "keep_loop_generation" => generation, "keep_restore_task_id" => task.id

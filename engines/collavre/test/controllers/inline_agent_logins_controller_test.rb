@@ -35,7 +35,7 @@ class InlineAgentLoginsControllerTest < ActionDispatch::IntegrationTest
       start_comment_id: @original.id, current_comment_id: @original.id)
     @creative.update!(data: { "trigger" => { "loop" => config } })
     payload = @task.trigger_event_payload.deep_dup
-    payload["comment"]["keep_loop_generation"] = config.slice("start_comment_id", "current_comment_id", "trigger_topic_id")
+    payload["comment"]["keep_loop_generation"] = config["generation"]
     payload["engine_login"].merge!("authorized" => true, "resumed" => true, "session_user_id" => @requester.id)
     @task.update_columns(trigger_event_payload: payload)
     replacement = @creative.comments.create!(user: @requester, topic_id: @original.topic_id, content: "Replacement", skip_dispatch: true)

@@ -25,6 +25,8 @@ module Collavre
           Matcher.stub(:permits_creative_access?, true) { @task.update!(status: "failed") }
         end
         assert_equal replacement, @creative.reload.data.dig("trigger", "loop")
+        assert_includes DeliveryRecord.rejected_restore_ids_in(@task.reload.trigger_event_payload), @turn.id
+        KeepLoop.stub(:admit!, ->(*) { flunk "Rejected obsolete restore was swept again" }) { DeliveryRecord.restore!(@task) }
       end
 
       test "late drop retains the original dispatch generation after replacement" do
