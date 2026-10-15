@@ -28,6 +28,14 @@ module Collavre
       end
     end
 
+    test "registered keep tool does not duplicate the built-in popup" do
+      McpService.stub(:available_tools, [ { name: "keep", params: [] } ]) do
+        items = CommandMenuService.new(user: users(:one)).items.select { |item| item[:name] == "keep" }
+        assert_equal 1, items.size
+        assert_equal %w[max agent_name goal], items.first[:input_schema].pluck(:name)
+      end
+    end
+
     test "returns built-in calendar and topic items" do
       user = users(:one)
       items = CommandMenuService.new(user: user).items

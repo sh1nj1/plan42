@@ -69,7 +69,7 @@ module Collavre
     def mcp_items
       Collavre::McpService.available_tools(user).filter_map do |tool|
         tool_name = tool[:name] || tool["name"]
-        next unless tool_name
+        next if tool_name.blank? || tool_name == "keep"
 
         raw_params = tool[:params] || tool["params"]
         schema = normalize_params(raw_params)
