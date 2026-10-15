@@ -3,30 +3,6 @@ module Collavre
   module PptArchive
     private
 
-    def import_archive(created)
-      Creative.transaction(requires_new: true) do |transaction|
-        transaction.after_rollback { @blob_cache.each_value(&:delete) }
-        Zip::File.open(@file) do |zip|
-          @zip = zip
-          validate_archive!
-          paths = ordered_slide_paths
-          raise self.class::InvalidArchive if paths.empty? || paths.size > self.class::MAX_SLIDES || paths.uniq.size != paths.size
-
-          @slide_size = presentation_slide_size
-          descriptions = rendered_slides(paths)
-          root = create_import_root(created)
-          sequence = next_sequence(root)
-          descriptions.each_with_index do |description, index|
-            created << Creative.create!(
-              user: @user, parent: root,
-              description: description,
-              sequence: sequence + index
-            )
-          end
-        end
-      end
-    end
-
     # Related parts may be cached once but serialized on every slide. Charge
     # actual UTF-8 HTML bytes, including notes and metadata, before any Creative.
     def rendered_slides(paths)

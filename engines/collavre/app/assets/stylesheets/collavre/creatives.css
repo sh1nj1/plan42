@@ -2042,3 +2042,10 @@ creative-tree-row.is-being-edited .creative-tree {
         opacity: 1;
     }
 }
+
+.ppt-attachment-preview {
+  display: block;
+  width: 100%;
+  height: min(70vh, 640px);
+  border: 0;
+}

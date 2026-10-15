@@ -1,0 +1,16 @@
+<div class="ppt-viewer" tabindex="0" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+  <div id="slide-view">
+    <div id="slide-content">
+      <% @slides.each_with_index do |slide, index| %>
+        <div class="ppt-viewer-slide" <%= 'hidden' unless index.zero? %>><%= slide.html_safe %></div>
+      <% end %>
+    </div>
+  </div>
+  <nav id="slide-controls" aria-label="<%= t('collavre.ppt_viewer.navigation') %>">
+    <button type="button" data-ppt-previous aria-label="<%= t('collavre.ppt_viewer.previous') %>">←</button>
+    <span data-ppt-counter aria-live="polite"></span>
+    <button type="button" data-ppt-next aria-label="<%= t('collavre.ppt_viewer.next') %>">→</button>
+    <button type="button" data-ppt-fullscreen><%= t('collavre.ppt_viewer.fullscreen') %></button>
+    <span data-ppt-error hidden role="alert"><%= t('collavre.ppt_viewer.fullscreen_error') %></span>
+  </nav>
+</div>

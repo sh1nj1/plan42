@@ -88,8 +88,7 @@ module Collavre
       entry = @zip.find_entry(relationship[:path])
       return "" unless entry
 
-      blob = blob_for(entry)
-      src = "/public-assets/blobs/#{blob.signed_id}/#{blob.filename.sanitized}"
+      src = picture_source(entry)
       wrapper = Nokogiri::XML::Node.new("picture", fill.document)
       wrapper.add_child(fill.dup)
       %(<div class="#{classes}"#{format_attribute(crop: picture_crop(wrapper))}><img src="#{ERB::Util.html_escape(src)}" alt=""></div>)

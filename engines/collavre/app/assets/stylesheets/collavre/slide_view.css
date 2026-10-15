@@ -147,3 +147,9 @@
 #slide-content .ppt-slide-notes {
   display: none;
 }
+
+.ppt-viewer { background: var(--surface-bg); }
+.ppt-viewer:fullscreen { width: 100%; height: 100%; }
+.ppt-viewer-slide[hidden] { display: none; }
+.ppt-viewer .ppt-slide-notes { display: none; }
+.ppt-viewer #slide-content { width: 100%; }

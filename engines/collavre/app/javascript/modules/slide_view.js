@@ -12,7 +12,7 @@ function decorateInitialSlide(contentEl) {
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
-  if (!container) return;
+  if (!container?.dataset.slideIds) return;
 
   var ids = container.dataset.slideIds.split(',').map(function(id) { return parseInt(id, 10); });
   var index = parseInt(container.dataset.initialIndex || '0', 10);

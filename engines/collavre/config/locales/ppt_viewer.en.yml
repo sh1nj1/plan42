@@ -1,0 +1,10 @@
+en:
+  collavre:
+    ppt_viewer:
+      title: "Presentation: %{filename}"
+      navigation: "Slide navigation"
+      previous: "Previous slide"
+      next: "Next slide"
+      fullscreen: "Fullscreen"
+      fullscreen_error: "Unable to enter fullscreen."
+      invalid: "Unable to display this presentation."

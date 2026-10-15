@@ -1,0 +1,10 @@
+ko:
+  collavre:
+    ppt_viewer:
+      title: "프레젠테이션: %{filename}"
+      navigation: "슬라이드 탐색"
+      previous: "이전 슬라이드"
+      next: "다음 슬라이드"
+      fullscreen: "전체화면"
+      fullscreen_error: "전체화면을 시작할 수 없습니다."
+      invalid: "이 프레젠테이션을 표시할 수 없습니다."
