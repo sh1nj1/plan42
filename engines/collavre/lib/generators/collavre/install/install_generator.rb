@@ -22,7 +22,7 @@ module Collavre
       end
 
       def install_pdf_dependency
-        manager = File.exist?(File.join(destination_root, "yarn.lock")) ? "yarn add --exact" : "npm install --save-exact"
+        manager = yarn_host? ? "yarn add --exact" : "npm install --save-exact"
         run "#{manager} pdfjs-dist@4.8.69", abort_on_failure: true
       end
 
@@ -39,11 +39,17 @@ module Collavre
         say "  @import 'collavre/tables';"
         say "  @import 'collavre/dark_mode';"
         say ""
-        say "Run 'npm run build' to build assets."
+        say "Yarn requires nodeLinker: node-modules; Plug'n'Play is not supported." if yarn_host?
+        command = yarn_host? ? "yarn build" : "npm run build"
+        say "Run '#{command}' to build assets."
         say ""
       end
 
       private
+
+      def yarn_host?
+        File.exist?(File.join(destination_root, "yarn.lock"))
+      end
 
       def update_existing_build_script(build_script)
         content = File.read(build_script)

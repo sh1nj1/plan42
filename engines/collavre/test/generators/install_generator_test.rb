@@ -32,6 +32,21 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
     }) { generator.install_pdf_dependency }
   end
 
+  [ false, true ].each do |yarn_host|
+    test "shows matching build instructions for #{yarn_host ? 'Yarn' : 'npm'} hosts" do
+      File.write(File.join(destination_root, "yarn.lock"), "") if yarn_host
+      generator = self.class.generator_class.new([], {}, destination_root: destination_root)
+      messages = []
+      generator.stub(:say, ->(message, *) { messages << message }) { generator.show_post_install }
+
+      command = yarn_host ? "yarn build" : "npm run build"
+      assert_includes messages, "Run '#{command}' to build assets."
+      if yarn_host
+        assert_includes messages, "Yarn requires nodeLinker: node-modules; Plug'n'Play is not supported."
+      end
+    end
+  end
+
   test "adds host dependency resolution to an existing build script" do
     FileUtils.mkdir_p(File.join(destination_root, "script"))
     File.write(File.join(destination_root, "script/build.cjs"), <<~JS)

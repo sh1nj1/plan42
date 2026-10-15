@@ -7,7 +7,10 @@ This guide explains how to install and configure the Collavre engine in a Rails 
 - Ruby 3.2+
 - Rails 8.0+
 - Node.js 18+ (for JavaScript asset building)
-- npm or yarn
+- npm or Yarn with a physical `node_modules` directory. Yarn Plug'n'Play (PnP)
+  is not supported by the generated build script. For Yarn 2+, configure
+  `nodeLinker: node-modules` in `.yarnrc.yml` and run `yarn install` before
+  running the generator or building assets.
 
 ## Installation
 
@@ -35,7 +38,8 @@ bundle install
 ### 2. Run the Install Generator
 
 The install generator sets up JavaScript asset building for jsbundling-rails
-and installs the PDF.js dependency through npm:
+and installs the exact PDF.js dependency through Yarn when the host has a
+`yarn.lock`, or npm otherwise:
 
 ```bash
 rails generate collavre:install
@@ -66,8 +70,12 @@ rails db:migrate
 
 ### 5. Build Assets
 
+Use the package manager selected during installation:
+
 ```bash
 npm run build
+# Yarn hosts (node-modules linker only):
+yarn build
 ```
 
 ## Configuration
@@ -84,6 +92,8 @@ You can also manually set the gem path:
 
 ```bash
 COLLAVRE_GEM_PATH=/path/to/gem npm run build
+# Yarn hosts:
+COLLAVRE_GEM_PATH=/path/to/gem yarn build
 ```
 
 ### Stylesheets
@@ -176,7 +186,7 @@ When updating the Collavre gem:
 ```bash
 bundle update collavre
 bundle exec rails generate collavre:install
-npm run build
+npm run build # Use yarn build for Yarn hosts (node-modules linker only).
 rails db:migrate
 ```
 
@@ -186,7 +196,12 @@ exact Node.js 18-compatible version `4.8.69` and updates `script/build.cjs` so
 gem entry points can resolve dependencies from the host's `node_modules`.
 `bundle update` alone does not install JavaScript dependencies.
 
-Review and commit the resulting `package.json`, `package-lock.json`, and
+For Yarn 2+ hosts, ensure `.yarnrc.yml` sets `nodeLinker: node-modules` and run
+`yarn install` before this sequence. PnP is not supported: the generated build
+resolves dependencies from the host's physical `node_modules` directory.
+Use `yarn build` throughout for Yarn hosts.
+
+Review and commit the resulting `package.json`, `package-lock.json` (or `yarn.lock`), and
 `script/build.cjs` changes. Keep the exact PDF.js version pin when updating
 dependencies. For a customized build script, merge the generator changes into
 your existing configuration; do not use `--replace-build-script` unless you
