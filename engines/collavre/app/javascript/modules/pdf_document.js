@@ -15,6 +15,7 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
       renderPending = false
       rendering = true
       loading.hidden = false
+      updatePdfControls(viewer, pageNumber, pdf.numPages)
       try {
         const page = await pdf.getPage(pageNumber)
         const base = page.getViewport({ scale: 1 })
@@ -25,7 +26,6 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
         viewer.querySelector('[data-document-error]').hidden = true
         content.replaceChildren(canvas)
-        updatePdfControls(viewer, pageNumber, pdf.numPages)
       } finally {
         loading.hidden = true
         rendering = false

@@ -100,3 +100,32 @@ test('PDF entry point loads PDF.js and renders the document with the configured 
     jest.unstable_unmockModule('pdfjs-dist')
   }
 })
+
+
+test.each(['getPage', 'render'])('allows returning to a usable page after %s fails', async failure => {
+  const viewer = setup()
+  const page = {
+    getViewport: ({ scale }) => ({ width: 400 * scale, height: 600 * scale }),
+    render: jest.fn().mockReturnValue({ promise: Promise.resolve() })
+  }
+  const getPage = jest.fn().mockResolvedValue(page)
+  await initializePdfDocument(viewer, async () => ({
+    getDocument: () => ({ promise: Promise.resolve({ numPages: 2, getPage }) }), GlobalWorkerOptions: {}
+  }))
+  if (failure === 'getPage') getPage.mockRejectedValueOnce(new Error('Invalid page'))
+  else page.render.mockImplementationOnce(() => ({ promise: Promise.reject(new Error('Render failed')) }))
+  viewer.querySelector('[data-ppt-next]').click()
+  await settle()
+  expect(viewer.querySelector('[data-document-error]').hidden).toBe(false)
+  expect(viewer.querySelector('[data-ppt-previous]').disabled).toBe(false)
+  expect(viewer.querySelector('[data-ppt-next]').disabled).toBe(true)
+  expect(viewer.querySelector('[data-ppt-counter]').textContent).toBe('2 / 2')
+  viewer.querySelector('[data-ppt-previous]').click()
+  await settle()
+  expect(getPage).toHaveBeenLastCalledWith(1)
+  expect(viewer.querySelector('[data-document-error]').hidden).toBe(true)
+  expect(viewer.querySelector('[data-ppt-counter]').textContent).toBe('1 / 2')
+  expect(viewer.querySelector('[data-ppt-previous]').disabled).toBe(true)
+  expect(viewer.querySelector('[data-ppt-next]').disabled).toBe(false)
+  expect(viewer.querySelector('.media-loading').hidden).toBe(true)
+})
