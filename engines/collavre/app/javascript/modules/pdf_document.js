@@ -2,18 +2,17 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
   const content = viewer.querySelector('[data-pdf-src]')
   if (!content) return
   const loading = viewer.querySelector('.media-loading')
-  const previous = viewer.querySelector('[data-ppt-previous]')
-  const next = viewer.querySelector('[data-ppt-next]')
-  const counter = viewer.querySelector('[data-ppt-counter]')
   let pageNumber = 1
   let scale = 1
   let rendering = false
+  let renderPending = false
   try {
     const { getDocument, GlobalWorkerOptions } = await load()
     GlobalWorkerOptions.workerSrc = content.dataset.pdfWorker
     const pdf = await getDocument({ url: content.dataset.pdfSrc }).promise
     async function show() {
-      if (rendering) return
+      if (rendering) { renderPending = true; return }
+      renderPending = false
       rendering = true
       loading.hidden = false
       try {
@@ -26,12 +25,11 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
         viewer.querySelector('[data-document-error]').hidden = true
         content.replaceChildren(canvas)
-        counter.textContent = `${pageNumber} / ${pdf.numPages}`
-        previous.disabled = pageNumber === 1
-        next.disabled = pageNumber === pdf.numPages
+        updatePdfControls(viewer, pageNumber, pdf.numPages)
       } finally {
         loading.hidden = true
         rendering = false
+        if (renderPending) await show()
       }
     }
     bindPdfControls(viewer, {
@@ -53,4 +51,10 @@ function bindPdfControls(viewer, actions) {
   viewer.querySelector('[data-ppt-previous]').addEventListener('click', actions.previous)
   viewer.querySelector('[data-ppt-next]').addEventListener('click', actions.next)
   viewer.querySelector('[data-pdf-zoom]').addEventListener('click', actions.zoom)
+}
+
+function updatePdfControls(viewer, pageNumber, pageCount) {
+  viewer.querySelector('[data-ppt-counter]').textContent = `${pageNumber} / ${pageCount}`
+  viewer.querySelector('[data-ppt-previous]').disabled = pageNumber === 1
+  viewer.querySelector('[data-ppt-next]').disabled = pageNumber === pageCount
 }

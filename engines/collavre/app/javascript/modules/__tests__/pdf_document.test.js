@@ -4,7 +4,7 @@ import { initializePdfDocument } from '../pdf_document'
 const settle = () => new Promise(resolve => setTimeout(resolve, 0))
 function setup() {
   document.body.innerHTML = `<div id="viewer"><div data-pdf-src="/report.pdf" data-pdf-worker="/worker.js"></div><span class="media-loading"></span><button data-ppt-previous></button><button data-ppt-next></button><span data-ppt-counter></span><button data-pdf-zoom></button><span data-document-error hidden></span></div>`
-  Object.defineProperty(document.querySelector('[data-pdf-src]'), 'clientWidth', { value: 600 })
+  Object.defineProperty(document.querySelector('[data-pdf-src]'), 'clientWidth', { value: 600, configurable: true })
   window.HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({})
   return document.querySelector('#viewer')
 }
@@ -45,4 +45,34 @@ test('failed PDF and worker loads show a translated error and remove the loader'
   expect(viewer.querySelector('[data-document-error]').hidden).toBe(false)
   expect(viewer.querySelector('.media-loading').hidden).toBe(true)
   await initializePdfDocument(document.createElement('div'))
+})
+
+test('coalesces resizes during rendering and uses the latest container width', async () => {
+  const viewer = setup()
+  const content = viewer.querySelector('[data-pdf-src]')
+  let finishRender
+  const render = jest.fn().mockImplementationOnce(() => ({ promise: new Promise(resolve => { finishRender = resolve }) }))
+    .mockReturnValue({ promise: Promise.resolve() })
+  const getViewport = ({ scale }) => ({ width: 400 * scale, height: 600 * scale })
+  const getPage = jest.fn().mockResolvedValue({ getViewport, render })
+  const initialized = initializePdfDocument(viewer, async () => ({
+    getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage }) }), GlobalWorkerOptions: {}
+  }))
+  await settle()
+  Object.defineProperty(content, 'clientWidth', { value: 800, configurable: true })
+  window.dispatchEvent(new window.Event('resize'))
+  Object.defineProperty(content, 'clientWidth', { value: 1000, configurable: true })
+  window.dispatchEvent(new window.Event('resize'))
+  expect(render).toHaveBeenCalledTimes(1)
+  expect(viewer.querySelector('.media-loading').hidden).toBe(false)
+  finishRender()
+  await initialized
+  await settle()
+  expect(render).toHaveBeenCalledTimes(2)
+  expect(content.querySelector('canvas').width).toBe(1000)
+  expect(viewer.querySelector('.media-loading').hidden).toBe(true)
+  Object.defineProperty(content, 'clientWidth', { value: 700, configurable: true })
+  window.dispatchEvent(new window.Event('resize'))
+  await settle()
+  expect(content.querySelector('canvas').width).toBe(700)
 })
