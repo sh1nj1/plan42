@@ -27,6 +27,10 @@ module Collavre
         user_id.present? && !user&.ai_user? && !approval_action? && !self.private?
       end
 
+      def orchestration_topic_blocked?
+        (creative.inbox? && inbox_system_topic?) || blocked_keep_reply?
+      end
+
       def blocked_keep_reply?
         @keep_reply_dispatch_checked = true
         @blocked_keep_reply_snapshot = nil

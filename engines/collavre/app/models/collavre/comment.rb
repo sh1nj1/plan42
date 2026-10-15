@@ -169,7 +169,6 @@ module Collavre
     include ClaudeChannelPermission, CreationEvents, ImageCdnEviction, BulkFollowUpJobs
 
     attribute :skip_default_user, :boolean, default: false
-
     attribute :skip_dispatch, :boolean, default: false
     attribute :skip_link_preview, :boolean, default: false
     attribute :skip_notification_revision, :boolean, default: false
@@ -555,10 +554,6 @@ module Collavre
         "#{e.class} #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
       )
       raise  # re-raise so calling jobs (e.g. DropTriggerJob) can retry
-    end
-
-    def orchestration_topic_blocked?
-      (creative.inbox? && inbox_system_topic?) || blocked_keep_reply?
     end
 
     # The inbox System topic is the alarm/notification stream and must never
