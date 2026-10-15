@@ -43,8 +43,21 @@ module Collavre
         self.class.where(creative_id: creative_id, topic_id: topic_id, trigger_event_name: "comment_created")
             .where(status: ACTIVE_STATUSES + Orchestration::DeliveryRecord::RESTORABLE_STATUSES).where.not(id: id).any? do |task|
           task.creative = target
-          target.trigger_loop_task?(task) && (task.active? || task.send(:trigger_loop_completion_eligible?) ||
+          target.trigger_loop_task?(task) && (task.active? || task.send(:owned_loop_check?) ||
             Orchestration::DeliveryRecord.pending_restoration?(task, comment_id: target.data.dig("trigger", "loop", "current_comment_id")))
+        end
+      end
+
+      def owned_loop_check?
+        !trigger_event_payload&.dig("keep_check_enqueue_failed") && trigger_loop_completion_eligible?
+      end
+
+      def record_loop_check_publication(failed:)
+        task = self.class.find(id)
+        task.with_lock do
+          payload = (task.trigger_event_payload || {}).deep_dup
+          payload["keep_check_enqueue_failed"] = failed
+          task.update_columns(trigger_event_payload: payload)
         end
       end
 
@@ -79,6 +92,7 @@ module Collavre
         queue = cooldown.positive? ? TriggerLoopCheckJob.set(wait: cooldown.seconds) : TriggerLoopCheckJob
         job = queue.perform_later(id)
         raise ActiveJob::EnqueueError if snapshot&.dig("source") == "keep" && !job
+        record_loop_check_publication(failed: false) if snapshot&.dig("source") == "keep"
       rescue StandardError => error
         raise unless snapshot&.dig("source") == "keep"
 
@@ -93,6 +107,7 @@ module Collavre
           creative.with_lock do
             config = creative.data&.dig("trigger", "loop")
             next unless creative.keep_loop? && config["state"] == "running" && creative.trigger_loop_task?(self.class.find(id))
+            record_loop_check_publication(failed: true)
             next if surviving_keep_turn?(creative) || Orchestration::KeepQueuedDispatches.pending?(creative, config["current_comment_id"])
 
             config["state"] = "awaiting_user"

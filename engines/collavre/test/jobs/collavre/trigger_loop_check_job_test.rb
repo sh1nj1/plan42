@@ -536,18 +536,20 @@ module Collavre
       end
     end
 
-    test "coalescing the current keep task leaves the surviving turn running" do
+    test "current keep task remains independent of an ordinary queued turn" do
       config = TriggerLoopConfig.build(@topic.id, source: "keep", current_comment_id: 999)
       @child.update!(data: { "trigger" => { "loop" => config } })
       Task.where(id: @task.id).update_all(status: "queued")
-      survivor = Task.create!(name: "Surviving turn", status: "queued", agent: @ai_bot, creative: @child,
-        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000, "keep_loop_generation" => 1 } })
-      assert_includes Orchestration::TaskCoalescer.coalesce!(survivor), @task.id
-      assert_equal "cancelled", @task.reload.status
+      ordinary = Task.create!(name: "Ordinary turn", status: "queued", agent: @ai_bot, creative: @child,
+        topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: { "comment" => { "id" => 1000 } })
+      assert_empty Orchestration::TaskCoalescer.coalesce!(ordinary)
+      assert_equal "queued", @task.reload.status
       assert_equal config, @child.reload.data.dig("trigger", "loop")
-      assert @child.trigger_loop_task?(survivor.reload)
-      survivor.update!(status: "cancelled")
+      assert @child.trigger_loop_task?(@task)
+      assert_not @child.trigger_loop_task?(ordinary.reload)
+      @task.update!(status: "cancelled")
       assert_equal "awaiting_user", @child.reload.data.dig("trigger", "loop", "state")
+      assert_equal "queued", ordinary.reload.status
     end
 
     test "another active or completed keep turn retains loop ownership after a sibling stops" do
