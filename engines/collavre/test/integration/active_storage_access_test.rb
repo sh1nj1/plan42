@@ -40,6 +40,56 @@ module Collavre
       { "Authorization" => "Bearer #{token}" }
     end
 
+    def svg_blob
+      @svg_blob ||= ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new('<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20"/></svg>'),
+        filename: "image.svg", content_type: "image/svg+xml"
+      ).tap { |blob| @creative.files.attach(blob) }
+    end
+
+    test "private SVG previews require permission and render inline for the owner" do
+      path = url_helpers.rails_storage_proxy_path(svg_blob, only_path: true)
+      get path
+      assert_response :not_found
+      get path, headers: bearer(@stranger)
+      assert_response :not_found
+
+      get path, headers: bearer(@owner)
+      assert_response :success
+      assert_equal svg_blob.download, response.body
+      assert_equal "image/svg+xml", response.media_type
+      assert_match(/\Ainline;/, response.headers["Content-Disposition"])
+      assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
+      assert_equal "nosniff", response.headers["X-Content-Type-Options"]
+      assert_equal "private, no-store", response.headers["Cache-Control"]
+    end
+
+    test "SVG redirect URLs use the sandboxed proxy instead of the storage service" do
+      get url_helpers.rails_blob_path(svg_blob, only_path: true), headers: bearer(@owner)
+      assert_response :redirect
+      assert_equal URI(url_helpers.rails_storage_proxy_path(svg_blob, only_path: true)).path,
+                   URI(response.location).path
+      assert_equal "private, no-store", response.headers["Cache-Control"]
+    end
+
+    test "SVG range responses retain image headers and sandboxing" do
+      get url_helpers.rails_storage_proxy_path(svg_blob, only_path: true),
+          headers: bearer(@owner).merge("Range" => "bytes=0-9")
+      assert_response :partial_content
+      assert_equal svg_blob.download.byteslice(0, 10), response.body
+      assert_equal "image/svg+xml", response.media_type
+      assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
+    end
+
+    test "SVG downloads preserve explicit attachment disposition" do
+      get url_helpers.rails_blob_path(svg_blob, disposition: "attachment", only_path: true), headers: bearer(@owner)
+      assert_response :redirect
+      get response.location, headers: bearer(@owner)
+      assert_response :success
+      assert_match(/\Aattachment;/, response.headers["Content-Disposition"])
+      assert_equal "image/svg+xml", response.media_type
+    end
+
     test "anonymous requests for a private blob get 404 on every endpoint" do
       endpoints(@blob).each do |name, path|
         get path

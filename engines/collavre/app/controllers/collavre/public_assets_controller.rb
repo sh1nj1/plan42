@@ -16,6 +16,7 @@ module Collavre
     include ActiveStorage::Streaming
     include Collavre::OriginVerification
     include Collavre::BlobAccessControl
+    prepend Collavre::SvgStreaming
 
     # Browsers revalidate hourly; CloudFront keeps a day at most. Deleting a
     # blob or revoking a public share invalidates CloudFront explicitly
