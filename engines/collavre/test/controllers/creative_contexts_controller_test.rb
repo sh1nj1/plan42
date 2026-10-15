@@ -178,6 +178,8 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "PATCH update_contexts saves context_order" do
+    @features.update!(data: { "context_ids" => [ @project.id, @development.id ] })
+
     patch update_contexts_creative_path(@features), params: {
       context_order: [ @development.id, @project.id, @development.id, 0 ]
     }, headers: { "ACCEPT" => "application/json" }, as: :json
@@ -231,5 +233,24 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal({ "context_ids" => [ @project.id ], "context_order" => [ @project.id ] }, @features.reload.data)
+  end
+
+  test "PATCH update_contexts drops reordered IDs that another tab just removed" do
+    @features.update!(data: { "context_ids" => [ @development.id, @project.id ] })
+    stale = Collavre::Creative.find(@features.id)
+    concurrent_removal = lambda do |*|
+      Collavre::Creative.find_by(id: @features.id).update!(data: { "context_ids" => [ @project.id ] })
+      true
+    end
+
+    Collavre::Creative.stub(:find, stale) do
+      stale.stub(:has_permission?, concurrent_removal) do
+        patch update_contexts_creative_path(@features), params: { context_order: [ @development.id, @project.id ] },
+          headers: { "ACCEPT" => "application/json" }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal [ @project.id ], @features.reload.data["context_order"]
   end
 end

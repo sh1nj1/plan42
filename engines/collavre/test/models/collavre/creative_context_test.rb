@@ -154,6 +154,13 @@ module Collavre
       assert_equal [ @development.id, @goal.id ], @feature_a.ordered_context_ids
     end
 
+    test "context_order ignores entries that are not positive integer IDs" do
+      @feature_a.update!(data: { "context_order" => [ {}, true, nil, "abc", -1, "#{@goal.id}", @rnd.id, @rnd.id ] })
+
+      assert_equal [ @goal.id, @rnd.id ], @feature_a.context_order
+      assert_nothing_raised { @feature_a.ordered_context_ids }
+    end
+
     test "context_order is empty for non-object metadata" do
       Creative.where(id: @feature_a.id).update_all([ "data = ?", "[]" ])
 

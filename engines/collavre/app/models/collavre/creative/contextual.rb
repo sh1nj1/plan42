@@ -37,7 +37,7 @@ module Collavre
 
       # Returns the user-arranged context order saved on this creative.
       def context_order
-        data.is_a?(Hash) ? Array(data["context_order"]).map(&:to_i) : []
+        data.is_a?(Hash) ? context_id_list(data["context_order"]) : []
       end
 
       # Returns the nearest saved context order (self first, then ancestors).
@@ -85,11 +85,24 @@ module Collavre
       def context_settings_data(settings)
         new_data = (data || {}).dup
         apply_context_ids_setting(new_data, settings) if settings.key?(:context_ids)
-        new_data["context_order"] = Array(settings[:context_order]).map(&:to_i).select(&:positive?).uniq if settings.key?(:context_order)
+        apply_context_order_setting(new_data, settings[:context_order]) if settings.key?(:context_order)
         new_data.delete("context_order") if new_data.key?("context_order") && new_data["context_order"].empty?
         apply_disabled_context_setting(new_data, settings[:disabled_context_ids]) if settings.key?(:disabled_context_ids)
         apply_disabled_self_context_setting(new_data, settings[:disabled_self_context]) if settings.key?(:disabled_self_context)
         new_data
+      end
+
+      # Metadata is free-form JSON, so drop anything that is not a positive ID.
+      def context_id_list(values)
+        Array(values).filter_map { |v| v.to_i if v.is_a?(Integer) || v.to_s.match?(/\A\d+\z/) }.select(&:positive?).uniq
+      end
+
+      # Keeps only IDs that are still effective contexts under the lock, so a
+      # stale reorder from another tab cannot resurrect a just-removed context.
+      def apply_context_order_setting(new_data, requested)
+        own_ids = context_id_list(new_data["context_ids"])
+        effective = own_ids + (parent&.effective_context_ids || []).map(&:to_i)
+        new_data["context_order"] = context_id_list(requested) & effective
       end
 
       # A removed context must not keep its old slot in context_order, or
