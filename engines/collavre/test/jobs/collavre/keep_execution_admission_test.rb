@@ -185,6 +185,27 @@ module Collavre
       assert_equal [ sibling.id ], @creative.reload.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
     end
 
+    [ false, :raise, :acknowledged ].each do |outcome|
+      test "queued rejection respects terminal check publication #{outcome}" do
+        owner = task_for("running")
+        @creative.comments.create!(content: "finished", user: @agent, topic: @topic, task: owner, skip_dispatch: true)
+        @creative.update!(data: @creative.data.deep_merge("trigger" => { "loop" => { "cooldown_seconds" => 0 } }))
+        Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
+        enqueue = ->(*) { outcome == :raise ? raise(ActiveJob::EnqueueError, "queue unavailable") : outcome }
+        TriggerLoopCheckJob.stub(:perform_later, enqueue) { owner.done! }
+        assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+        assert_equal outcome != :acknowledged, owner.reload.trigger_event_payload["keep_check_enqueue_failed"]
+        assert_no_difference("Task.count") do
+          Creatives::PermissionChecker.stub(:current_allowed?, false) { assert_equal :rejected, dispatch }
+        end
+        config = @creative.reload.data.dig("trigger", "loop")
+        assert_equal outcome == :acknowledged ? "running" : "awaiting_user", config["state"]
+        assert_equal outcome == :acknowledged ? 0 : 1, config.fetch("control_version", 0)
+        assert_equal 0, config["current_iteration"]
+        assert_nil @creative.data.dig("trigger", "keep_queued_dispatches")
+      end
+    end
+
     test "last queued dispatch rejection releases the turn and its reservation" do
       Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
       Orchestration::Matcher.stub(:prepare_waiting_payload, nil) { dispatch }
