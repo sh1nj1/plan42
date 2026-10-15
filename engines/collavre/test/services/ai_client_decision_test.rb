@@ -335,6 +335,24 @@ module Collavre
       end
     end
 
+    test "score answers require integer level indices for every decision source" do
+      definitions = DecisionQuestions.new(rating: { type: :score, levels: %w[low high] })
+      schema = definitions.schema.dig(:properties, :answers, :properties, "rating", :properties, "score")
+      assert_equal "integer", schema[:type]
+
+      %w[native chat adapter].each do |source|
+        [ 0.5, 1.0, -1, 2, "1", nil ].each do |score|
+          assert_raises(ArgumentError) do
+            definitions.normalize({ answers: { rating: { score: score } } }, source: source)
+          end
+        end
+        [ 0, 1 ].each do |score|
+          result = definitions.normalize({ answers: { rating: { score: score } } }, source: source)
+          assert_equal score, result.dig("answers", "rating", "score")
+        end
+      end
+    end
+
     test "decision questions validate probability and score bounds" do
       definitions = DecisionQuestions.new(p: { type: :probability }, s: { type: :score, levels: %w[low high] })
       assert definitions.schema

@@ -57,7 +57,7 @@ module Collavre
       count = levels.size
       raise ArgumentError, "A score needs 2 to 10 levels" unless (2..10).cover?(count)
 
-      { type: "number", minimum: 0, maximum: count - 1 }
+      { type: "integer", minimum: 0, maximum: count - 1 }
     end
 
     def validate_value!(value, definition)
@@ -66,7 +66,8 @@ module Collavre
         definition.fetch("options").key?(value)
       else
         maximum = type == "probability" ? 1 : definition.fetch("levels").size - 1
-        value.is_a?(Numeric) && value.finite? && value.between?(0, maximum)
+        value.is_a?(Numeric) && value.finite? && value.between?(0, maximum) &&
+          (type != "score" || value.is_a?(Integer))
       end
       raise ArgumentError, "Invalid decision answer" unless valid
     end
