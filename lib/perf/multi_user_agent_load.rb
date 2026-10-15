@@ -211,13 +211,18 @@ module Perf
         ))
       end
 
+      # Grants are built synchronously: the shares' own PermissionCacheJobs run
+      # on the authz queue, and a comment posted before they land is routed to
+      # no agent and only surfaces as "missing" at the timeout.
       def workspace(user)
         Collavre::Creative.find_or_create_by!(user: user, description: "Perf workspace #{user.name}")
+                          .tap { |creative| Collavre::Creatives::PermissionCacheBuilder.cache_owner(creative) }
       end
 
       def pinned_topic(creative, agent)
         share = Collavre::CreativeShare.find_or_initialize_by(creative: creative, user: agent)
         share.update!(permission: :feedback, shared_by: creative.user) unless share.persisted? && share.feedback?
+        Collavre::Creatives::PermissionCacheBuilder.propagate_share(share)
         topic = Collavre::Topic.find_or_create_by!(creative: creative, name: agent.name) { |t| t.user = creative.user }
         topic.set_primary_agent!(agent) unless topic.primary_agent_id == agent.id
         topic

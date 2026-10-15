@@ -58,6 +58,15 @@ module Perf
       assert_equal 0, @server.in_flight
     end
 
+    test "leaves untagged requests out of the in-flight peak" do
+      threads = [ "PERF-1", "no tag" ].map { |content| Thread.new { post_completion(stream: true, messages: [ { content: content } ]) } }
+      threads.each(&:join)
+
+      assert_equal 2, @server.requests.size
+      assert_equal 1, @server.peak_in_flight
+      assert_equal 0, @server.in_flight
+    end
+
     test "returns 404 for anything else and survives a client that hangs up" do
       assert_equal "404", Net::HTTP.get_response(URI("#{@server.base_url}/embeddings")).code
 

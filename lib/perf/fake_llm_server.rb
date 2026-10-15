@@ -15,7 +15,9 @@ module Perf
   # the number that tells whether N users x M agents really ran in parallel.
   #
   # A request is attributed to a load-test message by the last `tag_pattern`
-  # match in its body (the newest message in the prompt).
+  # match in its body (the newest message in the prompt). Only tagged requests
+  # count toward in-flight and its peak, so a stray turn left queued by an
+  # earlier run cannot stand in for a missing one of this run.
   class FakeLlmServer
     Request = Struct.new(:tag, :path, :started_at, :finished_at, keyword_init: true)
 
@@ -162,15 +164,17 @@ module Perf
 
     def track_start(path, tag)
       @mutex.synchronize do
-        @in_flight += 1
-        @peak_in_flight = [ @peak_in_flight, @in_flight ].max
+        if tag
+          @in_flight += 1
+          @peak_in_flight = [ @peak_in_flight, @in_flight ].max
+        end
         Request.new(tag: tag, path: path, started_at: @clock.call).tap { |request| @requests << request }
       end
     end
 
     def track_finish(request)
       @mutex.synchronize do
-        @in_flight -= 1
+        @in_flight -= 1 if request.tag
         request.finished_at = @clock.call
       end
     end

@@ -22,6 +22,16 @@ module Perf
       end
     end
 
+    test "builds permission grants before returning, without the authz queue" do
+      fixtures = Collavre::PermissionCacheJob.stub(:perform_later, nil) { prepare }
+
+      fixtures.workspaces.each do |creative|
+        granted = Collavre::CreativeSharesCache.where(creative_id: creative.id).pluck(:user_id)
+        assert_includes granted, creative.user_id
+        fixtures.agents.each { |agent| assert_includes granted, agent.id }
+      end
+    end
+
     test "lets every agent run one turn per user at once" do
       fixtures = prepare
       resolver = Collavre::Orchestration::PolicyResolver.new({})
