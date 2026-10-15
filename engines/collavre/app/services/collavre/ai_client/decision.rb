@@ -43,9 +43,20 @@ module Collavre
 
         perform_chat_decision(input, definitions, structured: true)
       rescue RubyLLM::BadRequestError => e
-        raise unless e.message.match?(/schema|response_format|structured.output/i)
+        raise unless schema_rejection?(e)
 
         perform_chat_decision(input, definitions, structured: false)
+      end
+
+      def schema_rejection?(error)
+        pattern = /schema|response_format|structured.output/i
+        return true if error.message.match?(pattern)
+
+        body = error.response&.body
+        details = body.is_a?(String) ? JSON.parse(body) : body
+        details.to_json.match?(pattern)
+      rescue JSON::ParserError
+        false
       end
 
       def perform_chat_decision(input, definitions, structured:)

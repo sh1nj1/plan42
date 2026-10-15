@@ -137,6 +137,40 @@ module Collavre
       assert_empty chats
     end
 
+    test "masked schema rejection retries using raw JSON response details" do
+      [ { "detail" => "response_format unsupported" }.to_json,
+        { "errors" => [ { "message" => "invalid structured output schema" } ] }.to_json,
+        { "detail" => "schema unsupported" } ].each do |body|
+        first = fake_chat
+        raw_response = OpenStruct.new(status: 400, body: body)
+        first.define_singleton_method(:ask) do |*|
+          raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: raw_response)
+        end
+        second = fake_chat
+        second.define_singleton_method(:with_schema) { |*| flunk "fallback must not request a schema" }
+        chats = [ first, second ]
+        @client.stub(:build_conversation, -> { chats.shift }) do
+          assert_equal "DONE", @client.judge("Task", questions: QUESTIONS).dig("answers", "status", "choice")
+        end
+        assert_empty chats
+      end
+    end
+
+    test "masked unrelated or malformed error bodies do not retry" do
+      [ '{"detail":"Invalid API parameter"}', '<html>schema gateway error</html>', nil ].each do |body|
+        chat = fake_chat
+        raw_response = OpenStruct.new(status: 400, body: body)
+        chat.define_singleton_method(:ask) do |*|
+          raise RubyLLM::BadRequestError.new("Invalid request - please check your input", response: raw_response)
+        end
+        calls = 0
+        @client.stub(:build_conversation, -> { calls += 1; chat }) do
+          assert_raises(RubyLLM::BadRequestError) { @client.judge("Task", questions: QUESTIONS) }
+        end
+        assert_equal 1, calls
+      end
+    end
+
     test "native failures propagate while recording failed usage" do
       client = AiClient.new(vendor: "typesafe", model: "jev-latest", system_prompt: nil,
         context: { user: @agent })
