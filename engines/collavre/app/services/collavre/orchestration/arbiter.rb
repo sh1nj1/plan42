@@ -14,9 +14,10 @@ module Collavre
     class Arbiter
       # Default confidence threshold for bid strategy
       DEFAULT_CONFIDENCE_THRESHOLD = 0.3
-      def initialize(context, policy_resolver: nil)
+      def initialize(context, policy_resolver: nil, records: nil)
         @context = context
         @policy_resolver = policy_resolver || PolicyResolver.new(context)
+        @records = records || DispatchRecords.new
       end
 
       # Select which agents will respond from the candidates
@@ -67,7 +68,7 @@ module Collavre
         comment_id = @context.dig("comment", "id") || @context.dig(:comment, :id)
         return false unless comment_id
 
-        Comment.find_by(id: comment_id)&.review_message? || false
+        @records.find(Comment, comment_id)&.review_message? || false
       end
 
       # True when the Matcher routed by @mention (mirrors Matcher#match_by_mention).

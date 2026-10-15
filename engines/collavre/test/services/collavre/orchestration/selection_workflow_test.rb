@@ -106,14 +106,14 @@ module Collavre
         base = rule_for("true", "agent", [ @agent.id ])
         calls = 0
         factory = Matcher.method(:new)
-        Matcher.stub(:new, ->(context) {
+        Matcher.stub(:new, ->(context, *shared) {
           calls += 1
           if calls == 2
             data = base.data.deep_dup
             data["workflow_rule"]["future_metadata"] = "changed"
             base.update!(data: data)
           end
-          factory.call(context)
+          factory.call(context, *shared)
         }) do
           selection = select
           assert_empty selection.agents
@@ -127,10 +127,10 @@ module Collavre
         original = base.description
         calls = 0
         factory = Matcher.method(:new)
-        Matcher.stub(:new, ->(context) {
+        Matcher.stub(:new, ->(context, *shared) {
           calls += 1
           base.update!(description: "Changed instruction") if calls == 2
-          factory.call(context)
+          factory.call(context, *shared)
         }) do
           selection = select
           assert_empty selection.agents
