@@ -64,19 +64,41 @@ test('form and unauthorized drops never add contexts', () => {
   expect(controller._updateContextIds).not.toHaveBeenCalled()
 })
 
-test('context reorder uses delegated rows after rendering and rejects self and inherited destinations', async () => {
+test('context reorder saves the full arranged order, including inherited contexts', async () => {
+  controller._updateContextOrder = jest.fn().mockResolvedValue()
   const values = {}
   const source = popup.querySelector('[data-context-id="10"]')
   const target = popup.querySelector('[data-context-id="20"]')
+  expect(popup.querySelector('[data-context-id="99"]').getAttribute('draggable')).toBe('true')
   drag('dragstart', source, values)
   expect(values['application/x-context-id']).toBe('10')
   expect(drag('dragover', source, values).defaultPrevented).toBe(false)
-  expect(drag('dragover', popup.querySelector('[data-context-id="99"]'), values).defaultPrevented).toBe(false)
   drag('drop', target, values, 10)
   await Promise.resolve()
-  expect(controller._updateContextIds).toHaveBeenCalledWith([20, 10])
+  expect(controller._updateContextOrder).toHaveBeenCalledWith([20, 10, 99])
+  expect(controller._updateContextIds).not.toHaveBeenCalled()
   drag('dragend', source, values)
   expect(source.classList.contains('context-dragging')).toBe(false)
+})
+
+test('inherited context can be moved before own contexts', async () => {
+  controller._updateContextOrder = jest.fn().mockResolvedValue()
+  await controller.handleReorderDrop({ el: popup.querySelector('[data-context-id="10"]'), ids: ['99'], hit: 'left' })
+  expect(controller._updateContextOrder).toHaveBeenCalledWith([99, 10, 20])
+})
+
+test('reorder ignores unknown or self-targeted drops', async () => {
+  controller._updateContextOrder = jest.fn().mockResolvedValue()
+  const target = popup.querySelector('[data-context-id="10"]')
+  await controller.handleReorderDrop({ el: target, ids: ['10'], hit: 'left' })
+  await controller.handleReorderDrop({ el: target, ids: ['555'], hit: 'left' })
+  expect(controller._updateContextOrder).not.toHaveBeenCalled()
+})
+
+test('context order is sent as context_order', async () => {
+  controller._patchContexts = jest.fn().mockResolvedValue(true)
+  await controller._updateContextOrder([20, 10])
+  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [20, 10] })
 })
 
 test('leaving an empty popup restores hidden context list', () => {
@@ -233,14 +255,16 @@ test('context drag cancelled before its animation frame does not restore stale f
   expect(source.classList.contains('context-dragging')).toBe(false)
 })
 
-test('reordering before a context preserves inherited items and ignores missing IDs', async () => {
+test('reordering before a context keeps inherited items in the order and ignores missing IDs', async () => {
+  controller._updateContextOrder = jest.fn().mockResolvedValue()
   const target = popup.querySelector('[data-context-id="10"]')
   await controller.handleReorderDrop({ el: target, ids: ['20'], hit: 'left' })
-  expect(controller._updateContextIds).toHaveBeenCalledWith([20, 10])
-  controller._updateContextIds.mockClear()
-  for (const id of ['0', '10', '99', '123']) {
+  expect(controller._updateContextOrder).toHaveBeenCalledWith([20, 10, 99])
+  controller._updateContextOrder.mockClear()
+  for (const id of ['0', '10', '123']) {
     await controller.handleReorderDrop({ el: target, ids: [id], hit: 'left' })
   }
+  expect(controller._updateContextOrder).not.toHaveBeenCalled()
   expect(controller._updateContextIds).not.toHaveBeenCalled()
 })
 
@@ -281,7 +305,7 @@ test('disconnect clears popup preview and removes delegated drop listeners', () 
 
 
 describe('serialized context writes against a fake server', () => {
-  let serverIds, pendingPatches, pendingLoads, originalFetch, errorSpy
+  let serverIds, serverOrder, pendingPatches, pendingLoads, originalFetch, errorSpy
 
   const flush = () => new Promise(resolve => setTimeout(resolve, 0))
   const contextsBody = () => ({ ok: true, json: async () => ({
@@ -292,6 +316,7 @@ describe('serialized context writes against a fake server', () => {
 
   beforeEach(() => {
     serverIds = [10, 20]
+    serverOrder = null
     pendingPatches = []
     pendingLoads = []
     originalFetch = global.fetch
@@ -300,8 +325,12 @@ describe('serialized context writes against a fake server', () => {
     delete controller._updateContextIds
     global.fetch = jest.fn((url, options) => {
       if (options?.method === 'PATCH') {
-        const ids = JSON.parse(options.body).context_ids
-        return new Promise(resolve => pendingPatches.push(() => { if (ids) serverIds = ids; resolve(patchOk()) }))
+        const { context_ids: ids, context_order: order } = JSON.parse(options.body)
+        return new Promise(resolve => pendingPatches.push(() => {
+          if (ids) serverIds = ids
+          if (order) serverOrder = order
+          resolve(patchOk())
+        }))
       }
       return new Promise(resolve => pendingLoads.push(resolve))
     })
@@ -393,7 +422,8 @@ describe('serialized context writes against a fake server', () => {
     const reorder = controller.handleReorderDrop({ el: popup.querySelector('[data-context-id="10"]'), ids: ['20'], hit: 'left' })
     await settle()
     await Promise.all([drop, reorder])
-    expect(serverIds).toEqual([20, 10, 30])
+    expect(serverIds).toEqual([10, 20, 30])
+    expect(serverOrder).toEqual([20, 10, 30, 99])
   })
 
   test('a bundle dropped after a failed reload does not resurrect a removed context', async () => {

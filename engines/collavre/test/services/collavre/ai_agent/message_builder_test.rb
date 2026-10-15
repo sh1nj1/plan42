@@ -172,6 +172,28 @@ module Collavre
         assert_includes context_msg[:parts].first[:text], "Dev Rules"
       end
 
+      test "injects context creatives in the chat context bar order" do
+        parent_rules = Creative.create!(description: "<p>Parent Rules</p>", user: @user, progress: 1.0)
+        own_a = Creative.create!(description: "<p>Own A</p>", user: @user, progress: 1.0)
+        own_b = Creative.create!(description: "<p>Own B</p>", user: @user, progress: 1.0)
+        parent = Creative.create!(description: "<p>Ordering Parent</p>", user: @user, data: { "context_ids" => [ parent_rules.id ] })
+        @creative.update!(parent: parent, data: {
+          "context_ids" => [ own_a.id, own_b.id ],
+          "context_order" => [ own_b.id, parent_rules.id ]
+        })
+
+        context = {
+          "comment" => { "id" => @comment.id, "content" => "Implement feature X" },
+          "creative" => { "id" => @creative.id }
+        }
+
+        messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+        injected = messages.select { |m| m[:kind] == :context_creative }
+          .map { |m| m[:parts].first[:text][/Context Creative \(id: (\d+)\)/, 1].to_i }
+
+        assert_equal [ own_b.id, parent_rules.id, own_a.id ], injected
+      end
+
       test "excludes disabled context creatives" do
         dev_rules = Creative.create!(
           description: "<p>Dev Rules</p>",

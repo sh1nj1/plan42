@@ -347,29 +347,20 @@ module Collavre
       end
 
       creative = @creative.effective_origin(Set.new)
-      own_ids = creative.context_ids - [ creative.id ]
-      inherited_ids = (creative.effective_context_ids - own_ids - [ creative.id ]).uniq
-      own_creatives = Creative.where(id: own_ids).index_by(&:id)
-      inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
-
+      own_ids = creative.context_ids
+      ordered_ids = creative.ordered_context_ids
+      creatives_by_id = Creative.where(id: ordered_ids).index_by(&:id)
       disabled_ids = creative.effective_disabled_context_ids
 
-      own = own_ids.filter_map do |cid|
-        c = own_creatives[cid]
+      contexts = ordered_ids.filter_map do |cid|
+        c = creatives_by_id[cid]
         next unless c
 
-        { id: c.id, description: c.creative_snippet, inherited: false, disabled: disabled_ids.include?(cid) }
-      end
-
-      inherited = inherited_ids.filter_map do |cid|
-        c = inherited_creatives[cid]
-        next unless c
-
-        { id: c.id, description: c.creative_snippet, inherited: true, disabled: disabled_ids.include?(cid) }
+        { id: c.id, description: c.creative_snippet, inherited: !own_ids.include?(cid), disabled: disabled_ids.include?(cid) }
       end
 
       render json: {
-        contexts: inherited + own,
+        contexts: contexts,
         can_manage: creative.has_permission?(Current.user, :admin),
         disabled_self_context: creative.data&.dig("disabled_self_context") == true
       }
@@ -384,6 +375,10 @@ module Collavre
 
       current_data = (creative.data || {}).dup
       current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
+      if params.key?(:context_order)
+        current_data["context_order"] = Array(params[:context_order]).map(&:to_i).select(&:positive?).uniq
+        current_data.delete("context_order") if current_data["context_order"].empty?
+      end
       if params.key?(:disabled_context_ids)
         requested_disabled = Array(params[:disabled_context_ids]).map(&:to_i)
         parent_disabled = creative.parent&.effective_disabled_context_ids || []

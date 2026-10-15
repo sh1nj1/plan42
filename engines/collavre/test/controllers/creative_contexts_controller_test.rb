@@ -166,4 +166,33 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
   end
+  test "GET contexts returns contexts in the saved context order" do
+    @features.update!(data: { "context_ids" => [ @development.id ] })
+    @feature_a.update!(data: { "context_ids" => [ @project.id ], "context_order" => [ @project.id, @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    contexts = JSON.parse(response.body)["contexts"]
+    assert_equal [ @project.id, @development.id ], contexts.map { |c| c["id"] }
+    assert_equal [ false, true ], contexts.map { |c| c["inherited"] }
+  end
+
+  test "PATCH update_contexts saves context_order" do
+    patch update_contexts_creative_path(@features), params: {
+      context_order: [ @development.id, @project.id, @development.id, 0 ]
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    assert_equal [ @development.id, @project.id ], @features.reload.data["context_order"]
+  end
+
+  test "PATCH update_contexts removes an empty context_order" do
+    @features.update!(data: { "context_order" => [ @development.id ] })
+
+    patch update_contexts_creative_path(@features), params: { context_order: [] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    refute @features.reload.data.key?("context_order")
+  end
 end

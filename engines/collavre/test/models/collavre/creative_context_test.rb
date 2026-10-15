@@ -115,5 +115,49 @@ module Collavre
       assert_includes @research_a.effective_context_ids, @goal.id
       refute_includes @research_a.effective_context_ids, @development.id
     end
+
+    test "ordered_context_ids lists inherited contexts before own ones by default" do
+      @features.update!(data: { "context_ids" => [ @development.id ] })
+      @feature_a.update!(data: { "context_ids" => [ @goal.id, @rnd.id ] })
+
+      assert_equal [ @development.id, @goal.id, @rnd.id ], @feature_a.ordered_context_ids
+    end
+
+    test "ordered_context_ids excludes self" do
+      @feature_a.update!(data: { "context_ids" => [ @feature_a.id, @goal.id ] })
+
+      assert_equal [ @goal.id ], @feature_a.ordered_context_ids
+    end
+
+    test "ordered_context_ids applies own context_order and appends unlisted contexts" do
+      @features.update!(data: { "context_ids" => [ @development.id ] })
+      @feature_a.update!(data: {
+        "context_ids" => [ @goal.id, @rnd.id, @research_a.id ],
+        "context_order" => [ @rnd.id, @development.id, 999_999 ]
+      })
+
+      assert_equal [ @rnd.id, @development.id, @goal.id, @research_a.id ], @feature_a.ordered_context_ids
+    end
+
+    test "ordered_context_ids inherits the nearest ancestor context_order" do
+      @project.update!(data: { "context_order" => [ @goal.id ] })
+      @features.update!(data: { "context_ids" => [ @development.id, @goal.id ], "context_order" => [ @goal.id, @development.id ] })
+
+      assert_equal [ @goal.id, @development.id ], @feature_a.ordered_context_ids
+      assert_equal [ @goal.id, @development.id ], @feature_a.effective_context_order
+    end
+
+    test "own context_order takes precedence over ancestors" do
+      @features.update!(data: { "context_ids" => [ @development.id, @goal.id ], "context_order" => [ @goal.id ] })
+      @feature_a.update!(data: { "context_order" => [ @development.id ] })
+
+      assert_equal [ @development.id, @goal.id ], @feature_a.ordered_context_ids
+    end
+
+    test "context_order is empty for non-object metadata" do
+      Creative.where(id: @feature_a.id).update_all([ "data = ?", "[]" ])
+
+      assert_empty @feature_a.reload.context_order
+    end
   end
 end
