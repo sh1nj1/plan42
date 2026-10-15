@@ -69,7 +69,6 @@ test('context reorder saves the full arranged order, including inherited context
   const values = {}
   const source = popup.querySelector('[data-context-id="10"]')
   const target = popup.querySelector('[data-context-id="20"]')
-  expect(popup.querySelector('[data-context-id="99"]').getAttribute('draggable')).toBe('true')
   drag('dragstart', source, values)
   expect(values['application/x-context-id']).toBe('10')
   expect(drag('dragover', source, values).defaultPrevented).toBe(false)
@@ -81,10 +80,27 @@ test('context reorder saves the full arranged order, including inherited context
   expect(source.classList.contains('context-dragging')).toBe(false)
 })
 
-test('inherited context can be moved before own contexts', async () => {
+test('ancestor-ordered contexts are not draggable but accept drops', async () => {
   controller._patchContexts = jest.fn().mockResolvedValue(true)
-  await controller.handleReorderDrop({ el: popup.querySelector('[data-context-id="10"]'), ids: ['99'], hit: 'left' })
-  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [99, 10, 20] })
+  controller.contexts = [{ id: 10 }, { id: 20, order_locked: true }, { id: 99, inherited: true, order_locked: true }]
+  controller.renderContexts()
+  expect(popup.querySelector('[data-context-id="10"]').getAttribute('draggable')).toBe('true')
+  expect(popup.querySelector('[data-context-id="20"]').hasAttribute('draggable')).toBe(false)
+  expect(popup.querySelector('[data-context-id="99"]').hasAttribute('draggable')).toBe(false)
+  const values = {}
+  drag('dragstart', popup.querySelector('[data-context-id="10"]'), values)
+  drag('drop', popup.querySelector('[data-context-id="99"]'), values, 10)
+  await Promise.resolve()
+  expect(controller._patchContexts).toHaveBeenCalledWith({ context_order: [20, 99, 10] })
+})
+
+test('inherited or ancestor-ordered contexts cannot be moved', async () => {
+  controller._patchContexts = jest.fn().mockResolvedValue(true)
+  controller.contexts = [{ id: 10 }, { id: 20, order_locked: true }, { id: 99, inherited: true }]
+  const target = popup.querySelector('[data-context-id="10"]')
+  await controller.handleReorderDrop({ el: target, ids: ['99'], hit: 'left' })
+  await controller.handleReorderDrop({ el: target, ids: ['20'], hit: 'left' })
+  expect(controller._patchContexts).not.toHaveBeenCalled()
 })
 
 test('reorder ignores unknown or self-targeted drops', async () => {

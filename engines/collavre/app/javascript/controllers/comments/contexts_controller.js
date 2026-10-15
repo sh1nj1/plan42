@@ -177,7 +177,7 @@ export default class extends Controller {
         this.contexts.forEach(ctx => {
             const disabledClass = ctx.disabled ? 'context-disabled' : ''
             const inheritedClass = ctx.inherited ? 'context-inherited' : ''
-            const draggable = this.canManage ? 'draggable="true"' : ''
+            const draggable = this.canManage && !ctx.inherited && !ctx.order_locked ? 'draggable="true"' : ''
 
             html += `<span class="context-chip ${disabledClass} ${inheritedClass}" ${draggable}
                           data-action="click->comments--contexts#toggleContext"
@@ -450,8 +450,8 @@ export default class extends Controller {
 
     _registerDragDrop() {
         this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
-        const selector = '.context-chip[draggable="true"]'
-        this.dnd.registerDragSource({ selector,
+        // Only contexts added on this creative move; ancestor-ordered chips are still drop targets.
+        this.dnd.registerDragSource({ selector: '.context-chip[draggable="true"]',
             onDragStart: ({ el, event }) => {
                 this.draggingContextId = el.dataset.contextId
                 writeDragData(event.dataTransfer, { kind: 'context', ids: [this.draggingContextId], payload: {} })
@@ -461,7 +461,7 @@ export default class extends Controller {
                 })
             },
             onDragEnd: ({ el }) => { this.draggingContextId = null; el.classList.remove('context-dragging') } })
-        this.dnd.registerDropZone({ selector, accepts: ['context'],
+        this.dnd.registerDropZone({ selector: '.context-chip[data-context-id]', accepts: ['context'],
             hitTest: ({ el, event }) => this.canManage && this.draggingContextId && el.dataset.contextId !== this.draggingContextId
                 ? horizontalHit({ el, event }) : null,
             preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
@@ -475,6 +475,7 @@ export default class extends Controller {
         const insertBefore = hit === 'left'
 
         return this._enqueueContextMutation(() => {
+            if (!this.contexts.some(c => Number(c.id) === draggedId && !c.inherited && !c.order_locked)) return null
             const ids = this.contexts.map(context => Number(context.id))
             const draggedIndex = ids.indexOf(draggedId)
             if (draggedIndex === -1 || ids.indexOf(targetId) === -1) return null

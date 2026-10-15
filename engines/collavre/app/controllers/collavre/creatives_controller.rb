@@ -349,6 +349,7 @@ module Collavre
       creative = @creative.effective_origin(Set.new)
       own_ids = creative.context_ids
       ordered_ids = creative.ordered_context_ids
+      locked_ids = creative.inherited_ordered_context_ids
       creatives_by_id = Creative.where(id: ordered_ids).index_by(&:id)
       disabled_ids = creative.effective_disabled_context_ids
 
@@ -356,7 +357,8 @@ module Collavre
         c = creatives_by_id[cid]
         next unless c
 
-        { id: c.id, description: c.creative_snippet, inherited: !own_ids.include?(cid), disabled: disabled_ids.include?(cid) }
+        { id: c.id, description: c.creative_snippet, inherited: !own_ids.include?(cid),
+          order_locked: locked_ids.include?(cid), disabled: disabled_ids.include?(cid) }
       end
 
       render json: {

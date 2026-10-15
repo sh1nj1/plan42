@@ -175,6 +175,17 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
     contexts = JSON.parse(response.body)["contexts"]
     assert_equal [ @project.id, @development.id ], contexts.map { |c| c["id"] }
     assert_equal [ false, true ], contexts.map { |c| c["inherited"] }
+    assert_equal [ false, true ], contexts.map { |c| c["order_locked"] }
+  end
+
+  test "GET contexts locks the order of a direct pin that an ancestor also provides" do
+    @features.update!(data: { "context_ids" => [ @development.id ] })
+    @feature_a.update!(data: { "context_ids" => [ @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    ctx = JSON.parse(response.body)["contexts"].sole
+    refute ctx["inherited"]
+    assert ctx["order_locked"]
   end
 
   test "PATCH update_contexts saves context_order" do

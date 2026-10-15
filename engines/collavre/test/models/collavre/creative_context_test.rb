@@ -139,19 +139,44 @@ module Collavre
       assert_equal [ @rnd.id, @development.id, @goal.id, @research_a.id ], @feature_a.ordered_context_ids
     end
 
-    test "ordered_context_ids inherits the nearest ancestor context_order" do
-      @project.update!(data: { "context_order" => [ @goal.id ] })
+    test "ordered_context_ids follows the ancestor order for inherited contexts" do
       @features.update!(data: { "context_ids" => [ @development.id, @goal.id ], "context_order" => [ @goal.id, @development.id ] })
+      Creative.create!(description: "Child", user: @admin, parent: @feature_a).tap do |grandchild|
+        assert_equal [ @goal.id, @development.id ], grandchild.ordered_context_ids
+      end
 
       assert_equal [ @goal.id, @development.id ], @feature_a.ordered_context_ids
-      assert_equal [ @goal.id, @development.id ], @feature_a.effective_context_order
+      assert_equal [ @goal.id, @development.id ], @feature_a.inherited_ordered_context_ids
     end
 
-    test "own context_order takes precedence over ancestors" do
-      @features.update!(data: { "context_ids" => [ @development.id, @goal.id ], "context_order" => [ @goal.id ] })
-      @feature_a.update!(data: { "context_order" => [ @development.id ] })
+    test "own context_order cannot rearrange inherited contexts" do
+      @features.update!(data: { "context_ids" => [ @development.id, @goal.id ], "context_order" => [ @goal.id, @development.id ] })
+      @feature_a.update!(data: { "context_order" => [ @development.id, @goal.id ] })
+
+      assert_equal [ @goal.id, @development.id ], @feature_a.ordered_context_ids
+    end
+
+    test "own new contexts keep their slot while inherited ones follow the ancestor order" do
+      @features.update!(data: { "context_ids" => [ @development.id, @goal.id ] })
+      @feature_a.update!(data: { "context_ids" => [ @rnd.id ], "context_order" => [ @development.id, @rnd.id, @goal.id ] })
+
+      assert_equal [ @development.id, @rnd.id, @goal.id ], @feature_a.ordered_context_ids
+      assert_equal [ @development.id, @goal.id ], @feature_a.inherited_ordered_context_ids
+
+      @features.update!(data: @features.data.merge("context_order" => [ @goal.id, @development.id ]))
+
+      assert_equal [ @goal.id, @rnd.id, @development.id ], @feature_a.reload.ordered_context_ids
+    end
+
+    test "a direct pin that is also inherited follows the ancestor order" do
+      @features.update!(data: { "context_ids" => [ @development.id, @goal.id ] })
+      @feature_a.update!(data: { "context_ids" => [ @goal.id ], "context_order" => [ @goal.id, @development.id ] })
 
       assert_equal [ @development.id, @goal.id ], @feature_a.ordered_context_ids
+    end
+
+    test "inherited_ordered_context_ids is empty without a parent" do
+      assert_empty @project.inherited_ordered_context_ids
     end
 
     test "context_order ignores entries that are not positive integer IDs" do

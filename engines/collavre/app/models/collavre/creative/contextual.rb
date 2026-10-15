@@ -40,27 +40,18 @@ module Collavre
         data.is_a?(Hash) ? context_id_list(data["context_order"]) : []
       end
 
-      # Returns the nearest saved context order (self first, then ancestors).
-      def effective_context_order(visited_ids = Set.new)
-        return [] if visited_ids.include?(id)
-
-        visited_ids.add(id)
-        order = context_order
-        order.any? ? order : (parent&.effective_context_order(visited_ids) || [])
+      # Returns effective context IDs (excluding self) in the order shown in the
+      # chat context bar and injected into AI prompts. Ancestors' arrangement
+      # always wins: contexts inherited from the parent keep the parent's order,
+      # and only contexts newly added on this creative follow its own saved
+      # order (they may sit between inherited ones).
+      def ordered_context_ids
+        arranged_context_ids - [ id ]
       end
 
-      # Returns effective context IDs (excluding self) in the order shown in the
-      # chat context bar and injected into AI prompts: inherited contexts, then
-      # own ones, rearranged by the nearest saved context order. IDs absent from
-      # that order keep their relative position after the arranged ones.
-      def ordered_context_ids
-        own = context_ids - [ id ]
-        ids = ((effective_context_ids - own) + own).uniq - [ id ]
-        order = effective_context_order
-        return ids if order.empty?
-
-        rank = order.each_with_index.to_h
-        ids.each_with_index.sort_by { |cid, index| [ rank.fetch(cid, order.size), index ] }.map(&:first)
+      # Contexts arranged by ancestors; their order cannot be changed here.
+      def inherited_ordered_context_ids
+        parent&.arranged_context_ids(Set[id]) || []
       end
 
       # Returns context creatives (excludes self to avoid duplication).
@@ -80,7 +71,30 @@ module Collavre
         with_lock { update(data: context_settings_data(settings)) }
       end
 
+      protected
+
+      def arranged_context_ids(visited_ids = Set.new)
+        return [] if visited_ids.include?(id)
+
+        visited_ids.add(id)
+        inherited = parent&.arranged_context_ids(visited_ids) || []
+        arrange_own_contexts(inherited, context_id_list(context_ids) - inherited)
+      end
+
       private
+
+      # Sorts by this creative's saved order to pick the slots of its own new
+      # contexts, then refills the remaining slots with the inherited contexts
+      # in the ancestors' order.
+      def arrange_own_contexts(inherited, own_new)
+        order = context_order
+        return inherited + own_new if order.empty? || own_new.empty?
+
+        rank = order.each_with_index.to_h
+        slots = (inherited + own_new).each_with_index.sort_by { |cid, index| [ rank.fetch(cid, order.size), index ] }
+        queue = inherited.dup
+        slots.map { |cid, _| own_new.include?(cid) ? cid : queue.shift }
+      end
 
       def context_settings_data(settings)
         new_data = (data || {}).dup
