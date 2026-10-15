@@ -69,6 +69,26 @@ module Collavre
         end
       end
 
+      test "controls without an initial loop cannot mutate a concurrently created loop" do
+        { "pause" => "running", "resume" => "paused", "restart" => "completed" }.each do |action, state|
+          [ "keep", "drop" ].each do |source|
+            @child.update!(data: {})
+            operation = command(action: action)
+            replacement = { "trigger" => { "loop" => TriggerLoopConfig.build(
+              @child.main_topic.id, source: source, state: state
+            ) } }
+            Creative.where(id: @child.id).update_all(data: replacement)
+
+            SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Stale control dispatched" }) do
+              assert_no_difference -> { @child.comments.count } do
+                assert operation.call.success?
+              end
+            end
+            assert_equal replacement, @child.reload.data
+          end
+        end
+      end
+
       test "stale controls preserve a replacement keep in the same topic" do
         { "pause" => "running", "resume" => "paused", "restart" => "completed" }.each do |action, state|
           @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
