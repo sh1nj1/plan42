@@ -174,6 +174,131 @@ module Collavre
       refute moved.dig("comment", "keep_restore_task_id")
     end
 
+    test "rejected dispatch preserves an acknowledged queued sibling" do
+      sibling = users(:channel_bot)
+      Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
+      Orchestration::KeepQueuedDispatches.reserve!(@context, sibling)
+      Orchestration::Matcher.stub(:prepare_waiting_payload, nil) { dispatch }
+      assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_equal [ sibling.id ], @creative.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+      Orchestration::KeepQueuedDispatches.release!(@context, users(:one))
+      assert_equal [ sibling.id ], @creative.reload.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+    end
+
+    test "last queued dispatch rejection releases the turn and its reservation" do
+      Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
+      Orchestration::Matcher.stub(:prepare_waiting_payload, nil) { dispatch }
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_nil @creative.data.dig("trigger", "keep_queued_dispatches")
+    end
+
+    test "admitted dispatch clears its reservation and a new turn replaces stale ones" do
+      Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
+      service = Object.new
+      service.define_singleton_method(:call) { true }
+      AiAgentService.stub(:new, ->(*) { service }) { dispatch }
+      assert_nil @creative.reload.data.dig("trigger", "keep_queued_dispatches")
+      Orchestration::KeepQueuedDispatches.reserve!(@context, @agent)
+      next_context = @context.deep_merge("comment" => { "id" => @turn.id + 1 })
+      Orchestration::KeepQueuedDispatches.reserve!(next_context, @agent)
+      assert_equal({ "comment_id" => @turn.id + 1, "agent_ids" => [ @agent.id ] },
+        @creative.reload.data.dig("trigger", "keep_queued_dispatches"))
+      Orchestration::KeepQueuedDispatches.release!(@context, @agent)
+      assert Orchestration::KeepQueuedDispatches.pending?(@creative.reload, @turn.id + 1)
+    end
+
+    test "ordinary and restored contexts are not reserved" do
+      ordinary = @context.deep_dup.tap { |context| context["comment"].delete("keep_loop_generation") }
+      restored = @context.deep_merge("comment" => { "keep_restore_task_id" => 1 })
+      [ ordinary, restored, nil ].each { |context| Orchestration::KeepQueuedDispatches.reserve!(context, @agent) }
+      assert_nil @creative.reload.data.dig("trigger", "keep_queued_dispatches")
+    end
+
+    test "enqueue reserves accepted keep jobs and releases failed ones" do
+      enqueuer = Object.new.extend(Orchestration::JobEnqueue)
+      enqueuer.instance_variable_set(:@event_name, "comment_created")
+      job = Struct.new(:successfully_enqueued?).new(true)
+      AiAgentJob.stub(:perform_later, job) do
+        enqueuer.send(:enqueue_agent_job, @agent, @context, { timing: :immediate }, require_enqueue_ack: true)
+      end
+      assert Orchestration::KeepQueuedDispatches.pending?(@creative.reload, @turn.id)
+      AiAgentJob.stub(:perform_later, false) do
+        assert_raises(ActiveJob::EnqueueError) do
+          enqueuer.send(:enqueue_agent_job, users(:channel_bot), @context, { timing: :immediate }, require_enqueue_ack: true)
+        end
+      end
+      assert_equal [ @agent.id ], @creative.reload.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+    end
+
+    test "response-less completion preserves a queued sibling dispatch" do
+      Orchestration::KeepQueuedDispatches.reserve!(@context, users(:channel_bot))
+      owner = task_for("running")
+      owner.update!(status: "failed")
+      assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+    end
+
+    test "all siblings own the turn before the first published job can reject" do
+      sibling = users(:channel_bot)
+      enqueuer = batch_enqueuer
+      published = []
+      publish = lambda do |agent_id, _event, context|
+        published << agent_id
+        Orchestration::Matcher.stub(:prepare_waiting_payload, nil) do
+          Orchestration::KeepDispatchAdmission.call(context, User.find(agent_id)) { :rejected }
+        end
+        if published.one?
+          assert_equal "running", @creative.reload.data.dig("trigger", "loop", "state")
+          assert_equal [ sibling.id ], @creative.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+        end
+        Struct.new(:successfully_enqueued?).new(true)
+      end
+      AiAgentJob.stub(:perform_later, publish) do
+        enqueuer.send(:enqueue_jobs, [ @agent, sibling ].map { |agent| { agent: agent, timing: :immediate } },
+          context_for: nil, require_enqueue_ack: true)
+      end
+      assert_equal [ @agent.id, sibling.id ], published
+      assert_equal "awaiting_user", @creative.reload.data.dig("trigger", "loop", "state")
+      assert_nil @creative.data.dig("trigger", "keep_queued_dispatches")
+    end
+
+    test "failed publication releases every unpublished sibling reservation" do
+      [ false, :raise ].each do |failure|
+        enqueuer = batch_enqueuer
+        publish = ->(*) { failure == :raise ? raise(ActiveJob::EnqueueError) : false }
+        AiAgentJob.stub(:perform_later, publish) do
+          assert_raises(ActiveJob::EnqueueError) do
+            enqueuer.send(:enqueue_jobs, [ @agent, users(:channel_bot) ].map { |agent| { agent: agent, timing: :immediate } },
+              context_for: nil, require_enqueue_ack: true)
+          end
+        end
+        assert_nil @creative.reload.data.dig("trigger", "keep_queued_dispatches")
+      end
+    end
+
+    test "notice failure retains published ownership and releases unpublished siblings" do
+      enqueuer = batch_enqueuer
+      enqueuer.define_singleton_method(:post_waiting_notice) { |*| raise "notice failed" }
+      queue = Object.new
+      queue.define_singleton_method(:perform_later) { |*| Struct.new(:successfully_enqueued?).new(true) }
+      AiAgentJob.stub(:set, queue) do
+        assert_raises(RuntimeError) do
+          enqueuer.send(:enqueue_jobs, [ @agent, users(:channel_bot) ].map { |agent| { agent: agent, timing: :delayed, delay: 1 } },
+            context_for: nil, require_enqueue_ack: true)
+        end
+      end
+      assert_equal [ @agent.id ], @creative.reload.data.dig("trigger", "keep_queued_dispatches", "agent_ids")
+    end
+
+    def batch_enqueuer
+      enqueuer = Object.new.extend(Orchestration::JobEnqueue)
+      enqueuer.instance_variable_set(:@event_name, "comment_created")
+      context = @context
+      enqueuer.define_singleton_method(:context_for_agent) { |*| context }
+      enqueuer.define_singleton_method(:log_decision) { |*| }
+      enqueuer.define_singleton_method(:already_handled?) { |*| false }
+      enqueuer
+    end
+
     def task_for(status)
       Task.create!(name: "Keep owner", status: status, creative: @creative, agent: @agent,
         topic_id: @topic.id, trigger_event_name: "comment_created", trigger_event_payload: @context.deep_dup)

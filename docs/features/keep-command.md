@@ -180,7 +180,10 @@ Keep dispatches revalidate their recorded generation, current turn, running stat
 and current agent access when the queued job starts, including delayed restores
 and promoted waiters. Paused or superseded jobs do not start agent work. An
 execution-time refusal returns the unchanged turn to `awaiting_user` when no
-other task or pending restoration owns it. A refused restored job clears its
+other task, pending restoration, or acknowledged queued job owns it. Each
+accepted keep job records its agent on the current turn until it reaches
+admission, so one sibling's refusal cannot release a turn while another routed
+agent's job is still queued. A refused restored job clears its
 restore claim and records refusal before deciding whether ownership remains.
 Admission uses the controls' topic-to-creative lock order; provider execution
 runs after those admission locks have been released.

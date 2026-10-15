@@ -25,6 +25,7 @@ module Collavre
           next if surviving_keep_turn?(target)
           # Restored dispatches have no sibling Task until their queued job starts.
           next if Orchestration::DeliveryRecord.pending_restoration?(self.class.find(id), comment_id: config["current_comment_id"])
+          next if Orchestration::KeepQueuedDispatches.pending?(target, config["current_comment_id"])
 
           config["state"] = "awaiting_user"
           config["control_version"] = config.fetch("control_version", 0) + 1
