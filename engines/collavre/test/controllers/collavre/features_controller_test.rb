@@ -48,6 +48,19 @@ module Collavre
       end
     end
 
+    test "index omits the landing feature section background while landing retains it" do
+      get "/features"
+
+      assert_response :success
+      assert_select ".landing-section .landing-features-grid", count: 1
+      assert_select ".landing-features", count: 0
+
+      get "/landing"
+
+      assert_response :success
+      assert_select ".landing-section.landing-features", count: 1
+    end
+
     test "Kollavy guide and discovery copy render in both locales" do
       %i[en ko].each do |locale|
         get "/features", params: { locale: locale }
