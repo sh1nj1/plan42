@@ -53,17 +53,18 @@ export function trackNewRowSave(tree, promise) {
 // failed). A render over a row whose create had already failed, or whose edits
 // could not be saved, goes ahead only once the user agrees to discard it; the
 // attachments removed from the drafts it discards are deleted then, since no
-// create will come to delete them.
-export function holdRenderForCreates(event, confirmDiscard, flushOpenRow, deleteAttachment) {
+// create will come to delete them. An open row whose edits the user kept after
+// such a failure holds later renders the same way until they are saved.
+export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttachment) {
   const pendingIn = () => [...new Set([...inFlight, ...rowSaves.keys()])].filter((tree) => event.target.contains(tree))
   const failedIn = () => [...event.target.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
-  if (!event.detail?.resume || !(pendingIn().length || failedIn())) return
+  if (!event.detail?.resume || !(pendingIn().length || failedIn() || openRow.keptUnsaved(event.target))) return
   event.preventDefault()
   const waited = new Set()
   let saveFailed = false
   const purge = () => event.target.querySelectorAll('.creative-tree').forEach((tree) => takeRetryDeletedIds(tree).forEach(deleteAttachment))
   const discard = () => confirmDiscard().then((agreed) => agreed && (purge(), event.detail.resume()))
-  const flushOpen = () => flushOpenRow(event.target)?.then((failed) => (failed ? discard() : settle()))
+  const flushOpen = () => openRow.flush(event.target)?.then((failed) => (failed ? discard() : settle()))
   const settle = () => {
     const pending = pendingIn()
     if (pending.length) {

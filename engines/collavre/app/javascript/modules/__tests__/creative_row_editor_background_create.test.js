@@ -1320,6 +1320,63 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(second.isConnected).toBe(true)
   })
 
+  // The open row was created while the first swap waited, so it is a saved row
+  // whose edit the user kept after its PATCH failed.
+  async function keepFailedEditOfCreatedRow(laterSaves) {
+    const failure = { ok: false, status: 500, clone: () => ({ json: () => Promise.resolve({}) }) }
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
+    const firstPost = deferred()
+    const secondPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementationOnce(() => secondPost.promise)
+      .mockImplementationOnce(() => Promise.resolve(failure))
+      .mockImplementation(laterSaves(failure))
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    frameRender(document.getElementById('creatives'))
+    type('second creative')
+    toggleProgress()
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+    type('second creative, edited')
+    secondPost.resolve(created(78))
+    await flush()
+    expect(confirmDialogMock).toHaveBeenCalledTimes(1)
+    return second
+  }
+
+  test.each([
+    ['asks again when the retry fails and is dropped when the user keeps it', false, false],
+    ['saves the edit and renders when the retry goes through', true, true],
+  ])('a later frame swap over a saved row whose edit the user kept after a failed flush %s', async (_name, retryOk, resumes) => {
+    const second = await keepFailedEditOfCreatedRow((failure) => () => Promise.resolve(retryOk ? created(78) : failure))
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
+
+    const event = frameRender(document.getElementById('creatives'))
+    expect(event.defaultPrevented).toBe(true)
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(4)
+    expect(saveMock.mock.calls[3][1]).toBe('PATCH')
+    expect(sentField(saveMock.mock.calls[3], 'creative[description]')).toContain('second creative, edited')
+    expect(confirmDialogMock).toHaveBeenCalledTimes(resumes ? 1 : 2)
+    expect(event.detail.resume).toHaveBeenCalledTimes(resumes ? 1 : 0)
+    expect(template().parentElement).toBe(second)
+  })
+
+  test('a later frame swap renders at once once the kept edit of a saved row has been saved on close', async () => {
+    await keepFailedEditOfCreatedRow(() => () => Promise.resolve(created(78)))
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(template().style.display).toBe('none')
+
+    const event = frameRender(document.getElementById('creatives'))
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(confirmDialogMock).toHaveBeenCalledTimes(1)
+  })
+
   test('a frame swap stays dropped when the failed row it waited for is reopened before it settles', async () => {
     const firstPost = deferred()
     const secondPost = deferred()

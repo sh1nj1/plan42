@@ -307,7 +307,11 @@ function setupEditorSession() {
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
-    const flushOpenRow = (target) => (isDirty || pendingSave) && target.contains(currentTree) && !creativeSaveSnapshotIsEmpty(captureBufferSnapshot()) ? saveForm(currentTree, parentInput.value).then(isFailedSaveResult, () => true) : null;
+    // A render flushes the open row's edits; when that fails and the user keeps
+    // them, the row holds later renders too, as long as they stay unsaved.
+    let keptUnsavedTree = null;
+    const flushOpenRow = (target, tree = currentTree) => (isDirty || pendingSave) && target.contains(tree) && !creativeSaveSnapshotIsEmpty(captureBufferSnapshot()) ? saveForm(tree, parentInput.value).then(isFailedSaveResult, () => true).then((failed) => ((keptUnsavedTree = failed ? tree : null), failed)) : null;
+    const openRow = { flush: flushOpenRow, keptUnsaved: (target) => !!keptUnsavedTree && keptUnsavedTree === currentTree && (isDirty || pendingSave) && target.contains(currentTree) };
     // Closing is a later edit request too: a click still waiting on a pending
     // create must not reopen the editor after it.
     const closeByUser = (event) => editTickets.take() && hideCurrent(event);
@@ -318,7 +322,7 @@ function setupEditorSession() {
     // it since it opened: nothing on the server refers to them. A saved row's
     // removed uploads stay, as its saved content still does.
     const purgeOpenDraft = (target) => !form.dataset.creativeId && target.contains(currentTree) && lexicalEditor.getDeletedAttachments?.().forEach(deleteAttachment);
-    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }).then((agreed) => (agreed && purgeOpenDraft(event.target), agreed)), flushOpenRow, deleteAttachment);
+    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }).then((agreed) => (agreed && purgeOpenDraft(event.target), agreed)), openRow, deleteAttachment);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
 
