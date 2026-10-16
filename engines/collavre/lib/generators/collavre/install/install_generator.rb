@@ -80,15 +80,9 @@ module Collavre
         configure_gem_entries(build_script, content)
       end
 
-      def configure_gem_entries(build_script, content)
-        # Check if already installed
-        if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
-          say_status :skip, "Collavre already configured in build script", :yellow
-          return
-        end
-
+      def gem_path_function
         # Add gem path detection function after requires
-        gem_path_function = <<~JS
+        <<~JS
 
           // Find Collavre gem path using bundler
           const { execSync } = require('child_process');
@@ -103,9 +97,11 @@ module Collavre
               return null;
           }
         JS
+      end
 
+      def gem_discovery_code
         # Add gem entry point discovery
-        gem_discovery_code = <<~JS
+        <<~JS
 
           // Add Collavre gem entry points
           const collavreGemPath = getCollavreGemPath();
@@ -118,6 +114,14 @@ module Collavre
               });
           }
         JS
+      end
+
+      def configure_gem_entries(build_script, content)
+        # Check if already installed
+        if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
+          say_status :skip, "Collavre already configured in build script", :yellow
+          return
+        end
 
         # Insert function after requires
         if content.include?("const path = require('path');")
