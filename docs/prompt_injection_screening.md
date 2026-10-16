@@ -48,12 +48,12 @@ times out, or answers malformed output yields `error`, never `passed`.
 Severity is `blocked > error > flagged > passed`: a definite block by one
 screener is not overridden by the owner's approval of another screener's error.
 
-| Verdict | Claude Channel |
-|---|---|
-| passed | Delivered |
-| flagged | Not delivered: the session's local tools are outside the server's approval gates |
-| error | Paused for the agent owner's approval |
-| blocked | Not delivered; the task fails and the sender is told |
+| Verdict | LLM turn (server-run tools) | Claude Channel, CLI Proxy, adapter vendors |
+|---|---|---|
+| passed | Delivered | Delivered |
+| flagged | Delivered; every tool call waits for the agent owner | Not delivered: their tools run outside the server's approval gates |
+| error | Paused for the agent owner's approval | Paused for the agent owner's approval |
+| blocked | Not delivered; the task fails and the sender is told | Same |
 
 A notice that cannot be posted is logged; the turn still ends as blocked.
 
@@ -77,6 +77,23 @@ Approving resumes the same task (`ApprovalGateResumeJob`). The approval
 applies only to content with the recorded digest; changed content is
 screened again. Denying fails the task and tells the sender, even if
 screening was turned off while the turn waited.
+
+## LLM turns
+
+`AiAgentService#execute_llm_conversation` screens the resolved provider
+payload (`SessionContextResolver` output) before it is recorded as delivered,
+so the screened content is what is sent. That includes the trigger, merged
+comments, creative context and history. The agent's own replies and the
+owner's history entries (`MessageBuilder` tags history with `:author_id`) are
+left out. Images are not screened.
+
+A flagged turn passes `screening_flagged: true` to `AiClient`.
+`check_tool_approval!` then requires approval for every tool call, with the
+agent's owner as approver (`ApprovalPendingError#approver`). A turn resumed
+from a tool-approval snapshot replays what was screened, so it keeps its flag
+from the turn's `screening` task actions instead of screening again. Only
+vendors whose tools run in the server's RubyLLM loop qualify. A flagged turn
+for CLI Proxy, adapter vendors, or an agent with no owner is blocked.
 
 ## Claude Channel
 
