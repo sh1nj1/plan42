@@ -1365,6 +1365,23 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(template().parentElement).toBe(second)
   })
 
+  test('a page visit left for the kept edit of a saved row restarts its editing ping', async () => {
+    await keepFailedEditOfCreatedRow((failure) => () => Promise.resolve(failure))
+    confirmDialogMock.mockImplementationOnce(() => Promise.resolve(false))
+    const pinged = []
+    const onStart = (e) => pinged.push(e.detail.creativeId)
+    document.addEventListener('creative-editing:start', onStart)
+    document.dispatchEvent(new Event('turbo:before-cache'))
+    const event = new CustomEvent('turbo:before-render', { cancelable: true, detail: { resume: jest.fn() } })
+    document.dispatchEvent(event)
+    await flush()
+    document.removeEventListener('creative-editing:start', onStart)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(event.detail.resume).not.toHaveBeenCalled()
+    expect(pinged).toEqual([78])
+  })
+
   test('a later frame swap renders at once once the kept edit of a saved row has been saved on close', async () => {
     await keepFailedEditOfCreatedRow(() => () => Promise.resolve(created(78)))
     document.getElementById('inline-close').click()

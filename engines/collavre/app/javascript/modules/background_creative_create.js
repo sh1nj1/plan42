@@ -54,7 +54,8 @@ export function trackNewRowSave(tree, promise) {
 // could not be saved, goes ahead only once the user agrees to discard it; the
 // attachments removed from the drafts it discards are deleted then, since no
 // create will come to delete them. An open row whose edits the user kept after
-// such a failure holds later renders the same way until they are saved.
+// such a failure holds later renders the same way until they are saved. A
+// render dropped that way leaves the open row being edited (openRow.keep).
 export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttachment) {
   const pendingIn = () => [...new Set([...inFlight, ...rowSaves.keys()])].filter((tree) => event.target.contains(tree))
   const failedIn = () => [...event.target.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
@@ -63,7 +64,10 @@ export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttac
   const waited = new Set()
   let saveFailed = false
   const purge = () => event.target.querySelectorAll('.creative-tree').forEach((tree) => takeRetryDeletedIds(tree).forEach(deleteAttachment))
-  const discard = () => confirmDiscard().then((agreed) => agreed && (purge(), event.detail.resume()))
+  // A render left for good keeps the open row on the page: whatever the render
+  // already stopped for it (a page visit's before-cache stops its editing ping)
+  // must be restarted.
+  const discard = () => confirmDiscard().then((agreed) => (agreed ? (purge(), event.detail.resume()) : openRow.keep()))
   const flushOpen = () => openRow.flush(event.target)?.then((failed) => (failed ? discard() : settle()))
   const settle = () => {
     const pending = pendingIn()
@@ -71,7 +75,7 @@ export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttac
       pending.forEach((tree) => waited.add(tree))
       Promise.all(pending.flatMap((tree) => [creates.get(tree), rowSaves.get(tree)?.then((failed) => { saveFailed ||= failed })])).then(settle)
     } else if (saveFailed || [...waited].some((tree) => failedRows.has(tree))) {
-      return
+      openRow.keep()
     } else if (flushOpen()) {
       return
     } else if (!failedIn()) {
