@@ -33,7 +33,7 @@ module Collavre
       # The running transition and the execution stamp are one write, so no
       # observer sees a running row still carrying the previous attempt's owner.
       def self.start!(task, execution_job_id: nil)
-        if task.pending_tool_call&.dig("kind") == "approval_gate"
+        if Task.approval_gate_kind?(task.pending_tool_call)
           return task.with_lock do
             next false unless task.pending_approval? && task.pending_tool_call["decision"]
 

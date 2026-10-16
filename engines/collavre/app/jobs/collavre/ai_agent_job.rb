@@ -97,28 +97,11 @@ module Collavre
       should_release = true
 
       begin
-        # For Claude Channel agents, transition to "delegated" BEFORE dispatching.
-        # The MCP client can receive the broadcast and POST /reply on a different
-        # thread before AiAgentService#call returns; the reply handler only looks
-        # for status: "delegated" tasks, so a late update! would leave the
-        # already-answered task stuck in delegated until stuck recovery.
-        if is_claude_channel_agent
-          # Atomic running -> delegated transition. If AgentsController#destroy
-          # races us between reserve! above and this line and flips the task
-          # to "cancelled", the locked status check fails, we skip dispatch,
-          # and the ensure block releases the slot. A separate reload +
-          # update! would let the cancel slip in between.
-          unless delegate_to_channel!(task, attempt_generation)
-            Rails.logger.info(
-              "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
-              "(status=#{task.status}); skipping dispatch"
-            )
-            return
-          end
-        end
+        service = AiAgentService.new(task)
+        return if is_claude_channel_agent && !hand_to_channel!(service, task, attempt_generation)
 
         return unless Workflow::FixedAnchor.validate!(task)
-        AiAgentService.new(task).call
+        service.call
 
         # Claude Channel agents delegate via MCP; no immediate response expected
         if is_claude_channel_agent
@@ -158,6 +141,31 @@ module Collavre
     end
 
     private
+
+    # Screened while still running, so an unanswered screening can pause the
+    # turn for approval before anything is handed to the session.
+    #
+    # For Claude Channel agents, transition to "delegated" BEFORE dispatching.
+    # The MCP client can receive the broadcast and POST /reply on a different
+    # thread before AiAgentService#call returns; the reply handler only looks
+    # for status: "delegated" tasks, so a late update! would leave the
+    # already-answered task stuck in delegated until stuck recovery.
+    #
+    # Atomic running -> delegated transition. If AgentsController#destroy
+    # races us between reserve! and this line and flips the task to
+    # "cancelled", the locked status check fails, we skip dispatch, and the
+    # caller's ensure block releases the slot. A separate reload + update!
+    # would let the cancel slip in between.
+    def hand_to_channel!(service, task, attempt_generation)
+      service.screen_channel_turn!
+      return true if delegate_to_channel!(task, attempt_generation)
+
+      Rails.logger.info(
+        "[AiAgentJob] Claude Channel task #{task.id} not in running state " \
+        "(status=#{task.status}); skipping dispatch"
+      )
+      false
+    end
 
     # Give back what the attempt held once its worker is out — unless the turn
     # was suspended and resumed under it: the resumed attempt now owns the

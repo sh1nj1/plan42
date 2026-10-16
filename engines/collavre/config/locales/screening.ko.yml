@@ -1,0 +1,13 @@
+ko:
+  collavre:
+    screening:
+      approval_request: |-
+        프롬프트 인젝션 검사로 %{agent}에게 전달할 메시지를 확인하지 못했습니다 (%{error}).
+        승인하면 검사 없이 %{agent}에게 전달하고, 거절하면 전달하지 않습니다.
+
+        보낸 사람: %{sender}
+
+        %{excerpt}
+      blocked_notice: "프롬프트 인젝션 검사에서 위험한 내용으로 판정되어 이 메시지를 %{agent}에게 전달하지 않았습니다."
+      denied_notice: "agent 소유자가 검사 없이 전달하는 것을 거절하여 이 메시지를 %{agent}에게 전달하지 않았습니다."
+      unknown_sender: "확인되지 않은 발신자"

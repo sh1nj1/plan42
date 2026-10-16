@@ -104,7 +104,7 @@ module Collavre
       queue_job.ready_execution.destroy!
       claim = SolidQueue::ClaimedExecution.create!(job: queue_job, process: process)
 
-      AiAgentService.stub :new, ->(task) {
+      AiAgent::ClaudeChannelAdapter.stub :new, ->(task:, **) {
         assert_equal "delegated", task.reload.status
         assert_equal({ "generation" => Orchestration::ExecutionFence.generation(task), "state" => "pending" },
           task.trigger_event_payload["channel_handoff"])
