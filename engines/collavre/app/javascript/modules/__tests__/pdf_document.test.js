@@ -188,3 +188,27 @@ test('PDF failures overlay the document area and remain hidden after recovery', 
     style.remove()
   }
 })
+
+
+test.each([1, 2, 1.5])('renders PDF at device pixel ratio %s without changing CSS size', async ratio => {
+  const viewer = setup()
+  const previousRatio = window.devicePixelRatio
+  window.devicePixelRatio = ratio
+  const render = jest.fn().mockReturnValue({ promise: Promise.resolve() })
+  const getPage = async () => ({
+    getViewport: ({ scale }) => ({ width: 400 * scale, height: 600 * scale }), render
+  })
+  try {
+    await initializePdfDocument(viewer, async () => ({
+      getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage }) }), GlobalWorkerOptions: {}
+    }))
+    const canvas = viewer.querySelector('canvas')
+    expect(canvas.width).toBe(600 * ratio)
+    expect(canvas.height).toBe(900 * ratio)
+    expect(canvas.style.width).toBe('600px')
+    expect(canvas.style.height).toBe('900px')
+    expect(render.mock.calls[0][0].transform).toEqual([ratio, 0, 0, ratio, 0, 0])
+  } finally {
+    window.devicePixelRatio = previousRatio
+  }
+})

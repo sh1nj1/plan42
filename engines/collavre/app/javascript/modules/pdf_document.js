@@ -20,10 +20,7 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
         const page = await pdf.getPage(pageNumber)
         const base = page.getViewport({ scale: 1 })
         const viewport = page.getViewport({ scale: Math.min(content.clientWidth / base.width, 4) * scale })
-        const canvas = document.createElement('canvas')
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+        const canvas = await renderPdfPage(viewer, page, viewport)
         viewer.querySelector('[data-document-error]').hidden = true
         content.replaceChildren(canvas)
       } catch {
@@ -47,6 +44,17 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
     loading.hidden = true
     viewer.querySelector('[data-document-error]').hidden = false
   }
+}
+
+async function renderPdfPage(viewer, page, viewport) {
+  const canvas = document.createElement('canvas')
+  const ratio = viewer.ownerDocument.defaultView.devicePixelRatio || 1
+  canvas.width = Math.floor(viewport.width * ratio)
+  canvas.height = Math.floor(viewport.height * ratio)
+  canvas.style.width = `${viewport.width}px`
+  canvas.style.height = `${viewport.height}px`
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport, transform: [ratio, 0, 0, ratio, 0, 0] }).promise
+  return canvas
 }
 
 function bindPdfControls(viewer, actions) {
