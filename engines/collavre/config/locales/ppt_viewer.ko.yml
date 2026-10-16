@@ -1,6 +1,8 @@
 ko:
   collavre:
     ppt_viewer:
+      zoom: "확대/축소"
+      loading: "불러오는 중…"
       close: "닫기"
       download: "다운로드"
       title: "프레젠테이션: %{filename}"
@@ -9,4 +11,8 @@ ko:
       next: "다음 슬라이드"
       fullscreen: "전체화면"
       fullscreen_error: "전체화면을 시작할 수 없습니다."
-      invalid: "이 프레젠테이션을 표시할 수 없습니다."
+      invalid: "이 문서를 표시할 수 없습니다."
+      document_controls: "문서 제어"
+      page_navigation: "페이지 탐색"
+      previous_page: "이전 페이지"
+      next_page: "다음 페이지"

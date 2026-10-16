@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { jest } from '@jest/globals'
 import { initializePptViewer } from '../ppt_viewer'
 
@@ -68,6 +69,9 @@ test('hides unsupported fullscreen and initializes only viewer pages', () => {
 
 test('sizes the embedding frame from validated presentation dimensions', () => {
   const frame = document.createElement('iframe')
+  const wrapper = document.createElement('div')
+  wrapper.className = 'ppt-attachment-preview'
+  wrapper.append(frame)
   Object.defineProperty(window, 'frameElement', { configurable: true, value: frame })
   const viewer = setup()
   const slide = document.createElement('div')
@@ -78,6 +82,7 @@ test('sizes the embedding frame from validated presentation dimensions', () => {
     slide.dataset.pptHeight = height
     initializePptViewer(viewer)
     expect(frame.style.aspectRatio).toBe(`${width} / ${height}`)
+    expect(wrapper.style.aspectRatio).toBe(`${width} / ${height}`)
   }
   for (const [width, height] of [[0, 1], [1, -1], ['invalid', 1], [Infinity, 1], [1, 1e10]]) {
     frame.style.aspectRatio = ''
@@ -150,4 +155,37 @@ test('slide links open outside the iframe without changing download targets', ()
   expect(link.target).toBe('_blank')
   expect(link.rel).toBe('noopener noreferrer')
   expect(viewer.querySelector('a[href="/download"]').target).toBe('')
+})
+
+
+test('document viewers initialize fullscreen without presentation navigation', async () => {
+  setup()
+  const viewer = document.querySelector('.ppt-viewer').cloneNode(true)
+  viewer.classList.add('document-viewer')
+  viewer.querySelectorAll('.ppt-viewer-slide, [data-ppt-previous], [data-ppt-next], [data-ppt-counter]').forEach(element => element.remove())
+  viewer.requestFullscreen = jest.fn().mockResolvedValue(undefined)
+  document.body.replaceChildren(viewer)
+  initializePptViewer(viewer)
+  viewer.querySelector('[data-ppt-fullscreen]').click()
+  await tick()
+  expect(viewer.requestFullscreen).toHaveBeenCalledTimes(1)
+  expect(document.activeElement).toBe(viewer)
+})
+
+test('document fullscreen control stays hidden when fullscreen is unsupported', () => {
+  const style = document.createElement('style')
+  style.textContent = readFileSync('engines/collavre/app/assets/stylesheets/collavre/slide_view.css', 'utf8')
+  document.head.append(style)
+  const viewer = setup(false)
+  viewer.classList.add('document-viewer')
+  const controls = document.createElement('div')
+  controls.id = 'slide-controls'
+  viewer.append(controls)
+  const button = viewer.querySelector('[data-ppt-fullscreen]')
+  controls.append(button)
+  expect(button.hidden).toBe(true)
+  expect(getComputedStyle(button).display).toBe('none')
+  button.hidden = false
+  expect(getComputedStyle(button).display).toBe('block')
+  style.remove()
 })

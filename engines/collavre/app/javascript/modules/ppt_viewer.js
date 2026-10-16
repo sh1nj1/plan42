@@ -5,7 +5,12 @@ function sizePreviewFrame(viewer) {
   const width = Number(slide.dataset.pptWidth)
   const height = Number(slide.dataset.pptHeight)
   const valid = value => Number.isFinite(value) && value >= 1 && value <= 1e9
-  if (valid(width) && valid(height)) frame.style.aspectRatio = `${width} / ${height}`
+  if (valid(width) && valid(height)) {
+    frame.style.aspectRatio = `${width} / ${height}`
+    if (frame.parentElement?.classList.contains("ppt-attachment-preview")) {
+      frame.parentElement.style.aspectRatio = `${width} / ${height}`
+    }
+  }
 }
 
 function initializePresentationControls(viewer, fullscreen) {
@@ -42,6 +47,8 @@ function initializePresentationControls(viewer, fullscreen) {
 }
 
 export function initializePptViewer(viewer) {
+  initializePresentationControls(viewer, viewer.querySelector('[data-ppt-fullscreen]'))
+  if (viewer.classList.contains('document-viewer')) return
   sizePreviewFrame(viewer)
   viewer.querySelectorAll(".ppt-viewer-slide a[href]").forEach(link => {
     link.target = "_blank"
@@ -66,7 +73,6 @@ export function initializePptViewer(viewer) {
     event.preventDefault()
     show(index + (event.key === 'ArrowRight' ? 1 : -1))
   })
-  initializePresentationControls(viewer, viewer.querySelector('[data-ppt-fullscreen]'))
   show(0)
 }
 

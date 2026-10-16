@@ -33,7 +33,7 @@ describe('attachment rendering parity', () => {
 	editing.innerHTML = renderToStaticMarkup(node.decorate())
 	expect(saved.getAttribute('src')).toBe('/collavre/ppt_previews/signed')
 	expect(sanitizeDescriptionHtml(saved.outerHTML)).toContain('/collavre/ppt_previews/signed')
-	expect(editing.firstChild.getAttribute('src')).toBe(saved.getAttribute('src'))
+	expect(editing.querySelector('iframe').getAttribute('src')).toBe(saved.getAttribute('src'))
       }, {discrete: true})
     }
   )
@@ -86,11 +86,11 @@ describe('attachment rendering parity', () => {
       expect(stopped).toBe(true)
       editing.innerHTML = renderToStaticMarkup(decoration)
       expect(saved.getAttribute('src')).toBe('/ppt_previews/signed')
-      expect(saved.getAttribute('src')).toBe(editing.firstChild.getAttribute('src'))
+      expect(saved.getAttribute('src')).toBe(editing.querySelector('iframe').getAttribute('src'))
       expect(saved.title).toBe('deck.PPTX')
       expect(saved.hasAttribute('allowfullscreen')).toBe(true)
       expect(saved.getAttribute('allow')).toBe('fullscreen')
-      expect(saved.className).toBe(editing.firstChild.className)
+      expect(saved.className).toBe(editing.querySelector('iframe').className)
       expect(sanitizeDescriptionHtml(saved.outerHTML)).toContain('/ppt_previews/signed')
       expect(node.exportDOM().element.tagName).toBe('A')
       expect(AttachmentNode.importDOM().a(node.exportDOM().element).conversion(node.exportDOM().element).node.getSrc()).toBe(src)
@@ -170,4 +170,20 @@ describe('attachment rendering parity', () => {
     expect(link.hasAttribute('href')).toBe(false)
     expect(link.hasAttribute('onclick')).toBe(false)
   })
+})
+
+test.each(['notes.md', 'report.HTML', 'paper.pdf', 'slides.pptx'])('shared preview renders %s in both display paths', filename => {
+  document.head.innerHTML = '<meta name="ppt-preview-url-template" content="/ppt_previews/PPT_BLOB_ID"><meta name="document-loading" content="불러오는 중…">'
+  const editor = createEditor({nodes: [AttachmentNode], onError: error => { throw error }})
+  editor.update(() => {
+    const node = $createAttachmentNode({src: '/public-assets/blobs/signed/file', filename})
+    const saved = render(node.exportDOM().element.outerHTML)
+    const editing = document.createElement('div')
+    editing.innerHTML = renderToStaticMarkup(node.decorate())
+    for (const root of [saved, editing]) {
+      expect(root.querySelector('[data-controller="document-preview"]').getAttribute('aria-busy')).toBe('true')
+      expect(root.querySelector('.media-loading').getAttribute('aria-label')).toBe('불러오는 중…')
+      expect(root.querySelector('iframe').getAttribute('src')).toBe('/ppt_previews/signed')
+    }
+  }, {discrete: true})
 })

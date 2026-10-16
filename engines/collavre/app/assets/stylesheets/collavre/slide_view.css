@@ -227,3 +227,61 @@
 .ppt-viewer:not(:fullscreen) #slide-view .ppt-slide {
   width: 100%;
 }
+
+.document-viewer { height: 100dvh; cursor: default; }
+.document-viewer #slide-content { position: relative; height: 100%; }
+.document-viewer #slide-content .document-viewer-content {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  background: white;
+}
+.document-viewer #slide-view { height: calc(100dvh - 44px); }
+.document-viewer #slide-controls {
+  position: relative;
+  left: 0;
+  bottom: 0;
+  height: 44px;
+  gap: 4px;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 1;
+  background: var(--surface-bg);
+}
+.document-viewer #slide-controls :is(button, a) {
+  position: static;
+  pointer-events: auto;
+  padding: 6px;
+  font: inherit;
+  color: var(--text-color);
+  filter: none;
+}
+.document-viewer #slide-controls svg { width: 24px; height: 24px; }
+.document-viewer #slide-controls [data-ppt-fullscreen]:not([hidden]) { display: block; }
+.document-viewer:fullscreen #slide-controls [data-ppt-fullscreen] { display: none; }
+.document-viewer #slide-controls [data-ppt-previous],
+.document-viewer #slide-controls [data-ppt-next],
+.document-viewer #slide-controls [data-ppt-counter] {
+  position: static;
+  transform: none;
+}
+.document-viewer #slide-controls [data-ppt-counter] {
+  color: var(--text-color);
+  text-shadow: none;
+  white-space: nowrap;
+}
+.pdf-document { height: 100%; overflow: auto; text-align: center; }
+.pdf-document canvas { max-width: none; background: white; }
+
+.document-viewer [data-document-error]:not([hidden]) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: var(--surface-bg);
+  color: var(--text-color);
+  text-align: center;
+}

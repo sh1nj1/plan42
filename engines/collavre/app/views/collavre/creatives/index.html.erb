@@ -1,4 +1,5 @@
 <% content_for :head do %>
+  <%= tag.meta name: "document-loading", content: t("collavre.ppt_viewer.loading") %>
   <%= tag.meta name: "ppt-preview-url-template", content: collavre.ppt_preview_path("PPT_BLOB_ID") %>
 <% end %>
 <% creative_index_content = capture do %>

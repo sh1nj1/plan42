@@ -2058,13 +2058,39 @@ creative-tree-row.is-being-edited .creative-tree {
 }
 
 /* Presentation attachments expand the row rather than using text's reading width. */
-.creative-row-start > div:has(.ppt-attachment-preview) {
+.creative-row-start > :is(div, .page-title):has(.ppt-attachment-preview) {
   flex: 1;
   min-width: 0;
 }
 
-.creative-content:has(.ppt-attachment-preview) {
+.creative-content:has(.ppt-attachment-preview),
+.creative-title-content:has(.ppt-attachment-preview) {
   width: 100%;
   min-width: 0;
   max-width: none;
+}
+
+.ppt-attachment-preview { position: relative; }
+.document-preview-frame { width: 100%; height: 100%; border: 0; display: block; }
+.ppt-attachment-preview[aria-busy="true"] > iframe { opacity: 0; }
+.media-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.media-loading[hidden] { display: none; }
+.media-loading::after {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-color, #ccc);
+  border-top-color: var(--text-color, #555);
+  border-radius: 50%;
+  animation: media-loading-spin 800ms linear infinite;
+}
+@keyframes media-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .media-loading::after { animation: none; }
 }

@@ -114,6 +114,86 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "markdown renders headings tables and code in a sandboxed document" do
+    @creative.files.attach(ActiveStorage::Blob.create_and_upload!(io: StringIO.new("# Notes\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n```ruby\nputs 1\n```"), filename: "notes.md"))
+    get collavre.ppt_preview_path(@creative.files.last.blob.signed_id)
+    assert_response :success
+    assert_select ".document-viewer"
+    assert_select "iframe[sandbox='']" do |frames|
+      html = Nokogiri::HTML.parse(frames.first["srcdoc"])
+      assert_equal "Notes", html.at_css("h1").text
+      assert html.at_css("table")
+      assert html.at_css("pre code")
+    end
+    assert_select ".ppt-viewer h1, .ppt-viewer style", count: 0
+    assert_select "[data-ppt-fullscreen]"
+    assert_select "[data-ppt-next]", count: 0
+  end
+
+  test "html source stays escaped inside a sandbox without script permissions" do
+    source = '<h1>Report</h1><script>window.parent.compromised=true</script>'
+    @creative.files.attach(ActiveStorage::Blob.create_and_upload!(io: StringIO.new(source), filename: "report.HTML"))
+    get collavre.ppt_preview_path(@creative.files.last.blob.signed_id)
+    assert_response :success
+    assert_select "iframe[sandbox='']" do |frames|
+      assert_equal source, frames.first["srcdoc"]
+    end
+    assert_select ".ppt-viewer > script", count: 0
+  end
+
+  test "pdf uses a local PDF.js worker and shared document controls" do
+    @blob.update!(filename: "report.pdf")
+    get @path
+    assert_response :success
+    assert_select ".pdf-document[data-pdf-src][data-pdf-worker]" do |elements|
+      assert_match %r{/collavre_pdf_worker[^/]*\.js}, elements.first["data-pdf-worker"]
+    end
+    assert_select "script[src]" do |scripts|
+      assert scripts.any? { |script| script["src"].match?(%r{/collavre_pdf_viewer[^/]*\.js}) }
+    end
+    assert_select "[data-pdf-zoom]"
+    assert_select "[data-ppt-next]"
+    assert_select ".media-loading[role=status]"
+  end
+
+  test "preview accessibility labels describe documents pages and slides in both locales" do
+    { en: [ "Document controls", "Page navigation", "Previous page", "Next page", "Slide navigation" ],
+      ko: [ "문서 제어", "페이지 탐색", "이전 페이지", "다음 페이지", "슬라이드 탐색" ] }.each do |locale, labels|
+      users(:one).update!(locale: locale)
+      %w[md html pdf pptx].each do |extension|
+        @blob.update!(filename: "document.#{extension}")
+        Collavre::PptPreview.stub :slides, [ "Slide" ] do
+          get @path, params: { locale: locale }
+        end
+        assert_response :success
+        navigation = extension == "pptx" ? labels[4] : (extension == "pdf" ? labels[1] : labels[0])
+        assert_select ".ppt-viewer[aria-label=?]", navigation
+        assert_select "nav[aria-label=?]", navigation
+        if extension == "pdf"
+          assert_select "[data-ppt-previous][aria-label=?]", labels[2]
+          assert_select "[data-ppt-next][aria-label=?]", labels[3]
+        end
+      end
+    end
+  end
+
+  test "document size limit is applied before downloading" do
+    @blob.update!(filename: "large.md", byte_size: 10.megabytes + 1)
+    get @path
+    assert_response :unprocessable_entity
+  end
+
+  test "new formats retain creative authorization" do
+    sign_in_as(users(:two), password: "password")
+    %w[md html pdf].each do |extension|
+      @blob.update!(filename: "private.#{extension}")
+      get @path
+      assert_response :forbidden
+      get collavre.ppt_preview_path(@blob.signed_id)
+      assert_response :not_found
+    end
+  end
+
   test "non pptx attachments are rejected" do
     @blob.update!(filename: "notes.txt")
     get @path

@@ -1,4 +1,4 @@
-import { pptAttachmentProps } from "./ppt_attachment"
+import { pptAttachmentProps, previewContainerProps, previewLoadingProps } from "./ppt_attachment"
 import { formatFileSize } from './attachment_payload'
 
 // Shared by the editor decorator and sanitized, read-only descriptions.
@@ -26,9 +26,21 @@ export function decorateAttachmentLinks(root) {
     const preview = pptAttachmentProps(link.getAttribute('href'), filename)
     if (preview) {
       const frame = document.createElement('iframe')
-      Object.assign(frame, preview)
+      Object.entries(preview).forEach(([key, value]) => {
+        if (key.startsWith('data-')) frame.setAttribute(key, value)
+        else frame[key] = value
+      })
       frame.setAttribute('allowfullscreen', '')
-      link.replaceWith(frame)
+      const container = document.createElement('span')
+      const loading = document.createElement('span')
+      for (const [key, value] of Object.entries(previewContainerProps())) {
+        container.setAttribute(key === 'className' ? 'class' : key, value)
+      }
+      for (const [key, value] of Object.entries(previewLoadingProps())) {
+        loading.setAttribute(key === 'className' ? 'class' : key, value)
+      }
+      container.append(loading, frame)
+      link.replaceWith(container)
       return
     }
     const parts = attachmentLinkParts(filename, link.getAttribute('data-filesize'))

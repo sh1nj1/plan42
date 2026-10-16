@@ -26,9 +26,9 @@ class PptViewerTest < ApplicationSystemTestCase
 
   test "inline viewer navigates and uses native fullscreen" do
     visit collavre.creatives_path(id: @creative.id)
-    assert_selector "iframe.ppt-attachment-preview"
+    assert_selector "iframe.document-preview-frame"
     assert_preview_fills_container
-    within_frame(find("iframe.ppt-attachment-preview")) do
+    within_frame(find("iframe.document-preview-frame")) do
       assert_equal "0", page.evaluate_script("getComputedStyle(document.querySelector('#slide-controls')).opacity")
       find(".ppt-viewer").hover
       assert_selector "[data-ppt-counter]", text: "1 / 2"
@@ -57,7 +57,7 @@ class PptViewerTest < ApplicationSystemTestCase
   end
   test "fullscreen controls reveal keyboard focus without changing click toggles" do
     visit collavre.creatives_path(id: @creative.id)
-    within_frame(find("iframe.ppt-attachment-preview")) do
+    within_frame(find("iframe.document-preview-frame")) do
       find(".ppt-viewer-slide:not([hidden])").click
       assert_selector ".ppt-viewer:fullscreen"
       assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
@@ -79,7 +79,7 @@ class PptViewerTest < ApplicationSystemTestCase
     visit collavre.creatives_path
     find("#creative-#{@creative.id}").hover
     find("#creative-#{@creative.id} .edit-inline-btn").click
-    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
+    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.document-preview-frame"
     editor = find("[data-lexical-editor-root][data-editor-ready='true']")
     assert_preview_fills_container
     original_src = editor.find("iframe")["src"]
@@ -87,11 +87,11 @@ class PptViewerTest < ApplicationSystemTestCase
       Tempfile.create([ "uploaded", ".pptx" ]) do |upload|
         FileUtils.cp(file.path, upload.path)
         editor.find("input[type=file]:not([accept])", visible: false).attach_file(upload.path)
-        assert_selector "[data-lexical-editor-root] iframe.ppt-attachment-preview", count: 2
+        assert_selector "[data-lexical-editor-root] iframe.document-preview-frame", count: 2
       end
     end
-    assert_selector "[data-lexical-editor-root] iframe.ppt-attachment-preview", count: 2
-    within_frame(all("[data-lexical-editor-root] iframe.ppt-attachment-preview").last) do
+    assert_selector "[data-lexical-editor-root] iframe.document-preview-frame", count: 2
+    within_frame(all("[data-lexical-editor-root] iframe.document-preview-frame").last) do
       find(".ppt-viewer").hover
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       find("[data-ppt-next]").click
@@ -99,14 +99,14 @@ class PptViewerTest < ApplicationSystemTestCase
     end
     find("#inline-close").click
     assert_no_selector ".lexical-content-editable"
-    assert_selector "#creative-#{@creative.id} iframe.ppt-attachment-preview", count: 2
-    assert_equal original_src, first("#creative-#{@creative.id} iframe.ppt-attachment-preview")["src"]
+    assert_selector "#creative-#{@creative.id} iframe.document-preview-frame", count: 2
+    assert_equal original_src, first("#creative-#{@creative.id} iframe.document-preview-frame")["src"]
   end
 
   test "standard slides fill editor and creative width and preserve fullscreen" do
     visit collavre.creatives_path(id: @creative.id)
     assert_preview_fills_container(4.0 / 3)
-    within_frame(first("iframe.ppt-attachment-preview")) do
+    within_frame(first("iframe.document-preview-frame")) do
       find(".ppt-viewer").hover
       find(".ppt-viewer-slide:not([hidden])").click
       assert_selector ".ppt-viewer:fullscreen"
@@ -120,14 +120,14 @@ class PptViewerTest < ApplicationSystemTestCase
     visit collavre.creatives_path
     find("#creative-#{@creative.id}").hover
     find("#creative-#{@creative.id} .edit-inline-btn").click
-    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
+    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.document-preview-frame"
     assert_preview_fills_container(4.0 / 3)
   end
 
   test "touch controls toggle and fullscreen provides download and close" do
     visit collavre.creatives_path(id: @creative.id)
     page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: true)
-    within_frame(find("iframe.ppt-attachment-preview")) do
+    within_frame(find("iframe.document-preview-frame")) do
       assert page.evaluate_script("matchMedia('(hover: none)').matches")
       viewer = find(".ppt-viewer")
       assert_equal "0", page.evaluate_script("getComputedStyle(document.querySelector('#slide-controls')).opacity")
@@ -155,7 +155,7 @@ class PptViewerTest < ApplicationSystemTestCase
       source: "Element.prototype.requestFullscreen = undefined")
     page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: true)
     visit collavre.creatives_path(id: @creative.id)
-    within_frame(find("iframe.ppt-attachment-preview")) do
+    within_frame(find("iframe.document-preview-frame")) do
       assert page.evaluate_script("typeof document.querySelector('.ppt-viewer').requestFullscreen === 'undefined'")
       find(".ppt-viewer").click
       assert_selector "a[download]"
@@ -169,7 +169,7 @@ class PptViewerTest < ApplicationSystemTestCase
 
   test "download remains available when fullscreen request is rejected" do
     visit collavre.creatives_path(id: @creative.id)
-    within_frame(find("iframe.ppt-attachment-preview")) do
+    within_frame(find("iframe.document-preview-frame")) do
       page.execute_script("document.querySelector('.ppt-viewer').requestFullscreen = () => Promise.reject(new Error('Denied'))")
       find(".ppt-viewer-slide:not([hidden])").click
       assert_selector "[data-ppt-error]"
@@ -183,7 +183,7 @@ class PptViewerTest < ApplicationSystemTestCase
     [ 900, 1400, 800 ].each do |width|
       page.current_window.resize_to(width, 1000)
       assert_preview_fills_container
-      frame = first("iframe.ppt-attachment-preview")
+      frame = first("iframe.document-preview-frame")
       sizes = page.evaluate_script(<<~JS, frame)
         ((frame) => {
           const row = frame.closest('.creative-row-start');
@@ -194,7 +194,7 @@ class PptViewerTest < ApplicationSystemTestCase
     end
     find("#creative-#{@creative.id}").hover
     find("#creative-#{@creative.id} .edit-inline-btn").click
-    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.ppt-attachment-preview"
+    assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.document-preview-frame"
     [ 1400, 800 ].each do |width|
       page.current_window.resize_to(width, 1000)
       assert_preview_fills_container
@@ -203,7 +203,7 @@ class PptViewerTest < ApplicationSystemTestCase
 
   test "navigation buttons stay centered while pressed" do
     visit collavre.creatives_path(id: @creative.id)
-    within_frame(first("iframe.ppt-attachment-preview")) do
+    within_frame(first("iframe.document-preview-frame")) do
       find(".ppt-viewer").hover
       [ "next", "previous" ].each do |direction|
         button = find("[data-ppt-#{direction}]")
@@ -216,11 +216,46 @@ class PptViewerTest < ApplicationSystemTestCase
     end
   end
 
+  test "markdown and html use a sandboxed document with shared fullscreen and loading" do
+    { "notes.md" => "# Document heading", "page.html" => '<h1>Document heading</h1><script>parent.compromised=true</script>' }.each do |filename, source|
+      blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(source), filename: filename)
+      @creative.embed_attachment_blob!(blob)
+    end
+    visit collavre.creatives_path(id: @creative.id)
+    assert_selector ".ppt-attachment-preview[aria-busy='false']", count: 3
+    all("iframe.document-preview-frame").drop(1).each do |frame|
+      within_frame(frame) do
+        assert_selector ".document-viewer"
+        within_frame(find("iframe[sandbox]")) { assert_selector "h1", text: "Document heading" }
+        assert_nil page.evaluate_script("window.compromised")
+        find("[data-ppt-fullscreen]").click
+        assert_selector ".document-viewer:fullscreen"
+        find("[data-ppt-close]").click
+        assert_no_selector ".document-viewer:fullscreen"
+      end
+    end
+  end
+
+  test "pdf renders locally and navigates pages with the common toolbar" do
+    blob = ActiveStorage::Blob.create_and_upload!(io: File.open(File.expand_path("../fixtures/files/document_viewer.pdf", __dir__)), filename: "paper.pdf", content_type: "application/pdf")
+    @creative.embed_attachment_blob!(blob)
+    visit collavre.creatives_path(id: @creative.id)
+    within_frame(all("iframe.document-preview-frame").last) do
+      assert_selector ".pdf-document canvas"
+      assert_selector "[data-ppt-counter]", text: "1 / 2"
+      assert_no_selector ".media-loading"
+      find("[data-ppt-next]").click
+      assert_selector "[data-ppt-counter]", text: "2 / 2"
+      find("[data-pdf-zoom]").click
+      assert_no_selector "[data-document-error]"
+    end
+  end
+
   private
 
   def assert_preview_fills_container(ratio = 16.0 / 9)
-    assert_selector 'iframe.ppt-attachment-preview[style*="aspect-ratio"]'
-    dimensions = page.evaluate_script(<<~JS, first("iframe.ppt-attachment-preview"))
+    assert_selector 'iframe.document-preview-frame[style*="aspect-ratio"]'
+    dimensions = page.evaluate_script(<<~JS, first("iframe.document-preview-frame"))
       ((frame) => {
         const container = frame.closest('.lexical-content-editable') || frame.parentElement;
         const style = getComputedStyle(container);
@@ -233,7 +268,7 @@ class PptViewerTest < ApplicationSystemTestCase
     JS
     assert_in_delta dimensions["available"], dimensions["width"], 2
     assert_in_delta dimensions["width"] / ratio, dimensions["height"], 2
-    within_frame(first("iframe.ppt-attachment-preview")) do
+    within_frame(first("iframe.document-preview-frame")) do
       assert_selector ".ppt-slide"
       slide_width = page.evaluate_script("document.querySelector('.ppt-slide').getBoundingClientRect().width")
       assert_in_delta dimensions["width"], slide_width, 2
