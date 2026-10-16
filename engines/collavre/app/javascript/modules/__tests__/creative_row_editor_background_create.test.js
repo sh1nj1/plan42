@@ -1218,6 +1218,53 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(event.detail.resume).toHaveBeenCalled()
   })
 
+  function unload() {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event
+  }
+
+  test('leaving the page asks first while a background create is in flight', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+
+    expect(unload().defaultPrevented).toBe(true)
+
+    firstPost.resolve(created(77))
+    await flush()
+    expect(unload().defaultPrevented).toBe(false)
+  })
+
+  test('leaving the page asks first while a save of the open new row is in flight', async () => {
+    const post = deferred()
+    saveMock.mockImplementationOnce(() => post.promise)
+    await startNewRow('first creative')
+    toggleProgress()
+    await flush()
+    expect(saveMock).toHaveBeenCalledTimes(1)
+
+    expect(unload().defaultPrevented).toBe(true)
+
+    post.resolve(created(77))
+    await flush()
+    expect(unload().defaultPrevented).toBe(false)
+  })
+
+  test('leaving the page asks first while a failed draft is on it', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    expect(first.dataset.saveState).toBe('error')
+
+    expect(unload().defaultPrevented).toBe(true)
+
+    first.parentElement.remove()
+    expect(unload().defaultPrevented).toBe(false)
+  })
+
   test('a frame swap is dropped when a save of the open new row started while it was paused fails', async () => {
     const firstPost = deferred()
     const secondPost = deferred()
