@@ -22,6 +22,28 @@ module Collavre
 
       private
 
+      # Screens what this LLM turn hands the provider, after the session filter
+      # and before anything is recorded as delivered. A flagged turn proceeds
+      # only where every tool call passes through the server's approval gate
+      # (AiClient#check_tool_approval!), and each call then waits for the agent
+      # owner. Elsewhere (CLI Proxy, adapter vendors) it is blocked like a
+      # Claude Channel turn. A turn resumed from an approval snapshot replays
+      # what was screened, so it keeps its earlier flag.
+      def screen_llm_turn!(resolved)
+        @screening_flagged =
+          if ApprovalConversation.restoring_snapshot?(@task.pending_tool_call)
+            Screening.flagged?(@task)
+          else
+            texts = Screening.texts_for(resolved[:messages], owner_id: @agent.created_by_id)
+            screening_guard.call(texts, block_flagged: !server_gated_tools?) == "flagged"
+          end
+      end
+
+      def server_gated_tools?
+        vendor = @agent.llm_vendor.to_s.strip.downcase
+        AiClient::VENDOR_TO_PROVIDER.key?(vendor) && vendor != "cli_proxy" && @agent.creator.present?
+      end
+
       def delegate_to_claude_channel
         log_action("start", { message: "Delegating to Claude Channel via MCP" })
 

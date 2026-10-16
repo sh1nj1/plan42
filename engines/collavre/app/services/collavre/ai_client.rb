@@ -302,15 +302,18 @@ module Collavre
       check_approval_gate!(tool_call)
       tool_name = tool_call.name
       task = context&.dig(:task)
+      # A turn screening flagged runs no tool without its agent owner's approval.
+      flagged = context&.dig(:screening_flagged)
 
-      return unless ToolApprovalPolicy.required_for_call?(tool_call, agent: task&.agent)
+      return unless flagged || ToolApprovalPolicy.required_for_call?(tool_call, agent: task&.agent)
 
       # Requires approval - raise error to halt execution
       raise ApprovalPendingError.new(
         "Tool '#{tool_name}' requires approval before execution",
         tool_call: tool_call,
         task: task,
-        messages: AiAgent::ApprovalConversation.dump(@conversation&.messages || [])
+        messages: AiAgent::ApprovalConversation.dump(@conversation&.messages || []),
+        approver: (task&.agent&.creator if flagged)
       )
     end
 

@@ -35,6 +35,26 @@ module Collavre
       SystemSetting.screening_enabled?
     end
 
+    # The texts of a provider payload that someone other than the agent and
+    # its owner could have written: the agent's own replies and the owner's
+    # history entries are left out.
+    def self.texts_for(messages, owner_id:)
+      Array(messages).filter_map do |message|
+        next if %w[model assistant system].include?(message[:role].to_s)
+        next if message[:kind].to_s == "chat_history" && owner_id && message[:author_id] == owner_id
+
+        parts = message[:parts]
+        text = parts ? Array(parts).filter_map { |part| part[:text] }.join("\n") : message[:text] || message[:content]
+        { source: (message[:kind] || message[:role]).to_s, text: text.to_s }
+      end
+    end
+
+    # Whether this turn was flagged when it was screened. A turn resumed from
+    # a tool-approval snapshot keeps its flag without screening again.
+    def self.flagged?(task)
+      task.task_actions.where(action_type: ACTION_TYPE).pluck(:payload).any? { |payload| payload["verdict"] == "flagged" }
+    end
+
     def self.digest(texts)
       Digest::SHA256.hexdigest(JSON.generate(texts.map { |entry| [ entry[:source].to_s, entry[:text].to_s ] }))
     end

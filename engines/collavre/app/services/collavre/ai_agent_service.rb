@@ -136,12 +136,13 @@ module Collavre
       ).build
     end
 
+    # Screened as resolved, so what was screened is what the provider gets.
     def resolve_session_context(messages_data, system_prompt)
       AiAgent::SessionContextResolver.new(
         agent: @agent,
         messages_data: messages_data,
         system_prompt: system_prompt
-      ).resolve
+      ).resolve.tap { |resolved| screen_llm_turn!(resolved) }
     end
 
     def find_creative
@@ -193,6 +194,7 @@ module Collavre
           task: @task,
           comment: @reply_comment || @original_comment,
           workspace_user: workspace_user,
+          screening_flagged: @screening_flagged,
           reasoning_effort: run_options&.reasoning_effort
         },
         request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
