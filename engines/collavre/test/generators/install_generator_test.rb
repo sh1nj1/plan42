@@ -83,22 +83,24 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
       assert_equal [ File.join(destination_root, "node_modules") ], JSON.parse(output)
     end
   end
-  test "preserves custom node paths and adds the host path only once" do
-    FileUtils.mkdir_p(File.join(destination_root, "script"))
-    script = File.join(destination_root, "script/build.cjs")
-    File.write(script, <<~JS)
-      // collavre
-      const config = { bundle: true, nodePaths: ['/custom/modules', '/other/modules'] };
-    JS
-    generator = self.class.generator_class.new([], {}, destination_root: destination_root)
-    Rails.stub(:root, Pathname.new(destination_root)) do
-      2.times { generator.install_build_script }
-    end
+  [ "nodePaths", '"nodePaths"', "'nodePaths'" ].each do |key|
+    test "preserves custom #{key} and adds the host path only once" do
+      FileUtils.mkdir_p(File.join(destination_root, "script"))
+      script = File.join(destination_root, "script/build.cjs")
+      File.write(script, <<~JS)
+        // collavre
+        const config = { bundle: true, #{key}: ['/custom/modules', '/other/modules'] };
+      JS
+      generator = self.class.generator_class.new([], {}, destination_root: destination_root)
+      Rails.stub(:root, Pathname.new(destination_root)) do
+        2.times { generator.install_build_script }
+      end
 
-    File.write(script, "#{File.read(script)}\nconsole.log(JSON.stringify(config.nodePaths));")
-    output, status = Open3.capture2e("node", script, chdir: destination_root)
-    assert status.success?, output
-    assert_equal [ File.join(destination_root, "node_modules"), "/custom/modules", "/other/modules" ], JSON.parse(output)
+      File.write(script, "#{File.read(script)}\nconsole.log(JSON.stringify(config.nodePaths));")
+      output, status = Open3.capture2e("node", script, chdir: destination_root)
+      assert status.success?, output
+      assert_equal [ File.join(destination_root, "node_modules"), "/custom/modules", "/other/modules" ], JSON.parse(output)
+    end
   end
 
   test "reports dynamic node paths instead of silently skipping the host path" do

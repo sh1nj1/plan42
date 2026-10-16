@@ -55,9 +55,9 @@ module Collavre
         content = File.read(build_script)
 
         host_path = "require('path').join(process.cwd(), 'node_modules')"
-        if content.match?(/\bnodePaths\s*:/)
+        if content.match?(/(?:\bnodePaths|"nodePaths"|'nodePaths')\s*:/)
           unless content.include?(host_path)
-            updated = content.sub(/\bnodePaths\s*:\s*\[/, "nodePaths: [#{host_path}, ")
+            updated = content.sub(/((?:\bnodePaths|"nodePaths"|'nodePaths')\s*:\s*)\[/) { "#{Regexp.last_match(1)}[#{host_path}, " }
             if updated == content
               raise Thor::Error, "Cannot update dynamic nodePaths. Add #{host_path} to nodePaths and rerun the generator."
             end
