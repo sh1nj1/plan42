@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "open3"
+require "tmpdir"
 require "rails/generators"
 require "rails/generators/test_case"
 require_relative "../../lib/generators/collavre/install/install_generator"
@@ -10,6 +11,20 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
   tests Collavre::Generators::InstallGenerator
   destination File.expand_path("../../../../tmp/install_generator", __dir__)
   setup :prepare_destination
+  teardown { FileUtils.rm_rf(destination_root) }
+
+  test "preparing another test destination preserves the active host" do
+    marker = File.join(destination_root, "active-host")
+    File.write(marker, "keep")
+    other = self.class.new(name)
+    begin
+      other.send(:prepare_destination)
+      assert_not_equal destination_root, other.destination_root
+      assert_equal "keep", File.read(marker)
+    ensure
+      FileUtils.rm_rf(other.destination_root) if other.destination_root != destination_root
+    end
+  end
 
   test "installs PDF.js and generates host dependency resolution" do
     generator = self.class.generator_class.new([], {}, destination_root: destination_root)
@@ -127,5 +142,12 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
       assert_includes error.message, "rerun the generator"
     end
     assert_equal original, File.read(script)
+  end
+
+  private
+
+  def prepare_destination
+    self.destination_root = File.realpath(Dir.mktmpdir("collavre-install-generator-"))
+    super
   end
 end
