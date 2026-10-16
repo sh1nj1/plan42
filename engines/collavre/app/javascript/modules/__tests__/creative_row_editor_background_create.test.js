@@ -1289,6 +1289,26 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(keepaliveDeletes()).toHaveLength(2)
   })
 
+  test.each([
+    ['created', () => created(77)],
+    ['rejected', () => ({ ok: false, status: 500 })],
+  ])('attachments removed from a draft still being created are deleted once when the page unloads and the create is then %s', async (_name, response) => {
+    const post = deferred()
+    saveMock.mockImplementationOnce(() => post.promise)
+    await startNewRow('first creative')
+    deletedAttachments = ['blob-5']
+    await pressEnter()
+    await flush()
+
+    pageHide()
+
+    expect(keepaliveDeletes()).toEqual(['/attachments/blob-5'])
+    post.resolve(response())
+    await flush()
+    pageHide()
+    expect(attachmentDeletes()).toEqual(['/attachments/blob-5'])
+  })
+
   test('attachments removed from drafts stay when the page is kept in the back/forward cache', async () => {
     saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
     await startNewRow('first creative')

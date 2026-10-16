@@ -22,6 +22,9 @@ const inFlight = new Set()
 // A new row's own save (autosave, progress toggle) POSTs it too; a render
 // waits for it as for a background create. Settles true when it failed.
 const rowSaves = new Map()
+// Attachments removed from drafts whose create is in flight: the request owns
+// them until it settles, and an unload that cuts it off deletes them instead.
+const inFlightDeletes = new Set()
 
 export function trackCreate(tree, promise) {
   creates.set(tree, promise)
@@ -106,10 +109,14 @@ export function warnBeforeUnload(event, openRow) {
 
 // Once the page does unload (the user agreed, or nothing asked), the drafts go
 // with it: the attachments removed from failed rows' drafts and from the open
-// new row's draft are deleted, as a Turbo render that discards them does. A
-// page kept in the back/forward cache keeps its drafts.
+// new row's draft are deleted, as a Turbo render that discards them does. So
+// are those removed from drafts still being created, since a create cut off by
+// the unload may never get to delete them; they are taken out of the request,
+// so a create that still settles does not delete them again. A page kept in
+// the back/forward cache keeps its drafts.
 export function purgeOnUnload(event, releaseOpenDraft, deleteAttachment) {
   if (event.persisted) return
+  inFlightDeletes.forEach((ids) => ids.splice(0).forEach(deleteAttachment))
   document.querySelectorAll('.creative-tree').forEach((tree) => takeRetryDeletedIds(tree).forEach(deleteAttachment))
   releaseOpenDraft()
 }
@@ -157,7 +164,13 @@ export function takeFailedDraft(tree) {
 
 // Resolves with the anchor for the row after this one: the new id, or on
 // failure the slot this row asked for, so the next row still lands there.
-export async function postNewCreative(tree, { action, body, snapshot, deletedIds = [] }, fallback, { save, created, failed }) {
+export function postNewCreative(tree, request, fallback, callbacks) {
+  const ids = request.deletedIds || []
+  inFlightDeletes.add(ids)
+  return postCreate(tree, { ...request, deletedIds: ids }, fallback, callbacks).finally(() => inFlightDeletes.delete(ids))
+}
+
+async function postCreate(tree, { action, body, snapshot, deletedIds }, fallback, { save, created, failed }) {
   const anchor = await takeDeferredAnchor(tree)
   if (anchor) {
     Object.assign(fallback, anchor)
