@@ -51,9 +51,7 @@ module Collavre
         File.exist?(File.join(destination_root, "yarn.lock"))
       end
 
-      def update_existing_build_script(build_script)
-        content = File.read(build_script)
-
+      def merge_host_node_path(content)
         host_path = "require('path').join(process.cwd(), 'node_modules')"
         if content.match?(/(?:\bnodePaths|"nodePaths"|'nodePaths')\s*:/)
           unless content.include?(host_path)
@@ -70,6 +68,13 @@ module Collavre
           end
           content = updated
         end
+        content
+      end
+
+      def update_existing_build_script(build_script)
+        content = File.read(build_script)
+
+        content = merge_host_node_path(content)
         File.write(build_script, content)
 
         # Check if already installed
