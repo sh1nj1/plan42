@@ -77,6 +77,10 @@ module Collavre
         content = merge_host_node_path(content)
         File.write(build_script, content)
 
+        configure_gem_entries(build_script, content)
+      end
+
+      def configure_gem_entries(build_script, content)
         # Check if already installed
         if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
           say_status :skip, "Collavre already configured in build script", :yellow
