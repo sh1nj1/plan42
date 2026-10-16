@@ -94,7 +94,7 @@ describe('background creative create bookkeeping', () => {
       trackCreate(creating, new Promise((r) => { finishCreate = r }))
       trackNewRowSave(saving, Promise.resolve({ ok: false }))
       const event = { target: frame, detail: { resume: jest.fn() }, preventDefault: jest.fn() }
-      const openRow = { keptUnsaved: () => false, flush: () => undefined, keep: jest.fn() }
+      const openRow = { keptUnsaved: () => false, flush: () => undefined, keep: jest.fn(), release: jest.fn() }
 
       holdRenderForCreates(event, jest.fn(), openRow, jest.fn())
       await new Promise((r) => setTimeout(r, 0))
@@ -108,6 +108,7 @@ describe('background creative create bookkeeping', () => {
       expect(event.preventDefault).toHaveBeenCalled()
       expect(event.detail.resume).toHaveBeenCalledTimes(resumes)
       expect(openRow.keep).toHaveBeenCalledTimes(1 - resumes)
+      expect(openRow.release).toHaveBeenCalledTimes(resumes)
     })
   })
 })

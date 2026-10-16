@@ -55,7 +55,8 @@ export function trackNewRowSave(tree, promise) {
 // attachments removed from the drafts it discards are deleted then, since no
 // create will come to delete them. An open row whose edits the user kept after
 // such a failure holds later renders the same way until they are saved. A
-// render dropped that way leaves the open row being edited (openRow.keep).
+// render dropped that way leaves the open row being edited (openRow.keep); one
+// that goes ahead takes the open row's unsaved draft with it (openRow.release).
 export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttachment) {
   const pendingIn = () => [...new Set([...inFlight, ...rowSaves.keys()])].filter((tree) => event.target.contains(tree))
   const failedIn = () => [...event.target.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
@@ -81,6 +82,9 @@ export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttac
     } else if (flushOpen()) {
       return
     } else if (!failedIn()) {
+      // The open row was saved or had nothing to save: an emptied new row
+      // goes with the render, so the uploads removed from it are deleted.
+      openRow.release(event.target)
       event.detail.resume()
     } else {
       discard()

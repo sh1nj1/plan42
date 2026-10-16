@@ -1779,6 +1779,25 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(attachmentDeletes()).toEqual(deletes)
   })
 
+  test('attachments removed from an emptied new row are deleted when a held frame swap goes ahead', async () => {
+    const firstPost = deferred()
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+    await startNewRow('first creative')
+    await pressEnter()
+    type('second creative')
+    deletedAttachments = ['blob-4']
+    type('')
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+    expect(attachmentDeletes()).toEqual([])
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(event.detail.resume).toHaveBeenCalledTimes(1)
+    expect(attachmentDeletes()).toEqual(['/attachments/blob-4'])
+  })
+
   test('attachments removed from a saved row whose edit cannot be saved stay when it is discarded', async () => {
     saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
     // A failed new row elsewhere holds the render and has it ask to discard.

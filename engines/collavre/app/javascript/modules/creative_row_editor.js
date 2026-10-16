@@ -311,7 +311,7 @@ function setupEditorSession() {
     // them, the row holds later renders too, as long as they stay unsaved.
     let keptUnsavedTree = null;
     const flushOpenRow = (target, tree = currentTree) => (isDirty || pendingSave) && target.contains(tree) && !creativeSaveSnapshotIsEmpty(captureBufferSnapshot()) ? saveForm(tree, parentInput.value).then(isFailedSaveResult, () => true).then((failed) => ((keptUnsavedTree = failed ? tree : null), failed)) : null;
-    const openRow = { flush: flushOpenRow, keptUnsaved: (target) => !!keptUnsavedTree && keptUnsavedTree === currentTree && (isDirty || pendingSave) && target.contains(currentTree), keep: () => !editingPingInterval && currentTree && startEditingPresence(form.dataset.creativeId) };
+    const openRow = { flush: flushOpenRow, keptUnsaved: (target) => !!keptUnsavedTree && keptUnsavedTree === currentTree && (isDirty || pendingSave) && target.contains(currentTree), keep: () => !editingPingInterval && currentTree && startEditingPresence(form.dataset.creativeId), release: (target) => purgeOpenDraft(target) };
     // Closing is a later edit request too: a click still waiting on a pending
     // create must not reopen the editor after it.
     const closeByUser = (event) => editTickets.take() && hideCurrent(event);
