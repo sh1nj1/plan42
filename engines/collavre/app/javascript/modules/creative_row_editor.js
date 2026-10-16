@@ -1171,17 +1171,11 @@ function setupEditorSession() {
       updateActionButtonStates();
     }
 
-    function beforeNewOrMove(wasNew, prev, prevParent) {
-      const needsSave = pendingSave || wasNew || saveQueue.saving;
-      const p = needsSave ? requestSave(prev, prevParent) : Promise.resolve();
-      return p.then(() => {
-        if (wasNew && !form.dataset.creativeId) {
-          removeTreeElement(prev);
-        } else {
-          showRow(prev);
-          refreshRow(prev);
-        }
-      });
+    // Flushes a never-saved row before the editor leaves it. A failed create
+    // resolves false with the draft kept open on the row (see hideCurrent), so
+    // the caller stays put instead of removing the only copy and moving on.
+    function beforeNewOrMove() {
+      return hideCurrent(false, { switching: true }).then((result) => result !== SAVE_FAILED);
     }
 
     /**
@@ -1344,11 +1338,10 @@ function setupEditorSession() {
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
-      const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly because currentTree will be updated immediately after
-      if (!wasNew && isFailedSaveResult(await persistQueuedSave(prev))) return;
+      if (wasNew ? !(await beforeNewOrMove()) : isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       // Update UI immediately
       currentTree = target;
@@ -1376,24 +1369,14 @@ function setupEditorSession() {
         }));
       }
 
-      if (wasNew) {
-        // For new creatives, still need to save or cleanup
-        beforeNewOrMove(wasNew, prev, prevParent).then(() => {
-          loadCreative(target);
-          focusAfterMove();
-          // Notify editing started on new creative + start ping
-          startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
-        });
-      } else {
-        // For existing creatives, show the row and refresh if needed
-        if (prev.querySelector('.creative-row')) {
-          showRow(prev);
-        }
-        loadCreative(target);
-        focusAfterMove();
-        // Notify editing started on new creative + start ping
-        startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
+      // A new row was already flushed and shown (or discarded) above.
+      if (!wasNew && prev.querySelector('.creative-row')) {
+        showRow(prev);
       }
+      loadCreative(target);
+      focusAfterMove();
+      // Notify editing started on new creative + start ping
+      startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
       updateActionButtonStates();
     }
 
@@ -1455,7 +1438,7 @@ function setupEditorSession() {
         // A new creative with content saves in the background; anything else
         // (empty, uploading, ...) still saves or cleans up before moving on.
         const anchor = createInBackground(prev, prevParent);
-        (anchor ? Promise.resolve() : beforeNewOrMove(wasNew, prev, prevParent)).then(() => handleAddNew(anchor)).finally(() => {
+        (anchor ? Promise.resolve(true) : beforeNewOrMove()).then((moved) => moved && handleAddNew(anchor)).finally(() => {
           addNewInProgress = false;
         });
       } else {
@@ -1474,7 +1457,6 @@ function setupEditorSession() {
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
-      const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
@@ -1496,7 +1478,7 @@ function setupEditorSession() {
 
       if (wasNew) {
         // For new creatives, still need to save or cleanup
-        beforeNewOrMove(wasNew, prev, prevParent).then(handleAddChild);
+        beforeNewOrMove().then((moved) => moved && handleAddChild());
       } else {
         // For existing creatives, show the row if it exists and proceed
         if (prev.querySelector('.creative-row')) {

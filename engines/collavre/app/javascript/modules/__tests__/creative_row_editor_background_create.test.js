@@ -1534,6 +1534,58 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(event.detail.resume).toHaveBeenCalledTimes(1)
   })
 
+  test.each([
+    ['moving down', () => document.getElementById('inline-move-down').click()],
+    ['Alt+Enter', () => editorOptions.onKeyDown({ key: 'Enter', altKey: true, preventDefault: jest.fn() }, {})],
+    ['Enter while an upload is pending', async () => {
+      window.creativeRowEditor.setUploadsPending(true)
+      document.getElementById('inline-add').click()
+      await flush()
+      window.creativeRowEditor.resolveUploadCompletion()
+    }],
+  ])('a reopened failed draft whose retry fails on %s stays open with its text', async (_case, leave) => {
+    saveMock.mockImplementation(() => Promise.resolve({ ok: false, status: 500 }))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    appendExistingRow(5)
+    clickRow(first)
+    await flush()
+    alertDialogMock.mockClear()
+
+    await leave()
+    await flush()
+
+    expect(saveMock).toHaveBeenCalledTimes(2)
+    expect(saveMock.mock.calls[1][1]).toBe('POST')
+    expect(first.isConnected).toBe(true)
+    expect(template().parentElement).toBe(first)
+    expect(template().style.display).toBe('block')
+    expect(document.getElementById('markdown-editor-textarea').value).toBe('first creative')
+    expect(alertDialogMock).toHaveBeenCalledWith('Save failed')
+  })
+
+  test.each([
+    ['moving down', () => document.getElementById('inline-move-down').click(), (opened, _first, below) => opened === below],
+    ['Alt+Enter', () => editorOptions.onKeyDown({ key: 'Enter', altKey: true, preventDefault: jest.fn() }, {}), (opened, first) => opened !== first && first.contains(opened)],
+  ])('a reopened failed draft whose retry succeeds on %s is created and the editor moves on', async (_case, leave, movedOn) => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+      .mockImplementationOnce(() => Promise.resolve(created(80)))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    const { tree: below } = appendExistingRow(5)
+    clickRow(first)
+    await flush()
+
+    leave()
+    await flush()
+
+    expect(first.dataset.id).toBe('80')
+    expect(first.querySelector('.creative-row').style.display).toBe('')
+    expect(movedOn(template().parentElement, first, below)).toBe(true)
+  })
+
   test('a frame swap after a create succeeded renders at once', async () => {
     saveMock.mockImplementation(() => Promise.resolve(created(77)))
     await startNewRow('first creative')
