@@ -1429,6 +1429,16 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(pinged).toEqual([78])
   })
 
+  test('leaving the page asks first while the kept edit of a saved row is unsaved', async () => {
+    await keepFailedEditOfCreatedRow(() => () => Promise.resolve(created(78)))
+
+    expect(unload().defaultPrevented).toBe(true)
+
+    document.getElementById('inline-close').click()
+    await flush()
+    expect(unload().defaultPrevented).toBe(false)
+  })
+
   test('a later frame swap renders at once once the kept edit of a saved row has been saved on close', async () => {
     await keepFailedEditOfCreatedRow(() => () => Promise.resolve(created(78)))
     document.getElementById('inline-close').click()

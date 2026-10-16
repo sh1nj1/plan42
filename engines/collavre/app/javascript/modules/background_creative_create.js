@@ -95,10 +95,11 @@ export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttac
 
 // A reload, tab close or non-Turbo link unloads the page without a Turbo
 // render to hold, and may cancel a create still in flight, or drop a failed
-// row's draft, which lives only in memory. The browser asks the user first.
-export function warnBeforeUnload(event) {
+// row's draft, which lives only in memory, or the open row's edits the user
+// kept after a render failed to save them. The browser asks the user first.
+export function warnBeforeUnload(event, openRow) {
   const failed = [...document.querySelectorAll('.creative-tree')].some((tree) => failedRows.has(tree))
-  if (!inFlight.size && !rowSaves.size && !failed) return
+  if (!inFlight.size && !rowSaves.size && !failed && !openRow?.keptUnsaved(document)) return
   event.preventDefault()
   event.returnValue = ''
 }

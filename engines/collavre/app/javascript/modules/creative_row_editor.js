@@ -325,7 +325,7 @@ function setupEditorSession() {
     const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }).then((agreed) => (agreed && purgeOpenDraft(event.target), agreed)), openRow, deleteAttachment);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
-    globalListeners.add(window, 'beforeunload', warnBeforeUnload);
+    globalListeners.add(window, 'beforeunload', (event) => warnBeforeUnload(event, openRow));
 
     // Registered with the module-level teardown so a workspace frame swap —
     // which rebuilds the session without ever calling hideCurrent()/move() on
