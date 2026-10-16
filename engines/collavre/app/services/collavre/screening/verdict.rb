@@ -2,7 +2,9 @@
 
 module Collavre
   module Screening
-    Verdict = Struct.new(:verdict, :screener_id, :model, :probability, :error, keyword_init: true) do
+    # residual: the strictest verdict among screeners that did answer, kept for
+    # when the owner approves a turn another screener could not answer for.
+    Verdict = Struct.new(:verdict, :screener_id, :model, :probability, :error, :residual, keyword_init: true) do
       def self.from(result, screener)
         probability = Float(result.dig("answers", "injection", "probability"))
         verdict = if probability >= SystemSetting.screening_block_threshold then "blocked"
@@ -21,7 +23,7 @@ module Collavre
       end
 
       def to_h
-        super.compact.transform_keys(&:to_s)
+        super.except(:residual).compact.transform_keys(&:to_s)
       end
     end
   end

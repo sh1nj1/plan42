@@ -11,16 +11,20 @@ setting after configuring `TYPESAFE_API_KEY` (and optionally
 
 ## Which turns are screened
 
-`Screening::Scope` compares the turn's principal
+`Screening::Scope` screens a turn that carries text from anyone other than the
+agent's owner. It checks both the turn's principal
 (`AiAgent::WorkspaceAuthentication#workspace_user`, carried through A2A
-chains) with the agent's creator.
+chains) and the authors of the comments the turn carries: the anchor, the
+merged comments and a workflow source message. The principal alone is not
+enough: a cron or A2A comment can arrive with the owner as fallback principal
+while another person's agent wrote it.
 
-| Principal | Result |
+| Case | Result |
 |---|---|
-| The agent's owner | Skipped |
-| Another person | Screened |
-| Carried but unverifiable (`workspace_user_id: nil`) | Screened |
-| None (system turn) | Skipped |
+| Principal is another person | Screened |
+| Carried but unverifiable principal (`workspace_user_id: nil`) | Screened |
+| An author other than the owner, the agent, or the owner's other agents | Screened |
+| Owner principal and trusted authors, or a system turn with neither | Skipped |
 
 ## Who screens
 
@@ -51,6 +55,8 @@ screener is not overridden by the owner's approval of another screener's error.
 | error | Paused for the agent owner's approval |
 | blocked | Not delivered; the task fails and the sender is told |
 
+A notice that cannot be posted is logged; the turn still ends as blocked.
+
 Each screener's verdict is recorded as a `screening` task action with the
 model, policy version and a SHA-256 of the screened content. Verdicts are not
 cached.
@@ -61,7 +67,11 @@ An `error` raises `ScreeningPendingError`. `AiAgent::ScreeningApprovalHandler`
 pauses the task with `pending_tool_call.kind = "screening"` and posts an
 approval-gate comment whose approver is the **agent's owner**. The creative
 owner is not used: the sender may own the creative and must not approve their
-own turn. The owner needs read access to the creative to decide.
+own turn. An owner who cannot read the creative cannot decide, so the turn is
+blocked instead of pausing until someone stops it.
+
+When one screener errors and another flags, the approval request says so, and
+an approved turn is still handled as flagged.
 
 Approving resumes the same task (`ApprovalGateResumeJob`). The approval
 applies only to content with the recorded digest; changed content is

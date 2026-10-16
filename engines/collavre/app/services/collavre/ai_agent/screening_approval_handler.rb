@@ -11,7 +11,7 @@ module Collavre
       def update_task(error)
         @task.update!(status: "pending_approval", pending_tool_call: {
           kind: Screening::PENDING_KIND, tool_name: error.tool_name, tool_call_id: error.tool_call_id,
-          content_digest: error.content_digest, approver_id: error.approver.id,
+          content_digest: error.content_digest, residual: error.residual, approver_id: error.approver.id,
           requested_at: Time.current.iso8601
         })
       end

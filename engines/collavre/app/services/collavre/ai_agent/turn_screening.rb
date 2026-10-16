@@ -44,7 +44,15 @@ module Collavre
 
       def screening_guard
         Screening::TurnGuard.new(task: @task, agent: @agent, creative: @creative,
-                                 context: @context, principal: workspace_user)
+                                 context: @context, principal: workspace_user, authors: screening_authors)
+      end
+
+      # Who wrote the comments this turn carries: the anchor, the comments
+      # folded into it and a workflow's source message.
+      def screening_authors
+        ids = [ @context.dig("comment", "id"), *Array(@context["merged_comment_ids"]),
+                Workflow::SourceMessage.comment_id(@context, @agent) ].compact
+        User.where(id: Comment.where(id: ids).select(:user_id)).to_a
       end
     end
   end

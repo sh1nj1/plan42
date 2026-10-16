@@ -14,7 +14,8 @@ module Collavre
           verdicts = ScreenerResolver.for(agent: agent, creative: creative, task: task)
                                      .map { |screener| scan(screener, chunks) }
           record!(task, verdicts, Screening.digest(texts))
-          Verdict.strictest(verdicts)
+          answered = Verdict.strictest(verdicts.reject { |v| v.verdict == "error" })
+          Verdict.strictest(verdicts).tap { |v| v.residual = answered&.verdict || "passed" }
         end
       end
 
