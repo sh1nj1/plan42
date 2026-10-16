@@ -47,6 +47,20 @@ module Collavre
         end
       end
 
+      # Text that joins a turn after it was screened, such as an approval
+      # reason replayed into a resumed conversation. It cannot pause the turn
+      # (the turn is mid-conversation), so an unanswered screening flags it.
+      def screen_followup(texts, block_flagged:)
+        return "skipped" if Current.screening || !Screening.enabled?
+        return "skipped" if Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
+
+        case Gate.new.call(texts, agent: @agent, creative: @creative, task: @task).verdict
+        when "passed" then "passed"
+        when "blocked" then block!(:blocked_notice)
+        else apply_flag(block_flagged)
+        end
+      end
+
       private
 
       # The owner's answer to an earlier pause, removed from the task so it

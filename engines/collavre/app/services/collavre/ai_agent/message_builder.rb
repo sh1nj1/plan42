@@ -254,22 +254,27 @@ module Collavre
           history_chars += content.length
           break if history_chars > history_size_limit
 
-          # Tagged with the comment it came from so Orchestration::DeliveryRecord
-          # can read, off the payload the adapter is actually handed, which
-          # comments this turn delivered. Consumers key into :role and :parts;
-          # the extra key is inert to all of them.
-          #
-          # Only an entry that carries its comment whole wears the tag — the
-          # tag is the delivery claim, and delivered_whole? is what makes it
-          # true. An untagged entry still goes to the agent as context; it just
-          # does not stand in for the comment's own dispatch.
-          entry = { role: role, kind: :chat_history, parts: [ { text: content } ] }
-          entry[:comment_id] = c.id if delivered_whole?(c)
-          messages << entry
+          messages << history_entry(c, role, content)
           count += 1
         end
 
         count
+      end
+
+      # Tagged with the comment it came from so Orchestration::DeliveryRecord
+      # can read, off the payload the adapter is actually handed, which
+      # comments this turn delivered. Consumers key into :role and :parts;
+      # the extra keys are inert to all of them.
+      #
+      # Only an entry that carries its comment whole wears the tag — the
+      # tag is the delivery claim, and delivered_whole? is what makes it
+      # true. An untagged entry still goes to the agent as context; it just
+      # does not stand in for the comment's own dispatch.
+      #
+      # :author_id lets Screening leave the agent owner's own entries out.
+      def history_entry(comment, role, content)
+        { role: role, kind: :chat_history, author_id: comment.user_id, parts: [ { text: content } ] }
+          .tap { |entry| entry[:comment_id] = comment.id if delivered_whole?(comment) }
       end
 
       def history_excluded_ids
