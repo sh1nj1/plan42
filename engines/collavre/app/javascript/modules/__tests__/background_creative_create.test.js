@@ -4,7 +4,7 @@
 import { jest } from '@jest/globals'
 import {
   trackCreate, pendingCreate, cannotEdit, postNewCreative, deferRowAnchor, takeDeferredAnchor,
-  createEditTickets,
+  createEditTickets, trackNewRowSave, holdRenderForCreates, forgetFailedChain,
 } from '../background_creative_create'
 
 describe('background creative create bookkeeping', () => {
@@ -72,5 +72,42 @@ describe('background creative create bookkeeping', () => {
     expect(result).toEqual({ afterId: '3', beforeId: '', failedTrees: [tree] })
     expect(failed).toHaveBeenCalled()
     expect(tree.dataset.saveState).toBe('error')
+  })
+
+  describe('a render held for a create and a new row save', () => {
+    function treeIn(frame) {
+      const tree = document.createElement('div')
+      tree.className = 'creative-tree'
+      frame.appendChild(tree)
+      return tree
+    }
+
+    test.each([
+      ['goes ahead once the failed row has been retried successfully', true, 1],
+      ['is dropped while the row whose save failed is still unsaved', false, 0],
+    ])('%s', async (_name, retried, resumes) => {
+      document.body.innerHTML = '<div id="frame"></div>'
+      const frame = document.getElementById('frame')
+      const creating = treeIn(frame)
+      const saving = treeIn(frame)
+      let finishCreate
+      trackCreate(creating, new Promise((r) => { finishCreate = r }))
+      trackNewRowSave(saving, Promise.resolve({ ok: false }))
+      const event = { target: frame, detail: { resume: jest.fn() }, preventDefault: jest.fn() }
+      const openRow = { keptUnsaved: () => false, flush: () => undefined, keep: jest.fn() }
+
+      holdRenderForCreates(event, jest.fn(), openRow, jest.fn())
+      await new Promise((r) => setTimeout(r, 0))
+      if (retried) {
+        saving.dataset.id = '78'
+        forgetFailedChain(saving)
+      }
+      finishCreate({ afterId: '77', beforeId: '' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(event.preventDefault).toHaveBeenCalled()
+      expect(event.detail.resume).toHaveBeenCalledTimes(resumes)
+      expect(openRow.keep).toHaveBeenCalledTimes(1 - resumes)
+    })
   })
 })

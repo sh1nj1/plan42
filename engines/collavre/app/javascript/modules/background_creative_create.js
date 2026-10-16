@@ -62,7 +62,6 @@ export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttac
   if (!event.detail?.resume || !(pendingIn().length || failedIn() || openRow.keptUnsaved(event.target))) return
   event.preventDefault()
   const waited = new Set()
-  let saveFailed = false
   const purge = () => event.target.querySelectorAll('.creative-tree').forEach((tree) => takeRetryDeletedIds(tree).forEach(deleteAttachment))
   // A render left for good keeps the open row on the page: whatever the render
   // already stopped for it (a page visit's before-cache stops its editing ping)
@@ -73,8 +72,11 @@ export function holdRenderForCreates(event, confirmDiscard, openRow, deleteAttac
     const pending = pendingIn()
     if (pending.length) {
       pending.forEach((tree) => waited.add(tree))
-      Promise.all(pending.flatMap((tree) => [creates.get(tree), rowSaves.get(tree)?.then((failed) => { saveFailed ||= failed })])).then(settle)
-    } else if (saveFailed || [...waited].some((tree) => failedRows.has(tree))) {
+      // A failed row save marks its row failed, so whether the render can go
+      // ahead is read from the rows once everything settles: a row retried
+      // successfully since then no longer holds it.
+      Promise.all(pending.flatMap((tree) => [creates.get(tree), rowSaves.get(tree)])).then(settle)
+    } else if ([...waited].some((tree) => failedRows.has(tree))) {
       openRow.keep()
     } else if (flushOpen()) {
       return
