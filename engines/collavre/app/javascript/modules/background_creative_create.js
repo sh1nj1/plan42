@@ -104,6 +104,16 @@ export function warnBeforeUnload(event, openRow) {
   event.returnValue = ''
 }
 
+// Once the page does unload (the user agreed, or nothing asked), the drafts go
+// with it: the attachments removed from failed rows' drafts and from the open
+// new row's draft are deleted, as a Turbo render that discards them does. A
+// page kept in the back/forward cache keeps its drafts.
+export function purgeOnUnload(event, releaseOpenDraft, deleteAttachment) {
+  if (event.persisted) return
+  document.querySelectorAll('.creative-tree').forEach((tree) => takeRetryDeletedIds(tree).forEach(deleteAttachment))
+  releaseOpenDraft()
+}
+
 // The row's in-flight background create, if any, or for a failed row the
 // create of the row that took over its slot: its retry slot depends on it.
 export function pendingCreate(tree) {

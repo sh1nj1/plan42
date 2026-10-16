@@ -5,7 +5,7 @@ import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSave
 import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource, rowRefreshGuard } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
-import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates, trackNewRowSave, warnBeforeUnload } from './background_creative_create'
+import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates, trackNewRowSave, warnBeforeUnload, purgeOnUnload } from './background_creative_create'
 import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
@@ -91,7 +91,7 @@ function teardownEditorSession() {
   activeTemplate = null;
 }
 
-function deleteAttachment(signedId) {
+function deleteAttachment(signedId, { keepalive = false } = {}) {
   if (!signedId) return;
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
   fetch(`/attachments/${signedId}`, {
@@ -99,6 +99,7 @@ function deleteAttachment(signedId) {
     headers: {
       'X-CSRF-Token': csrfToken,
     },
+    keepalive,
   }).catch(err => console.error('Error deleting attachment:', err));
 }
 
@@ -321,11 +322,14 @@ function setupEditorSession() {
     // Discarding the open new row's draft also deletes the uploads removed from
     // it since it opened: nothing on the server refers to them. A saved row's
     // removed uploads stay, as its saved content still does.
-    const purgeOpenDraft = (target) => !form.dataset.creativeId && target.contains(currentTree) && lexicalEditor.getDeletedAttachments?.().forEach(deleteAttachment);
+    const purgeOpenDraft = (target, remove = deleteAttachment) => !form.dataset.creativeId && target.contains(currentTree) && lexicalEditor.getDeletedAttachments?.().forEach((id) => remove(id));
     const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }).then((agreed) => (agreed && purgeOpenDraft(event.target), agreed)), openRow, deleteAttachment);
     globalListeners.add(document, 'turbo:before-frame-render', holdRender);
     globalListeners.add(document, 'turbo:before-render', holdRender);
     globalListeners.add(window, 'beforeunload', (event) => warnBeforeUnload(event, openRow));
+    // The page is gone before these deletes finish, so they must outlive it.
+    const deleteOnUnload = (id) => deleteAttachment(id, { keepalive: true });
+    globalListeners.add(window, 'pagehide', (event) => purgeOnUnload(event, () => purgeOpenDraft(document, deleteOnUnload), deleteOnUnload));
 
     // Registered with the module-level teardown so a workspace frame swap —
     // which rebuilds the session without ever calling hideCurrent()/move() on

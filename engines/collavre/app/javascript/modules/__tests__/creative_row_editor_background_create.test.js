@@ -1265,6 +1265,58 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(unload().defaultPrevented).toBe(false)
   })
 
+  function pageHide(persisted = false) {
+    const event = new Event('pagehide')
+    event.persisted = persisted
+    window.dispatchEvent(event)
+  }
+  const keepaliveDeletes = () => global.fetch.mock.calls
+    .filter(([, options]) => options?.method === 'DELETE' && options.keepalive).map(([url]) => url)
+
+  test('attachments removed from a failed draft and from the open new row are deleted when the page unloads', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+    type('second creative')
+    deletedAttachments = ['blob-2']
+
+    pageHide()
+
+    expect(keepaliveDeletes()).toEqual(['/attachments/blob-1', '/attachments/blob-2'])
+    pageHide()
+    expect(keepaliveDeletes()).toHaveLength(2)
+  })
+
+  test('attachments removed from drafts stay when the page is kept in the back/forward cache', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500 }))
+    await startNewRow('first creative')
+    deletedAttachments = ['blob-1']
+    await pressEnter()
+    await flush()
+    type('second creative')
+    deletedAttachments = ['blob-2']
+
+    pageHide(true)
+
+    expect(attachmentDeletes()).toEqual([])
+  })
+
+  test('attachments removed from a saved open row stay when the page unloads', async () => {
+    saveMock.mockImplementationOnce(() => Promise.resolve(created(77)))
+    const first = await startNewRow('first creative')
+    await pressEnter()
+    await flush()
+    clickRow(first)
+    await flush()
+    deletedAttachments = ['blob-3']
+
+    pageHide()
+
+    expect(attachmentDeletes()).toEqual([])
+  })
+
   test('a frame swap is dropped when a save of the open new row started while it was paused fails', async () => {
     const firstPost = deferred()
     const secondPost = deferred()
