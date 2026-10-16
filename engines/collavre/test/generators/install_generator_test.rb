@@ -113,4 +113,17 @@ class CollavreInstallGeneratorTest < Rails::Generators::TestCase
     end
     assert_equal original, File.read(script)
   end
+  test "reports unmatched host path insertion without changing a configured script" do
+    FileUtils.mkdir_p(File.join(destination_root, "script"))
+    script = File.join(destination_root, "script/build.cjs")
+    original = "// collavre\nconst config = { \"bundle\": true };"
+    File.write(script, original)
+    generator = self.class.generator_class.new([], {}, destination_root: destination_root)
+    Rails.stub(:root, Pathname.new(destination_root)) do
+      error = assert_raises(Thor::Error) { generator.install_build_script }
+      assert_includes error.message, "Add require('path').join(process.cwd(), 'node_modules') to nodePaths"
+      assert_includes error.message, "rerun the generator"
+    end
+    assert_equal original, File.read(script)
+  end
 end

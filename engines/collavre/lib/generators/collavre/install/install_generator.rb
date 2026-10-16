@@ -64,7 +64,11 @@ module Collavre
             content = updated
           end
         else
-          content = content.sub(/\bbundle:\s*true\s*(?:,|(?=\}))/, "bundle: true,\n    nodePaths: [#{host_path}],")
+          updated = content.sub(/\bbundle:\s*true\s*(?:,|(?=\}))/, "bundle: true,\n    nodePaths: [#{host_path}],")
+          if updated == content
+            raise Thor::Error, "Cannot insert host nodePaths. Add #{host_path} to nodePaths and rerun the generator."
+          end
+          content = updated
         end
         File.write(build_script, content)
 
