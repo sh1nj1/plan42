@@ -1,0 +1,13 @@
+en:
+  collavre:
+    tools:
+      task_tracking:
+        errors:
+          current_user_required: "Current user is required."
+          unreadable_trigger: "The instruction is not readable."
+          invalid_status: "Status must be active, finished, or all."
+          invalid_limit: "Limit must be between 1 and 100."
+          choose_input: "Provide exactly one of comment_id or task_ids."
+          invalid_ids: "Provide between 1 and 100 task ids."
+          too_many_tasks: "This instruction exceeds the 200-task tracking limit. Query smaller task groups."
+          invalid_lineage: "The task replacement chain is invalid; completion cannot be determined."

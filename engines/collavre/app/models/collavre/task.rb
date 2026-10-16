@@ -13,6 +13,17 @@ module Collavre
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
+    has_many :task_merged_instructions, dependent: :delete_all
+    after_save :sync_merged_instructions, if: :saved_change_to_trigger_event_payload?
+
+    def sync_merged_instructions
+      ids = Array(trigger_event_payload&.fetch("merged_comment_ids", nil)).map(&:to_i).select(&:positive?).uniq
+      task_merged_instructions.where.not(comment_id: ids).delete_all
+      ids.each { |id| task_merged_instructions.find_or_create_by!(comment_id: id) }
+    end
+
+    before_validation :assign_trigger_comment_id
+    before_validation :assign_event_causation_id
     validates :name, presence: true
 
     enum :status, {
@@ -161,6 +172,14 @@ module Collavre
     end
 
     private
+
+    def assign_trigger_comment_id
+      self.trigger_comment_id ||= trigger_event_payload&.dig("comment", "id")
+    end
+
+    def assign_event_causation_id
+      self.event_causation_id = trigger_event_payload&.dig("event", "causation_id")
+    end
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?

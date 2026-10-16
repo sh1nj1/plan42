@@ -113,6 +113,10 @@ collavre tool run topic_create --json '{"creative_id": 8849, "name": "Delivery",
 collavre tool run topic_message_create --json '{"topic_id": 12, "content": "Research the API options and report your recommendation."}'
 collavre tool run topic_message_create --json '{"topic_id": 13, "content": "Build the selected approach and verify it."}'
 
+# Inspect current work, or check the comment_id returned by topic_message_create
+collavre tool run topic_tasks --json '{"topic_id": 12}'
+collavre tool run task_status --json '{"comment_id": 991}'
+
 # Put a finished thread away (messages are kept and stay readable by id)
 collavre tool run topic_update --json '{"topic_id": 12, "archived": true}'
 
@@ -126,6 +130,11 @@ collavre tool run topic_branch --json '{"source_topic_id": 12, "comment_ids": "9
 `topic_messages` includes each comment image as a URL-bearing marker in the
 message content. Image-only comments are not blank, and a long attachment list
 uses the same `content_offset` continuation as long prose.
+
+`task_status` includes descendant work. `not_started` means no task exists yet;
+check again later if dispatch is pending. `needs_attention` takes priority over
+`in_progress`, and `cancelled` is separate. `done` means the agent turns ended
+successfully; read the returned reply summaries to verify the requested outcome.
 
 ### Discover & run tools (meta)
 ```bash

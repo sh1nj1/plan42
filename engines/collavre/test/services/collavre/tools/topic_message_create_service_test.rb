@@ -17,6 +17,7 @@ module Collavre
 
       test "posts a public message and returns its identity" do
         result = service.call(topic_id: @topic.id, content: "Start with the API contract.")
+        assert_equal result[:id], result[:comment_id]
         comment = Comment.find(result[:id])
 
         assert_equal @topic.id, result[:topic_id]

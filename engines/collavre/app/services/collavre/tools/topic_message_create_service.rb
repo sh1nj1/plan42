@@ -26,6 +26,10 @@ module Tools
       stored as written and may use Markdown. An agent cannot post to the topic
       it is currently handling; continue that work in the current turn instead.
 
+      Returns comment_id as a tracking key. Task creation is asynchronous;
+      use task_status(comment_id:) to check execution and read reply summaries.
+      A done task means a turn ended, not that the requested outcome was verified.
+
       Requires feedback permission or better on the topic's creative. Archived
       creatives, archived topics, History topics, and an inbox's reserved System
       topic do not accept messages through this tool.
@@ -193,6 +197,7 @@ module Tools
     def serialize(comment)
       {
         id: comment.id,
+        comment_id: comment.id,
         topic_id: comment.topic_id,
         creative_id: comment.creative_id,
         content: comment.content,
