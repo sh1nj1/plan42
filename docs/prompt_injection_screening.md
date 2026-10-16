@@ -92,8 +92,16 @@ A flagged turn passes `screening_flagged: true` to `AiClient`.
 agent's owner as approver (`ApprovalPendingError#approver`). A turn resumed
 from a tool-approval snapshot replays what was screened, so it keeps its flag
 from the turn's `screening` task actions instead of screening again. Only
-vendors whose tools run in the server's RubyLLM loop qualify. A flagged turn
-for CLI Proxy, adapter vendors, or an agent with no owner is blocked.
+vendors whose tools run in the server's RubyLLM loop qualify, and only when
+the owner exists and can read the creative to decide. Otherwise a flagged turn
+is blocked. This covers CLI Proxy, adapter vendors, ownerless agents, and
+owners without read access.
+
+An `approval_request` decision is replayed to the model as its tool result,
+including the decider's reason. When a resumed turn replays a reason written
+by someone other than the owner, the reason is screened. A flag or an
+unanswered screening flags the turn, and a block ends it. It cannot pause the
+turn, because the conversation is already under way.
 
 ## Claude Channel
 
