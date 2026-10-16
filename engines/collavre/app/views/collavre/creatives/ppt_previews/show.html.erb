@@ -9,7 +9,7 @@
       <% elsif @document %>
         <iframe class="document-viewer-content" sandbox="" title="<%= @blob.filename %>" srcdoc="<%= @blob.filename.extension.downcase == "md" ? String.new(render("collavre/creatives/ppt_previews/markdown_document")) : @document %>"></iframe>
       <% else %>
-        <div class="pdf-document" data-pdf-src="<%= main_app.rails_storage_proxy_path(@blob, disposition: "inline") %>" data-pdf-worker="<%= asset_path('pdf_worker.js') %>"></div>
+        <div class="pdf-document" data-pdf-src="<%= main_app.rails_storage_proxy_path(@blob, disposition: "inline") %>" data-pdf-worker="<%= asset_path('collavre_pdf_worker.js') %>"></div>
         <span class="media-loading" role="status" aria-label="<%= t('collavre.ppt_viewer.loading') %>"></span>
         <span data-document-error hidden role="alert"><%= t('collavre.ppt_viewer.invalid') %></span>
       <% end %>
@@ -34,5 +34,5 @@
 </div>
 
 <% if @blob.filename.extension.downcase == "pdf" %>
-  <%= javascript_include_tag 'pdf_viewer', type: 'module' %>
+  <%= javascript_include_tag 'collavre_pdf_viewer', type: 'module' %>
 <% end %>

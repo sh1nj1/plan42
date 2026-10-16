@@ -90,7 +90,7 @@ test('PDF entry point loads PDF.js and renders the document with the configured 
   const worker = {}
   jest.unstable_mockModule('pdfjs-dist', () => ({ getDocument, GlobalWorkerOptions: worker }))
   try {
-    await import('../../pdf_viewer.js')
+    await import('../../collavre_pdf_viewer.js')
     await settle()
     expect(getDocument).toHaveBeenCalledWith({ url: '/report.pdf' })
     expect(worker.workerSrc).toBe('/worker.js')
