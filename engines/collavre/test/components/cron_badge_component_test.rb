@@ -27,6 +27,20 @@ class CronBadgeComponentTest < ViewComponent::TestCase
     assert_selector "button.cron-task-delete.btn.btn-danger.btn-sm[data-cron-delete-url='/creatives/42/crons/cron_42_daily']"
   end
 
+  test "renders the selected clock SVG as decoration inside the accessible badge" do
+    task = Task.new("cron_42_daily", "0 9 * * *", nil, [])
+
+    render_inline(Collavre::CronBadgeComponent.new(tasks: [ task ], creative_id: 42))
+
+    assert_selector "button.creative-cron-badge[aria-label='1 scheduled job']" do
+      assert_selector "svg[width='16'][height='16'][viewbox='0 0 24 24'][fill='none'][stroke='currentColor'][stroke-width='1.7'][aria-hidden='true'][focusable='false']" do
+        assert_selector "circle[cx='12'][cy='12'][r='9']"
+        assert_selector "path[d='M12 7v5l3 2']"
+      end
+    end
+    assert_no_text "⏰"
+  end
+
   test "renders unavailable values and omits deletion without write access" do
     task = Task.new("cron_42_daily", "0 9 * * *", nil, [])
 
