@@ -172,6 +172,22 @@ module Collavre
       assert_equal "running", loop_config["state"]
     end
 
+    test "a decision during completion verification leaves the verifier in charge" do
+      @creative.comments.create!(topic: @topic, user: @agent, task: @task, content: "All set [STATUS: DONE]", skip_dispatch: true)
+      @creative.update!(data: { "trigger" => { "loop" => loop_config.merge("state" => "pending_verification") } })
+      job = TriggerLoopVerifyJob.new
+      decide = method(:decide_and_resume)
+      job.define_singleton_method(:verify_completion) do |*|
+        decide.call
+        :verified
+      end
+
+      job.perform(@task.id)
+      assert_equal "completed", loop_config["state"]
+      assert_nil continuation.trigger_event_payload[KeepLoop::CONTINUATION_KEY]
+      assert_nil @task.reload.trigger_event_payload[KeepLoop::CONTINUED_KEY]
+    end
+
     test "creatives without a loop create plain continuations" do
       @creative.update!(data: {})
       decide_and_resume

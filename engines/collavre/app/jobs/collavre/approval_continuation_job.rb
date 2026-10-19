@@ -66,11 +66,15 @@ module Collavre
     # inherits that turn's identity and owns its completion check. A loop paused
     # by that turn's BLOCKED reply resumes without waiting for another comment.
     # Only keep loops release or reconcile an abandoned continuation, so drop
-    # loops leave the asking turn's own check in charge.
+    # loops leave the asking turn's own check in charge. A loop in verification
+    # (or already stopped) belongs to its verifier, so it is left untouched.
+    HANDOFF_STATES = %w[running awaiting_user].freeze
+
     def continue_trigger_loop(creative, origin, context)
       creative.with_lock do
         config = creative.data&.dig("trigger", "loop")
-        next unless config && creative.keep_loop? && creative.trigger_loop_task?(origin)
+        next unless config && HANDOFF_STATES.include?(config["state"])
+        next unless creative.keep_loop? && creative.trigger_loop_task?(origin)
         next unless config["trigger_topic_id"].nil? || config["trigger_topic_id"] == origin.topic_id
 
         comment_id = config["current_comment_id"] || origin.trigger_event_payload&.dig("comment", "id")
