@@ -18,6 +18,8 @@ module Collavre
       # An approval continuation now owns this turn; its stale BLOCKED reply must not pause the loop.
       return if task.trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
 
+      @loop_task_id = task.id
+
       child_creative = task.creative
       parent_creative = child_creative.trigger_loop_context
       return unless child_creative.trigger_loop_enabled?
@@ -73,6 +75,12 @@ module Collavre
     end
 
     private
+
+    # Recheck under the creative lock: the approval handoff may land after perform's early return.
+    def validate_loop_snapshot!(loop_data, creative)
+      super
+      raise StaleLoopError if Task.where(id: @loop_task_id).pick(:trigger_event_payload)&.dig(KeepLoop::CONTINUED_KEY)
+    end
 
     def enqueue_verification(creative, task)
       update_loop_data(creative, state: "pending_verification", infra_retry_count: 0)

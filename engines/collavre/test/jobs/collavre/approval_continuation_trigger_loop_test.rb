@@ -84,6 +84,30 @@ module Collavre
       assert_enqueued_with(job: TriggerLoopCheckJob, args: [ continuation.id ]) { finish_continuation("Started [STATUS: CONTINUE]") }
     end
 
+    # Runs the asking turn's check with the decision committed just before +hook+ executes.
+    def check_with_decision_before(hook)
+      job = TriggerLoopCheckJob.new
+      original = job.method(hook)
+      decide = method(:decide_and_resume)
+      job.define_singleton_method(hook) do |*args|
+        decide.call
+        original.call(*args)
+      end
+      job.perform(@task.id)
+    end
+
+    test "decision after the check read the loop snapshot keeps the loop running" do
+      check_with_decision_before(:evaluate_response)
+      assert_equal "running", loop_config["state"]
+      assert_enqueued_with(job: TriggerLoopCheckJob, args: [ continuation.id ]) { finish_continuation("Started [STATUS: CONTINUE]") }
+    end
+
+    test "decision after the check passed its early return keeps the loop running" do
+      check_with_decision_before(:trigger_completion_topic)
+      assert_equal "running", loop_config["state"]
+      assert_enqueued_with(job: TriggerLoopCheckJob, args: [ continuation.id ]) { finish_continuation("Started [STATUS: CONTINUE]") }
+    end
+
     test "an unavailable keep agent leaves the paused loop awaiting the user" do
       TriggerLoopCheckJob.perform_now(@task.id)
       CreativeShare.where(creative: @creative, user: @agent).destroy_all

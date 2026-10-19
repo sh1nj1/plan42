@@ -74,9 +74,8 @@ module Collavre
         comment_id = config["current_comment_id"] || origin.trigger_event_payload&.dig("comment", "id")
         context[KeepLoop::CONTINUATION_KEY] = { "comment_id" => comment_id, "generation" => config["generation"] }.compact
         origin.update_columns(trigger_event_payload: (origin.trigger_event_payload || {}).merge(KeepLoop::CONTINUED_KEY => true))
-        next unless config["state"] == "awaiting_user" && !creative.keep_loop_agent_unavailable?
-
-        config["state"] = "running"
+        # Bump even while running so an in-flight check of the asking turn goes stale.
+        config["state"] = "running" if config["state"] == "awaiting_user" && !creative.keep_loop_agent_unavailable?
         config["control_version"] = config.fetch("control_version", 0) + 1
         creative.update!(data: creative.data)
       end
