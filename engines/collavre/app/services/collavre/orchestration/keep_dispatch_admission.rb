@@ -63,8 +63,10 @@ module Collavre
 
       def owned?(creative, comment_id)
         config = creative.data.dig("trigger", "loop")
-        Task.where(creative_id: creative.id, topic_id: config["trigger_topic_id"], trigger_event_name: "comment_created").any? do |task|
+        Task.where(creative_id: creative.id, topic_id: config["trigger_topic_id"], trigger_event_name: KeepLoop::TURN_EVENTS).any? do |task|
           task.creative = creative
+          next false unless KeepLoop.turn?(task)
+
           (creative.trigger_loop_task?(task) && (task.active? || task.send(:owned_loop_check?))) ||
             DeliveryRecord.pending_restoration?(task, comment_id: comment_id)
         end || KeepQueuedDispatches.pending?(creative, comment_id)

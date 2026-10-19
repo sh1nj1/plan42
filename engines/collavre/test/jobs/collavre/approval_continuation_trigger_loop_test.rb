@@ -162,6 +162,16 @@ module Collavre
       assert_nil @task.reload.trigger_event_payload[KeepLoop::CONTINUED_KEY]
     end
 
+    test "a rejected sibling dispatch keeps a running continuation as the loop owner" do
+      decide_and_resume
+      continuation.update!(status: "running")
+      clear_enqueued_jobs
+
+      result = Orchestration::KeepDispatchAdmission.call(@task.reload.trigger_event_payload, @agent) { :rejected }
+      assert_equal :rejected, result
+      assert_equal "running", loop_config["state"]
+    end
+
     test "creatives without a loop create plain continuations" do
       @creative.update!(data: {})
       decide_and_resume
