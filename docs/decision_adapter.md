@@ -63,4 +63,4 @@ complete the loop. Existing behavior accepting an explicit DONE claim when no
 verifier is shared remains available.
 
 Both paths use the existing interaction logging and LLM usage attribution.
-Prompt injection detection is outside this change.
+Prompt-injection screening uses this interface; see [prompt_injection_screening.md](prompt_injection_screening.md).

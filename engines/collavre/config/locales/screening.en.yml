@@ -1,0 +1,14 @@
+en:
+  collavre:
+    screening:
+      approval_request: |-
+        Prompt-injection screening could not check a message for %{agent} (%{error}).
+        Approve to deliver it to %{agent} without screening, or deny to drop it.
+
+        From: %{sender}
+
+        %{excerpt}
+      also_flagged: "Another screener also flagged it: if approved, the turn is handled as flagged."
+      blocked_notice: "This message was not delivered to %{agent}: prompt-injection screening flagged it."
+      denied_notice: "This message was not delivered to %{agent}: the agent's owner declined to deliver it without screening."
+      unknown_sender: "an unverified sender"
