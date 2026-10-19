@@ -15,6 +15,8 @@ module Collavre
     def perform(task_id)
       task = Task.find_by(id: task_id)
       return unless task&.creative
+      # An approval continuation now owns this turn; its stale BLOCKED reply must not pause the loop.
+      return if task.trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
 
       child_creative = task.creative
       parent_creative = child_creative.trigger_loop_context

@@ -56,9 +56,30 @@ module Collavre
       context["chat"]["mentioned_users"] = [ { "id" => comment.user_id } ]
       context[request_context_key] = payload["request_id"]
       context["workspace_user_id"] = AiAgent::TaskWorkspaceUser.resolve(origin)&.id
+      continue_trigger_loop(comment.creative, origin, context)
       Task.create!(name: event_name.humanize, agent: comment.user,
                    creative: comment.creative, topic_id: comment.topic_id, status: "queued",
                    trigger_event_name: event_name, trigger_event_payload: context)
+    end
+
+    # The decision answers the loop turn that asked for it, so the continuation
+    # inherits that turn's identity and owns its completion check. A loop paused
+    # by that turn's BLOCKED reply resumes without waiting for another comment.
+    def continue_trigger_loop(creative, origin, context)
+      creative.with_lock do
+        config = creative.data&.dig("trigger", "loop")
+        next unless config && creative.trigger_loop_enabled? && creative.trigger_loop_task?(origin)
+        next unless config["trigger_topic_id"].nil? || config["trigger_topic_id"] == origin.topic_id
+
+        comment_id = config["current_comment_id"] || origin.trigger_event_payload&.dig("comment", "id")
+        context[KeepLoop::CONTINUATION_KEY] = { "comment_id" => comment_id, "generation" => config["generation"] }.compact
+        origin.update_columns(trigger_event_payload: (origin.trigger_event_payload || {}).merge(KeepLoop::CONTINUED_KEY => true))
+        next unless config["state"] == "awaiting_user" && !creative.keep_loop_agent_unavailable?
+
+        config["state"] = "running"
+        config["control_version"] = config.fetch("control_version", 0) + 1
+        creative.update!(data: creative.data)
+      end
     end
 
     def create_notice(comment, payload)

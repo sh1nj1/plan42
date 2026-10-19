@@ -74,7 +74,7 @@ module Collavre
         return false unless status == "done"
         # Pending and completed replays own completion instead of the login card.
         return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
-        return false unless trigger_event_name == "comment_created"
+        return false unless trigger_event_name == "comment_created" || approval_loop_continuation?
         return false unless creative&.trigger_loop_enabled? && creative.trigger_loop_task?(self)
 
         # Only trigger loop check for tasks in the loop's trigger topic
@@ -84,6 +84,11 @@ module Collavre
 
         trigger_topic_id = loop_config["trigger_topic_id"]
         trigger_topic_id.nil? || trigger_topic_id == topic_id
+      end
+
+      def approval_loop_continuation?
+        trigger_event_name.in?(%w[async_approval claude_channel_approval]) &&
+          trigger_event_payload&.key?(KeepLoop::CONTINUATION_KEY)
       end
 
       def check_trigger_loop_completion
