@@ -22,7 +22,8 @@ class CreativesHelperTest < ActionView::TestCase
       html = render_cron_badge([ first, second ], creative_id: 1)
 
       assert_includes html, "creative-cron-badge"
-      assert_includes html, "⏰"
+      assert_select Nokogiri::HTML.fragment(html), "button.creative-cron-badge svg[stroke=currentColor]"
+      assert_not_includes html, "⏰"
       assert_includes html, ">2</span>"
       assert_includes html, "2 scheduled jobs"
       assert_includes html, "0 9 * * *"
