@@ -19,6 +19,12 @@ collavre list
 
 The `collavre` script lives in `scripts/collavre`. Config is stored at `~/.config/collavre/config.json`.
 
+When you work on a dispatched task (the message carries a `task_id`), set `COLLAVRE_TASK_ID` so every request names its task (`X-Collavre-Task` header). A write for a document-mode review or question is refused when the agent has several active tasks and the task is not named:
+
+```bash
+COLLAVRE_TASK_ID=<task_id> collavre update 123 --desc "Revised"
+```
+
 ## Commands
 
 ### List root creatives

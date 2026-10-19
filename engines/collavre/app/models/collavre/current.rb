@@ -7,6 +7,7 @@ module Collavre
     attribute :mcp_tool_approval_required
     attribute :mcp_request
     attribute :mcp_agent_workspace
+    attribute :mcp_task_id
     attribute :user
     attribute :agent_turn
     attribute :authoritative_permissions
