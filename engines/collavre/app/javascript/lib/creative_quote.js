@@ -52,6 +52,27 @@ export function creativeQuoteTarget(quotes, root = document) {
   }
 }
 
+// Quote target fields on a comment form. A creative quote and a message quote
+// are exclusive, so a creative quote drops any message quote already present.
+export function applyQuoteTarget(formData, { creativeId, commentId, text } = {}) {
+  if (creativeId) {
+    formData.delete('comment[quoted_comment_id]')
+    formData.set('comment[quoted_creative_id]', creativeId)
+    formData.set('comment[quoted_text]', text)
+  } else if (commentId) {
+    formData.set('comment[quoted_comment_id]', commentId)
+  }
+}
+
+// Chip prefix telling a document-mode quote apart from a message quote.
+export function creativeQuoteSource(quote, prefix) {
+  const source = document.createElement('span')
+  source.className = 'review-quote-chip-source'
+  source.textContent = `📄 ${prefix}${quote.label ? `: ${quote.label}` : ''}`
+  source.title = quote.label || ''
+  return source
+}
+
 export function creativeLabel(row) {
   const body = row?.querySelector(BODY_SELECTOR)
   const text = (body?.textContent || '').replace(/\s+/gu, ' ').trim()
@@ -96,5 +117,19 @@ export function scrollToCreativeRow(creativeId, root = document) {
   row.scrollIntoView({ behavior: 'smooth', block: 'center' })
   row.classList.add('creative-quote-highlight')
   setTimeout(() => row.classList.remove('creative-quote-highlight'), 2000)
+  return true
+}
+
+// Bring a quote chip's source into view: the document row for a creative
+// quote, the chat message otherwise. beforeCommentScroll runs only when a
+// message is about to be scrolled to.
+export function scrollToQuoteSource(quote, beforeCommentScroll, root = document) {
+  if (quote.creativeId) return scrollToCreativeRow(quote.creativeId, root)
+  const commentEl = root.querySelector(`[data-comment-id="${quote.commentId}"]`)
+  if (!commentEl) return false
+  beforeCommentScroll?.()
+  commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  commentEl.classList.add('comment-highlight')
+  setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)
   return true
 }

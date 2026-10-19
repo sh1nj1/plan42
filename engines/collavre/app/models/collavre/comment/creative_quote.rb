@@ -14,6 +14,21 @@ module Collavre
         belongs_to :quoted_creative, class_name: "Collavre::Creative", optional: true
 
         validate :single_quote_target
+
+        # Messages that must run as their own agent turn and never be folded into,
+        # absorb, or be dropped as context of another: a review is bound to the
+        # comment it quotes, and a document-mode quote (review or question) is bound
+        # to its creative — folding a question would also lose its read-only guard.
+        scope :own_turn_messages, -> { review_messages.or(where.not(quoted_creative_id: nil)) }
+      end
+
+      class_methods do
+        def own_turn_message_ids(ids)
+          ids = Array(ids).compact.map(&:to_i).uniq
+          return [] if ids.empty?
+
+          own_turn_messages.where(id: ids).pluck(:id)
+        end
       end
 
       def creative_quote?

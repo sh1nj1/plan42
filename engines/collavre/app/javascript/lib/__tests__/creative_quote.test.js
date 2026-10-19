@@ -3,7 +3,10 @@
  */
 import { jest } from '@jest/globals'
 import {
+  applyQuoteTarget,
   commonAncestorCreativeId,
+  creativeQuoteSource,
+  scrollToQuoteSource,
   creativeQuoteTarget,
   creativeLabel,
   selectionPopupSupported,
@@ -252,5 +255,89 @@ describe('scrollToCreativeRow', () => {
     } finally {
       jest.useRealTimers()
     }
+  })
+})
+
+describe('applyQuoteTarget', () => {
+  test('a creative quote replaces any message quote', () => {
+    const formData = new FormData()
+    formData.append('comment[quoted_comment_id]', '7')
+    applyQuoteTarget(formData, { creativeId: '3', commentId: '7', text: 'beta' })
+    expect(formData.has('comment[quoted_comment_id]')).toBe(false)
+    expect(formData.get('comment[quoted_creative_id]')).toBe('3')
+    expect(formData.get('comment[quoted_text]')).toBe('beta')
+  })
+
+  test('a message quote sets only the quoted comment', () => {
+    const formData = new FormData()
+    applyQuoteTarget(formData, { commentId: '7', text: 'hi' })
+    expect(formData.get('comment[quoted_comment_id]')).toBe('7')
+    expect(formData.has('comment[quoted_creative_id]')).toBe(false)
+    expect(formData.has('comment[quoted_text]')).toBe(false)
+  })
+
+  test('no target leaves the form untouched', () => {
+    const formData = new FormData()
+    applyQuoteTarget(formData)
+    expect([...formData.keys()]).toEqual([])
+  })
+})
+
+describe('creativeQuoteSource', () => {
+  test('labels a document quote with its row', () => {
+    const source = creativeQuoteSource({ label: 'Intro' }, 'Doc')
+    expect(source.className).toBe('review-quote-chip-source')
+    expect(source.textContent).toBe('📄 Doc: Intro')
+    expect(source.title).toBe('Intro')
+  })
+
+  test('falls back to the bare prefix without a label', () => {
+    const source = creativeQuoteSource({}, 'Doc')
+    expect(source.textContent).toBe('📄 Doc')
+    expect(source.title).toBe('')
+  })
+})
+
+describe('scrollToQuoteSource', () => {
+  test('a creative quote scrolls to its row without the comment hook', () => {
+    const r = row('3')
+    r.scrollIntoView = jest.fn()
+    const before = jest.fn()
+    expect(scrollToQuoteSource({ creativeId: '3', commentId: '7' }, before, root)).toBe(true)
+    expect(r.scrollIntoView).toHaveBeenCalled()
+    expect(before).not.toHaveBeenCalled()
+  })
+
+  test('returns false when the quoted message is not on the page', () => {
+    const before = jest.fn()
+    expect(scrollToQuoteSource({ commentId: '404' }, before, root)).toBe(false)
+    expect(before).not.toHaveBeenCalled()
+  })
+
+  test('scrolls to and briefly highlights the quoted message', () => {
+    jest.useFakeTimers()
+    try {
+      const message = document.createElement('div')
+      message.dataset.commentId = '7'
+      message.scrollIntoView = jest.fn()
+      root.appendChild(message)
+      const before = jest.fn()
+      expect(scrollToQuoteSource({ commentId: '7' }, before, root)).toBe(true)
+      expect(before).toHaveBeenCalled()
+      expect(message.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+      expect(message.classList.contains('comment-highlight')).toBe(true)
+      jest.advanceTimersByTime(2000)
+      expect(message.classList.contains('comment-highlight')).toBe(false)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  test('works without a comment hook', () => {
+    const message = document.createElement('div')
+    message.dataset.commentId = '8'
+    message.scrollIntoView = jest.fn()
+    root.appendChild(message)
+    expect(scrollToQuoteSource({ commentId: '8' }, undefined, root)).toBe(true)
   })
 })
