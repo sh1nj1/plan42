@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_000002) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_19_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -275,6 +275,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000002) do
     t.integer "user_id"
     t.string "waiting_notice_scope"
     t.integer "waiting_notice_task_id"
+    t.integer "quoted_creative_id"
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["async_approval_recovery_pending"], name: "index_comments_on_pending_async_approval"
@@ -288,11 +289,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_000002) do
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
+    t.index ["quoted_creative_id"], name: "index_comments_on_quoted_creative_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"
     t.index ["topic_id", "topic_assigned_at"], name: "index_comments_on_topic_and_assigned_at"
     t.index ["topic_id"], name: "index_comments_on_topic_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
+    t.check_constraint "quoted_comment_id IS NULL OR quoted_creative_id IS NULL", name: "comments_single_quote_target"
   end
 
   create_table "contacts", force: :cascade do |t|

@@ -13,6 +13,7 @@ import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
 import { focusWhenAvailable } from '../../lib/utils/focus'
 import { openingFocusOptions } from './popup_focus'
+import { creativeQuoteTarget, scrollToCreativeRow } from '../../lib/creative_quote'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -389,6 +390,7 @@ export default class extends Controller {
     // Build final content from review quotes + user text
     if (hasQuotes) {
       store.backup(this.textareaTarget.value)
+      this._pendingCreativeQuote = creativeQuoteTarget(store.creativeQuotes)
       this.textareaTarget.value = store.buildContent(this.textareaTarget.value)
       this._pendingReviewType = 'review'
     }
@@ -453,6 +455,13 @@ export default class extends Controller {
     if (this._pendingReviewType) {
       formData.append('comment[review_type]', this._pendingReviewType)
       this._pendingReviewType = null
+      if (this._pendingCreativeQuote) {
+        // A creative quote and a message quote are exclusive; the creative wins.
+        formData.delete('comment[quoted_comment_id]')
+        formData.set('comment[quoted_creative_id]', this._pendingCreativeQuote.creativeId)
+        formData.set('comment[quoted_text]', this._pendingCreativeQuote.text)
+      }
+      this._pendingCreativeQuote = null
     }
 
     let url = `/creatives/${this.creativeId}/comments`
@@ -947,18 +956,20 @@ export default class extends Controller {
   }
 
   // Append a review quote as a visual chip above the textarea.
-  appendReviewQuote(commentId, selectedText) {
+  // options: { type: 'review' | 'question', creativeId, label } — creativeId
+  // marks a document-mode quote of a creative instead of a chat message.
+  appendReviewQuote(commentId, selectedText, options = {}) {
     if (!selectedText) return
 
     const store = this._reviewStore
     if (store.isEmpty) this._flushDraftSave()
     store.saveActiveFeedback(this.textareaTarget.value)
 
-    if (commentId) {
+    if (commentId && !options.creativeId) {
       this.quotedCommentIdTarget.value = commentId
     }
 
-    store.add(commentId, selectedText)
+    store.add(commentId, selectedText, options)
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
@@ -1002,7 +1013,12 @@ export default class extends Controller {
     const formData = new FormData()
     formData.append('comment[content]', content)
     formData.append('comment[review_type]', 'question')
-    if (quote.commentId) formData.append('comment[quoted_comment_id]', quote.commentId)
+    if (quote.creativeId) {
+      formData.append('comment[quoted_creative_id]', quote.creativeId)
+      formData.append('comment[quoted_text]', quote.text)
+    } else if (quote.commentId) {
+      formData.append('comment[quoted_comment_id]', quote.commentId)
+    }
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
     appendRunOptions(this.formTarget, formData)
@@ -1098,10 +1114,22 @@ export default class extends Controller {
         : quote.text
       textSpan.textContent = preview
       textSpan.title = quote.text
+      if (quote.creativeId) {
+        // Document-mode quote: say where it came from, apart from message quotes.
+        const source = document.createElement('span')
+        source.className = 'review-quote-chip-source'
+        source.textContent = `📄 ${this._getI18nText('creativeQuotePrefix', 'Doc')}${quote.label ? `: ${quote.label}` : ''}`
+        source.title = quote.label || ''
+        textSpan.prepend(source)
+      }
 
       // Click chip to edit its feedback
       textSpan.addEventListener('click', () => {
         if (quote.id === store.activeId) {
+          if (quote.creativeId) {
+            scrollToCreativeRow(quote.creativeId)
+            return
+          }
           const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
           if (commentEl) {
             // Programmatic list scroll — drop the prev-message anchor so the next

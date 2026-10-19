@@ -544,6 +544,10 @@ export default class extends Controller {
     if (!target) return
 
     if (target.closest('.comment-select-checkbox')) return
+    // Creative history buttons (a change set's approve/reject/revert, also shown
+    // under a document-mode review reply) reuse the approve/deny classes but
+    // belong to the creative-history controller, not to a chat message.
+    if (target.closest('[data-controller~="creative-history"]')) return
 
     const topicLink = target.closest('.comment-topic-switch')
     if (topicLink) {

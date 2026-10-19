@@ -52,6 +52,7 @@ module Collavre
       @comment = @creative.comments.build(comment_attributes)
 
       validate_topic_id!(@comment.topic_id) or return
+      validate_quoted_creative! or return
 
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
@@ -80,7 +81,7 @@ module Collavre
       end
 
       if @comment.user == Current.user
-        safe_params = comment_params.except(:quoted_comment_id, :quoted_text, :agent_run_options)
+        safe_params = comment_params.except(:quoted_comment_id, :quoted_text, :quoted_creative_id, :agent_run_options)
         validate_topic_id!(safe_params[:topic_id]) or return
 
         if update_comment(safe_params)
@@ -254,8 +255,19 @@ module Collavre
       comment.creative&.github_markdown?
     end
 
+    # A document-mode quote may only point at a creative the sender can read;
+    # otherwise the agent would be handed content the sender never saw.
+    def validate_quoted_creative!
+      return true if @comment.quoted_creative_id.blank?
+      return true if @comment.quoted_creative&.has_permission?(Current.user, :read)
+
+      render json: { error: I18n.t("collavre.comments.creative_quote.not_readable") }, status: :forbidden
+      false
+    end
+
     def comment_params
       permitted = params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text,
+                                                  :quoted_creative_id,
                                                   :review_type, images: [],
                                                   agent_run_options: CliProxy::RunOptions::MESSAGE_KEYS)
       return permitted unless permitted.key?(:agent_run_options)

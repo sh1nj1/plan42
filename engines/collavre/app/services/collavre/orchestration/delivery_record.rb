@@ -473,7 +473,7 @@ module Collavre
         # off the anchor, never off the history window. Having been read as
         # context is not having been answered, so a review is never dropped —
         # the same boundary TaskCoalescer and refresh_deferred_context! keep.
-        return nil if Comment.review_message_ids([ comment_id ]).any?
+        return nil if Comment.own_turn_message_ids([ comment_id ]).any?
 
         Task.where(
           agent_id: agent.id,

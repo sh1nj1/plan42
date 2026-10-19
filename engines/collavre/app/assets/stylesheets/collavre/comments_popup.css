@@ -617,6 +617,61 @@ body.chat-fullscreen {
     white-space: nowrap;
 }
 
+/* Review / Ask side by side, in chat and in document mode */
+.quote-selection-popup ul {
+    display: flex;
+    gap: 0.2em;
+}
+
+/* Document-mode quotes */
+.review-quote-chip-source {
+    margin-right: 0.4em;
+    color: var(--color-muted);
+    font-size: 0.9em;
+}
+
+.comment-creative-quote-source {
+    display: inline-block;
+    margin-top: 0.3em;
+    font-size: 0.8em;
+    color: var(--color-muted);
+    text-decoration: none;
+}
+
+.comment-creative-quote-source:hover {
+    color: var(--color-text);
+    text-decoration: underline;
+}
+
+.creative-quote-review {
+    margin-top: 0.5em;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    padding: 0.4em 0.6em;
+}
+
+.creative-quote-review > details > summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.creative-quote-review .creative-history-state {
+    margin-left: 0.4em;
+    font-weight: normal;
+    color: var(--color-muted);
+}
+
+.creative-quote-review-warning {
+    margin: 0.4em 0;
+    font-size: 0.8em;
+}
+
+.creative-quote-highlight {
+    background: color-mix(in srgb, var(--color-active) 15%, transparent);
+    transition: background 0.3s ease;
+}
+
 .comment-reactions {
     margin-top: 0.4em;
     display: flex;

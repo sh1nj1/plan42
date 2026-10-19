@@ -135,6 +135,18 @@ ko:
       review_send_question: 질문 보내기
       review_type_review: 리뷰
       review_type_question: 질문
+      ask_button: 질의
+      review_button_hint: 선택한 부분을 수정합니다
+      ask_button_hint: 선택한 부분에 대해 질문합니다 (수정하지 않음)
+      creative_quote:
+        single_target: 메시지와 크리에이티브를 동시에 인용할 수 없습니다.
+        not_readable: 읽을 수 없는 크리에이티브는 인용할 수 없습니다.
+        question_read_only: 이번 턴은 문서에 대한 질의라서 크리에이티브를 수정할 수 없습니다. 채팅으로 답변하세요.
+        chip_prefix: 문서
+        proposed_change: 변경 제안
+        out_of_scope: "선택한 부분 밖의 크리에이티브도 변경됩니다: %{ids}"
+        rejected_notice: "\"%{title}\"에 대한 변경 제안이 거절되었습니다. 바꿀 내용을 알려 주고 다시 요청하세요."
+        reject_reason_placeholder: 거절한 이유를 에이전트에게 알려 주세요...
       navigate_back: 이전 채팅
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅

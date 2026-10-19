@@ -63,6 +63,7 @@ module Collavre
 
       def trigger_content
         text = Workflow::SourceMessage.prepend_to(@context.dig("comment", "content"), @context, @agent)
+        text = CreativeQuoteContext.prepend_to(text, find_comment)
         Orchestration::ResumeContext.prepend_to(
           MergedTriggerComments.prepend_to(text, @context, agent: @agent), @context)
       end

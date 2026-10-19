@@ -94,13 +94,23 @@
         <%= t('collavre.comments.copy_link_button') %>
       </button>
     </div>
-  <% if comment.quoted_text.present? %>
+  <% if comment.creative_quote? && comment.quoted_creative %>
+    <a class="comment-creative-quote-source" href="<%= collavre.creative_path(comment.quoted_creative) %>"
+       data-turbo-frame="_top" data-creative-quote-source-id="<%= comment.quoted_creative_id %>">
+      📄 <%= comment.review_type_question? ? t("collavre.comments.ask_button") : t("collavre.comments.review_button") %>
+      · <%= comment.quoted_creative.creative_snippet %>
+    </a>
+  <% elsif comment.quoted_text.present? %>
     <div class="comment-quoted-block">
       <blockquote class="comment-quoted-text"><%= comment.quoted_text %></blockquote>
     </div>
   <% end %>
   <div class="comment-content" data-comment-target="content"><%= comment.content %></div>
   <%= render_extension_slot(:comment_content_extensions, comment: comment, streaming: local_assigns.fetch(:streaming, false)) %>
+  <% unless local_assigns.fetch(:streaming, false) %>
+    <% creative_quote_review = Collavre::Comments::CreativeQuoteReview.for_reply(comment) %>
+    <%= render "collavre/comments/creative_quote_review", review: creative_quote_review if creative_quote_review %>
+  <% end %>
   <% if comment.comment_versions_count > 0 %>
     <% version_count = comment.comment_versions_count %>
     <% selected_id = comment.selected_version_id %>

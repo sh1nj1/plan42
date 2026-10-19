@@ -7,6 +7,11 @@ import { Application } from '@hotwired/stimulus'
 import FormController from '../form_controller'
 import CommentController from '../../comment_controller'
 
+// jsdom has no CSS.escape; creative_quote uses it to build row selectors.
+if (!globalThis.CSS?.escape) {
+  globalThis.CSS = { ...(globalThis.CSS || {}), escape: (value) => String(value).replace(/["\\]/g, '\\$&') }
+}
+
 describe('FormController - Review Quote Chips', () => {
   let application
   let container
@@ -173,12 +178,12 @@ describe('FormController - Review Quote Chips', () => {
     try {
       if (entry === 'popup') {
         commentController.showReviewPopup(comment.getBoundingClientRect(), selection.toString())
-        commentController._reviewPopup.onSelect()
+        commentController._quotePopup.popup.handleItemSelect(0)
       } else {
         commentController.reviewClick({ preventDefault: jest.fn() })
       }
 
-      expect(getQuotes(controller)[0]).toMatchObject({ commentId: '42', text: 'Selected message' })
+      expect(getQuotes(controller)[0]).toMatchObject({ commentId: '42', text: 'Selected message', type: 'review' })
       expect(selection.toString()).toBe('')
       expect(clearSelection).toHaveBeenCalledTimes(1)
       expect(focus).toHaveBeenCalled()
@@ -187,9 +192,123 @@ describe('FormController - Review Quote Chips', () => {
       expect(document.activeElement).toBe(controller.textareaTarget)
     } finally {
       commentController.hideReviewPopup()
+      commentController._quotePopup?.destroy()
       clearSelection.mockRestore()
       focus.mockRestore()
     }
+  })
+
+  describe('review / ask popup on a chat message', () => {
+    let comment
+    let commentController
+
+    beforeEach(() => {
+      const popupEl = container.querySelector('#comments-popup')
+      popupEl.dataset.reviewButtonText = 'Revise'
+      popupEl.dataset.askButtonText = 'Ask it'
+      comment = document.createElement('div')
+      comment.dataset.commentId = '42'
+      comment.innerHTML = '<div class="comment-content">Selected message</div>'
+      popupEl.appendChild(comment)
+      commentController = Object.create(CommentController.prototype)
+      Object.defineProperty(commentController, 'element', { value: comment })
+      commentController.findFormController = () => controller
+      controller.textareaTarget.scrollIntoView = jest.fn()
+    })
+
+    afterEach(() => {
+      commentController._quotePopup?.destroy()
+    })
+
+    test('renders Review and Ask items inside the comments popup', () => {
+      commentController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'Selected message')
+
+      const popupEl = container.querySelector('#comments-popup .quote-selection-popup')
+      expect(popupEl).not.toBeNull()
+      expect(popupEl.style.display).toBe('block')
+      const items = [...popupEl.querySelectorAll('li')].map(li => li.textContent)
+      expect(items).toEqual(['Revise', 'Ask it'])
+    })
+
+    test('reuses one popup across selections', () => {
+      commentController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'one')
+      const first = commentController._quotePopup
+      commentController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'two')
+      expect(commentController._quotePopup).toBe(first)
+      expect(container.querySelectorAll('.quote-selection-popup')).toHaveLength(1)
+    })
+
+    test('picking Ask adds a question quote for the message', () => {
+      commentController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'Selected message')
+      container.querySelectorAll('.quote-selection-popup li')[1].click()
+
+      expect(getQuotes(controller)).toHaveLength(1)
+      expect(getQuotes(controller)[0]).toMatchObject({ commentId: '42', text: 'Selected message', type: 'question', creativeId: null })
+      expect(controller.quotedCommentIdTarget.value).toBe('42')
+      expect(commentController._quotePopup.element.style.display).toBe('none')
+      expect(controller.submitTarget.textContent).toBe('Send question')
+    })
+
+    test('pickQuoteAction without a form controller only clears the selection and hides', () => {
+      commentController.findFormController = () => null
+      commentController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'Selected message')
+      commentController.pickQuoteAction('review')
+
+      expect(getQuotes(controller)).toHaveLength(0)
+      expect(commentController._quotePopup.element.style.display).toBe('none')
+    })
+
+    test('falls back to document.body when not inside the comments popup', () => {
+      const loose = document.createElement('div')
+      loose.dataset.commentId = '7'
+      document.body.appendChild(loose)
+      const looseController = Object.create(CommentController.prototype)
+      Object.defineProperty(looseController, 'element', { value: loose })
+      looseController.findFormController = () => controller
+      try {
+        looseController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'loose')
+        const el = looseController._quotePopup.element
+        expect(el.parentElement).toBe(document.body)
+        expect([...el.querySelectorAll('li')].map(li => li.textContent)).toEqual(['Review', 'Ask'])
+      } finally {
+        looseController._quotePopup.destroy()
+        loose.remove()
+      }
+    })
+
+    test('disconnect removes the popup element', () => {
+      commentController.showReviewPopup({ left: 0, right: 10, top: 0, bottom: 10, width: 10 }, 'Selected message')
+      const el = commentController._quotePopup.element
+      commentController.disconnect()
+      expect(el.isConnected).toBe(false)
+      expect(commentController._quotePopup).toBeNull()
+      expect(() => commentController.disconnect()).not.toThrow()
+    })
+
+    test('mouseup on a message selection shows the popup', () => {
+      const raf = jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 1 })
+      const hadRect = 'getBoundingClientRect' in Range.prototype
+      if (!hadRect) Range.prototype.getBoundingClientRect = () => ({ left: 0, right: 0, top: 0, bottom: 0, width: 0 })
+      try {
+        const range = document.createRange()
+        range.selectNodeContents(comment.querySelector('.comment-content'))
+        window.getSelection().removeAllRanges()
+        window.getSelection().addRange(range)
+
+        commentController.handleMouseUp()
+
+        expect(commentController._pendingQuoteText).toBe('Selected message')
+        expect(commentController._quotePopup.element.style.display).toBe('block')
+      } finally {
+        window.getSelection().removeAllRanges()
+        if (!hadRect) delete Range.prototype.getBoundingClientRect
+        raf.mockRestore()
+      }
+    })
+
+    test('hideReviewPopup is safe before any popup exists', () => {
+      expect(() => commentController.hideReviewPopup()).not.toThrow()
+    })
   })
 
   describe('appendReviewQuote', () => {
@@ -455,6 +574,131 @@ describe('FormController - Review Quote Chips', () => {
       expect(notifyProgrammaticScroll).toHaveBeenCalled()
 
       commentEl.remove()
+    })
+  })
+
+  describe('document-mode (creative) quotes', () => {
+    let creativeSeq = 0
+    let fetchMock
+    let originalFetch
+    let meta
+    let tree
+
+    beforeEach(() => {
+      fetchMock = jest.fn(() => new Promise(() => {}))
+      originalFetch = global.fetch
+      global.fetch = fetchMock
+      meta = document.createElement('meta')
+      meta.name = 'csrf-token'
+      meta.content = 'token'
+      document.head.appendChild(meta)
+      tree = document.createElement('div')
+      tree.innerHTML = `
+        <creative-tree-row creative-id="10"><div class="creative-content">Root</div></creative-tree-row>
+        <creative-tree-row creative-id="11" parent-id="10"><div class="creative-content">Child A</div></creative-tree-row>
+        <creative-tree-row creative-id="12" parent-id="10"><div class="creative-content">Child B</div></creative-tree-row>
+      `
+      document.body.appendChild(tree)
+      // Sends never settle here, so each test uses its own creative to stay
+      // clear of the module-level in-flight guard.
+      controller.creativeId = `doc-${++creativeSeq}`
+    })
+
+    afterEach(() => {
+      global.fetch = originalFetch
+      meta.remove()
+      tree.remove()
+    })
+
+    test('appendReviewQuote keeps creative quotes apart from the quoted message id', () => {
+      controller.appendReviewQuote(42, 'Child A', { type: 'question', creativeId: '11', label: 'Child A' })
+
+      expect(getQuotes(controller)[0]).toMatchObject({ commentId: null, creativeId: '11', label: 'Child A', type: 'question' })
+      expect(controller.quotedCommentIdTarget.value).toBe('')
+    })
+
+    test('review send carries the common ancestor creative and first quote text, not a message id', () => {
+      controller.appendReviewQuote(99, 'message text')
+      controller._commitActiveQuote()
+      controller.appendReviewQuote(null, 'Child A', { creativeId: '11', label: 'Child A' })
+      controller.textareaTarget.value = 'shorten'
+      controller._commitActiveQuote()
+      controller.appendReviewQuote(null, 'Child B', { creativeId: '12', label: 'Child B' })
+      controller._commitActiveQuote()
+      expect(controller.quotedCommentIdTarget.value).toBe('99')
+
+      controller.handleSend({ preventDefault: jest.fn() })
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const body = fetchMock.mock.calls[0][1].body
+      expect(body.get('comment[review_type]')).toBe('review')
+      expect(body.get('comment[quoted_creative_id]')).toBe('10')
+      expect(body.get('comment[quoted_text]')).toBe('Child A')
+      expect(body.has('comment[quoted_comment_id]')).toBe(false)
+      expect(controller.textareaTarget.value).toContain('> Child A')
+      expect(controller._pendingCreativeQuote).toBeNull()
+    })
+
+    test('review send of message quotes only keeps quoted_comment_id', () => {
+      controller.appendReviewQuote(99, 'message text')
+      controller._commitActiveQuote()
+
+      controller.handleSend({ preventDefault: jest.fn() })
+
+      const body = fetchMock.mock.calls[0][1].body
+      expect(body.get('comment[review_type]')).toBe('review')
+      expect(body.get('comment[quoted_comment_id]')).toBe('99')
+      expect(body.has('comment[quoted_creative_id]')).toBe(false)
+    })
+
+    test('question send of a creative quote carries quoted_creative_id and quoted_text', () => {
+      controller._sendQuestionQuote({ id: 'q1', commentId: null, creativeId: '11', text: 'Child A', type: 'question', feedback: 'Why?' })
+
+      const body = fetchMock.mock.calls[0][1].body
+      expect(body.get('comment[review_type]')).toBe('question')
+      expect(body.get('comment[quoted_creative_id]')).toBe('11')
+      expect(body.get('comment[quoted_text]')).toBe('Child A')
+      expect(body.has('comment[quoted_comment_id]')).toBe(false)
+    })
+
+    test('chip shows the document source label using data-creative-quote-prefix', () => {
+      container.querySelector('#comments-popup').dataset.creativeQuotePrefix = 'Document'
+      controller.appendReviewQuote(null, 'Child A', { creativeId: '11', label: 'Child A' })
+
+      const source = container.querySelector('.review-quote-chip-text .review-quote-chip-source')
+      expect(source.textContent).toBe('📄 Document: Child A')
+      expect(source.title).toBe('Child A')
+    })
+
+    test('chip source label without a label shows only the prefix', () => {
+      controller.appendReviewQuote(null, 'Child A', { creativeId: '11' })
+
+      const source = container.querySelector('.review-quote-chip-source')
+      expect(source.textContent).toBe('📄 Doc')
+      expect(source.title).toBe('')
+    })
+
+    test('message chips have no source label', () => {
+      controller.appendReviewQuote(1, 'message')
+      expect(container.querySelector('.review-quote-chip-source')).toBeNull()
+    })
+
+    test('clicking the active creative chip scrolls to its creative row', () => {
+      jest.useFakeTimers()
+      try {
+        const row = tree.querySelector('[creative-id="11"]')
+        row.scrollIntoView = jest.fn()
+        controller.appendReviewQuote(null, 'Child A', { creativeId: '11', label: 'Child A' })
+
+        container.querySelector('.review-quote-chip-text').click()
+
+        expect(row.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+        expect(row.classList.contains('creative-quote-highlight')).toBe(true)
+        jest.advanceTimersByTime(2000)
+        expect(row.classList.contains('creative-quote-highlight')).toBe(false)
+      } finally {
+        jest.useRealTimers()
+      }
     })
   })
 

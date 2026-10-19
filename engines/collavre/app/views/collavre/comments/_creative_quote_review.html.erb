@@ -1,0 +1,29 @@
+<%# Proposed change of a document-mode review, shown under the agent's reply.
+    Reuses the creative history detail (diff + approve/reject, then revert). %>
+<% scope_creative = review.scope_creative %>
+<% if scope_creative %>
+  <% out_of_scope = review.out_of_scope_ids %>
+  <div class="creative-quote-review" data-controller="creative-history comments--creative-quote-review"
+       data-action="creative-history:applied->comments--creative-quote-review#applied"
+       data-comments--creative-quote-review-reject-placeholder-value="<%= t('collavre.comments.creative_quote.reject_reason_placeholder') %>">
+    <details class="creative-history-detail" open data-controller="creative-history-detail"
+             data-action="toggle->creative-history-detail#load"
+             data-creative-history-detail-url-value="<%= collavre.creative_change_set_path(scope_creative, review.change_set) %>">
+      <summary>
+        <%= t("collavre.comments.creative_quote.proposed_change") %>
+        <span class="creative-history-state"><%= t("collavre.creative_history.states.#{review.change_set.status}") %></span>
+      </summary>
+      <% if out_of_scope.any? %>
+        <p class="creative-quote-review-warning" role="note">
+          ⚠️ <%= t("collavre.comments.creative_quote.out_of_scope", ids: out_of_scope.map { |id| "##{id}" }.join(", ")) %>
+        </p>
+      <% end %>
+      <div data-creative-history-detail-target="content" aria-live="polite"></div>
+      <p data-creative-history-detail-target="loading" hidden><%= t("collavre.creative_history.loading") %></p>
+      <div data-creative-history-detail-target="error" hidden role="alert">
+        <%= t("collavre.creative_history.load_error") %>
+        <button type="button" data-action="creative-history-detail#load"><%= t("collavre.creative_history.retry") %></button>
+      </div>
+    </details>
+  </div>
+<% end %>
