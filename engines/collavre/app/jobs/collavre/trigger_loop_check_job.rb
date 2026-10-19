@@ -13,12 +13,8 @@ module Collavre
     # Status flow:
     #   idle → running → completed | awaiting_user | stuck | max_reached
     def perform(task_id)
-      task = Task.find_by(id: task_id)
-      return unless task&.creative
-      # An approval continuation now owns this turn; its stale BLOCKED reply must not pause the loop.
-      return if task.trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
-
-      @loop_task_id = task.id
+      task = loop_task(task_id)
+      return unless task
 
       child_creative = task.creative
       parent_creative = child_creative.trigger_loop_context
@@ -75,6 +71,16 @@ module Collavre
     end
 
     private
+
+    # An approval continuation now owns a handed-off turn; its stale BLOCKED reply must not pause the loop.
+    def loop_task(task_id)
+      task = Task.find_by(id: task_id)
+      return unless task&.creative
+      return if task.trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
+
+      @loop_task_id = task.id
+      task
+    end
 
     # Recheck under the creative lock: the approval handoff may land after perform's early return.
     def validate_loop_snapshot!(loop_data, creative)
