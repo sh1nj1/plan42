@@ -251,9 +251,12 @@ class PptViewerTest < ApplicationSystemTestCase
       assert_no_selector ".media-loading"
       find("[data-ppt-next]").click
       assert_selector "[data-ppt-counter]", text: "2 / 2"
+      assert_no_selector ".media-loading"
       find(".pdf-viewer").send_keys(:arrow_left)
       assert_selector "[data-ppt-counter]", text: "1 / 2"
+      assert_no_selector ".media-loading"
       find("[data-pdf-zoom]").click
+      assert_no_selector ".media-loading"
       assert_no_selector "[data-document-error]"
       find(".pdf-document canvas").click
       assert_selector ".pdf-viewer:fullscreen"
