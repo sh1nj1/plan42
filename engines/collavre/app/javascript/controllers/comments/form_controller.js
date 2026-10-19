@@ -1180,6 +1180,8 @@ export default class extends Controller {
   }
 
   _restoreOrdinaryDraft() {
+    this.quotedCommentIdTarget.value = ''
+    this.quotedTextTarget.value = ''
     this.textareaTarget.value = ''
     this.textareaTarget.placeholder = this._defaultPlaceholder()
     this._restoreDraft()
