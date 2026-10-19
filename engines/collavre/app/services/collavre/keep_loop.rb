@@ -10,6 +10,7 @@ module Collavre
     CONTINUATION_KEY = "loop_continuation"
     # Marks the asking turn whose completion the continuation now owns.
     CONTINUED_KEY = "loop_continued"
+    TURN_EVENTS = %w[comment_created async_approval claude_channel_approval].freeze
 
     def admit!(creative, generation:, comment_id:)
       config = creative.data&.dig("trigger", "loop") || {}
@@ -25,6 +26,16 @@ module Collavre
       generation = payload.dig(Orchestration::KeepDispatchRestoration::KEY, comment_id.to_s) ||
         payload.dig("comment", "keep_loop_generation") || payload.dig(CONTINUATION_KEY, "generation")
       admit!(creative, generation: generation, comment_id: comment_id)
+    end
+
+    # Comment turns and approval continuations that inherited a turn's identity.
+    def turn?(task)
+      task.trigger_event_name == "comment_created" ||
+        (task.trigger_event_name.in?(TURN_EVENTS) && (task.trigger_event_payload || {}).key?(CONTINUATION_KEY))
+    end
+
+    def turn_generation(payload)
+      payload&.dig("comment", "keep_loop_generation") || payload&.dig(CONTINUATION_KEY, "generation")
     end
 
     def loop_comment_ids(payload)

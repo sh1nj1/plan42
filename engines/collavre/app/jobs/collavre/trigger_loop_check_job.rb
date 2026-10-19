@@ -45,7 +45,7 @@ module Collavre
         enqueue_verification(child_creative, task)
       when :awaiting_user
         update_loop_data(child_creative, state: "awaiting_user", infra_retry_count: 0)
-        post_system_notice(child_creative, topic, I18n.t(
+        post_loop_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.awaiting_user",
           iteration: loop_config["current_iteration"]
         ))

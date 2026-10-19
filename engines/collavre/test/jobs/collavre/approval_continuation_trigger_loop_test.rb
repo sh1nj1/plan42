@@ -108,6 +108,32 @@ module Collavre
       assert_enqueued_with(job: TriggerLoopCheckJob, args: [ continuation.id ]) { finish_continuation("Started [STATUS: CONTINUE]") }
     end
 
+    test "decision after the check paused the loop suppresses its awaiting-user notice" do
+      check_with_decision_before(:post_loop_notice)
+      assert_equal "running", loop_config["state"]
+      awaiting = I18n.t("collavre.trigger_loop.awaiting_user", iteration: loop_config["current_iteration"])
+      assert_not @topic.comments.exists?(content: awaiting)
+    end
+
+    test "a failed continuation releases the loop it owns" do
+      decide_and_resume
+      continuation.update!(status: "running")
+      assert_equal "running", loop_config["state"]
+
+      continuation.update!(status: "failed")
+      assert_equal "awaiting_user", loop_config["state"]
+    end
+
+    test "a long-running continuation keeps owning the loop during reconciliation" do
+      decide_and_resume
+      continuation.update!(status: "running")
+      clear_enqueued_jobs
+
+      travel 1.hour do
+        assert Orchestration::KeepLoopOwnership.new(@creative.reload, grace: 15.minutes).live?
+      end
+    end
+
     test "an unavailable keep agent leaves the paused loop awaiting the user" do
       TriggerLoopCheckJob.perform_now(@task.id)
       CreativeShare.where(creative: @creative, user: @agent).destroy_all
