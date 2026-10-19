@@ -40,7 +40,8 @@ module Collavre
       end
 
       def tasks
-        @tasks ||= Task.where(creative_id: @creative.id, topic_id: @config["trigger_topic_id"], trigger_event_name: "comment_created").to_a
+        @tasks ||= Task.where(creative_id: @creative.id, topic_id: @config["trigger_topic_id"], trigger_event_name: KeepLoop::TURN_EVENTS)
+                       .select { |task| KeepLoop.turn?(task) }
       end
 
       def reservation
@@ -80,7 +81,7 @@ module Collavre
 
       def pending_task_owner?
         tasks.map do |task|
-          next false unless task.pending? && task.trigger_event_payload&.dig("comment", "keep_loop_generation")
+          next false unless task.pending? && KeepLoop.turn_generation(task.trigger_event_payload)
           live = task.updated_at > @grace.ago || executable_jobs.any? do |name, args|
             name == "Collavre::AiAgentJob" && task_id(args.first) == task.id
           end

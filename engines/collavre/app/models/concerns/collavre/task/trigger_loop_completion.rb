@@ -40,10 +40,10 @@ module Collavre
 
       # Coalescing and ambient fan-out may leave another task owning this turn.
       def surviving_keep_turn?(target)
-        self.class.where(creative_id: creative_id, topic_id: topic_id, trigger_event_name: "comment_created")
+        self.class.where(creative_id: creative_id, topic_id: topic_id, trigger_event_name: KeepLoop::TURN_EVENTS)
             .where(status: ACTIVE_STATUSES + Orchestration::DeliveryRecord::RESTORABLE_STATUSES).where.not(id: id).any? do |task|
           task.creative = target
-          target.trigger_loop_task?(task) && (task.active? || task.send(:owned_loop_check?) ||
+          KeepLoop.turn?(task) && target.trigger_loop_task?(task) && (task.active? || task.send(:owned_loop_check?) ||
             Orchestration::DeliveryRecord.pending_restoration?(task, comment_id: target.data.dig("trigger", "loop", "current_comment_id")))
         end
       end
@@ -74,7 +74,7 @@ module Collavre
         return false unless status == "done"
         # Pending and completed replays own completion instead of the login card.
         return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
-        return false unless trigger_event_name == "comment_created"
+        return false unless completion_owning_turn?
         return false unless creative&.trigger_loop_enabled? && creative.trigger_loop_task?(self)
 
         # Only trigger loop check for tasks in the loop's trigger topic
@@ -84,6 +84,11 @@ module Collavre
 
         trigger_topic_id = loop_config["trigger_topic_id"]
         trigger_topic_id.nil? || trigger_topic_id == topic_id
+      end
+
+      # A turn handed off to its approval continuation no longer owns completion.
+      def completion_owning_turn?
+        KeepLoop.turn?(self) && !trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
       end
 
       def check_trigger_loop_completion

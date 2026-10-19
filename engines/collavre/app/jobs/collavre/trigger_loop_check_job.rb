@@ -13,8 +13,8 @@ module Collavre
     # Status flow:
     #   idle → running → completed | awaiting_user | stuck | max_reached
     def perform(task_id)
-      task = Task.find_by(id: task_id)
-      return unless task&.creative
+      task = loop_task(task_id)
+      return unless task
 
       child_creative = task.creative
       parent_creative = child_creative.trigger_loop_context
@@ -45,7 +45,7 @@ module Collavre
         enqueue_verification(child_creative, task)
       when :awaiting_user
         update_loop_data(child_creative, state: "awaiting_user", infra_retry_count: 0)
-        post_system_notice(child_creative, topic, I18n.t(
+        post_loop_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.awaiting_user",
           iteration: loop_config["current_iteration"]
         ))
@@ -71,6 +71,22 @@ module Collavre
     end
 
     private
+
+    # An approval continuation now owns a handed-off turn; its stale BLOCKED reply must not pause the loop.
+    def loop_task(task_id)
+      task = Task.find_by(id: task_id)
+      return unless task&.creative
+      return if task.trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
+
+      @loop_task_id = task.id
+      task
+    end
+
+    # Recheck under the creative lock: the approval handoff may land after perform's early return.
+    def validate_loop_snapshot!(loop_data, creative)
+      super
+      raise StaleLoopError if Task.where(id: @loop_task_id).pick(:trigger_event_payload)&.dig(KeepLoop::CONTINUED_KEY)
+    end
 
     def enqueue_verification(creative, task)
       update_loop_data(creative, state: "pending_verification", infra_retry_count: 0)

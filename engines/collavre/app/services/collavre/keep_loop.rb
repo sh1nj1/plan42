@@ -6,6 +6,12 @@ module Collavre
   module KeepLoop
     module_function
 
+    # Approval continuations resume the loop turn whose agent asked for approval.
+    CONTINUATION_KEY = "loop_continuation"
+    # Marks the asking turn whose completion the continuation now owns.
+    CONTINUED_KEY = "loop_continued"
+    TURN_EVENTS = %w[comment_created async_approval claude_channel_approval].freeze
+
     def admit!(creative, generation:, comment_id:)
       config = creative.data&.dig("trigger", "loop") || {}
       config["source"] == "keep" && generation.is_a?(Integer) && generation.positive? &&
@@ -15,13 +21,27 @@ module Collavre
     def task?(creative, task)
       comment_id = creative.data.dig("trigger", "loop", "current_comment_id")
       payload = task.trigger_event_payload || {}
-      ids = [ payload.dig("comment", "id") ] + Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
-        Array(payload[Orchestration::DeliveryRecord::DROPPED_KEY])
-      return false unless comment_id && ids.compact.map(&:to_i).include?(comment_id)
+      return false unless comment_id && loop_comment_ids(payload).include?(comment_id)
 
       generation = payload.dig(Orchestration::KeepDispatchRestoration::KEY, comment_id.to_s) ||
-        payload.dig("comment", "keep_loop_generation")
+        payload.dig("comment", "keep_loop_generation") || payload.dig(CONTINUATION_KEY, "generation")
       admit!(creative, generation: generation, comment_id: comment_id)
+    end
+
+    # Comment turns and approval continuations that inherited a turn's identity.
+    def turn?(task)
+      task.trigger_event_name == "comment_created" ||
+        (task.trigger_event_name.in?(TURN_EVENTS) && (task.trigger_event_payload || {}).key?(CONTINUATION_KEY))
+    end
+
+    def turn_generation(payload)
+      payload&.dig("comment", "keep_loop_generation") || payload&.dig(CONTINUATION_KEY, "generation")
+    end
+
+    def loop_comment_ids(payload)
+      ([ payload.dig("comment", "id"), payload.dig(CONTINUATION_KEY, "comment_id") ] +
+        Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
+        Array(payload[Orchestration::DeliveryRecord::DROPPED_KEY])).compact.map(&:to_i)
     end
 
     def with_dispatch(context)

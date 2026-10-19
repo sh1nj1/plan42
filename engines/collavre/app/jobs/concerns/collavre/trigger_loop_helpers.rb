@@ -153,10 +153,22 @@ module Collavre
       agent = creative.trigger_loop_agent
       if creative.keep_loop_agent_unavailable?
         update_loop_data(creative, state: "awaiting_user")
-        post_system_notice(creative, topic, I18n.t("collavre.comments.keep_command.agent_not_authorized"))
+        post_loop_notice(creative, topic, I18n.t("collavre.comments.keep_command.agent_not_authorized"))
         raise StaleLoopError
       end
       agent
+    end
+
+    # A notice about this job's state write is dropped once a later control write supersedes it.
+    def post_loop_notice(creative, topic, content)
+      Comments::TopicMutation.call(topic.id, creative.id) do
+        creative.with_lock do
+          validate_loop_snapshot!(creative.data&.dig("trigger", "loop") || {}, creative)
+          post_system_notice(creative, topic, content)
+        end
+      end
+    rescue StaleLoopError
+      nil
     end
 
     # Post a system notice (no specific user author) in the trigger topic.
