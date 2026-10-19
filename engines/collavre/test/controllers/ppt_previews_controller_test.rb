@@ -145,6 +145,7 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     @blob.update!(filename: "report.pdf")
     get @path
     assert_response :success
+    assert_select ".ppt-viewer.document-viewer.pdf-viewer"
     assert_select ".pdf-document[data-pdf-src][data-pdf-worker]" do |elements|
       assert_match %r{/collavre_pdf_worker[^/]*\.js}, elements.first["data-pdf-worker"]
     end
