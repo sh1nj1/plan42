@@ -895,6 +895,22 @@ module Collavre
         assert_equal @comment.content, trigger[:parts].first[:text]
       end
 
+      test "codex task identity is offered only when the approval tool is granted" do
+        gateway = AgentGateway.create!(name: "Test", owner: @user, base_url: "https://gateway.example.com",
+                                       admin_key: "test", completion_key: "test", tenant_id: "test")
+        @agent.update!(agent_gateway: gateway, llm_vendor: "cli_proxy", llm_model: "codex",
+                       created_by_id: @user.id, tools: [])
+        task = Task.create!(name: "Codex", agent: @agent, creative: @creative, status: "running")
+        context = { "comment" => { "id" => @comment.id, "content" => @comment.content } }
+        identity = I18n.t("collavre.approval_gate.task_context", task_id: task.id)
+        texts = -> { MessageBuilder.new(agent: @agent, context: context, original_comment: @comment, task: task)
+                       .build[:messages].last[:parts].map { |part| part[:text] } }
+
+        assert_not_includes texts.call, identity
+        @agent.update!(tools: [ "approval_request" ])
+        assert_includes texts.call, identity
+      end
+
       private
 
       def build_routing_links(count:, depth:, kind: "workflow")
