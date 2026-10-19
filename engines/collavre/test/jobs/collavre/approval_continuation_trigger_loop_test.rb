@@ -152,6 +152,16 @@ module Collavre
       assert_no_enqueued_jobs(only: TriggerLoopCheckJob) { finish_continuation("Done [STATUS: CONTINUE]") }
     end
 
+    test "drop-trigger loops keep the asking turn's own check" do
+      parent = Creative.create!(description: "Drop parent", user: @user, data: { "trigger" => { "on_child_enter" => true } })
+      @creative.update!(parent: parent, data: { "trigger" => { "loop" => loop_config.except("source", "agent_id") } })
+      assert @creative.reload.trigger_loop_enabled?
+
+      decide_and_resume
+      assert_nil continuation.trigger_event_payload[KeepLoop::CONTINUATION_KEY]
+      assert_nil @task.reload.trigger_event_payload[KeepLoop::CONTINUED_KEY]
+    end
+
     test "creatives without a loop create plain continuations" do
       @creative.update!(data: {})
       decide_and_resume
