@@ -1180,6 +1180,8 @@ export default class extends Controller {
   }
 
   _restoreOrdinaryDraft() {
+    this.quotedCommentIdTarget.value = ''
+    this.quotedTextTarget.value = ''
     this.textareaTarget.value = ''
     this.textareaTarget.placeholder = this._defaultPlaceholder()
     this._restoreDraft()
@@ -1254,10 +1256,7 @@ export default class extends Controller {
       }
     }
     // Get the content element from the latest system message
-    if (latest) {
-      return latest.querySelector('.comment-content')
-    }
-    return null
+    return latest?.querySelector('.comment-content') || null
   }
 
   cancelQuote() {

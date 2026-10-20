@@ -76,6 +76,20 @@ describe('FormController - Review Quote Chips', () => {
     document.body.removeChild(container)
   })
 
+  test.each([
+    ['', null],
+    ['<div class="comment-item" data-user-id="42"><div class="comment-content">User</div></div>', null],
+    ['<div class="comment-item"><div class="comment-content">First</div></div><div class="comment-item"><div class="comment-content">Latest</div></div>', 'Latest'],
+    ['<div class="comment-item"></div>', null],
+  ])('finds the latest alarm content or returns null: %s', (html, expected) => {
+    const list = document.createElement('div')
+    list.id = 'comments-list'
+    list.innerHTML = html
+    container.appendChild(list)
+
+    expect(controller._findLatestAlarm()?.textContent ?? null).toBe(expected)
+  })
+
   // Helper accessors for the refactored store-based API
   const getQuotes = (ctrl) => ctrl._reviewStore.quotes
   const getActiveId = (ctrl) => ctrl._reviewStore.activeId
@@ -458,6 +472,18 @@ describe('FormController - Review Quote Chips', () => {
     })
   })
 
+  describe('returning to ordinary messages', () => {
+    test('removing the final quote clears hidden quote metadata', () => {
+      controller.appendReviewQuote(42, 'Previous message')
+      controller.quotedTextTarget.value = 'Previous message'
+      container.querySelector('.review-quote-chip-remove').click()
+
+      const body = new FormData(controller.formTarget)
+      expect(body.get('comment[quoted_comment_id]')).toBe('')
+      expect(body.get('comment[quoted_text]')).toBe('')
+    })
+  })
+
   describe('sending a question quote', () => {
     test('carries the selected agent run options and topic', async () => {
       const fetchMock = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') }))
@@ -472,7 +498,9 @@ describe('FormController - Review Quote Chips', () => {
         controller._mainTopicId = '55'
         container.querySelector('select').value = 'max'
 
-        controller._sendQuestionQuote({ id: 'q1', commentId: 42, text: 'Why?', type: 'question', feedback: 'Explain' })
+        controller.appendReviewQuote(42, 'Why?')
+        const quote = controller._reviewStore.activeQuote
+        controller._sendQuestionQuote({ ...quote, type: 'question', feedback: 'Explain' })
 
         expect(fetchMock).toHaveBeenCalledTimes(1)
         const [url, options] = fetchMock.mock.calls[0]
@@ -484,6 +512,9 @@ describe('FormController - Review Quote Chips', () => {
         expect(body.get('comment[agent_run_options][reasoning_effort]')).toBe('max')
         expect(body.get('comment[agent_run_options][model]')).toBeNull()
         expect(body.get('comment[quoted_text]')).toBeNull()
+        const nextMessage = new FormData(controller.formTarget)
+        expect(nextMessage.get('comment[quoted_comment_id]')).toBe('')
+        expect(nextMessage.get('comment[quoted_text]')).toBe('')
         await new Promise((resolve) => setTimeout(resolve, 0))
       } finally {
         global.fetch = originalFetch
