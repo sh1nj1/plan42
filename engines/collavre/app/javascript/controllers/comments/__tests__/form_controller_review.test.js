@@ -76,6 +76,20 @@ describe('FormController - Review Quote Chips', () => {
     document.body.removeChild(container)
   })
 
+  test.each([
+    ['', null],
+    ['<div class="comment-item" data-user-id="42"><div class="comment-content">User</div></div>', null],
+    ['<div class="comment-item"><div class="comment-content">First</div></div><div class="comment-item"><div class="comment-content">Latest</div></div>', 'Latest'],
+    ['<div class="comment-item"></div>', null],
+  ])('finds the latest alarm content or returns null: %s', (html, expected) => {
+    const list = document.createElement('div')
+    list.id = 'comments-list'
+    list.innerHTML = html
+    container.appendChild(list)
+
+    expect(controller._findLatestAlarm()?.textContent ?? null).toBe(expected)
+  })
+
   // Helper accessors for the refactored store-based API
   const getQuotes = (ctrl) => ctrl._reviewStore.quotes
   const getActiveId = (ctrl) => ctrl._reviewStore.activeId
