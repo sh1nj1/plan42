@@ -630,3 +630,38 @@ test.each(['network', 'GET 500', 'POST 503'])('manual %s failure offers a one-cl
   expect(row.querySelector('h1').textContent).toBe('번역 제목')
   expect(controller.menuButton.textContent).toBe('Show original')
 })
+
+
+test.each(['cooldown', 'poll'])('manual failed %s result preserves one-click retry without polling', async failure => {
+  controller.showTranslated = false
+  controller.autoValue = false
+  controller.updateMenu()
+  intersection([{ target: row, isIntersecting: true }])
+  fetchMock.mockResolvedValueOnce(response('failed'))
+    .mockResolvedValueOnce(response(failure === 'cooldown' ? 'failed' : 'processing'))
+  controller.menuButton.click()
+  await tick()
+  const state = controller.rows.get(row)
+  if (failure === 'poll') {
+    clearTimeout(state.timer)
+    fetchMock.mockResolvedValueOnce(response('failed'))
+    await controller.load(row, false)
+  }
+  expect(state.timer).toBeUndefined()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  const calls = fetchMock.mock.calls.length
+  await tick()
+  expect(fetchMock).toHaveBeenCalledTimes(calls)
+  fetchMock.mockResolvedValueOnce(response('failed')).mockResolvedValueOnce(response('completed', pairs))
+  controller.menuButton.click()
+  await tick()
+  expect(fetchMock.mock.calls.slice(calls).map(([url, options]) => [url, options.method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'],
+    ['/translation/creatives/1/translation?manual=1', 'POST']
+  ])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show original')
+  controller.menuButton.click()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+})

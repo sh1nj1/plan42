@@ -67,6 +67,7 @@ export default class extends Controller {
       } else if (sanitizeDescriptionHtml(result.original_html) !== state.source) return
       if (state.digest && state.digest !== result.source_digest) return
       state.digest = result.source_digest
+      state.blocked = result.status === 'failed'
       if (result.status === 'completed') this.show(row, state, JSON.parse(result.content))
       else if (['pending', 'processing', 'translating'].includes(result.status)) {
         state.delay = Math.min((state.delay || 500) * 2, 10000)
