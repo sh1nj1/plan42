@@ -557,3 +557,50 @@ test('a retry requested mid-flight is dropped once the reader returns to the ori
   expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(row.querySelector('h1').textContent).toBe('English title')
 })
+
+test('policy-rejected automatic loads offer a manual translation on the first click', async () => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 })
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(controller.menuButton.getAttribute('aria-pressed')).toBe('false')
+  fetchMock.mockResolvedValueOnce(response('missing')).mockResolvedValueOnce(response('completed', pairs))
+  controller.menuButton.click()
+  await tick()
+  expect(fetchMock.mock.calls.slice(1).map(call => [call[0], call[1].method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'], ['/translation/creatives/1/translation?manual=1', 'POST']])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+test('retrying a blocked row preserves other translations and still offers retry after manual denial', async () => {
+  fetchMock.mockResolvedValueOnce(response('completed', pairs))
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  const link = addTreeLink()
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 })
+  intersection([{ target: link, isIntersecting: true }])
+  await tick()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 })
+  controller.menuButton.click()
+  await tick()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/1/translation?embed=0&manual=1', expect.anything())
+  link.remove()
+  controller.scan()
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+
+test('loads can finish before the overflow menu mounts', async () => {
+  document.getElementById('creative-overflow-menu').remove()
+  controller.menuButton = undefined
+  fetchMock.mockResolvedValueOnce(response('completed', pairs))
+  await controller.load(row)
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  document.body.insertAdjacentHTML('beforeend', '<div id="creative-overflow-menu"></div>')
+  controller.scan()
+  expect(controller.menuButton.textContent).toBe('Show original')
+})

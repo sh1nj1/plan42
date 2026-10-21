@@ -44,6 +44,7 @@ export default class extends Controller {
     if (!state) return
     state.timer = undefined
     state.loading = true
+    state.blocked = false
     // A reader request made while this row was busy also retries failed results.
     retryFailed ||= state.retry
     state.retry = false
@@ -52,6 +53,7 @@ export default class extends Controller {
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })
+        if (response.status === 403) state.blocked = true
         if (!response.ok) throw new Error('Translation unavailable')
         return response.json()
       }
@@ -72,6 +74,7 @@ export default class extends Controller {
     } catch { /* Leave the original visible when translation is unavailable. */ }
     finally {
       state.loading = false
+      this.updateMenu()
       // Retry a reader request that arrived mid-flight if that request ended without a result.
       if (state.retry && this.showTranslated && !state.nodes && !state.timer && !state.abort.signal.aborted) this.load(row)
     }
@@ -124,7 +127,7 @@ export default class extends Controller {
     this.menuButton.type = 'button'
     this.menuButton.className = 'popup-menu-item creative-translation-toggle'
     this.menuButton.addEventListener('click', () => {
-      this.showTranslated = !this.showTranslated
+      this.showTranslated = this.translationActionAvailable
       if (this.showTranslated) this.manual = true
       this.rows.forEach((state, row) => {
         if (state.nodes) this.toggle(state, this.showTranslated)
@@ -138,9 +141,15 @@ export default class extends Controller {
     menu.append(this.menuButton)
   }
 
+  get translationActionAvailable() {
+    // A policy rejection leaves the original visible even in translated mode.
+    return !this.showTranslated || [...this.rows.values()].some(state => state.visible && state.blocked)
+  }
+
   updateMenu() {
-    this.menuButton.textContent = this.showTranslated ? this.originalValue : this.translatedValue
-    this.menuButton.setAttribute('aria-pressed', String(this.showTranslated))
+    if (!this.menuButton) return
+    this.menuButton.textContent = this.translationActionAvailable ? this.translatedValue : this.originalValue
+    this.menuButton.setAttribute('aria-pressed', String(!this.translationActionAvailable))
   }
 
   cleanup(row, state) {
@@ -152,6 +161,7 @@ export default class extends Controller {
     })
     if (state.exportHandler) row.removeEventListener("click", state.exportHandler, true)
     this.rows.delete(row)
+    this.updateMenu()
   }
 
   disconnect() {
