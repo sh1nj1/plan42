@@ -6,17 +6,21 @@ import { LABEL, ROWS, PROTECTED, translationSource, translationContent, translat
 
 
 export default class extends Controller {
-  static values = { base: String, original: String, translated: String }
+  static values = { base: String, original: String, translated: String, auto: { type: Boolean, default: true } }
 
   connect() {
     this.rows = new Map()
-    this.showTranslated = true
+    // With automatic translation off, rows load only after the reader asks for it.
+    this.showTranslated = this.autoValue
+    this.manual = false
     this.observer = new MutationObserver(() => this.scan())
     this.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-creative-id', 'data-original-label'] })
     this.visibility = new IntersectionObserver(entries => {
       entries.filter(entry => entry.isIntersecting).forEach(entry => {
         this.visibility.unobserve(entry.target)
-        this.load(entry.target)
+        const state = this.rows.get(entry.target)
+        if (state) state.visible = true
+        if (this.showTranslated) this.load(entry.target)
       })
     })
     this.scan()
@@ -38,8 +42,10 @@ export default class extends Controller {
   async load(row, retryFailed = true) {
     const state = this.rows.get(row)
     if (!state) return
+    state.timer = undefined
+    state.loading = true
     try {
-      const url = translationLocaleUrl(translationUrl(this.baseValue, row))
+      const url = this.requestUrl(translationLocaleUrl(translationUrl(this.baseValue, row)))
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })
@@ -61,6 +67,15 @@ export default class extends Controller {
         state.timer = setTimeout(() => this.load(row, false), state.delay)
       }
     } catch { /* Leave the original visible when translation is unavailable. */ }
+    finally { state.loading = false }
+  }
+
+  // A reader's explicit request translates even when their automatic translation is off.
+  requestUrl(path) {
+    if (!this.manual) return path
+    const url = new URL(path, window.location.origin)
+    url.searchParams.set('manual', '1')
+    return url.pathname + url.search
   }
 
   show(row, state, replacements) {
@@ -103,7 +118,11 @@ export default class extends Controller {
     this.menuButton.className = 'popup-menu-item creative-translation-toggle'
     this.menuButton.addEventListener('click', () => {
       this.showTranslated = !this.showTranslated
-      this.rows.forEach(state => { if (state.nodes) this.toggle(state, this.showTranslated) })
+      if (this.showTranslated) this.manual = true
+      this.rows.forEach((state, row) => {
+        if (state.nodes) this.toggle(state, this.showTranslated)
+        else if (this.showTranslated && state.visible && !state.loading && !state.timer) this.load(row)
+      })
       this.updateMenu()
     })
     this.updateMenu()

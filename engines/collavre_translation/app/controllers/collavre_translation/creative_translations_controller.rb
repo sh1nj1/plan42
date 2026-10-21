@@ -21,9 +21,14 @@ module CollavreTranslation
       return head :forbidden unless @creative.effective_origin.has_permission?(Current.user, :read)
 
       return head :service_unavailable unless CollavreTranslation.enabled?
-      return head :forbidden unless ContentTranslationPolicy.enabled?(@creative.effective_origin, Current.user)
+      return head :forbidden unless manual_request? || ContentTranslationPolicy.enabled?(@creative.effective_origin, Current.user)
 
       head :unprocessable_entity unless %w[en ko].include?(target_locale)
+    end
+
+    # Readers who turned automatic translation off can still ask for one explicitly.
+    def manual_request?
+      Current.user.present? && params[:manual] == "1"
     end
 
     def render_translation(record)

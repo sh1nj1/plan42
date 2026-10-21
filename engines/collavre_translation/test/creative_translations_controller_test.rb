@@ -131,6 +131,44 @@ module CollavreTranslation
       refute @user.reload.auto_translation_enabled?
     end
 
+    test "explicit requests translate for readers who turned automatic translation off" do
+      @user.update!(auto_translation_enabled: false)
+      get "/creatives", params: { id: @creative.id }
+      assert_select '[data-controller="creative-translations"][data-creative-translations-auto-value="false"]', count: 1
+      assert_enqueued_jobs 1, only: TranslateJob do
+        get @url, params: { manual: "1" }
+        assert_response :success
+        assert_equal "missing", response.parsed_body["status"]
+        post @url, params: { manual: "1" }
+        assert_response :success
+      end
+      assert Translation.find_by(translatable: @creative, target_locale: "ko")
+      post @url, params: { manual: "0" }
+      assert_response :forbidden
+      @user.update!(auto_translation_enabled: true)
+      get "/creatives", params: { id: @creative.id }
+      assert_select '[data-creative-translations-auto-value="true"]', count: 1
+    end
+
+    test "explicit requests need a signed-in reader and still require read permission" do
+      Collavre::SystemSetting.where(key: "creatives_login_required").destroy_all
+      @user.update!(auto_translation_enabled: false)
+      Collavre::CreativeSharesCache.create!(creative: @creative, user: nil, permission: :read)
+      private_creative = Collavre::Creative.create!(user: @user, description: "Private original")
+      sign_out
+      assert_no_enqueued_jobs only: TranslateJob do
+        sign_in_as users(:three), password: "password"
+        post "/translation/creatives/#{private_creative.id}/translation", params: { manual: "1" }
+        assert_response :forbidden
+        delete "/session"
+        post @url, params: { manual: "1" }
+        assert_response :forbidden
+      end
+      get "/creatives", params: { id: @creative.id }
+      follow_redirect! while response.redirect?
+      assert_select '[data-creative-translations-auto-value="true"]', count: 1
+    end
+
     test "unsupported locale rejects requests and blank locale uses default" do
       @user.update_column(:locale, "fr")
       post @url
