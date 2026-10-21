@@ -6,17 +6,21 @@ import { LABEL, ROWS, PROTECTED, translationSource, translationContent, translat
 
 
 export default class extends Controller {
-  static values = { base: String, original: String, translated: String }
+  static values = { base: String, original: String, translated: String, auto: { type: Boolean, default: true } }
 
   connect() {
     this.rows = new Map()
-    this.showTranslated = true
+    // With automatic translation off, rows load only after the reader asks for it.
+    this.showTranslated = this.autoValue
+    this.manual = false
     this.observer = new MutationObserver(() => this.scan())
     this.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-creative-id', 'data-original-label'] })
     this.visibility = new IntersectionObserver(entries => {
       entries.filter(entry => entry.isIntersecting).forEach(entry => {
         this.visibility.unobserve(entry.target)
-        this.load(entry.target)
+        const state = this.rows.get(entry.target)
+        if (state) state.visible = true
+        if (this.showTranslated) this.load(entry.target)
       })
     })
     this.scan()
@@ -38,11 +42,19 @@ export default class extends Controller {
   async load(row, retryFailed = true) {
     const state = this.rows.get(row)
     if (!state) return
+    state.timer = undefined
+    state.loading = true
+    state.blocked = false
+    state.denied = false
+    // A reader request made while this row was busy also retries failed results.
+    retryFailed ||= state.retry
+    state.retry = false
     try {
-      const url = translationLocaleUrl(translationUrl(this.baseValue, row))
+      const url = this.requestUrl(translationLocaleUrl(translationUrl(this.baseValue, row)))
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })
+        if (response.status === 403 && new URL(url, window.location.origin).searchParams.has('manual')) state.denied = true
         if (!response.ok) throw new Error('Translation unavailable')
         return response.json()
       }
@@ -55,12 +67,30 @@ export default class extends Controller {
       } else if (sanitizeDescriptionHtml(result.original_html) !== state.source) return
       if (state.digest && state.digest !== result.source_digest) return
       state.digest = result.source_digest
+      state.blocked = result.status === 'failed'
       if (result.status === 'completed') this.show(row, state, JSON.parse(result.content))
       else if (['pending', 'processing', 'translating'].includes(result.status)) {
         state.delay = Math.min((state.delay || 500) * 2, 10000)
         state.timer = setTimeout(() => this.load(row, false), state.delay)
       }
-    } catch { /* Leave the original visible when translation is unavailable. */ }
+    } catch {
+      // Explicit policy denials cannot be retried by anonymous readers.
+      state.blocked = !state.denied
+    }
+    finally {
+      state.loading = false
+      this.updateMenu()
+      // Retry a reader request that arrived mid-flight if that request ended without a result.
+      if (state.retry && this.showTranslated && !state.nodes && !state.timer && !state.abort.signal.aborted) this.load(row)
+    }
+  }
+
+  // A reader's explicit request translates even when their automatic translation is off.
+  requestUrl(path) {
+    if (!this.manual) return path
+    const url = new URL(path, window.location.origin)
+    url.searchParams.set('manual', '1')
+    return url.pathname + url.search
   }
 
   show(row, state, replacements) {
@@ -102,17 +132,29 @@ export default class extends Controller {
     this.menuButton.type = 'button'
     this.menuButton.className = 'popup-menu-item creative-translation-toggle'
     this.menuButton.addEventListener('click', () => {
-      this.showTranslated = !this.showTranslated
-      this.rows.forEach(state => { if (state.nodes) this.toggle(state, this.showTranslated) })
+      this.showTranslated = this.translationActionAvailable
+      if (this.showTranslated) this.manual = true
+      this.rows.forEach((state, row) => {
+        if (state.nodes) this.toggle(state, this.showTranslated)
+        else if (!this.showTranslated || !state.visible) return
+        else if (state.loading || state.timer) state.retry = true
+        else this.load(row)
+      })
       this.updateMenu()
     })
     this.updateMenu()
     menu.append(this.menuButton)
   }
 
+  get translationActionAvailable() {
+    // Unavailable translations offer retry unless an explicit request was denied.
+    return !this.showTranslated || [...this.rows.values()].some(state => state.visible && state.blocked)
+  }
+
   updateMenu() {
-    this.menuButton.textContent = this.showTranslated ? this.originalValue : this.translatedValue
-    this.menuButton.setAttribute('aria-pressed', String(this.showTranslated))
+    if (!this.menuButton) return
+    this.menuButton.textContent = this.translationActionAvailable ? this.translatedValue : this.originalValue
+    this.menuButton.setAttribute('aria-pressed', String(!this.translationActionAvailable))
   }
 
   cleanup(row, state) {
@@ -124,6 +166,7 @@ export default class extends Controller {
     })
     if (state.exportHandler) row.removeEventListener("click", state.exportHandler, true)
     this.rows.delete(row)
+    this.updateMenu()
   }
 
   disconnect() {

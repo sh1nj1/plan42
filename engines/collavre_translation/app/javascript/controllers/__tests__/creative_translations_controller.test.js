@@ -443,3 +443,225 @@ test('reopening the same chat preserves translated nodes and original toggling',
   controller.menuButton.click()
   expect(title.textContent).toBe('번역 제목')
 })
+
+async function mountManual() {
+  controller.disconnect()
+  app.stop()
+  document.querySelector('[data-controller]').dataset.creativeTranslationsAutoValue = 'false'
+  app = Application.start()
+  app.register('creative-translations', Controller)
+  await tick()
+  controller = app.getControllerForElementAndIdentifier(document.querySelector('[data-controller]'), 'creative-translations')
+  fetchMock.mockReset()
+}
+
+test('automatic translation off offers the translation first and translates only on request', async () => {
+  await mountManual()
+  const button = document.querySelector('.creative-translation-toggle')
+  expect(button.textContent).toBe('Show translation')
+  expect(button.getAttribute('aria-pressed')).toBe('false')
+  intersection([{ target: row, isIntersecting: true }, { target: document.createElement('div'), isIntersecting: true }])
+  await tick()
+  expect(fetchMock).not.toHaveBeenCalled()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  fetchMock.mockResolvedValueOnce(response('missing')).mockResolvedValueOnce(response('completed', pairs))
+  button.click()
+  await tick()
+  expect(fetchMock.mock.calls.map(call => [call[0], call[1].method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'], ['/translation/creatives/1/translation?manual=1', 'POST']])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(button.textContent).toBe('Show original')
+  button.click()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  button.click()
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  const link = addTreeLink()
+  fetchMock.mockResolvedValue(response('completed', pairs))
+  intersection([{ target: link, isIntersecting: true }])
+  await tick()
+  expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/1/translation?embed=0&manual=1', expect.anything())
+  expect(link.textContent).toBe('번역 제목')
+})
+
+test('showing translations re-requests missing results without duplicating in-flight loads', async () => {
+  fetchMock.mockResolvedValue(response('skipped'))
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  const state = controller.rows.get(row)
+  controller.menuButton.click()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  fetchMock.mockReset()
+  let resolve
+  fetchMock.mockImplementation(() => new Promise(done => { resolve = done }))
+  controller.menuButton.click()
+  expect(state.loading).toBe(true)
+  controller.menuButton.click()
+  controller.menuButton.click()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(fetchMock.mock.calls[0][0]).toBe('/translation/creatives/1/translation?manual=1')
+  resolve(response('processing'))
+  await tick()
+  expect(state.loading).toBe(false)
+  expect(state.timer).toBeTruthy()
+  controller.menuButton.click()
+  controller.menuButton.click()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  clearTimeout(state.timer)
+})
+
+test('showing translations during an automatic request retries manually when that request fails', async () => {
+  let reject
+  fetchMock.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+  intersection([{ target: row, isIntersecting: true }])
+  const state = controller.rows.get(row)
+  expect(fetchMock.mock.calls[0][0]).toBe('/translation/creatives/1/translation')
+  controller.menuButton.click()
+  controller.menuButton.click()
+  expect(state.retry).toBe(true)
+  fetchMock.mockResolvedValueOnce(response('failed')).mockResolvedValueOnce(response('completed', pairs))
+  reject(new Error('offline'))
+  await tick()
+  expect(fetchMock.mock.calls.slice(1).map(call => [call[0], call[1].method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'], ['/translation/creatives/1/translation?manual=1', 'POST']])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(state.retry).toBe(false)
+})
+
+test('showing translations while polling retries a failed result on the next poll', async () => {
+  fetchMock.mockResolvedValueOnce(response('pending')).mockResolvedValueOnce(response('processing'))
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  const state = controller.rows.get(row)
+  expect(state.timer).toBeTruthy()
+  controller.menuButton.click()
+  controller.menuButton.click()
+  fetchMock.mockReset()
+  fetchMock.mockResolvedValueOnce(response('failed')).mockResolvedValueOnce(response('completed', pairs))
+  clearTimeout(state.timer)
+  await controller.load(row, false)
+  expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST'])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+})
+
+test('a retry requested mid-flight is dropped once the reader returns to the original', async () => {
+  let resolve
+  fetchMock.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  intersection([{ target: row, isIntersecting: true }])
+  controller.menuButton.click()
+  controller.menuButton.click()
+  controller.menuButton.click()
+  resolve({ ok: false })
+  await tick()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(row.querySelector('h1').textContent).toBe('English title')
+})
+
+test('policy-rejected automatic loads offer a manual translation on the first click', async () => {
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 })
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(controller.menuButton.getAttribute('aria-pressed')).toBe('false')
+  fetchMock.mockResolvedValueOnce(response('missing')).mockResolvedValueOnce(response('completed', pairs))
+  controller.menuButton.click()
+  await tick()
+  expect(fetchMock.mock.calls.slice(1).map(call => [call[0], call[1].method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'], ['/translation/creatives/1/translation?manual=1', 'POST']])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+test('manual policy denial preserves translations and allows restoring originals', async () => {
+  fetchMock.mockResolvedValueOnce(response('completed', pairs))
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  const link = addTreeLink()
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 })
+  intersection([{ target: link, isIntersecting: true }])
+  await tick()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 403 })
+  controller.menuButton.click()
+  await tick()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show original')
+  controller.menuButton.click()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  controller.menuButton.click()
+  await tick()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/1/translation?embed=0&manual=1', expect.anything())
+  link.remove()
+  controller.scan()
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+
+test('loads can finish before the overflow menu mounts', async () => {
+  document.getElementById('creative-overflow-menu').remove()
+  controller.menuButton = undefined
+  fetchMock.mockResolvedValueOnce(response('completed', pairs))
+  await controller.load(row)
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  document.body.insertAdjacentHTML('beforeend', '<div id="creative-overflow-menu"></div>')
+  controller.scan()
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+test.each(['network', 'GET 500', 'POST 503'])('manual %s failure offers a one-click retry', async failure => {
+  controller.showTranslated = false
+  controller.autoValue = false
+  controller.updateMenu()
+  intersection([{ target: row, isIntersecting: true }])
+  if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('offline'))
+  else {
+    if (failure === 'POST 503') fetchMock.mockResolvedValueOnce(response('missing'))
+    fetchMock.mockResolvedValueOnce({ ok: false, status: failure === 'GET 500' ? 500 : 503 })
+  }
+  controller.menuButton.click()
+  await tick()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  fetchMock.mockResolvedValueOnce(response('completed', pairs))
+  controller.menuButton.click()
+  await tick()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+
+test.each(['cooldown', 'poll'])('manual failed %s result preserves one-click retry without polling', async failure => {
+  controller.showTranslated = false
+  controller.autoValue = false
+  controller.updateMenu()
+  intersection([{ target: row, isIntersecting: true }])
+  fetchMock.mockResolvedValueOnce(response('failed'))
+    .mockResolvedValueOnce(response(failure === 'cooldown' ? 'failed' : 'processing'))
+  controller.menuButton.click()
+  await tick()
+  const state = controller.rows.get(row)
+  if (failure === 'poll') {
+    clearTimeout(state.timer)
+    fetchMock.mockResolvedValueOnce(response('failed'))
+    await controller.load(row, false)
+  }
+  expect(state.timer).toBeUndefined()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  const calls = fetchMock.mock.calls.length
+  await tick()
+  expect(fetchMock).toHaveBeenCalledTimes(calls)
+  fetchMock.mockResolvedValueOnce(response('failed')).mockResolvedValueOnce(response('completed', pairs))
+  controller.menuButton.click()
+  await tick()
+  expect(fetchMock.mock.calls.slice(calls).map(([url, options]) => [url, options.method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'],
+    ['/translation/creatives/1/translation?manual=1', 'POST']
+  ])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(controller.menuButton.textContent).toBe('Show original')
+  controller.menuButton.click()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+})
