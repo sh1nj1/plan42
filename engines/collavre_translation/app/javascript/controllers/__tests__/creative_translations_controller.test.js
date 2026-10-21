@@ -485,7 +485,7 @@ test('automatic translation off offers the translation first and translates only
 })
 
 test('showing translations re-requests missing results without duplicating in-flight loads', async () => {
-  fetchMock.mockResolvedValue({ ok: false })
+  fetchMock.mockResolvedValue(response('skipped'))
   intersection([{ target: row, isIntersecting: true }])
   await tick()
   expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -573,7 +573,7 @@ test('policy-rejected automatic loads offer a manual translation on the first cl
   expect(controller.menuButton.textContent).toBe('Show original')
 })
 
-test('retrying a blocked row preserves other translations and still offers retry after manual denial', async () => {
+test('manual policy denial preserves translations and allows restoring originals', async () => {
   fetchMock.mockResolvedValueOnce(response('completed', pairs))
   intersection([{ target: row, isIntersecting: true }])
   await tick()
@@ -586,7 +586,12 @@ test('retrying a blocked row preserves other translations and still offers retry
   controller.menuButton.click()
   await tick()
   expect(row.querySelector('h1').textContent).toBe('번역 제목')
-  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(controller.menuButton.textContent).toBe('Show original')
+  controller.menuButton.click()
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  controller.menuButton.click()
+  await tick()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
   expect(fetchMock).toHaveBeenLastCalledWith('/translation/creatives/1/translation?embed=0&manual=1', expect.anything())
   link.remove()
   controller.scan()
@@ -602,5 +607,26 @@ test('loads can finish before the overflow menu mounts', async () => {
   expect(row.querySelector('h1').textContent).toBe('번역 제목')
   document.body.insertAdjacentHTML('beforeend', '<div id="creative-overflow-menu"></div>')
   controller.scan()
+  expect(controller.menuButton.textContent).toBe('Show original')
+})
+
+test.each(['network', 'GET 500', 'POST 503'])('manual %s failure offers a one-click retry', async failure => {
+  controller.showTranslated = false
+  controller.autoValue = false
+  controller.updateMenu()
+  intersection([{ target: row, isIntersecting: true }])
+  if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('offline'))
+  else {
+    if (failure === 'POST 503') fetchMock.mockResolvedValueOnce(response('missing'))
+    fetchMock.mockResolvedValueOnce({ ok: false, status: failure === 'GET 500' ? 500 : 503 })
+  }
+  controller.menuButton.click()
+  await tick()
+  expect(controller.menuButton.textContent).toBe('Show translation')
+  expect(row.querySelector('h1').textContent).toBe('English title')
+  fetchMock.mockResolvedValueOnce(response('completed', pairs))
+  controller.menuButton.click()
+  await tick()
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
   expect(controller.menuButton.textContent).toBe('Show original')
 })

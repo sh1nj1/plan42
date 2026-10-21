@@ -45,6 +45,7 @@ export default class extends Controller {
     state.timer = undefined
     state.loading = true
     state.blocked = false
+    state.denied = false
     // A reader request made while this row was busy also retries failed results.
     retryFailed ||= state.retry
     state.retry = false
@@ -53,7 +54,7 @@ export default class extends Controller {
       const request = async method => {
         const response = await csrfFetch(url, { method, signal: state.abort.signal,
           headers: { Accept: 'application/json' } })
-        if (response.status === 403) state.blocked = true
+        if (response.status === 403 && new URL(url, window.location.origin).searchParams.has('manual')) state.denied = true
         if (!response.ok) throw new Error('Translation unavailable')
         return response.json()
       }
@@ -71,7 +72,10 @@ export default class extends Controller {
         state.delay = Math.min((state.delay || 500) * 2, 10000)
         state.timer = setTimeout(() => this.load(row, false), state.delay)
       }
-    } catch { /* Leave the original visible when translation is unavailable. */ }
+    } catch {
+      // Explicit policy denials cannot be retried by anonymous readers.
+      state.blocked = !state.denied
+    }
     finally {
       state.loading = false
       this.updateMenu()
@@ -142,7 +146,7 @@ export default class extends Controller {
   }
 
   get translationActionAvailable() {
-    // A policy rejection leaves the original visible even in translated mode.
+    // Unavailable translations offer retry unless an explicit request was denied.
     return !this.showTranslated || [...this.rows.values()].some(state => state.visible && state.blocked)
   }
 
