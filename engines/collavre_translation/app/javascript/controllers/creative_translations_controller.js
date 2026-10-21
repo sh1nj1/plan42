@@ -44,6 +44,9 @@ export default class extends Controller {
     if (!state) return
     state.timer = undefined
     state.loading = true
+    // A reader request made while this row was busy also retries failed results.
+    retryFailed ||= state.retry
+    state.retry = false
     try {
       const url = this.requestUrl(translationLocaleUrl(translationUrl(this.baseValue, row)))
       const request = async method => {
@@ -67,7 +70,11 @@ export default class extends Controller {
         state.timer = setTimeout(() => this.load(row, false), state.delay)
       }
     } catch { /* Leave the original visible when translation is unavailable. */ }
-    finally { state.loading = false }
+    finally {
+      state.loading = false
+      // Retry a reader request that arrived mid-flight if that request ended without a result.
+      if (state.retry && this.showTranslated && !state.nodes && !state.timer && !state.abort.signal.aborted) this.load(row)
+    }
   }
 
   // A reader's explicit request translates even when their automatic translation is off.
@@ -121,7 +128,9 @@ export default class extends Controller {
       if (this.showTranslated) this.manual = true
       this.rows.forEach((state, row) => {
         if (state.nodes) this.toggle(state, this.showTranslated)
-        else if (this.showTranslated && state.visible && !state.loading && !state.timer) this.load(row)
+        else if (!this.showTranslated || !state.visible) return
+        else if (state.loading || state.timer) state.retry = true
+        else this.load(row)
       })
       this.updateMenu()
     })

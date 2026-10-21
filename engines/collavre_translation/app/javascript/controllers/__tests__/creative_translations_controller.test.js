@@ -510,3 +510,50 @@ test('showing translations re-requests missing results without duplicating in-fl
   expect(fetchMock).toHaveBeenCalledTimes(1)
   clearTimeout(state.timer)
 })
+
+test('showing translations during an automatic request retries manually when that request fails', async () => {
+  let reject
+  fetchMock.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+  intersection([{ target: row, isIntersecting: true }])
+  const state = controller.rows.get(row)
+  expect(fetchMock.mock.calls[0][0]).toBe('/translation/creatives/1/translation')
+  controller.menuButton.click()
+  controller.menuButton.click()
+  expect(state.retry).toBe(true)
+  fetchMock.mockResolvedValueOnce(response('failed')).mockResolvedValueOnce(response('completed', pairs))
+  reject(new Error('offline'))
+  await tick()
+  expect(fetchMock.mock.calls.slice(1).map(call => [call[0], call[1].method])).toEqual([
+    ['/translation/creatives/1/translation?manual=1', 'GET'], ['/translation/creatives/1/translation?manual=1', 'POST']])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+  expect(state.retry).toBe(false)
+})
+
+test('showing translations while polling retries a failed result on the next poll', async () => {
+  fetchMock.mockResolvedValueOnce(response('pending')).mockResolvedValueOnce(response('processing'))
+  intersection([{ target: row, isIntersecting: true }])
+  await tick()
+  const state = controller.rows.get(row)
+  expect(state.timer).toBeTruthy()
+  controller.menuButton.click()
+  controller.menuButton.click()
+  fetchMock.mockReset()
+  fetchMock.mockResolvedValueOnce(response('failed')).mockResolvedValueOnce(response('completed', pairs))
+  clearTimeout(state.timer)
+  await controller.load(row, false)
+  expect(fetchMock.mock.calls.map(call => call[1].method)).toEqual(['GET', 'POST'])
+  expect(row.querySelector('h1').textContent).toBe('번역 제목')
+})
+
+test('a retry requested mid-flight is dropped once the reader returns to the original', async () => {
+  let resolve
+  fetchMock.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  intersection([{ target: row, isIntersecting: true }])
+  controller.menuButton.click()
+  controller.menuButton.click()
+  controller.menuButton.click()
+  resolve({ ok: false })
+  await tick()
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(row.querySelector('h1').textContent).toBe('English title')
+})
