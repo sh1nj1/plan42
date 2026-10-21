@@ -69,6 +69,7 @@ module Collavre
         content: data["content"],
         private: data["private"] || false,
         quoted_text: data["quoted_text"],
+        quoted_creative_id: Creative.exists?(id: data["quoted_creative_id"]) ? data["quoted_creative_id"] : nil,
         review_type: data["review_type"],
         agent_run_options: data["agent_run_options"],
         skip_default_user: true

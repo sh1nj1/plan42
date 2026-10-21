@@ -49,6 +49,13 @@ function saveConfig(config) {
   }
 }
 
+// Names the Collavre task a write belongs to (X-Collavre-Task), so an agent
+// running several tasks at once has each write matched to the right one.
+function taskHeaders() {
+  const taskId = (process.env.COLLAVRE_TASK_ID || "").trim();
+  return taskId ? { "X-Collavre-Task": taskId } : {};
+}
+
 // --- MCP SSE Client ---
 class McpClient {
   constructor(url, token) {
@@ -188,6 +195,7 @@ class McpClient {
       ...opts,
       headers: {
         ...(opts.headers || {}),
+        ...taskHeaders(),
         Authorization: `Bearer ${this.token}`,
       },
     });
@@ -220,6 +228,7 @@ function postMultipartFile(baseUrl, token, creativeId, filePath) {
     const req = mod.request(url, {
       method: "POST",
       headers: {
+        ...taskHeaders(),
         Authorization: `Bearer ${token}`,
         "Content-Type": `multipart/form-data; boundary=${boundary}`,
         "Content-Length": body.length,
@@ -623,7 +632,10 @@ Commands:
   attach   --creative <id> --file <path>   Upload & embed a file (bearer multipart)
   batch    --file <ops.json>               Batch operations
   tool     <list|search|info|run>          Discover & run any tool
-  help                                     Show this help`);
+  help                                     Show this help
+
+Environment:
+  COLLAVRE_TASK_ID   Task id sent as X-Collavre-Task with every request`);
     process.exit(0);
   }
 

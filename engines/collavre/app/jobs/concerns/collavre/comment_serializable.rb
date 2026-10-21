@@ -17,6 +17,7 @@ module Collavre
           "created_at" => c.created_at.iso8601,
           "quoted_comment_id" => c.quoted_comment_id,
           "quoted_text" => c.quoted_text,
+          "quoted_creative_id" => c.quoted_creative_id,
           "review_type" => c.review_type,
           "agent_run_options" => c.agent_run_options
         }

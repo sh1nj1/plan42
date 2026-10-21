@@ -13,6 +13,7 @@ import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
 import { focusWhenAvailable } from '../../lib/utils/focus'
 import { openingFocusOptions } from './popup_focus'
+import { applyQuoteTarget, creativeQuoteSource, creativeQuoteTarget, scrollToQuoteSource } from '../../lib/creative_quote'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -389,6 +390,7 @@ export default class extends Controller {
     // Build final content from review quotes + user text
     if (hasQuotes) {
       store.backup(this.textareaTarget.value)
+      this._pendingCreativeQuote = creativeQuoteTarget(store.creativeQuotes)
       this.textareaTarget.value = store.buildContent(this.textareaTarget.value)
       this._pendingReviewType = 'review'
     }
@@ -450,10 +452,7 @@ export default class extends Controller {
     if (effectiveTopicId) {
       formData.append('comment[topic_id]', effectiveTopicId)
     }
-    if (this._pendingReviewType) {
-      formData.append('comment[review_type]', this._pendingReviewType)
-      this._pendingReviewType = null
-    }
+    this._appendPendingReview(formData)
 
     let url = `/creatives/${this.creativeId}/comments`
     let method = 'POST'
@@ -946,19 +945,27 @@ export default class extends Controller {
     this.focusTextarea({ explicit: true })
   }
 
+  // review_type (and a document-mode quote target) staged by handleSend.
+  _appendPendingReview(formData) {
+    if (!this._pendingReviewType) return
+    formData.append('comment[review_type]', this._pendingReviewType)
+    if (this._pendingCreativeQuote) applyQuoteTarget(formData, this._pendingCreativeQuote)
+    this._pendingReviewType = null
+    this._pendingCreativeQuote = null
+  }
+
   // Append a review quote as a visual chip above the textarea.
-  appendReviewQuote(commentId, selectedText) {
+  // options: { type, creativeId, label } — creativeId marks a document-mode quote.
+  appendReviewQuote(commentId, selectedText, options = {}) {
     if (!selectedText) return
 
     const store = this._reviewStore
     if (store.isEmpty) this._flushDraftSave()
     store.saveActiveFeedback(this.textareaTarget.value)
 
-    if (commentId) {
-      this.quotedCommentIdTarget.value = commentId
-    }
+    if (commentId && !options.creativeId) this.quotedCommentIdTarget.value = commentId
 
-    store.add(commentId, selectedText)
+    store.add(commentId, selectedText, options)
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
@@ -1002,7 +1009,7 @@ export default class extends Controller {
     const formData = new FormData()
     formData.append('comment[content]', content)
     formData.append('comment[review_type]', 'question')
-    if (quote.commentId) formData.append('comment[quoted_comment_id]', quote.commentId)
+    applyQuoteTarget(formData, quote)
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
     appendRunOptions(this.formTarget, formData)
@@ -1098,19 +1105,14 @@ export default class extends Controller {
         : quote.text
       textSpan.textContent = preview
       textSpan.title = quote.text
+      if (quote.creativeId) textSpan.prepend(creativeQuoteSource(quote, this._getI18nText('creativeQuotePrefix', 'Doc')))
 
       // Click chip to edit its feedback
       textSpan.addEventListener('click', () => {
         if (quote.id === store.activeId) {
-          const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
-          if (commentEl) {
-            // Programmatic list scroll — drop the prev-message anchor so the next
-            // previous-message click resolves from the quoted comment now in view.
-            this.listController?.notifyProgrammaticScroll()
-            commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            commentEl.classList.add('comment-highlight')
-            setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)
-          }
+          // A programmatic list scroll drops the prev-message anchor so the next
+          // previous-message click resolves from the quoted comment now in view.
+          scrollToQuoteSource(quote, () => this.listController?.notifyProgrammaticScroll())
           return
         }
         store.saveActiveFeedback(this.textareaTarget.value)

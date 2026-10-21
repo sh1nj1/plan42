@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 import { renderCommentMarkdown, renderMermaidDiagrams } from '../lib/utils/markdown'
 import { addTableDownloadButtons } from '../lib/utils/table_download'
-import CommonPopup from '../lib/common_popup'
+import QuoteSelectionPopup, { quoteActionItems } from '../lib/quote_selection_popup'
 import csrfFetch from '../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../lib/utils/dialog'
 
@@ -253,12 +253,8 @@ export default class extends Controller {
       this._streamingTimeout = null
     }
     document.removeEventListener('mouseup', this.handleMouseUp)
-    this.hideReviewPopup()
-    if (this._reviewPopupEl) {
-      this._reviewPopupEl.remove()
-      this._reviewPopupEl = null
-      this._reviewPopup = null
-    }
+    this._quotePopup?.destroy()
+    this._quotePopup = null
   }
 
   handleMouseUp() {
@@ -279,70 +275,37 @@ export default class extends Controller {
       const range = selection.getRangeAt(0)
       if (!contentEl.contains(range.commonAncestorContainer)) return
 
-      // Show review popup below the selection using CommonPopup
+      // Show the review / ask popup below the selection
       const rect = range.getBoundingClientRect()
       this.showReviewPopup(rect, selectedText)
     })
   }
 
   showReviewPopup(anchorRect, selectedText) {
-    // Create or reuse popup element
-    if (!this._reviewPopupEl) {
-      const el = document.createElement('div')
-      el.className = 'common-popup comment-review-popup'
-      el.style.display = 'none'
-      el.style.padding = '0.3em'
-
-      const list = document.createElement('ul')
-      list.style.listStyle = 'none'
-      list.style.margin = '0'
-      list.style.padding = '0'
-      el.appendChild(list)
-
-      const commentsPopup = this.element.closest('#comments-popup')
-      if (commentsPopup) {
-        commentsPopup.appendChild(el)
-      } else {
-        document.body.appendChild(el)
-      }
-      this._reviewPopupEl = el
+    const commentsPopup = this.element.closest('#comments-popup')
+    if (!this._quotePopup) {
+      this._quotePopup = new QuoteSelectionPopup({
+        container: commentsPopup || document.body,
+        onPick: (type) => this.pickQuoteAction(type),
+      })
     }
+    this._pendingQuoteText = selectedText
+    this._quotePopup.show(anchorRect, quoteActionItems(commentsPopup?.dataset))
+  }
 
-    const reviewLabel = this.element.closest('#comments-popup')?.dataset?.reviewButtonText || 'Review'
-
-    this._reviewPopup = new CommonPopup(this._reviewPopupEl, {
-      onSelect: () => {
-        const commentId = this.element.dataset.commentId
-        const formController = this.findFormController()
-        // Clear the message selection before focus so WebKit keeps the typing caret.
-        window.getSelection().removeAllRanges()
-        if (formController) {
-          formController.appendReviewQuote(commentId, selectedText)
-        }
-        this.hideReviewPopup()
-      },
-      renderItem: () => reviewLabel,
-    })
-
-    // Position below the selection end. A derived rect rather than one of
-    // showAt's live anchor providers: selecting inside the popup clears this
-    // selection, so there would be nothing left to re-measure.
-    const belowRect = {
-      left: anchorRect.left,
-      right: anchorRect.right,
-      top: anchorRect.bottom,
-      bottom: anchorRect.bottom + 4,
-      width: anchorRect.width,
+  pickQuoteAction(type) {
+    const commentId = this.element.dataset.commentId
+    const formController = this.findFormController()
+    // Clear the message selection before focus so WebKit keeps the typing caret.
+    window.getSelection().removeAllRanges()
+    if (formController) {
+      formController.appendReviewQuote(commentId, this._pendingQuoteText, { type })
     }
-
-    this._reviewPopup.setItems([{ label: reviewLabel }])
-    this._reviewPopup.showAt(belowRect)
+    this.hideReviewPopup()
   }
 
   hideReviewPopup() {
-    if (this._reviewPopup) {
-      this._reviewPopup.hide()
-    }
+    this._quotePopup?.hide()
   }
 
   findFormController() {

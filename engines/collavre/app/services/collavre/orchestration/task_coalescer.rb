@@ -310,7 +310,7 @@ module Collavre
       # they keep their own turn, which is the only shape ReviewHandler can run.
       def review_trigger?(task)
         anchor_id = (task.trigger_event_payload || {}).dig("comment", "id")
-        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+        anchor_id.present? && Comment.own_turn_message_ids([ anchor_id ]).any?
       end
 
       # One query for the whole burst rather than review_trigger? per sibling.
@@ -319,7 +319,7 @@ module Collavre
           KeepLoop.dispatch?(task.trigger_event_payload) || task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
         end
         anchors = siblings.filter_map { |t| (t.trigger_event_payload || {}).dig("comment", "id") }
-        review_ids = Comment.review_message_ids(anchors).to_set
+        review_ids = Comment.own_turn_message_ids(anchors).to_set
         return siblings if review_ids.empty?
 
         siblings.reject do |task|

@@ -287,6 +287,7 @@ module Collavre
           review_parts << "---\nOriginal message:\n#{quoted_body}\n---" if quoted_body.present?
           payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
         end
+        payload_text = CreativeQuoteContext.prepend_to(payload_text, @original_comment)
 
         sender_name = @context.dig("sender", "name")
         if sender_name

@@ -138,6 +138,20 @@ en:
       review_send_question: Send question
       review_type_review: Review
       review_type_question: Question
+      ask_button: Ask
+      review_button_hint: Revise the selected part
+      ask_button_hint: Ask about the selected part without changing it
+      creative_quote:
+        single_target: A message can quote either a message or a creative, not both.
+        not_readable: You cannot quote a creative you cannot read.
+        question_read_only: This turn answers a question about the document, so creatives cannot be modified. Answer in chat instead.
+        task_not_active: "The task named in the %{header} header is not an active task of this agent, so the write was refused."
+        task_ambiguous: "This agent has several active tasks and one is a document review or question, so the write cannot be matched to its task. Retry with the %{header} header set to the task id (collavre CLI: COLLAVRE_TASK_ID=<task id> collavre ...)."
+        chip_prefix: Doc
+        proposed_change: Proposed change
+        out_of_scope: "This change also touches creatives outside the selected part: %{ids}"
+        rejected_notice: "The proposed change to \"%{title}\" was rejected. Tell the agent what to change and ask again."
+        reject_reason_placeholder: Tell the agent why it was rejected...
       navigate_back: Previous chat
       navigate_forward: Next chat
       recent_chats: Recent chats

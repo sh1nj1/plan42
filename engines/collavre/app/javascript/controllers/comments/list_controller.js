@@ -543,7 +543,9 @@ export default class extends Controller {
     const target = event.target instanceof Element ? event.target : null
     if (!target) return
 
-    if (target.closest('.comment-select-checkbox')) return
+    // Creative history buttons (change set approve/reject/revert, also under a
+    // document-mode review reply) reuse the approve/deny classes but are not ours.
+    if (target.closest('.comment-select-checkbox, [data-controller~="creative-history"]')) return
 
     const topicLink = target.closest('.comment-topic-switch')
     if (topicLink) {

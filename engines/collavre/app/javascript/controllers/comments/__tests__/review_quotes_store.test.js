@@ -110,4 +110,33 @@ describe('ReviewQuotesStore', () => {
       expect(store.count).toBe(1)
     })
   })
+
+  describe('creative (document-mode) quotes', () => {
+    test('add defaults to a review quote with no creative', () => {
+      const q = store.add(1, 'text')
+      expect(q).toMatchObject({ commentId: 1, creativeId: null, label: '', type: 'review' })
+      expect(store.hasCreativeQuotes).toBe(false)
+      expect(store.creativeQuotes).toEqual([])
+    })
+
+    test('add accepts a question type', () => {
+      expect(store.add(1, 'text', { type: 'question' }).type).toBe('question')
+    })
+
+    test('add coerces unknown types to review', () => {
+      expect(store.add(1, 'text', { type: 'bogus' }).type).toBe('review')
+    })
+
+    test('a creative quote drops the comment id and keeps creative + label', () => {
+      const q = store.add(5, 'passage', { creativeId: '11', label: 'Intro' })
+      expect(q).toMatchObject({ commentId: null, creativeId: '11', label: 'Intro', type: 'review' })
+    })
+
+    test('creativeQuotes / hasCreativeQuotes only see creative quotes', () => {
+      store.add(1, 'message')
+      const c = store.add(null, 'passage', { creativeId: '11' })
+      expect(store.hasCreativeQuotes).toBe(true)
+      expect(store.creativeQuotes).toEqual([c])
+    })
+  })
 })
