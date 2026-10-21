@@ -124,6 +124,22 @@ class PptViewerTest < ApplicationSystemTestCase
     assert_preview_fills_container(4.0 / 3)
   end
 
+  test "standard slides fill fractional frame widths with classic scrollbars" do
+    visit collavre.creatives_path(id: @creative.id)
+    assert_selector 'iframe.document-preview-frame[style*="aspect-ratio"]'
+    within_frame(first("iframe.document-preview-frame")) do
+      page.execute_script(<<~JS)
+        const style = document.createElement('style');
+        style.textContent = '::-webkit-scrollbar { width: 15px; height: 15px; }';
+        document.head.append(style);
+      JS
+    end
+    [ 421.8125, 631.8125 ].each do |width|
+      page.execute_script("document.querySelector('.ppt-attachment-preview').style.width = arguments[0] + 'px'", width)
+      assert_preview_fills_container(4.0 / 3)
+    end
+  end
+
   test "touch controls toggle and fullscreen provides download and close" do
     visit collavre.creatives_path(id: @creative.id)
     page.driver.browser.execute_cdp("Emulation.setTouchEmulationEnabled", enabled: true)

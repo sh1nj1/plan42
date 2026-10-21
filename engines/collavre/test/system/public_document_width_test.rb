@@ -11,13 +11,18 @@ class PublicDocumentWidthTest < ApplicationSystemTestCase
       page.current_window.resize_to(width, 900)
       visit collavre.public_creative_path(public_id: creative.ensure_public_id!, slug: creative.public_slug)
       assert_selector "iframe.document-preview-frame"
+      page.execute_script(<<~JS)
+        const style = document.createElement('style');
+        style.textContent = 'html { overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; }';
+        document.head.append(style);
+      JS
       dimensions = page.evaluate_script(<<~JS)
         (() => {
           const frame = document.querySelector('iframe.document-preview-frame').getBoundingClientRect();
           const row = document.querySelector('.creative-row-start').getBoundingClientRect();
           return { frameRight: frame.right, rowRight: row.right, frameWidth: frame.width,
             mainWidth: document.querySelector('main').getBoundingClientRect().width,
-            viewport: innerWidth, documentWidth: document.documentElement.scrollWidth };
+            viewport: document.documentElement.clientWidth, documentWidth: document.documentElement.scrollWidth };
         })()
       JS
       assert_in_delta [ dimensions["viewport"], 960 ].min, dimensions["mainWidth"], 2
