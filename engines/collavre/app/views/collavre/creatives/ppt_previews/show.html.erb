@@ -1,5 +1,5 @@
 <% navigation_key = @slides ? "navigation" : (@document ? "document_controls" : "page_navigation") %>
-<div class="ppt-viewer <%= "document-viewer" unless @slides %>" tabindex="0" aria-label="<%= t("collavre.ppt_viewer.#{navigation_key}") %>">
+<div class="ppt-viewer <%= "document-viewer" unless @slides %> <%= "pdf-viewer" unless @slides || @document %>" tabindex="0" aria-label="<%= t("collavre.ppt_viewer.#{navigation_key}") %>">
   <div id="slide-view">
     <div id="slide-content">
       <% if @slides %>
