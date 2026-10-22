@@ -25,6 +25,9 @@ module Collavre
             Topic.exists?(id: task.topic_id, creative_id: task.creative_id)
           raise ArgumentError, I18n.t("collavre.approval_gate.invalid_task")
         end
+        # The gate is raised on the agent's behalf, so its tool selection applies
+        # even when the CLI authenticates with its creator's token.
+        AgentToolPermission.authorize_call!("approval_request", agent: task.agent)
         TopicAuthorizer.authorize_creative!(task.creative, :feedback, user: caller)
         TopicAuthorizer.authorize_creative!(task.creative, :feedback, user: task.agent)
       end
