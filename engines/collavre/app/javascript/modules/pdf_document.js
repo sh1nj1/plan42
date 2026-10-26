@@ -1,3 +1,5 @@
+import { bindViewerNavigation, updateViewerNavigation } from './viewer_navigation'
+
 export async function initializePdfDocument(viewer, load = () => import('pdfjs-dist')) {
   const content = viewer.querySelector('[data-pdf-src]')
   if (!content) return
@@ -15,7 +17,7 @@ export async function initializePdfDocument(viewer, load = () => import('pdfjs-d
       renderPending = false
       rendering = true
       loading.hidden = false
-      updatePdfControls(viewer, pageNumber, pdf.numPages)
+      updateViewerNavigation(viewer, pageNumber - 1, pdf.numPages)
       try {
         const page = await pdf.getPage(pageNumber)
         const base = page.getViewport({ scale: 1 })
@@ -58,13 +60,6 @@ async function renderPdfPage(viewer, page, viewport) {
 }
 
 function bindPdfControls(viewer, actions) {
-  viewer.querySelector('[data-ppt-previous]').addEventListener('click', actions.previous)
-  viewer.querySelector('[data-ppt-next]').addEventListener('click', actions.next)
+  bindViewerNavigation(viewer, actions)
   viewer.querySelector('[data-pdf-zoom]').addEventListener('click', actions.zoom)
-}
-
-function updatePdfControls(viewer, pageNumber, pageCount) {
-  viewer.querySelector('[data-ppt-counter]').textContent = `${pageNumber} / ${pageCount}`
-  viewer.querySelector('[data-ppt-previous]').disabled = pageNumber === 1
-  viewer.querySelector('[data-ppt-next]').disabled = pageNumber === pageCount
 }
