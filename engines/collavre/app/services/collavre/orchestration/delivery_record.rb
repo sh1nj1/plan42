@@ -719,8 +719,8 @@ module Collavre
 
       # The comments the history window carried *whole*, read off the tag
       # MessageBuilder#append_chat_history writes. A window entry can render a
-      # comment without delivering it — a blob or a linked creative's subtree
-      # rides only on the trigger path — and those entries go untagged, so this
+      # comment without delivering it — a blob rides only on the trigger
+      # path — and those entries go untagged, so this
       # record never claims them. That judgement lives with the builder, which
       # is the only place that knows what it rendered; see
       # MessageBuilder#delivered_whole?.

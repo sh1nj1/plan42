@@ -110,23 +110,76 @@ module Collavre
         end
       end
 
-      test "history delivery ignores excluded workflow references but still requires ordinary references" do
-        workflow = Creative.create!(description: "Private routing configuration", user: users(:two),
-                                    progress: 0.0, data: { "kind" => "workflow" })
-        linked = workflow.create_linked_creative_for_user(@user)
+      test "history delivery treats creative links as delivered and images as withheld" do
         ordinary = Creative.create!(description: "Ordinary reference", user: @user, progress: 0.0)
-        delivered = @creative.comments.create!(content: "[rules](/creatives/#{linked.id})",
-                                               user: @user, topic_id: @comment.topic_id)
-        withheld = @creative.comments.create!(content: "[rules](/creatives/#{linked.id}) [note](/creatives/#{ordinary.id})",
-                                              user: @user, topic_id: @comment.topic_id)
+        linked = @creative.comments.create!(content: "[note](/creatives/#{ordinary.id})",
+                                            user: @user, topic_id: @comment.topic_id)
+        illustrated = @creative.comments.create!(content: "look", user: @user, topic_id: @comment.topic_id)
+        illustrated.images.attach(io: File.open(Collavre::Engine.root.join("test/fixtures/files/small.png")),
+                                  filename: "small.png", content_type: "image/png")
         messages = MessageBuilder.new(
           agent: @agent, original_comment: @comment,
           context: { "creative" => { "id" => @creative.id }, "comment" => { "id" => @comment.id, "content" => @comment.content } }
         ).build[:messages]
-        history = messages.select { |message| message[:kind] == :chat_history }
+        delivered = messages.select { |message| message[:kind] == :chat_history }.filter_map { |message| message[:comment_id] }
 
-        assert_includes history.map { |message| message[:comment_id] }, delivered.id
-        refute_includes history.map { |message| message[:comment_id] }, withheld.id
+        assert_includes delivered, linked.id
+        refute_includes delivered, illustrated.id
+      end
+
+      test "inlines referenced creatives within the per-link budget" do
+        small = Creative.create!(description: "Small note", user: @user, progress: 0.0)
+        @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 500 } }.to_json)
+
+        text = referenced_texts("[s](/creatives/#{small.id})").sole
+
+        assert_includes text, "Small note"
+        refute_includes text, "creative_retrieval_service"
+      end
+
+      test "sends a reference card for a creative over the per-link budget" do
+        parent = Creative.create!(description: "Parent folder", user: @user, progress: 0.0)
+        big = Creative.create!(description: "Big document #{"x" * 300}", user: @user, progress: 0.0, parent: parent)
+        Creative.create!(description: "Hidden child body", user: @user, progress: 0.0, parent: big)
+        @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 100 } }.to_json)
+
+        text = referenced_texts("[b](/creatives/#{big.id})").sole
+
+        assert_includes text, "Referenced Creative (id: #{big.id}) — not inlined"
+        assert_includes text, "1 children)"
+        assert_includes text, "Parent folder (id: #{parent.id}) > "
+        assert_includes text, "creative_retrieval_service(id: #{big.id})"
+        refute_includes text, "x" * 300
+        refute_includes text, "Hidden child body"
+      end
+
+      test "links beyond the total budget fall back to cards in priority order" do
+        first = Creative.create!(description: "First #{"a" * 60}", user: @user, progress: 0.0)
+        second = Creative.create!(description: "Second #{"b" * 400}", user: @user, progress: 0.0)
+        @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 1_000,
+                                                    "referenced_creative_total_size" => 600 } }.to_json)
+
+        texts = referenced_texts("[1](/creatives/#{first.id}) [2](/creatives/#{second.id})")
+
+        assert_includes texts.first, "a" * 60
+        assert_includes texts.second, "not inlined"
+        refute_includes texts.second, "b" * 400
+      end
+
+      test "cards count against the total budget and the rest collapse to an id list" do
+        first = Creative.create!(description: "First #{"a" * 300}", user: @user, progress: 0.0)
+        second = Creative.create!(description: "Second #{"b" * 300}", user: @user, progress: 0.0)
+        third = Creative.create!(description: "Third #{"c" * 300}", user: @user, progress: 0.0)
+        @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 100,
+                                                    "referenced_creative_total_size" => 500 } }.to_json)
+
+        texts = referenced_texts("[1](/creatives/#{first.id}) [2](/creatives/#{second.id}) [3](/creatives/#{third.id})")
+
+        assert_equal 2, texts.size
+        assert_includes texts.first, "Referenced Creative (id: #{first.id}) — not inlined"
+        assert_includes texts.last, "Further referenced creatives not shown"
+        assert_includes texts.last, "id: #{second.id}, id: #{third.id}"
+        assert_operator texts.sum(&:length), :<=, 500
       end
 
       test "does not duplicate current creative in referenced contexts" do
@@ -896,6 +949,13 @@ module Collavre
       end
 
       private
+
+      def referenced_texts(content)
+        context = { "creative" => { "id" => @creative.id }, "comment" => { "id" => @comment.id, "content" => content } }
+        MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+                      .select { |message| message[:kind] == :referenced_creative }
+                      .map { |message| message.dig(:parts, 0, :text) }
+      end
 
       def build_routing_links(count:, depth:, kind: "workflow")
         Array.new(count) do
