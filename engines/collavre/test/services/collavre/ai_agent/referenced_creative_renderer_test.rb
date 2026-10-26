@@ -35,13 +35,33 @@ module Collavre
       end
 
       test "once a card no longer fits, later links skip straight to the overflow note" do
-        @agent.agent_conf = "context:\n  referenced_creative_size: 10\n  referenced_creative_total_size: 50"
+        @agent.agent_conf = "context:\n  referenced_creative_size: 10\n  referenced_creative_total_size: 250"
         renderer = build_renderer
         other = Creative.create!(description: "Other", user: users(:one), progress: 0.0)
 
         assert_nil renderer.render(@creative)
         assert_no_tree_render { assert_nil renderer.render(other) }
         assert_includes renderer.overflow_note, "id: #{@creative.id}, id: #{other.id}"
+      end
+
+      test "the overflow note truncates its id list to stay within the total budget" do
+        @agent.agent_conf = "context:\n  referenced_creative_size: 10\n  referenced_creative_total_size: 300"
+        renderer = build_renderer
+        creatives = Array.new(2_000) { |i| Creative.new(id: 1_000_000 + i, description: "Doc #{"d" * 50}") }
+        texts = creatives.filter_map { |c| renderer.render(c) }
+        note = renderer.overflow_note
+
+        assert_includes note, "id: 1000000, id: 1000001"
+        assert_match(/, and \d+ more\n/, note)
+        assert_operator texts.sum(&:length) + note.length, :<=, 300
+      end
+
+      test "a budget too small for any id still reports the deferred count" do
+        @agent.agent_conf = "context:\n  referenced_creative_size: 10\n  referenced_creative_total_size: 140"
+        renderer = build_renderer
+        renderer.render(@creative)
+
+        assert_includes renderer.overflow_note, "not shown (context budget spent): and 1 more\n"
       end
 
       test "no overflow note while everything fit" do

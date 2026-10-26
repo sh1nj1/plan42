@@ -157,7 +157,7 @@ module Collavre
         first = Creative.create!(description: "First #{"a" * 60}", user: @user, progress: 0.0)
         second = Creative.create!(description: "Second #{"b" * 400}", user: @user, progress: 0.0)
         @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 1_000,
-                                                    "referenced_creative_total_size" => 400 } }.to_json)
+                                                    "referenced_creative_total_size" => 600 } }.to_json)
 
         texts = referenced_texts("[1](/creatives/#{first.id}) [2](/creatives/#{second.id})")
 
@@ -171,7 +171,7 @@ module Collavre
         second = Creative.create!(description: "Second #{"b" * 300}", user: @user, progress: 0.0)
         third = Creative.create!(description: "Third #{"c" * 300}", user: @user, progress: 0.0)
         @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 100,
-                                                    "referenced_creative_total_size" => 300 } }.to_json)
+                                                    "referenced_creative_total_size" => 500 } }.to_json)
 
         texts = referenced_texts("[1](/creatives/#{first.id}) [2](/creatives/#{second.id}) [3](/creatives/#{third.id})")
 
@@ -179,7 +179,7 @@ module Collavre
         assert_includes texts.first, "Referenced Creative (id: #{first.id}) — not inlined"
         assert_includes texts.last, "Further referenced creatives not shown"
         assert_includes texts.last, "id: #{second.id}, id: #{third.id}"
-        assert_operator texts.first.length, :<=, 300
+        assert_operator texts.sum(&:length), :<=, 500
       end
 
       test "does not duplicate current creative in referenced contexts" do
