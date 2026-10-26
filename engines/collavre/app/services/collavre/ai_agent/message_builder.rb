@@ -159,8 +159,13 @@ module Collavre
           next unless creative
 
           @injected_creative_ids << creative_id
-          messages << { role: "user", kind: :referenced_creative, parts: [ { text: renderer.render(creative) } ] }
+          append_referenced_text(messages, renderer.render(creative))
         end
+        append_referenced_text(messages, renderer.overflow_note)
+      end
+
+      def append_referenced_text(messages, text)
+        messages << { role: "user", kind: :referenced_creative, parts: [ { text: text } ] } if text
       end
 
       def workflow_referenced_ids

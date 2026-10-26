@@ -146,7 +146,7 @@ module Collavre
         text = referenced_texts("[b](/creatives/#{big.id})").sole
 
         assert_includes text, "Referenced Creative (id: #{big.id}) — not inlined"
-        assert_includes text, "1 children"
+        assert_includes text, "1 children)"
         assert_includes text, "Parent folder (id: #{parent.id}) > "
         assert_includes text, "creative_retrieval_service(id: #{big.id})"
         refute_includes text, "x" * 300
@@ -155,15 +155,31 @@ module Collavre
 
       test "links beyond the total budget fall back to cards in priority order" do
         first = Creative.create!(description: "First #{"a" * 60}", user: @user, progress: 0.0)
-        second = Creative.create!(description: "Second #{"b" * 60}", user: @user, progress: 0.0)
+        second = Creative.create!(description: "Second #{"b" * 400}", user: @user, progress: 0.0)
         @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 1_000,
-                                                    "referenced_creative_total_size" => 100 } }.to_json)
+                                                    "referenced_creative_total_size" => 400 } }.to_json)
 
         texts = referenced_texts("[1](/creatives/#{first.id}) [2](/creatives/#{second.id})")
 
         assert_includes texts.first, "a" * 60
         assert_includes texts.second, "not inlined"
-        refute_includes texts.second, "b" * 60
+        refute_includes texts.second, "b" * 400
+      end
+
+      test "cards count against the total budget and the rest collapse to an id list" do
+        first = Creative.create!(description: "First #{"a" * 300}", user: @user, progress: 0.0)
+        second = Creative.create!(description: "Second #{"b" * 300}", user: @user, progress: 0.0)
+        third = Creative.create!(description: "Third #{"c" * 300}", user: @user, progress: 0.0)
+        @agent.update!(agent_conf: { "context" => { "referenced_creative_size" => 100,
+                                                    "referenced_creative_total_size" => 300 } }.to_json)
+
+        texts = referenced_texts("[1](/creatives/#{first.id}) [2](/creatives/#{second.id}) [3](/creatives/#{third.id})")
+
+        assert_equal 2, texts.size
+        assert_includes texts.first, "Referenced Creative (id: #{first.id}) — not inlined"
+        assert_includes texts.last, "Further referenced creatives not shown"
+        assert_includes texts.last, "id: #{second.id}, id: #{third.id}"
+        assert_operator texts.first.length, :<=, 300
       end
 
       test "does not duplicate current creative in referenced contexts" do

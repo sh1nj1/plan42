@@ -5,8 +5,10 @@ module Collavre
     # Renders creatives linked from chat into prompt text under a character
     # budget. A creative that fits the per-link and remaining per-turn budget
     # is inlined; a larger one is announced as a reference card so the agent
-    # fetches it on demand, and one long document or a handful of links
-    # cannot overflow the prompt.
+    # fetches it on demand. Cards are charged against the same budget, and
+    # links left once even a card no longer fits are listed by id in
+    # #overflow_note, so neither one long document nor many links can
+    # overflow the prompt.
     #
     # Budgets come from agent_conf `context.referenced_creative_size` and
     # `context.referenced_creative_total_size`. Call #render in priority order:
@@ -22,23 +24,58 @@ module Collavre
         @max_depth = max_depth
         @prune = prune
         @ancestry = ancestry
+        @overflow_ids = []
       end
 
+      # Prompt text for the creative, or nil when the budget is spent and the
+      # creative is deferred to #overflow_note.
       def render(creative)
-        markdown = ApplicationController.helpers.render_creative_tree_markdown(
-          [ creative ], 1, true, max_depth: @max_depth, prune: @prune
-        )
-        return card(creative, markdown.length) if markdown.length > [ @per_link, @remaining ].min
+        if @overflow_ids.empty?
+          markdown = inline_markdown(creative, [ @per_link, @remaining ].min)
+          return charge("Referenced Creative (id: #{creative.id}):\n#{markdown}") if markdown
 
-        @remaining -= markdown.length
-        "Referenced Creative (id: #{creative.id}):\n#{markdown}"
+          text = card(creative)
+          return charge(text) if text.length <= @remaining
+        end
+
+        @overflow_ids << creative.id
+        nil
+      end
+
+      def overflow_note
+        return if @overflow_ids.empty?
+
+        "Further referenced creatives not shown (context budget spent): " \
+          "#{@overflow_ids.map { |id| "id: #{id}" }.join(', ')}\n" \
+          "Use creative_retrieval_service(id: N) to read them when needed."
       end
 
       private
 
-      def card(creative, size)
+      def charge(text)
+        @remaining -= text.length
+        text
+      end
+
+      # The rendered tree, or nil when it would not fit +limit+. The root's own
+      # text is a lower bound on the tree, so a root that alone exceeds the
+      # limit skips rendering (and loading) the subtree.
+      def inline_markdown(creative, limit)
+        return if limit <= 0 || plain_description(creative).length > limit
+
+        markdown = ApplicationController.helpers.render_creative_tree_markdown(
+          [ creative ], 1, true, max_depth: @max_depth, prune: @prune
+        )
+        markdown if markdown.length <= limit
+      end
+
+      def plain_description(creative)
+        ActionView::Base.full_sanitizer.sanitize(creative.effective_description(nil, true).to_s).strip
+      end
+
+      def card(creative)
         children = creative.effective_origin(Set.new).children.count
-        "Referenced Creative (id: #{creative.id}) — not inlined (~#{size} chars, #{children} children)\n" \
+        "Referenced Creative (id: #{creative.id}) — not inlined (exceeds context budget, #{children} children)\n" \
           "Path: #{@ancestry.call(creative)}\n" \
           "Use creative_retrieval_service(id: #{creative.id}) to read its content when needed."
       end
