@@ -143,9 +143,13 @@ module Collavre
         contents = contents.compact
         return if contents.empty? && workflow_referenced_ids.empty?
 
-        children_level = @agent.creative_children_level
-        max_depth = 1 + children_level
+        renderer = ReferencedCreativeRenderer.new(
+          agent: @agent, max_depth: 1 + @agent.creative_children_level,
+          prune: method(:workflow_context?), ancestry: method(:build_ancestry_chain)
+        )
 
+        # Order is priority: the trigger's own links claim the budget first,
+        # then the coalesced comments, then the workflow source message.
         referenced_ids = (contents.flat_map { |c| referenced_creative_ids(c) } + workflow_referenced_ids).uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = load_prompt_context_creatives(referenced_ids)
@@ -155,15 +159,7 @@ module Collavre
           next unless creative
 
           @injected_creative_ids << creative_id
-          markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
-          )
-
-          messages << {
-            role: "user",
-            kind: :referenced_creative,
-            parts: [ { text: "Referenced Creative (id: #{creative.id}):\n#{markdown}" } ]
-          }
+          messages << { role: "user", kind: :referenced_creative, parts: [ { text: renderer.render(creative) } ] }
         end
       end
 
@@ -182,35 +178,19 @@ module Collavre
       # Whether a history entry carries its comment whole.
       #
       # A history entry is text: this window renders `content` and nothing
-      # else. Two things ride only on the trigger path — the blobs
-      # append_trigger_message attaches, and the subtree
-      # append_referenced_creative_contexts renders for a linked creative,
-      # which scans the anchor and the merged blocks and never this window. A
-      # comment carrying either is *partly* delivered here, and the turn that
-      # swept it up is not a substitute for its own dispatch.
+      # else. Only the blobs append_trigger_message attaches ride solely on the
+      # trigger path, so a comment with images is *partly* delivered here and
+      # the turn that swept it up is not a substitute for its own dispatch.
+      #
+      # A creative link is not withheld: the trigger path itself only promises
+      # a reference card for it (see append_referenced_creative_contexts), and
+      # the link text in this entry already tells the agent what to retrieve.
       #
       # Decided here rather than at Orchestration::DeliveryRecord, which reads
       # the :comment_id tag as a delivery claim: this is the only place that
-      # knows what was rendered, and in particular which creatives were
-      # already injected. A link to the topic's own creative — the common case
-      # — withholds nothing, and a rule written anywhere else could not tell
-      # that apart from a link to a subtree the agent never saw.
-      #
-      # Deliberately the same test append_referenced_creative_contexts applies,
-      # @injected_creative_ids and all, so the two answer alike: whatever that
-      # path would have injected for this comment is what this window failed to
-      # supply. It holds only roots, not the descendants a rendered subtree
-      # also covers, so a link to a descendant reads as withheld when its text
-      # was in fact rendered. That asymmetry costs a redundant turn; the
-      # opposite one costs the message.
+      # knows what was rendered.
       def delivered_whole?(comment)
-        return false if comment.images.attached?
-
-        missing = referenced_creative_ids(comment.content) - @injected_creative_ids.to_a
-        return true if missing.empty?
-
-        # Excluded routing configuration supplies no subtree on the trigger path either.
-        load_prompt_context_creatives(missing).empty?
+        !comment.images.attached?
       end
 
       # Appends chat history messages and returns the count of messages added.
