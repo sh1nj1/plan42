@@ -31,19 +31,7 @@ module Collavre
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
-      # The provider rejected the prompt as too large → retrying sends the same
-      # prompt and fails the same way, so pause instead of looping on it.
-      if prompt_too_large_error?(last_agent_comment)
-        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
-        post_loop_notice(child_creative, topic, I18n.t("collavre.trigger_loop.prompt_too_large"))
-        return
-      end
-
-      # Infrastructure errors (timeout, connection failure) → retry without consuming iteration
-      if infrastructure_error?(last_agent_comment)
-        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
-        return
-      end
+      return if handle_error_reply(last_agent_comment, child_creative, topic, parent_creative, loop_config, task)
 
       status = evaluate_response(child_creative, parent_creative, last_agent_comment, task, loop_config)
 
@@ -102,6 +90,22 @@ module Collavre
     rescue StandardError
       restore_retryable_loop_turn(creative)
       raise
+    end
+
+    # An error reply is not a task result. A prompt the provider rejected as
+    # too large fails the same way on every retry, so the loop pauses;
+    # infrastructure errors (timeout, connection failure) retry without
+    # consuming an iteration. Returns whether the reply was handled here.
+    def handle_error_reply(comment, child_creative, topic, parent_creative, loop_config, task)
+      if prompt_too_large_error?(comment)
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
+        post_loop_notice(child_creative, topic, I18n.t("collavre.trigger_loop.prompt_too_large"))
+      elsif infrastructure_error?(comment)
+        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
+      else
+        return false
+      end
+      true
     end
 
     # Detect infrastructure errors (timeout, connection failure, etc.)
