@@ -7,6 +7,9 @@ module Collavre
     # Extracts creative context, chat history, and the trigger comment
     # into the format expected by AiClient.
     class MessageBuilder
+      DEFAULT_CREATIVE_CONTEXT_SIZE = 100_000
+      DEFAULT_CONTEXT_CREATIVES_TOTAL_SIZE = 50_000
+
       def initialize(agent:, context:, original_comment: nil, task: nil)
         @task = task
         @agent = agent
@@ -24,6 +27,7 @@ module Collavre
         history_count = append_chat_history(messages)
         append_trigger_message(messages)
         append_task_identity(messages)
+        PromptBudget.enforce!(messages, @agent)
 
         {
           messages: messages,
@@ -60,11 +64,7 @@ module Collavre
           messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}" } ] }
         else
           # Full self-context: inject the creative subtree with ancestry breadcrumb
-          children_level = @agent.creative_children_level
-          max_depth = 1 + children_level
-          markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
-          )
+          markdown = tree_renderer.render(creative, context_size("creative_context_size", DEFAULT_CREATIVE_CONTEXT_SIZE))
 
           @injected_creative_ids << creative.id
           messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}\n#{markdown}" } ] }
@@ -92,10 +92,9 @@ module Collavre
         active_ids = context_ids - disabled_ids - [ creative_id, effective_origin.id ]
         return if active_ids.empty?
 
-        children_level = @agent.creative_children_level
-        max_depth = 1 + children_level
-
         creatives_by_id = load_prompt_context_creatives(active_ids)
+        # One budget shared by all Context Creatives, claimed in display order.
+        remaining = context_size("context_creatives_total_size", DEFAULT_CONTEXT_CREATIVES_TOTAL_SIZE)
 
         active_ids.each do |ctx_id|
           next if @injected_creative_ids.include?(ctx_id)
@@ -104,9 +103,8 @@ module Collavre
           next unless ctx
 
           @injected_creative_ids << ctx_id
-          markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ ctx ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
-          )
+          markdown = tree_renderer.render(ctx, remaining)
+          remaining -= markdown.length
 
           messages << {
             role: "user",
@@ -114,6 +112,16 @@ module Collavre
             parts: [ { text: "Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
           }
         end
+      end
+
+      def tree_renderer
+        @tree_renderer ||= BudgetedTreeRenderer.new(
+          max_depth: 1 + @agent.creative_children_level, prune: method(:workflow_context?)
+        )
+      end
+
+      def context_size(key, default)
+        (@agent.parsed_agent_conf.dig("context", key) || default).to_i
       end
 
       # Workflow creatives are machine-readable routing configuration. Only

@@ -74,7 +74,7 @@ ko:
         clear_api_key_label: 저장된 API 키 삭제
         clear_api_key_help: 저장 후 시스템 기본 키 또는 키가 필요 없는 게이트웨이를 사용합니다.
         agent_conf_label: "에이전트 설정 (YAML)"
-        agent_conf_help: "에이전트 동작을 위한 YAML 설정. chat_history: 최대 이전 메시지 수 (기본 50), chat_history_size: 최대 총 문자 수 (기본 100000), context.creative_children_level: 크리에이티브 컨텍스트에 포함할 자식 깊이 (기본 nil → 사용자 설정 따름, 0=자식 없음, 1=직접 자식, 2=손자까지), context.referenced_creative_size: 채팅에 링크된 크리에이티브를 본문째 넣을 최대 문자 수 (기본 4000, 초과 시 참조 카드만 전달), context.referenced_creative_total_size: 한 턴에 링크된 크리에이티브 전체 최대 문자 수 (기본 12000)."
+        agent_conf_help: "에이전트 동작을 위한 YAML 설정. chat_history: 최대 이전 메시지 수 (기본 50), chat_history_size: 최대 총 문자 수 (기본 100000), context.creative_children_level: 크리에이티브 컨텍스트에 포함할 자식 깊이 (기본 nil → 사용자 설정 따름, 0=자식 없음, 1=직접 자식, 2=손자까지), context.referenced_creative_size: 채팅에 링크된 크리에이티브를 본문째 넣을 최대 문자 수 (기본 4000, 초과 시 참조 카드만 전달), context.referenced_creative_total_size: 한 턴에 링크된 크리에이티브 전체 최대 문자 수 (기본 12000), context.creative_context_size: 현재 크리에이티브 하위 트리의 최대 문자 수 (기본 100000, 초과 시 깊은 단계부터 생략), context.context_creatives_total_size: Context Creative 전체 최대 문자 수 (기본 50000), context.max_prompt_chars: 프롬프트 전체 상한 (기본 500000, 초과 시 오래된 히스토리와 기타 컨텍스트부터 제외)."
         chat_title: 에이전트와 대화하기
         chat_placeholder: 에이전트를 테스트하려면 메시지를 입력하세요...
       update_ai:
