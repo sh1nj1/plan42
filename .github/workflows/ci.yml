@@ -7,7 +7,7 @@ on:
 
 jobs:
   scan_ruby:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
         run: bin/brakeman --no-pager
 
   test_js:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -58,7 +58,7 @@ jobs:
         run: npm audit --production
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -84,7 +84,7 @@ jobs:
   # about 8s together. See docs/complexity_budget.md.
   complexity:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -141,7 +141,7 @@ jobs:
   # db/schema.rb (Solid Queue/Cache/Cable tables included, and all engine
   # tables), so loading that one file covers every engine's schema too.
   postgres_schema_load:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -192,7 +192,7 @@ jobs:
         run: bin/rails runner script/postgres_query_smoke.rb
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # services:
     #  redis:
