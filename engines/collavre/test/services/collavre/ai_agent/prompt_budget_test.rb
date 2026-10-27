@@ -79,11 +79,15 @@ module Collavre
         assert_equal 100, total(result)
       end
 
-      test "does nothing more when there is no creative context or trigger to cut" do
+      test "does nothing more when there is no creative context or trigger text to cut" do
         limit!(5)
-        messages = [ entry(:chat_history, "h" * 20) ]
+        image_only = { role: "user", kind: :trigger, parts: [ { image: :blob } ] }
+        messages = [ entry(:chat_history, "h" * 20), entry(:system_note, "s" * 20), image_only ]
 
-        assert_empty PromptBudget.enforce!(messages, @agent)
+        result = PromptBudget.enforce!(messages, @agent)
+
+        assert_equal [ :system_note, :trigger ], result.map { |m| m[:kind] }
+        assert_equal "s" * 20, result.first.dig(:parts, 0, :text)
       end
     end
   end

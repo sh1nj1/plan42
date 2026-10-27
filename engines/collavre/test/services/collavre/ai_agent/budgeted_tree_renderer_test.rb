@@ -44,6 +44,17 @@ module Collavre
         assert_operator text.length, :<=, budget
       end
 
+      test "drops a level whose markup overflows even though its text is short" do
+        wide = Creative.create!(description: "Wide", user: @user)
+        20.times { Creative.create!(description: "c", user: @user, parent: wide) }
+        note = renderer.send(:truncation_note, wide, 7).length
+
+        text = renderer.render(wide, note + 100)
+
+        refute_includes text, "## c"
+        assert_includes text, "Subtree shown to depth 1"
+      end
+
       test "cuts a root whose own text exceeds the budget" do
         @root.update!(description: "Huge root " + ("r" * 2_000))
         text = renderer.render(@root, 500)
