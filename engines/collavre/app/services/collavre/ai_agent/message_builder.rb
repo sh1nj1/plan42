@@ -292,13 +292,14 @@ module Collavre
         # (a burst of messages answered as one turn). They belong *in* the
         # trigger, not in chat history: a session-backed agent receives only the
         # :trigger message, so history-only placement would lose them entirely.
+        anchor_size = payload_text.length
         merged_blocks = merged_trigger.blocks
         payload_text = (merged_blocks.map(&:text) + [ payload_text ]).join("\n\n") if merged_blocks.any?
         # A resumed turn is told what its interrupted attempt already did, in the
         # trigger for the same reason as the merged blocks above.
         payload_text = Orchestration::ResumeContext.prepend_to(payload_text, @context)
 
-        trigger_parts = [ { text: payload_text } ]
+        trigger_parts = [ { text: payload_text, anchor_offset: payload_text.length - anchor_size } ]
 
         merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
@@ -333,10 +334,7 @@ module Collavre
       end
 
       def trigger_comment
-        @trigger_comment ||= begin
-          id = @context.dig("comment", "id")
-          Comment.find_by(id: id) if id
-        end
+        @trigger_comment ||= Comment.find_by(id: @context.dig("comment", "id"))
       end
 
       def current_topic

@@ -24,7 +24,7 @@ module Collavre
 
       def initialize(messages, agent)
         @messages = messages
-        @limit = (agent.parsed_agent_conf.dig("context", "max_prompt_chars") || DEFAULT_MAX_CHARS).to_i
+        @limit = (agent.parsed_agent_conf.dig("context", "max_prompt_chars") || DEFAULT_MAX_CHARS).to_i.clamp(0, Float::INFINITY)
       end
 
       def enforce!
@@ -33,6 +33,7 @@ module Collavre
         Rails.logger.warn("[PromptBudget] prompt of #{total} chars exceeds #{@limit}; shedding context")
         SHED_ORDER.each { |kind| shed(kind) }
         shrink_creative_context if total > @limit
+        bound_retained_context if total > @limit
         cut_trigger if total > @limit
         @messages
       end
@@ -67,16 +68,41 @@ module Collavre
         part[:text] = part[:text].lines.take_while { |l| l.start_with?("Creative Path:", "Topic:") }.join.chomp
       end
 
-      # Applies to the text parts of the trigger only; images ride untouched.
+      # Reserve the remaining budget for the request, even when breadcrumbs
+      # or other retained messages alone exceed the configured cap.
+      def bound_retained_context
+        @messages.reject { |m| m[:kind] == :trigger }.reverse_each do |message|
+          message[:parts].reverse_each do |part|
+            next unless part[:text]
+            break if total <= @limit
+
+            part[:text] = part[:text][0, [ part[:text].length - (total - @limit), 0 ].max]
+          end
+        end
+      end
+
+      # The anchor follows merged comments and resume context. Drop that prefix
+      # first so an older instruction cannot displace the current request.
       def cut_trigger
-        message = @messages.find { |m| m[:kind] == :trigger }
-        return unless message
+        @messages.select { |m| m[:kind] == :trigger }.each do |message|
+          prioritize_anchor(message)
+          message[:parts].select { |p| p[:text] }.sort_by { |p| -p[:text].length }.each do |part|
+            break if total <= @limit
 
-        part = message[:parts].select { |p| p[:text] }.max_by { |p| p[:text].length }
-        return unless part
+            room = [ @limit - (total - part[:text].length), 0 ].max
+            note = TRUNCATED_NOTE[0, room]
+            part[:text] = "#{part[:text][0, room - note.length]}#{note}"
+          end
+        end
+      end
 
-        room = @limit - (total - part[:text].length) - TRUNCATED_NOTE.length
-        part[:text] = "#{part[:text][0, [ room, 0 ].max]}#{TRUNCATED_NOTE}"
+      def prioritize_anchor(message)
+        message[:parts].each do |part|
+          next unless part[:anchor_offset].to_i.positive?
+
+          part[:text] = part[:text][part[:anchor_offset]..]
+          part[:anchor_offset] = 0
+        end
       end
     end
   end

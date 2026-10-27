@@ -778,6 +778,23 @@ module Collavre
       # Comments folded into this turn by Orchestration::TaskCoalescer belong in
       # the trigger, not in chat history: a session-backed agent receives only
       # the :trigger message (SessionContextResolver#incremental_payload).
+      test "overall prompt budget preserves the anchor after merged comments and resume context" do
+        @agent.update!(agent_conf: { "context" => { "max_prompt_chars" => 150 } }.to_json)
+        merged = @creative.comments.create!(content: "Earlier request " * 100, user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "comment" => { "id" => @comment.id, "content" => "Cancel the earlier request" },
+          Orchestration::ResumeContext::KEY => { "reason" => "manual", "partial_reply" => "Previous attempt " * 100 },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+
+        trigger = messages.find { |message| message[:kind] == :trigger }
+        assert_includes trigger.dig(:parts, 0, :text), "Cancel the earlier request"
+        assert_operator messages.sum { |message| message[:parts].sum { |part| part[:text].to_s.length } }, :<=, 150
+      end
+
       test "merged comments are folded into the trigger message" do
         merged = @creative.comments.create!(
           content: "earlier burst message", user: @user, topic_id: @comment.topic_id
