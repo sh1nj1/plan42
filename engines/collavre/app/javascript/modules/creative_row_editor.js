@@ -309,9 +309,10 @@ function setupEditorSession() {
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
     // A render flushes the open row's edits; when that fails and the user keeps
-    // them, the row holds later renders too, as long as they stay unsaved.
+    // them, the row holds later renders too, as long as they stay unsaved. A
+    // chosen type alone is worth saving, as saveForm() would.
     let keptUnsavedTree = null;
-    const flushOpenRow = (target, tree = currentTree) => (isDirty || pendingSave) && target.contains(tree) && !creativeSaveSnapshotIsEmpty(captureBufferSnapshot()) ? saveForm(tree, parentInput.value).then(isFailedSaveResult, () => true).then((failed) => ((keptUnsavedTree = failed ? tree : null), failed)) : null;
+    const flushOpenRow = (target, tree = currentTree) => (isDirty || pendingSave) && target.contains(tree) && !creativeSaveSnapshotIsEmpty({ ...captureBufferSnapshot(), creativeType: typeEditor.value }) ? saveForm(tree, parentInput.value).then(isFailedSaveResult, () => true).then((failed) => ((keptUnsavedTree = failed ? tree : null), failed)) : null;
     const openRow = { flush: flushOpenRow, keptUnsaved: (target) => !!keptUnsavedTree && keptUnsavedTree === currentTree && (isDirty || pendingSave) && target.contains(currentTree), keep: () => !editingPingInterval && currentTree && startEditingPresence(form.dataset.creativeId), release: (target) => purgeOpenDraft(target) };
     // Closing is a later edit request too: a click still waiting on a pending
     // create must not reopen the editor after it.

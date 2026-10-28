@@ -115,7 +115,14 @@ describe('Enter on a new creative saves it in the background', () => {
     deletedAttachments = []
     global.fetch = jest.fn(() => Promise.resolve({ ok: true }))
     buildEditorDom(document.getElementById('center-frame'), { saveFailedMessage: 'Save failed' })
-    document.getElementById('inline-edit-form-element').dataset.discardFailedDraftMessage = 'Discard it?'
+    const form = document.getElementById('inline-edit-form-element')
+    form.dataset.discardFailedDraftMessage = 'Discard it?'
+    const typeRoot = document.createElement('div')
+    typeRoot.dataset.creativeTypeEditor = ''
+    typeRoot.dataset.options = JSON.stringify([{ name: 'General', value: '' }, { name: 'Workflow', value: 'workflow' }])
+    typeRoot.dataset.addLabel = 'Add %{name}'
+    typeRoot.innerHTML = '<input id="type" role="combobox"><input type="hidden" name="creative[creative_type]" disabled><div class="common-popup" style="display:none"><ul></ul></div><button type="button">Cancel</button><span role="alert"></span><a hidden>Rules</a>'
+    form.appendChild(typeRoot)
     initializeCreativeRowEditor()
     document.getElementById('metadata-popup').style.display = 'none'
   })
@@ -1878,6 +1885,34 @@ describe('Enter on a new creative saves it in the background', () => {
 
     expect(event.detail.resume).toHaveBeenCalledTimes(1)
     expect(attachmentDeletes()).toEqual(['/attachments/blob-4'])
+  })
+
+  test('a new row with only a type chosen is created before a held frame swap goes ahead', async () => {
+    const firstPost = deferred()
+    const sent = []
+    saveMock.mockImplementationOnce(() => firstPost.promise)
+      .mockImplementation((url, method, body) => {
+        sent.push(new FormData(body))
+        return Promise.resolve(created(78))
+      })
+    await startNewRow('first creative')
+    const second = await pressEnter()
+    const input = document.getElementById('type')
+    input.focus()
+    input.value = 'Workflow'
+    input.dispatchEvent(new Event('input'))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+
+    const event = frameRender(document.getElementById('creatives'))
+    await flush()
+    firstPost.resolve(created(77))
+    await flush()
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0].get('creative[creative_type]')).toBe('workflow')
+    expect(second.dataset.id).toBe('78')
+    expect(event.detail.resume).toHaveBeenCalledTimes(1)
   })
 
   test('attachments removed from a saved row whose edit cannot be saved stay when it is discarded', async () => {
