@@ -137,10 +137,10 @@ module Collavre
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
     belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
 
-    scope :public_only, -> { where(private: false) }
+    scope :public_only, -> { not_deleting.where(private: false) }
 
     scope :visible_to, ->(user) {
-      where(
+      not_deleting.where(
         "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
         false, user.id, user.id
       )
@@ -166,7 +166,7 @@ module Collavre
     include Broadcastable
     include Notifiable
     include Approvable
-    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction, BulkFollowUpJobs, CreativeQuote
+    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction, BulkFollowUpJobs, CreativeQuote, BatchDestruction
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
@@ -258,7 +258,7 @@ module Collavre
       # existing tasks, so scoping would miss moved-comment tasks).
       # Include approval-paused and delegated work: both can resume side effects
       # after withdrawal and keep holding the topic/agent slot without a worker.
-      Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
+      active_tasks_for_withdrawal.each do |task|
         # An un-started task can be the survivor of a coalesced burst, answering
         # several comments at once. Cancelling it because its anchor was deleted
         # would throw away the absorbed comments too — they have no task of their
