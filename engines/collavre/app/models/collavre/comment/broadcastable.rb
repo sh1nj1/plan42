@@ -30,6 +30,20 @@ module Collavre
           CommentBadgesBroadcastJob.perform_later(creative.id)
         end
 
+        # Remove several comments from every open chat in one stream message
+        # instead of one broadcast per comment. Private comments were never
+        # broadcast, so there is nothing to take down for them.
+        def broadcast_removals(creative, comments)
+          return unless creative
+
+          tags = comments.reject(&:private?).map do |comment|
+            Turbo::StreamsChannel.turbo_stream_action_tag(:remove, target: ActionView::RecordIdentifier.dom_id(comment))
+          end
+          return if tags.empty?
+
+          Turbo::StreamsChannel.broadcast_stream_to([ creative, :comments ], content: tags.join.html_safe)
+        end
+
         def broadcast_badges(creative)
           origin = creative.effective_origin
           users = [ origin.user ].compact + origin.all_shared_users(:feedback).map(&:user)
@@ -152,11 +166,15 @@ module Collavre
 
       def broadcast_destroy
         return if private? || !creative
+        return Comment.current_batch_destruction.defer_removal(self) if Comment.current_batch_destruction
+
         broadcast_remove_to([ creative, :comments ])
       end
 
       def broadcast_badges
         return unless creative
+        return Comment.current_batch_destruction.defer_badges(creative) if destroyed? && Comment.current_batch_destruction
+
         self.class.broadcast_badges_later(creative)
       end
     end

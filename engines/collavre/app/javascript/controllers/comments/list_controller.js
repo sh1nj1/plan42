@@ -11,6 +11,7 @@ import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import { hideCommentsOptimistically } from './optimistic_removal'
 import CommentReadTracker from './comment_read_tracker'
 import PrevMessageNavigator from './prev_message_navigator'
 import { beginCommentsReload, resetPaginationState } from './pagination_state'
@@ -810,7 +811,7 @@ export default class extends Controller {
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
     if (!(await confirmDialog(confirmText, { danger: true }))) return
 
-    const commentIds = Array.from(this.selection)
+    const removal = hideCommentsOptimistically(Array.from(this.selection))
     try {
       const response = await fetch(`/creatives/${this.creativeId}/comments/batch_destroy`, {
         method: 'DELETE',
@@ -818,19 +819,18 @@ export default class extends Controller {
           'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ comment_ids: commentIds }),
+        body: JSON.stringify({ comment_ids: removal.ids }),
       })
       if (response.ok) {
-        commentIds.forEach((id) => {
-          const el = document.getElementById(`comment_${id}`)
-          if (el) el.remove()
-        })
+        removal.commit()
         this.clearSelection()
       } else {
+        removal.restore()
         const data = await response.json().catch(() => ({}))
         alertDialog(data.error || 'Failed to delete comments')
       }
     } catch (error) {
+      removal.restore()
       console.error('Error deleting comments:', error)
       alertDialog('Failed to delete comments')
     }
