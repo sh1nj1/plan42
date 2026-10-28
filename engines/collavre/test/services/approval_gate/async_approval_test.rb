@@ -10,7 +10,8 @@ module Collavre
       @agent = users(:ai_bot)
       gateway = AgentGateway.create!(name: "Test", owner: @user, base_url: "https://gateway.example.com",
                                      admin_key: "test", completion_key: "test", tenant_id: "test")
-      @agent.update!(agent_gateway: gateway, llm_vendor: "cli_proxy", llm_model: "codex", created_by_id: @user.id)
+      @agent.update!(agent_gateway: gateway, llm_vendor: "cli_proxy", llm_model: "codex", created_by_id: @user.id,
+                     tools: [ "approval_request" ])
       @creative = Creative.create!(description: "Async approval", user: @user)
       CreativeShare.create!(creative: @creative, user: @agent, permission: "feedback")
       @topic = @creative.main_topic
@@ -56,6 +57,20 @@ module Collavre
                          arguments: { "question" => "Deploy?", "task_id" => @task.id })
       assert_equal "pending", result.dig(:result, :status)
       assert_equal @user, gate.approver
+    end
+
+    test "creator token cannot raise a gate for an agent without the approval tool" do
+      @agent.update!(tools: [ "topic_messages" ])
+      meta = ::Tools::MetaToolService.new
+      result = meta.call(action: "run", tool_name: "approval_request",
+                         arguments: { "question" => "Deploy?", "task_id" => @task.id })
+      assert_match "approval_request", result.dig(:result, :error) || result[:error]
+      assert_match "approval_request", request[:error]
+      Current.user = @agent
+      assert request[:error]
+      assert_empty @task.async_approval_gates
+      @agent.update!(tools: [ "approval_request" ])
+      assert_equal "pending", request[:status]
     end
 
     test "the agent itself can request approval" do

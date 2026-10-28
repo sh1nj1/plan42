@@ -360,6 +360,10 @@ The guard applies to RubyLLM calls, direct MCP calls, and targets dispatched by
 `meta_tool` grants no implicit permission to its targets. CLI workspace callback
 tokens use the workspace agent's allowlist even when the token belongs to a
 human. Ordinary human MCP access remains governed by existing permissions.
+A Codex CLI `approval_request` with `task_id` acts on behalf of the task's
+agent, so it also requires that agent to have `approval_request` selected, even
+when called with the creator's own token. The task-id hint is only added to a
+CLI turn's prompt when the agent has that grant.
 Creative permissions and tool approval requirements still apply independently.
 This controls Collavre tool execution, not a remote CLI's native shell tools.
 

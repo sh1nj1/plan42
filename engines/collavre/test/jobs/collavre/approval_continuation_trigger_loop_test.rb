@@ -14,7 +14,8 @@ module Collavre
       @agent = users(:ai_bot)
       gateway = AgentGateway.create!(name: "Test", owner: @user, base_url: "https://gateway.example.com",
                                      admin_key: "test", completion_key: "test", tenant_id: "test")
-      @agent.update!(agent_gateway: gateway, llm_vendor: "cli_proxy", llm_model: "codex", created_by_id: @user.id)
+      @agent.update!(agent_gateway: gateway, llm_vendor: "cli_proxy", llm_model: "codex", created_by_id: @user.id,
+                     tools: [ "approval_request" ])
       @creative = Creative.create!(description: "Keep approval", user: @user)
       CreativeShare.create!(creative: @creative, user: @agent, permission: "feedback")
       @topic = @creative.main_topic
