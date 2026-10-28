@@ -653,7 +653,6 @@ creative-tree-row.chat-active .creative-row:hover {
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
     background-color: var(--surface-hover);
-    border-radius: var(--radius-2);
 }
 
 creative-tree-row[is-title]:not(.chat-active) .creative-row,
