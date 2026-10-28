@@ -36,8 +36,9 @@ module Collavre
         end
 
         # Active task ids per source comment id, built on first use. Cancelling
-        # or re-anchoring only ever drops sources from a task, and the batch's
-        # own rows are gone before the first callback reads this, so an index
+        # or re-anchoring only ever drops sources from a task, and a re-anchor
+        # never lands on one of the batch's own rows (they are gone, or hidden
+        # by deleting_at, before the first callback reads this), so an index
         # taken once never misses a task a later comment would have found.
         def task_ids_for_source(comment_id)
           task_index.fetch(comment_id.to_i, [])
@@ -74,12 +75,17 @@ module Collavre
 
       class_methods do
         # Hide the selection from every reader now and destroy it in the
-        # background: the destroy callbacks scale with the selection.
+        # background: the destroy callbacks scale with the selection. The
+        # selection's agent turns and login cards are withdrawn here, not when
+        # the job gets to the rows — a worker checks its task, not deleting_at,
+        # so a backlogged queue would otherwise let a turn keep running and
+        # replying for a prompt the user already deleted.
         def destroy_later(creative, comments)
           ids = comments.map(&:id)
           where(id: ids).update_all(deleting_at: Time.current)
-          broadcast_removals(creative, comments)
-          BatchDestroyCommentsJob.perform_later(ids)
+          schedule_batch_destroy!(ids)
+          withdraw_dispatches(comments)
+          broadcast_removals_safely(creative, comments)
         end
 
         # Destroys each comment and returns the ones that were destroyed. Called
@@ -88,22 +94,65 @@ module Collavre
           comments = comments.to_a
           return comments.select(&:destroy) if comments.empty? || current_batch_destruction
 
-          batch = Batch.new
-          ActiveSupport::IsolatedExecutionState[STATE_KEY] = batch
-          begin
-            transaction { comments.select(&:destroy) }
-          ensure
-            # Only after-commit callbacks feed the batch, so whatever it holds
-            # belongs to rows that are already gone — flush it even when a later
-            # callback raised.
-            ActiveSupport::IsolatedExecutionState[STATE_KEY] = nil
-            batch.flush!
-          end
+          # Only after-commit callbacks feed the batch, so whatever it holds
+          # belongs to rows that are already gone — it is flushed even when a
+          # later callback raised.
+          with_batch { transaction { comments.select(&:destroy) } }
         end
 
         def current_batch_destruction
           ActiveSupport::IsolatedExecutionState[STATE_KEY]
         end
+
+        private
+
+        def with_batch
+          batch = Batch.new
+          ActiveSupport::IsolatedExecutionState[STATE_KEY] = batch
+          yield
+        ensure
+          ActiveSupport::IsolatedExecutionState[STATE_KEY] = nil
+          batch.flush!
+        end
+
+        # The markers are only safe once a job will remove the rows: a
+        # selection hidden with nothing scheduled stays hidden for good, and a
+        # retry cannot see it to delete it again. The queue lives in its own
+        # database, so it cannot share the marking transaction — the markers
+        # are put back instead.
+        def schedule_batch_destroy!(ids)
+          job = BatchDestroyCommentsJob.perform_later(ids)
+          raise ActiveJob::EnqueueError, "BatchDestroyCommentsJob was not enqueued" unless job&.successfully_enqueued?
+        rescue StandardError
+          where(id: ids).update_all(deleting_at: nil)
+          raise
+        end
+
+        # The job's destroy runs the same withdrawal again, so a failure here
+        # delays a cancellation rather than losing it — it must not fail a
+        # deletion that is already scheduled.
+        def withdraw_dispatches(comments)
+          with_batch { comments.each(&:withdraw_dispatch) }
+        rescue StandardError => e
+          Rails.logger.error("[Comment.destroy_later] Withdrawing dispatches failed: #{e.class}: #{e.message}")
+        end
+
+        # Realtime removal is a courtesy to other open screens (the requester
+        # already removed the rows); it goes through the cable database, and
+        # its failure must not undo a scheduled deletion.
+        def broadcast_removals_safely(creative, comments)
+          broadcast_removals(creative, comments)
+        rescue StandardError => e
+          Rails.logger.error("[Comment.destroy_later] Removal broadcast failed: #{e.class}: #{e.message}")
+        end
+      end
+
+      # Stop the agent turns and settle the login cards this comment speaks
+      # for, as its destroy will. Safe to repeat: a cancelled task is no longer
+      # active and a settled card is no longer pending.
+      def withdraw_dispatch
+        cancel_pending_tasks
+        abandon_pending_logins
       end
 
       private

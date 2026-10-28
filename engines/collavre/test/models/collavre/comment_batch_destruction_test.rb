@@ -161,5 +161,67 @@ module Collavre
       assert_nil Comment.current_batch_destruction
       assert_empty Comment.where(id: @comments.map(&:id))
     end
+    test "destroy_later cancels the selection's turns before the job runs" do
+      running = Task.create!(name: "Running", status: :running, agent: @agent, creative: @creative,
+        trigger_event_payload: { "comment" => { "id" => @comments.first.id } })
+      login_task = Task.create!(name: "Login", status: :done, agent: @agent, creative: @creative,
+        trigger_event_payload: { "comment" => { "id" => @comments.second.id } })
+      abandoned = []
+
+      CliProxy::InlineLogin.stub(:abandon_replay!, ->(task, pending:) { abandoned << task.id }) do
+        assert_enqueued_jobs 1, only: BatchDestroyCommentsJob do
+          Comment.destroy_later(@creative, @comments)
+        end
+      end
+
+      assert running.reload.cancelled?
+      assert_equal [ login_task.id ], abandoned
+      assert Comment.where(id: @comments.map(&:id)).all?(&:deleting_at)
+      assert_nil Comment.current_batch_destruction
+    end
+
+    test "destroy_later re-anchors a coalesced turn onto a comment outside the selection" do
+      keeper = @creative.comments.create!(user: @owner, content: "Keeper", skip_dispatch: true)
+      task = Task.create!(name: "Coalesced", status: :queued, agent: @agent, creative: @creative,
+        topic_id: @comments.first.topic_id, trigger_event_payload: {
+          "comment" => { "id" => @comments.first.id }, "workspace_user_id" => @owner.id,
+          "merged_comment_ids" => [ @comments.second.id, keeper.id ]
+        })
+
+      Comment.destroy_later(@creative, @comments.first(2))
+
+      task.reload
+      assert task.queued?
+      assert_equal keeper.id, task.trigger_event_payload.dig("comment", "id")
+    end
+
+    test "destroy_later restores the markers when the job cannot be enqueued" do
+      not_enqueued = BatchDestroyCommentsJob.new
+      not_enqueued.successfully_enqueued = false
+
+      BatchDestroyCommentsJob.stub(:perform_later, not_enqueued) do
+        assert_raises(ActiveJob::EnqueueError) { Comment.destroy_later(@creative, @comments) }
+      end
+      assert Comment.where(id: @comments.map(&:id)).all? { |comment| comment.deleting_at.nil? }
+    end
+
+    test "destroy_later restores the markers when enqueueing raises" do
+      BatchDestroyCommentsJob.stub(:perform_later, ->(*) { raise ActiveRecord::ConnectionNotEstablished }) do
+        assert_raises(ActiveRecord::ConnectionNotEstablished) { Comment.destroy_later(@creative, @comments) }
+      end
+      assert Comment.where(id: @comments.map(&:id)).all? { |comment| comment.deleting_at.nil? }
+    end
+
+    test "destroy_later keeps the scheduled deletion when the broadcast or withdrawal fails" do
+      @comments.first.define_singleton_method(:withdraw_dispatch) { raise "withdraw boom" }
+
+      Turbo::StreamsChannel.stub(:broadcast_stream_to, ->(*, **) { raise "cable down" }) do
+        assert_enqueued_jobs 1, only: BatchDestroyCommentsJob do
+          assert_nothing_raised { Comment.destroy_later(@creative, @comments) }
+        end
+      end
+      assert Comment.where(id: @comments.map(&:id)).all?(&:deleting_at)
+      assert_nil Comment.current_batch_destruction
+    end
   end
 end
