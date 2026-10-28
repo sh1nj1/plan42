@@ -110,6 +110,56 @@ module Collavre
         end
       end
 
+      test "creative context keeps only the levels that fit creative_context_size" do
+        branch = Creative.create!(description: "Budget branch", user: @user, parent: @creative)
+        Creative.create!(description: "Budget leaf " + ("x" * 2_000), user: @user, parent: branch)
+        @agent.update!(agent_conf: { "context" => { "creative_children_level" => 5, "creative_context_size" => 1_500 } }.to_json)
+        context = { "creative" => { "id" => @creative.id }, "comment" => { "id" => @comment.id, "content" => @comment.content } }
+
+        Current.set(user: @user) do
+          messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+          text = messages.find { |m| m[:kind] == :creative_context }.dig(:parts, 0, :text)
+
+          assert_includes text, "Budget branch"
+          refute_includes text, "Budget leaf"
+          assert_includes text, "creative_retrieval_service(id: #{@creative.id}, level: N)"
+        end
+      end
+
+      test "context creatives share one budget in display order" do
+        first = Creative.create!(description: "First context " + ("a" * 300), user: @user)
+        second = Creative.create!(description: "Second context " + ("b" * 300), user: @user)
+        @creative.update!(data: { "context_ids" => [ first.id, second.id ] })
+        @agent.update!(agent_conf: { "context" => { "context_creatives_total_size" => 500 } }.to_json)
+        context = { "creative" => { "id" => @creative.id }, "comment" => { "id" => @comment.id, "content" => @comment.content } }
+
+        Current.set(user: @user) do
+          messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+          texts = messages.select { |m| m[:kind] == :context_creative }.map { |m| m.dig(:parts, 0, :text) }
+
+          assert_includes texts.first, "a" * 300
+          assert_includes texts.second, "Content truncated to fit the context budget"
+          refute_includes texts.second, "b" * 300
+          assert_operator texts.sum { |t| t.split(":\n", 2).last.length }, :<=, 500
+        end
+      end
+
+      test "build sheds history to stay under max_prompt_chars" do
+        @creative.comments.create!(content: "Old history " + ("o" * 500), user: @user, topic_id: @comment.topic_id)
+        context = { "creative" => { "id" => @creative.id }, "comment" => { "id" => @comment.id, "content" => @comment.content } }
+        builder = -> { MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build }
+
+        assert builder.call[:messages].any? { |m| m[:kind] == :chat_history }
+
+        total = builder.call[:messages].sum { |m| m[:parts].sum { |p| p[:text].to_s.length } }
+        @agent.update!(agent_conf: { "context" => { "max_prompt_chars" => total - 1 } }.to_json)
+        result = builder.call
+
+        assert result[:messages].none? { |m| m[:kind] == :chat_history }
+        assert_operator result[:messages].sum { |m| m[:parts].sum { |p| p[:text].to_s.length } }, :<, total
+        refute result[:first_message], "history shed for size is not a first message"
+      end
+
       test "history delivery treats creative links as delivered and images as withheld" do
         ordinary = Creative.create!(description: "Ordinary reference", user: @user, progress: 0.0)
         linked = @creative.comments.create!(content: "[note](/creatives/#{ordinary.id})",
@@ -728,6 +778,23 @@ module Collavre
       # Comments folded into this turn by Orchestration::TaskCoalescer belong in
       # the trigger, not in chat history: a session-backed agent receives only
       # the :trigger message (SessionContextResolver#incremental_payload).
+      test "overall prompt budget preserves the anchor after merged comments and resume context" do
+        @agent.update!(agent_conf: { "context" => { "max_prompt_chars" => 150 } }.to_json)
+        merged = @creative.comments.create!(content: "Earlier request " * 100, user: @user)
+        context = {
+          "creative" => { "id" => @creative.id },
+          "comment" => { "id" => @comment.id, "content" => "Cancel the earlier request" },
+          Orchestration::ResumeContext::KEY => { "reason" => "manual", "partial_reply" => "Previous attempt " * 100 },
+          Orchestration::TaskCoalescer::PAYLOAD_KEY => [ merged.id ]
+        }
+
+        messages = MessageBuilder.new(agent: @agent, context: context, original_comment: @comment).build[:messages]
+
+        trigger = messages.find { |message| message[:kind] == :trigger }
+        assert_includes trigger.dig(:parts, 0, :text), "Cancel the earlier request"
+        assert_operator messages.sum { |message| message[:parts].sum { |part| part[:text].to_s.length } }, :<=, 150
+      end
+
       test "merged comments are folded into the trigger message" do
         merged = @creative.comments.create!(
           content: "earlier burst message", user: @user, topic_id: @comment.topic_id
