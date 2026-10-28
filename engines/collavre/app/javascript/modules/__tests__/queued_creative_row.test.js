@@ -3,7 +3,7 @@ import { jest } from '@jest/globals'
 const applyRowProperties = jest.fn()
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({ applyRowProperties }))
 const { applyPendingCreativeSyncData } = await import('../pending_creative_sync')
-const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus } = await import('../queued_creative_row')
+const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus, revealCreativeRow } = await import('../queued_creative_row')
 const { waitForQueuedRequests, mergeQueueCallbacks } = await import('../../lib/api/queue_completion')
 
 beforeEach(() => {
@@ -31,6 +31,18 @@ test('handles a detached row, HTML caches, and an absent status', () => {
   updateQueuedCreativeRow(attached, { content: '<p>html</p>', contentType: 'html' })
   expect(document.querySelector('creative-tree-row').dataset.markdownSource).toBe('')
   expect(document.querySelector('creative-tree-row').dataset.markdownEditor).toBe('')
+})
+
+test('reveals a hidden row painted from a non-empty buffer snapshot only', () => {
+  document.body.innerHTML = '<creative-tree-row><div class="creative-tree"><div class="creative-row" style="display: none"></div></div></creative-tree-row>'
+  const tree = document.querySelector('.creative-tree')
+  const row = tree.querySelector('.creative-row')
+  revealCreativeRow(tree, { content: '', emptyContent: '', emptyContentType: 'html' })
+  expect(row.style.display).toBe('none')
+  revealCreativeRow(tree, { content: '<p>typed</p>', emptyContent: '<p>typed</p>', emptyContentType: 'html', contentType: 'html' })
+  expect(row.style.display).toBe('')
+  expect(document.querySelector('creative-tree-row').dataset.descriptionHtml).toBe('<p>typed</p>')
+  expect(() => revealCreativeRow(document.createElement('div'), { content: 'x' })).not.toThrow()
 })
 
 test('a dependent operation ignores failures and completions for other creatives', async () => {
