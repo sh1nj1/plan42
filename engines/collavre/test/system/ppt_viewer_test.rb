@@ -268,18 +268,34 @@ class PptViewerTest < ApplicationSystemTestCase
     end
   end
 
-  test "pdf renders locally and navigates pages with the common toolbar" do
+  test "pdf uses shared overlay controls for navigation zoom and fullscreen" do
     blob = ActiveStorage::Blob.create_and_upload!(io: File.open(File.expand_path("../fixtures/files/document_viewer.pdf", __dir__)), filename: "paper.pdf", content_type: "application/pdf")
     @creative.embed_attachment_blob!(blob)
     visit collavre.creatives_path(id: @creative.id)
     within_frame(all("iframe.document-preview-frame").last) do
       assert_selector ".pdf-document canvas"
+      assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
+      find(".pdf-viewer").hover
+      assert_selector "#slide-controls", style: { position: "absolute", opacity: "1" }
+      assert_selector "[data-ppt-previous]", style: { left: "0px" }
+      assert_selector "[data-ppt-next]", style: { right: "0px" }
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       assert_no_selector ".media-loading"
       find("[data-ppt-next]").click
       assert_selector "[data-ppt-counter]", text: "2 / 2"
+      assert_no_selector ".media-loading"
+      find(".pdf-viewer").send_keys(:arrow_left)
+      assert_selector "[data-ppt-counter]", text: "1 / 2"
+      assert_no_selector ".media-loading"
       find("[data-pdf-zoom]").click
+      assert_no_selector ".media-loading"
       assert_no_selector "[data-document-error]"
+      find(".pdf-document canvas").click
+      assert_selector ".pdf-viewer:fullscreen"
+      find(".pdf-document canvas").click
+      assert_selector ".ppt-controls-visible"
+      find("[data-ppt-close]").click
+      assert_no_selector ".pdf-viewer:fullscreen"
     end
   end
 

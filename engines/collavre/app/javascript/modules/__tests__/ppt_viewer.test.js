@@ -189,3 +189,31 @@ test('document fullscreen control stays hidden when fullscreen is unsupported', 
   expect(getComputedStyle(button).display).toBe('block')
   style.remove()
 })
+
+
+test('PDF controls share the PPT overlay layout instead of the document toolbar', () => {
+  const style = document.createElement('style')
+  style.textContent = readFileSync('engines/collavre/app/assets/stylesheets/collavre/slide_view.css', 'utf8')
+  document.head.append(style)
+  const viewer = setup()
+  viewer.classList.add('document-viewer', 'pdf-viewer')
+  const controls = document.createElement('nav')
+  controls.id = 'slide-controls'
+  controls.append(...viewer.querySelectorAll('button, a, [data-ppt-counter]'))
+  viewer.append(controls)
+  const zoom = document.createElement('button')
+  zoom.dataset.pdfZoom = ''
+  controls.append(zoom)
+  try {
+    expect(getComputedStyle(controls).position).toBe('absolute')
+    expect(getComputedStyle(controls).opacity).toBe('0')
+    expect(getComputedStyle(viewer.querySelector('[data-ppt-previous]')).position).toBe('absolute')
+    expect(getComputedStyle(viewer.querySelector('[data-ppt-next]')).right).toBe('0px')
+    expect(getComputedStyle(viewer.querySelector('[data-ppt-counter]')).left).toBe('50%')
+    expect(getComputedStyle(zoom).bottom).toBe('0px')
+    window.matchMedia.mockReturnValue({ matches: true })
+    viewer.click()
+    expect(getComputedStyle(controls).opacity).toBe('1')
+    expect(getComputedStyle(zoom).pointerEvents).toBe('auto')
+  } finally { style.remove() }
+})

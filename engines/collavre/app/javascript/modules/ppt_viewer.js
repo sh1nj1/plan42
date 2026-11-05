@@ -1,3 +1,5 @@
+import { bindViewerNavigation, updateViewerNavigation } from './viewer_navigation'
+
 function sizePreviewFrame(viewer) {
   const frame = viewer.ownerDocument.defaultView.frameElement
   const slide = viewer.querySelector('.ppt-slide')
@@ -55,23 +57,15 @@ export function initializePptViewer(viewer) {
     link.rel = "noopener noreferrer"
   })
   const slides = Array.from(viewer.querySelectorAll('.ppt-viewer-slide'))
-  const previous = viewer.querySelector('[data-ppt-previous]')
-  const next = viewer.querySelector('[data-ppt-next]')
   let index = 0
   function show(value) {
     index = Math.max(0, Math.min(value, slides.length - 1))
     slides.forEach((slide, position) => { slide.hidden = position !== index })
-    previous.disabled = index === 0
-    next.disabled = index === slides.length - 1
-    viewer.querySelector('[data-ppt-counter]').textContent = `${index + 1} / ${slides.length}`
+    updateViewerNavigation(viewer, index, slides.length)
   }
-  previous.addEventListener('click', () => show(index - 1))
-  next.addEventListener('click', () => show(index + 1))
-  viewer.ownerDocument.addEventListener('keydown', event => {
-    if (!viewer.isConnected) return
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
-    event.preventDefault()
-    show(index + (event.key === 'ArrowRight' ? 1 : -1))
+  bindViewerNavigation(viewer, {
+    previous: () => show(index - 1),
+    next: () => show(index + 1),
   })
   show(0)
 }

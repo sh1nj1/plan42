@@ -212,3 +212,20 @@ test.each([1, 2, 1.5])('renders PDF at device pixel ratio %s without changing CS
     window.devicePixelRatio = previousRatio
   }
 })
+
+
+test('PDF arrow keys use shared navigation and retain page boundaries', async () => {
+  const viewer = setup()
+  const getPage = jest.fn().mockResolvedValue({
+    getViewport: ({ scale }) => ({ width: 400 * scale, height: 600 * scale }),
+    render: () => ({ promise: Promise.resolve() })
+  })
+  await initializePdfDocument(viewer, async () => ({
+    getDocument: () => ({ promise: Promise.resolve({ numPages: 2, getPage }) }), GlobalWorkerOptions: {}
+  }))
+  for (const [key, page] of [['ArrowLeft', 1], ['ArrowRight', 2], ['ArrowRight', 2], ['ArrowLeft', 1]]) {
+    viewer.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true }))
+    await settle()
+    expect(viewer.querySelector('[data-ppt-counter]').textContent).toBe(`${page} / 2`)
+  }
+})
