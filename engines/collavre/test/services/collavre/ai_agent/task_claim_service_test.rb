@@ -102,6 +102,41 @@ module Collavre
         assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
       end
 
+      test "a refused reply after a sibling answered is reported as dedup" do
+        assert_equal :created, reply.status
+
+        refused = reply(text: "Duplicate")
+
+        assert_equal :conflict, refused.status
+        assert_equal TaskClaimService::CONFLICT_ALREADY_COMPLETED, refused.body[:reason]
+      end
+
+      test "a refused reply for a task nobody answered surfaces" do
+        %w[cancelled failed pending running].each do |status|
+          @task.update_columns(status: status)
+
+          refused = reply
+
+          assert_equal :conflict, refused.status
+          assert_equal TaskClaimService::CONFLICT_NOT_DELEGATED, refused.body[:reason], "#{status} must not be benign"
+        end
+      end
+
+      test "a done task without a linked reply is not reported as dedup" do
+        @task.update_columns(status: "done")
+
+        assert_equal TaskClaimService::CONFLICT_NOT_DELEGATED,
+                     @claim_service.conflict_reason(agent: @user, topic: @topic, requested_task_id: @task.id)
+      end
+
+      test "a reply from a stale generation of an unanswered task surfaces" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+        @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id, requested_generation: "stale")
+
+        assert_equal TaskClaimService::CONFLICT_NOT_DELEGATED,
+                     @claim_service.conflict_reason(agent: @user, topic: @topic, requested_task_id: @task.id)
+      end
+
       private
 
       def reply(text: "Completed")

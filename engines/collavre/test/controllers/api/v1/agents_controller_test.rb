@@ -1247,18 +1247,20 @@ module Collavre
           assert_equal "done", task.reload.status
 
           # Second reply (same task_id) arrives after the first has completed.
-          # The task is no longer in delegated state — resolve_reply_agent
-          # cannot find it, returns nil, and reply renders 403. Either way,
-          # no duplicate comment is created.
+          # This is the multi-session dedup case: two Claude Channel sessions
+          # sharing one agent both /reply to the same fanned-out dispatch. The
+          # loser must reach the atomic-claim layer and get a clean 409 "already
+          # completed" — NOT a 403. resolve_reply_agent no longer gates on
+          # status: "delegated", so the already-done task still resolves the
+          # agent, and claim_delegated_task returns the 409. (Before the fix the
+          # loser failed at resolve_reply_agent with a misleading 403 that the
+          # MCP plugin surfaced as a hard error.) No duplicate comment either way.
           post "/api/v1/agent/reply",
             params: { topic_id: topic_id, text: "Duplicate reply", task_id: task.id },
             headers: auth_headers,
             as: :json
-          # The post-completion lookup falls through resolve_reply_agent (which
-          # scopes to status: "delegated") → 403. Either way, the second
-          # request must not produce a 2xx.
-          refute_includes 200..299, response.status,
-            "second reply for an already-completed task must not return 2xx"
+          assert_response :conflict,
+            "loser of the shared-agent dispatch race must get 409 (benign dedup), not 403"
 
           # Count only the agent's own reply comments. An agent reply in an inbox
           # creative now also creates a system-authored (user: nil) notification in
@@ -1318,6 +1320,140 @@ module Collavre
           assert_response :conflict
           assert_equal comments_before, creative.comments.count,
             "loser of the atomic claim must not save a comment"
+        end
+
+        test "409 for an already-answered dispatch is marked already_completed" do
+          # The dedup case: a sibling session sharing this agent won the claim and
+          # posted. The reply being refused is a duplicate, so the client is right
+          # to suppress it — and this reason is the only thing that says so.
+          reg = register_agent("conflict-reason-dedup")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Answered dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Sibling's answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Duplicate answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :conflict
+          assert_equal "already_completed", JSON.parse(response.body)["reason"]
+        end
+
+        test "409 already_completed still hands off the losing sibling's approvals" do
+          # Codex P2: siblings share the task id, so an approval the LOSING
+          # session raised carries the same origin_task_id. The winner only
+          # handed off its own requests; without this, a later decision on the
+          # loser's request could never resume the agent.
+          previous_adapter = ActiveJob::Base.queue_adapter
+          reg = register_agent("conflict-handoff")
+          topic = Topic.find(reg["topic_id"])
+          agent = User.find(reg["agent_id"])
+          task = Task.create!(name: "Fanned-out turn", status: "delegated", agent: agent,
+                              topic_id: topic.id, creative_id: topic.creative_id)
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, task_id: task.id, permission_request_id: "loser-1",
+                      approval_question: "Deploy?" }, headers: auth_headers, as: :json
+          assert_response :created
+          approval = Comment.find(response.parsed_body["comment_id"])
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Sibling's answer" },
+            headers: auth_headers, as: :json
+          assert_response :created
+          refute JSON.parse(approval.reload.action)["turn_finished"]
+
+          ActiveJob::Base.queue_adapter = :test
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Duplicate answer",
+                      pending_approval_ids: [ "loser-1", "unknown" ] }, headers: auth_headers, as: :json
+          assert_response :conflict
+          assert_equal "already_completed", response.parsed_body["reason"]
+          assert_equal [ "loser-1" ], response.parsed_body["pending_approval_ids"]
+          assert JSON.parse(approval.reload.action)["turn_finished"]
+
+          approval.decide_claude_channel_permission!(:allow, by: @user)
+          assert_difference("Task.count", 1) { ClaudeApprovalResumeJob.perform_now(approval.id) }
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "409 for a cancelled dispatch is NOT marked already_completed" do
+          # Codex P2: an offline-session cancellation or stuck-task recovery flips
+          # the task out of `delegated` while the agent is still composing. The
+          # claim fails exactly as it does for dedup, but NOTHING answered this
+          # dispatch — a client that reads every 409 as dedup drops the only copy
+          # of the reply. The reason is what lets it tell the two apart.
+          reg = register_agent("conflict-reason-cancelled")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          %w[cancelled failed pending].each do |status|
+            task = Collavre::Task.create!(
+              name: "Dispatch that went #{status}",
+              status: status,
+              trigger_event_name: "comment_created",
+              agent: ai_user,
+              topic_id: topic_id,
+              creative_id: creative.id
+            )
+
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Answer nobody else posted", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+
+            assert_response :conflict, "#{status} task must still be refused"
+            assert_equal "not_delegated", JSON.parse(response.body)["reason"],
+              "a #{status} dispatch was never answered — suppressing this 409 loses the reply"
+          end
+        end
+
+        test "409 for a done task with no linked reply is NOT marked already_completed" do
+          # The status alone is not the proof of an answer: a task can reach
+          # `done` without this path linking a reply to it. Only the linked
+          # reply comment says a sibling actually answered; without it the
+          # refused reply may be the only copy and must surface.
+          reg = register_agent("conflict-reason-claimed-unanswered")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Claimed but unanswered",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          Collavre::Task.where(id: task.id).update_all(status: "done")
+          assert_nil task.reload.reply_comment, "precondition: done, nothing posted"
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "The only copy of this answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :conflict
+          assert_equal "not_delegated", JSON.parse(response.body)["reason"],
+            "a done task with no reply behind it must not be suppressed as dedup"
         end
 
         test "Claude Channel reply enqueues TriggerLoopCheckJob only AFTER the reply comment is saved" do
