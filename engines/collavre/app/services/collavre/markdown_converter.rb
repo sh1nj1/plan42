@@ -79,6 +79,11 @@ module Collavre
 
         html.strip!
         html
+      rescue Commonmarker::NestingDepthExceededError
+        # commonmarker >= 2.10.1 caps block nesting (max_nesting_depth: 1000) and
+        # raises instead of rendering. Degrade to escaped plain text so a
+        # pathologically nested document still saves rather than failing the request.
+        plain_text_html(input)
       end
 
       # Convert HTML (links, bold, images, tables) back to Markdown.
@@ -286,6 +291,10 @@ module Collavre
       end
 
       private
+
+      def plain_text_html(text)
+        "<p>#{ERB::Util.html_escape(text).gsub("\n", "<br>\n")}</p>"
+      end
 
       # Run a regex-rewriting block on `text` with fenced code blocks,
       # indented code blocks, and inline code spans swapped for unique tokens,
