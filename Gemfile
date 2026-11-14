@@ -32,7 +32,9 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
 gem "solid_queue"
-gem "solid_cable"
+# Pinned below 4.1: its async broadcaster drops messages on write failure or
+# process exit (no shutdown flush). Upgrade together with a pubsub shutdown hook.
+gem "solid_cable", "~> 4.0.2"
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
@@ -44,7 +46,7 @@ gem "kamal", require: false
 gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 2.1"
+gem "image_processing", "~> 2.2"
 # Rails defaults to the :vips variant processor. image_processing 2.0 makes ruby-vips a soft
 # dependency, so declare it explicitly for avatar and comment image processing.
 # require: false leaves loading to ActiveStorage/image_processing rather than Bundler.

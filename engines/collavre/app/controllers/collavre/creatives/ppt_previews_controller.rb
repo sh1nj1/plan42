@@ -14,7 +14,8 @@ module Collavre
         response.headers["Cache-Control"] = "private, no-store"
         prepare_document
         render layout: "collavre/slide"
-      rescue PptRenderer::InvalidArchive, Zip::Error, Nokogiri::XML::SyntaxError
+      rescue PptRenderer::InvalidArchive, Zip::Error, Nokogiri::XML::SyntaxError,
+             Commonmarker::NestingDepthExceededError
         render plain: t("collavre.ppt_viewer.invalid"), status: :unprocessable_entity
       end
 

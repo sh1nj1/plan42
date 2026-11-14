@@ -378,5 +378,21 @@ module Collavre
         refute_includes html, "/rails/active_storage/blobs/"
       end
     end
+
+    test "markdown_to_html falls back to escaped plain text when nesting exceeds the commonmarker limit" do
+      input = ("> " * 1500) + "deep <b>quote</b>\nnext"
+      html = MarkdownConverter.markdown_to_html(input)
+      assert html.start_with?("<p>")
+      assert_includes html, "deep &lt;b&gt;quote&lt;/b&gt;<br>\nnext"
+      refute_includes html, "<blockquote>"
+    end
+
+    test "a creative with pathologically nested markdown still saves" do
+      creative = Creative.create!(user: users(:one), description: "Deep")
+      source = ("> " * 1500) + "deep"
+      creative.update!(content_type_input: "markdown", markdown_source: source)
+      assert_includes creative.reload.description, "deep"
+      assert_equal source, creative.data["markdown_source"]
+    end
   end
 end
