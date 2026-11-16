@@ -48,42 +48,7 @@ module Collavre
           source
         end
 
-        # Render with commonmarker (GFM extensions: table, strikethrough, autolink, tasklist, tagfilter).
-        # hardbreaks: a single newline becomes <br>, mirroring the JS renderer (marked breaks:true)
-        # and the canonical markdown_source, which stores consecutive rich-editor lines one-per-line
-        # rather than separated by a blank line.
-        #
-        # syntax_highlighter: nil disables comrak's built-in syntect highlighter, which otherwise
-        # bakes a fixed base16-ocean.dark theme into the stored HTML as inline `style=` attributes
-        # (e.g. `<pre style="background-color:#2b303b"><span style="color:#bf616a">`). Those inline
-        # styles override our theme-aware code_highlight.css palette and are blind to light/dark mode.
-        # Disabling it emits a plain `<pre lang="ruby"><code>…</code></pre>`; the client re-tokenizes
-        # with highlight.js so the rendered creative matches the editor (and respects the theme).
-        #
-        # header_ids: nil is pinned rather than left to the default. commonmarker 2.9.0 turned this
-        # extension on out of the box, which appends an anchor to every heading:
-        # `<h1 id="heading">Heading<a href="#heading" class="anchor"></a></h1>`. That output is stored
-        # (Creative#description is a rendered, sanitized field), and the sanitizer's allow-list drops
-        # `id` while keeping the `<a>` — so the anchor would link to a target that no longer exists,
-        # on every heading of every creative. `html_to_markdown` would also read it back as an empty
-        # link and write `[](#heading)` into the markdown. Pinning it keeps the rendered output a
-        # function of our options rather than of the gem's defaults; the key is accepted by 2.8 too.
-        html = Commonmarker.to_html(input, options: {
-          parse: { smart: true },
-          render: { unsafe: true, hardbreaks: true },
-          extension: {
-            table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true,
-            header_ids: nil
-          }
-        }, plugins: { syntax_highlighter: nil })
-
-        html.strip!
-        html
-      rescue Commonmarker::NestingDepthExceededError
-        # commonmarker >= 2.10.1 caps block nesting (max_nesting_depth: 1000) and
-        # raises instead of rendering. Degrade to escaped plain text so a
-        # pathologically nested document still saves rather than failing the request.
-        plain_text_html(input)
+        render_commonmark(input)
       end
 
       # Convert HTML (links, bold, images, tables) back to Markdown.
@@ -291,6 +256,45 @@ module Collavre
       end
 
       private
+
+      # Render with commonmarker (GFM extensions: table, strikethrough, autolink, tasklist, tagfilter).
+      # hardbreaks: a single newline becomes <br>, mirroring the JS renderer (marked breaks:true)
+      # and the canonical markdown_source, which stores consecutive rich-editor lines one-per-line
+      # rather than separated by a blank line.
+      #
+      # syntax_highlighter: nil disables comrak's built-in syntect highlighter, which otherwise
+      # bakes a fixed base16-ocean.dark theme into the stored HTML as inline `style=` attributes
+      # (e.g. `<pre style="background-color:#2b303b"><span style="color:#bf616a">`). Those inline
+      # styles override our theme-aware code_highlight.css palette and are blind to light/dark mode.
+      # Disabling it emits a plain `<pre lang="ruby"><code>…</code></pre>`; the client re-tokenizes
+      # with highlight.js so the rendered creative matches the editor (and respects the theme).
+      #
+      # header_ids: nil is pinned rather than left to the default. commonmarker 2.9.0 turned this
+      # extension on out of the box, which appends an anchor to every heading:
+      # `<h1 id="heading">Heading<a href="#heading" class="anchor"></a></h1>`. That output is stored
+      # (Creative#description is a rendered, sanitized field), and the sanitizer's allow-list drops
+      # `id` while keeping the `<a>` — so the anchor would link to a target that no longer exists,
+      # on every heading of every creative. `html_to_markdown` would also read it back as an empty
+      # link and write `[](#heading)` into the markdown. Pinning it keeps the rendered output a
+      # function of our options rather than of the gem's defaults; the key is accepted by 2.8 too.
+      def render_commonmark(input)
+        html = Commonmarker.to_html(input, options: {
+          parse: { smart: true },
+          render: { unsafe: true, hardbreaks: true },
+          extension: {
+            table: true, strikethrough: true, autolink: true, tasklist: true, tagfilter: true,
+            header_ids: nil
+          }
+        }, plugins: { syntax_highlighter: nil })
+
+        html.strip!
+        html
+      rescue Commonmarker::NestingDepthExceededError
+        # commonmarker >= 2.10.1 caps block nesting (max_nesting_depth: 1000) and
+        # raises instead of rendering. Degrade to escaped plain text so a
+        # pathologically nested document still saves rather than failing the request.
+        plain_text_html(input)
+      end
 
       def plain_text_html(text)
         "<p>#{ERB::Util.html_escape(text).gsub("\n", "<br>\n")}</p>"
