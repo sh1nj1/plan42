@@ -446,25 +446,6 @@ class ApiQueueManager {
         }
         this.saveToLocalStorage()
     }
-
-    /**
-     * Get current queue status
-     * @returns {Object} Queue status
-     */
-    getStatus() {
-        return {
-            queueLength: this.queue.length,
-            processing: this.processing,
-            failedLength: this.failedItems.length,
-            items: this.queue.map(item => ({
-                id: item.id,
-                path: item.path,
-                method: item.method,
-                retries: item.retries,
-                timestamp: item.timestamp
-            }))
-        }
-    }
 }
 
 // Export singleton instance

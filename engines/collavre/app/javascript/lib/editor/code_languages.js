@@ -46,7 +46,6 @@ const DETECT_SUBSET = Object.keys(DETECT_LANGUAGES)
 // JavaScript. We treat that exact value (and an empty/missing language) as
 // "unconfirmed" — eligible for re-detection — while honoring any other explicit
 // fence language the user set.
-export const DEFAULT_CODE_LANGUAGE = "javascript"
 const RE_DETECTABLE = new Set(["", "javascript"])
 
 // Tracks which CodeNodes received their language from an EXPLICIT source label

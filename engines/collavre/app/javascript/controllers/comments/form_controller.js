@@ -828,10 +828,6 @@ export default class extends Controller {
     return getCreativeLabelFromDom(creativeId)
   }
 
-  insertCreativeLink({ id, label }) {
-    this.insertCreativeLinks([{ id, label }])
-  }
-
   insertCreativeLinks(creatives) {
     if (!creatives.length) return
     const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
@@ -910,17 +906,6 @@ export default class extends Controller {
       item.appendChild(removeButton)
       this.attachmentListTarget.appendChild(item)
     })
-  }
-
-  quoteComment(commentId, selectedText) {
-    if (!commentId || !selectedText) return
-    this.quotedCommentIdTarget.value = commentId
-    this.quotedTextTarget.value = selectedText
-    this.quoteIndicatorTarget.style.display = ''
-    this.quoteIndicatorTextTarget.textContent = selectedText.length > 80
-      ? selectedText.substring(0, 80) + '…'
-      : selectedText
-    this.focusTextarea({ explicit: true })
   }
 
   // review_type (and a document-mode quote target) staged by handleSend.

@@ -29,7 +29,7 @@ import { reportPartialMove } from './move_feedback';
 import { expandBranchWithChildren } from '../branch_expansion';
 import { sendTopicMove } from '../../lib/api/drag_drop';
 import { isDragLocked, startsRowDrag } from '../../components/creative_tree_row_document_view';
-import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
+import { showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
 import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state';
@@ -45,7 +45,6 @@ import {
   readDropSignal,
 } from '../../lib/dnd/session';
 
-const coordPrecision = 5;
 export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
 
 let hoverExpandTimer = null;
@@ -194,10 +193,6 @@ function resolveTargetTree(targetTreeId) {
   const row = asTreeRow(tree);
   if (!row) return null;
   return { tree, row };
-}
-
-function relaxedCoord(value) {
-  return Math.round(value / coordPrecision) * coordPrecision;
 }
 
 function removeDroppedCreative({ creativeId, treeId }) {
@@ -720,15 +715,6 @@ export function removeGlobalListeners() {
   document.removeEventListener('dragend', handleDragEnd);
   window.removeEventListener('storage', handleStorageChange);
   window.removeEventListener(DROP_COMPLETED_EVENT, handleDropCompletionEvent);
-}
-
-export function registerGlobalHandlers() {
-  initIndicator();
-  addGlobalListeners();
-}
-
-export function hasActiveDrag() {
-  return hasDraggedState();
 }
 
 // Keep domain commands and DOM recovery in this adapter. Native and touch
