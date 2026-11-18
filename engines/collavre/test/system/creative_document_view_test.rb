@@ -263,7 +263,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
     assert_selector content_selector(@first), text: "First paragraph edited"
     assert_selector content_selector(@second), text: "Second paragraph"
-    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+    # The editor renders the draft before the queued save reaches the server.
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+    end
 
     # The next click opens the editor on the row it lands on.
     find(content_selector(@second)).click
