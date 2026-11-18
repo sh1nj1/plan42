@@ -27,12 +27,11 @@ class SolidCableInlineBroadcastTest < ActiveSupport::TestCase
     end
 
     trimming = Module.new
-    stub_const(SolidCable, :Trimming, trimming, exists: SolidCable.const_defined?(:Trimming, false)) do
-      SolidCableInlineBroadcast.install!(adapter_class)
+    install = -> { SolidCable.stub(:respond_to?, false) { SolidCableInlineBroadcast.install!(adapter_class) } }
+    stub_const(SolidCable, :Trimming, trimming, exists: SolidCable.const_defined?(:Trimming, false), &install)
 
-      assert_includes adapter_class.ancestors, SolidCableInlineBroadcast
-      assert_includes adapter_class.ancestors, trimming
-    end
+    assert_includes adapter_class.ancestors, SolidCableInlineBroadcast
+    assert_includes adapter_class.ancestors, trimming
   end
 
   test "leaves an adapter without batching unchanged" do
