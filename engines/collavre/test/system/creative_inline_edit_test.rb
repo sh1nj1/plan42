@@ -71,10 +71,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def expand_creative(creative)
     wait_for_network_idle(timeout: 10)
-    find("#creative-#{creative.id}").hover
-    # Force visibility for test stability as hover can be flaky
-    execute_script("document.querySelector('#creative-#{creative.id} .creative-toggle-btn').style.visibility = 'visible'")
-    find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
+    toggle_selector = "#creative-#{creative.id} .creative-toggle-btn"
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      # The tree can replace the row after the save request finishes.
+      reveal_toggle = "(toggle => toggle && (toggle.style.visibility = 'visible'))(document.querySelector(arguments[0]))"
+      assert evaluate_script(reveal_toggle, toggle_selector), "Expected the creative tree toggle to be rendered"
+    end
+    find(toggle_selector, wait: 5).click
   end
 
   def attach_inline_image(file_path)
