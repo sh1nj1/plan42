@@ -48,43 +48,30 @@ export default class extends Controller {
   async submit(event) {
     event.preventDefault()
     if (!this.hasFormTarget || !this.hasIdsInputTarget) return
-    const ids = this.selectedIds()
-
-    if (ids.length === 0) {
-      this.alert(this.selectOneValue)
-      return
-    }
-
-    const planId = this.planSelectTarget.value
-    if (!planId) {
-      this.alert(this.selectPlanValue)
-      return
-    }
-
-    await this.performRequest(this.formTarget.action, 'POST', {
-      plan_id: planId,
-      creative_ids: ids.join(',')
-    })
+    const body = this.selectionPayload()
+    if (body) await this.performRequest(this.formTarget.action, 'POST', body)
   }
 
   async remove(event) {
     event.preventDefault()
+    const body = this.selectionPayload()
+    if (body) await this.performRequest(event.currentTarget.dataset.removePath, 'DELETE', body)
+  }
+
+  selectionPayload() {
     const ids = this.selectedIds()
     if (ids.length === 0) {
       this.alert(this.selectOneValue)
-      return
+      return null
     }
 
     const planId = this.planSelectTarget.value
     if (!planId) {
       this.alert(this.selectPlanValue)
-      return
+      return null
     }
 
-    await this.performRequest(event.currentTarget.dataset.removePath, 'DELETE', {
-      plan_id: planId,
-      creative_ids: ids.join(',')
-    })
+    return { plan_id: planId, creative_ids: ids.join(',') }
   }
 
   async performRequest(url, method, body) {

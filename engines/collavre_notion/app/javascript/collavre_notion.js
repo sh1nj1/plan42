@@ -1,5 +1,5 @@
-import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
-import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import { showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose, requireCreativeId, resetConnectView, showSuccessAndClose } from 'collavre/modules/integration_wizard';
+import { confirmDialog } from 'collavre/lib/utils/dialog';
 
 let notionIntegrationInitialized = false;
 
@@ -55,18 +55,8 @@ if (!notionIntegrationInitialized) {
       selectedParentPage = null;
       statusEl.textContent = '';
       clearError(errorEl);
-      if (existingContainer) {
-        existingContainer.style.display = 'none';
-      }
-      if (existingList) {
-        existingList.innerHTML = '';
-      }
-      if (connectMessage) {
-        connectMessage.style.display = '';
-      }
-      if (deleteBtn) deleteBtn.style.display = 'none';
+      resetConnectView({ existingContainer, existingList, connectMessage, deleteBtn, loginBtn });
       if (syncBtn) syncBtn.style.display = 'none';
-      if (loginBtn) loginBtn.style.display = 'inline-block';
       if (parentPageSection) parentPageSection.style.display = 'none';
       updateStep();
     }
@@ -288,12 +278,7 @@ if (!notionIntegrationInitialized) {
         .then(response => response.json())
         .then(data => {
           if (data.success) {
-            statusEl.textContent = modal.dataset.exportSuccess || 'Export started successfully';
-            statusEl.style.color = 'green';
-            setTimeout(() => {
-              modal.style.display = 'none';
-              resetWizard();
-            }, 2000);
+            showSuccessAndClose(modal, statusEl, modal.dataset.exportSuccess || 'Export started successfully', resetWizard);
           } else {
             showError(errorEl, data.message || modal.dataset.exportFailed);
           }
@@ -349,12 +334,7 @@ if (!notionIntegrationInitialized) {
         .then(response => response.json())
         .then(data => {
           if (data.success) {
-            statusEl.textContent = modal.dataset.deleteSuccess || 'Integration removed successfully';
-            statusEl.style.color = 'green';
-            setTimeout(() => {
-              modal.style.display = 'none';
-              resetWizard();
-            }, 2000);
+            showSuccessAndClose(modal, statusEl, modal.dataset.deleteSuccess || 'Integration removed successfully', resetWizard);
           } else {
             showError(errorEl, data.message || modal.dataset.deleteFailed);
           }
@@ -371,11 +351,8 @@ if (!notionIntegrationInitialized) {
 
     // Event listeners
     openBtn.addEventListener('click', function () {
-      creativeId = this.dataset.creativeId;
-      if (!creativeId) {
-        alertDialog(modal.dataset.noCreative);
-        return;
-      }
+      creativeId = requireCreativeId(this, modal);
+      if (!creativeId) return;
       modal.style.display = 'flex';
       resetWizard();
       loadIntegrationStatus();

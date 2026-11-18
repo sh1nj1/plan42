@@ -140,22 +140,19 @@ export default class extends Controller {
 		)))
 	}
 
-  async deleteCron(url) {
-    const options = { method: 'DELETE' }
-    let response = await csrfFetch(url, options)
-    if (!(await this.shouldRetryCsrf(response))) return response
-
-    await refreshCsrfToken()
-    response = await csrfFetch(url, options)
-    return response
+  deleteCron(url) {
+    return this.fetchWithCsrfRetry(url, { method: 'DELETE' })
   }
 
-  async updateCron(url, message) {
-    const options = {
+  updateCron(url, message) {
+    return this.fetchWithCsrfRetry(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message }),
-    }
+    })
+  }
+
+  async fetchWithCsrfRetry(url, options) {
     let response = await csrfFetch(url, options)
     if (!(await this.shouldRetryCsrf(response))) return response
 

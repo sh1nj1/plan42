@@ -9,6 +9,8 @@
  *   import { csrfToken, showError, ... } from 'collavre/modules/integration_wizard'
  */
 
+import { alertDialog } from '../lib/utils/dialog';
+
 /**
  * Read the Rails CSRF token from the meta tag.
  * @returns {string|undefined}
@@ -140,4 +142,70 @@ export function setupModalClose(modal, closeBtn, onClose) {
       onClose();
     }
   });
+}
+
+/**
+ * Read the creative id from the open button, alerting when it is missing.
+ *
+ * @param {HTMLElement} openBtn - The button carrying data-creative-id
+ * @param {HTMLElement} modal - The modal carrying the data-no-creative message
+ * @returns {string|undefined}
+ */
+export function requireCreativeId(openBtn, modal) {
+  const creativeId = openBtn.dataset.creativeId;
+  if (!creativeId) alertDialog(modal.dataset.noCreative);
+  return creativeId;
+}
+
+/**
+ * Return the connect step to its initial state. Missing elements are skipped.
+ */
+export function resetConnectView({ existingContainer, existingList, connectMessage, deleteBtn, loginBtn }) {
+  if (existingContainer) existingContainer.style.display = 'none';
+  if (existingList) existingList.innerHTML = '';
+  if (connectMessage) connectMessage.style.display = '';
+  if (deleteBtn) deleteBtn.style.display = 'none';
+  if (loginBtn) loginBtn.style.display = 'inline-block';
+}
+
+/**
+ * Show a success message, then close the modal two seconds later.
+ */
+export function showSuccessAndClose(modal, statusEl, message, onClose) {
+  statusEl.textContent = message;
+  statusEl.style.color = 'green';
+  setTimeout(() => {
+    modal.style.display = 'none';
+    onClose();
+  }, 2000);
+}
+
+/**
+ * Send a JSON body with the CSRF token and resolve to `{ ok, body }`.
+ */
+export function sendJson(url, method, payload) {
+  return fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+    body: JSON.stringify(payload),
+  }).then(response => response.json().then(body => ({ ok: response.ok, body })));
+}
+
+/**
+ * Append `input` to `container`, wrapped in a flex label with a text caption.
+ */
+export function appendLabeledInput(container, input, text) {
+  const label = document.createElement('label');
+  label.style.display = 'flex';
+  label.style.alignItems = 'center';
+  label.style.gap = '0.5em';
+  label.style.marginBottom = '0.5em';
+  label.style.cursor = 'pointer';
+
+  const span = document.createElement('span');
+  span.textContent = text;
+
+  label.appendChild(input);
+  label.appendChild(span);
+  container.appendChild(label);
 }
