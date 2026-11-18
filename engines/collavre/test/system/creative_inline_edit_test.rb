@@ -71,13 +71,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def expand_creative(creative)
     wait_for_network_idle(timeout: 10)
-    toggle_selector = "#creative-#{creative.id} .creative-toggle-btn"
-    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
-      # The tree can replace the row after the save request finishes.
-      reveal_toggle = "(toggle => toggle && (toggle.style.visibility = 'visible'))(document.querySelector(arguments[0]))"
-      assert evaluate_script(reveal_toggle, toggle_selector), "Expected the creative tree toggle to be rendered"
+    toggle_selector = "#creative-#{creative.id} .creative-toggle-btn:has(svg)"
+    page.document.synchronize(5) do
+      # A childless row has an empty placeholder, and saving can replace the row.
+      toggle = find(toggle_selector, visible: :all, wait: 0)
+      page.execute_script("arguments[0].style.visibility = 'visible'", toggle)
+      toggle.click
     end
-    find(toggle_selector, wait: 5).click
   end
 
   def attach_inline_image(file_path)
@@ -207,7 +207,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     fill_inline_editor("Second child")
     inline_editor_field.send_keys(:escape)
-    sleep 0.5
+    assert_no_selector ".lexical-content-editable", wait: 10
 
     expand_creative(@root_creative)
 
