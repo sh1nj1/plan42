@@ -186,10 +186,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
       assert_equal [ "First child", "Second child" ], saved_descriptions
     end
 
-    visit collavre.creative_path(@root_creative)
-    assert_selector "#creatives > creative-tree-row:not([is-title]) .creative-row", count: 2
-    assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(1) .creative-row", text: "First child"
-    assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(2) .creative-row", text: "Second child"
+    expand_creative(@root_creative)
+    child_rows = "#creative-children-#{@root_creative.id} > creative-tree-row"
+    assert_selector child_rows, count: 2, wait: 5, visible: :all
+    assert_selector "#{child_rows}:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
+    assert_selector "#{child_rows}:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
   end
 
   test "supports keyboard shortcuts for add and close" do
