@@ -12,7 +12,8 @@ module SolidCableInlineBroadcast
   end
 
   def broadcast(channel, payload)
-    SolidCable::Message.broadcast(channel, payload)
+    # This adapter patch runs before Action Cable's ChannelPrefix wrapper.
+    SolidCable::Message.broadcast(channel_with_prefix(channel), payload)
     trim_batches(1).times { SolidCable::TrimJob.perform_now } if SolidCable.autotrim?
   end
 end
