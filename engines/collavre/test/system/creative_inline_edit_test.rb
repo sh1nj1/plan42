@@ -179,10 +179,10 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     fill_inline_editor("Second child")
     close_inline_editor
 
-    expand_creative(@root_creative)
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5, visible: :all
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
+    visit collavre.creative_path(@root_creative)
+    assert_selector "#creatives > creative-tree-row:not([is-title]) .creative-row", count: 2
+    assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(1) .creative-row", text: "First child"
+    assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(2) .creative-row", text: "Second child"
 
     @root_creative.reload
     first_child = @root_creative.children.order(:created_at).first
