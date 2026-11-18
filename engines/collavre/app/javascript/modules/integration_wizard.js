@@ -120,25 +120,6 @@ export function fetchWithCsrf(url, options = {}) {
 }
 
 /**
- * Hide a list of DOM elements (set display to 'none') and optionally clear their content.
- *
- * @param {Array<{el: HTMLElement|null, clear?: boolean}>} items
- *   Each item has an `el` (may be null) and an optional `clear` flag.
- *   When `clear` is true, textContent or innerHTML is also reset.
- */
-export function resetElements(items) {
-  items.forEach(function ({ el, clear }) {
-    if (!el) return;
-    el.style.display = 'none';
-    if (clear) {
-      if ('innerHTML' in el && el.tagName !== 'INPUT') {
-        el.textContent = '';
-      }
-    }
-  });
-}
-
-/**
  * Set up common modal close behavior: close button, backdrop click, and Escape key.
  *
  * @param {HTMLElement} modal - The modal overlay element
