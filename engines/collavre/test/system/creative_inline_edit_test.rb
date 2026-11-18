@@ -179,17 +179,17 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     fill_inline_editor("Second child")
     close_inline_editor
 
-    saved_child_rows = "#creative-children-#{@root_creative.id} .creative-tree[data-id]:not([data-id=''])"
-    assert_selector saved_child_rows, count: 2, visible: :all
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      saved_descriptions = @root_creative.children.order(:created_at).pluck(:description).map do |description|
+        ActionController::Base.helpers.strip_tags(description)
+      end
+      assert_equal [ "First child", "Second child" ], saved_descriptions
+    end
 
     visit collavre.creative_path(@root_creative)
     assert_selector "#creatives > creative-tree-row:not([is-title]) .creative-row", count: 2
     assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(1) .creative-row", text: "First child"
     assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(2) .creative-row", text: "Second child"
-
-    @root_creative.reload
-    first_child = @root_creative.children.order(:created_at).first
-    assert_equal "First child", ActionController::Base.helpers.strip_tags(first_child.description)
   end
 
   test "supports keyboard shortcuts for add and close" do
@@ -322,14 +322,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     close_inline_editor
 
-    @root_creative.reload
-    wait_for_network_idle(timeout: 10)
-
     assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all
-    assert_equal 1, @root_creative.description.scan(/<img/).length
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal 1, @root_creative.reload.description.scan(/<img/).length
+    end
 
     open_inline_editor(@root_creative)
     assert_selector ".lexical-content-editable img", count: 1, wait: 5
