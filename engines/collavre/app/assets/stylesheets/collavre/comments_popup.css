@@ -1710,6 +1710,11 @@ body.chat-fullscreen {
     cursor: grabbing;
 }
 
+.ai-agent-draggable .comment-user-popup {
+    /* Only the avatar is a drag handle; the profile popup is not. */
+    cursor: auto;
+}
+
 .ai-agent-draggable.dragging {
     /* Opacity on :active traps the fixed profile menu in a stacking context
        during a tap, redirecting the native click to content beneath it. */
