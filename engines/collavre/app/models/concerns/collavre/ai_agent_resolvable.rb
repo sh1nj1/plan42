@@ -36,12 +36,7 @@ module Collavre
     # text. AiClient returns nil on error while still yielding the error text as
     # a delta, so a nil result or blank output both count as failure (nil).
     def ai_digest_comments(agent, comments, system_prompt:, creative:, topic_id:, requester:)
-      client = AiClient.new(
-        vendor: agent.llm_vendor, model: agent.llm_model, system_prompt: system_prompt,
-        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
-        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
-        context: { creative: creative, user: agent, requester: requester, topic_id: topic_id }
-      )
+      client = build_client(agent, creative, topic_id, requester, system_prompt)
       conversation = comments.map do |comment|
         "#{comment.user&.name || I18n.t('collavre.comments.anonymous')}: #{comment.content}"
       end.join("\n\n")
@@ -49,6 +44,16 @@ module Collavre
       output = String.new
       result = client.chat([ { role: "user", text: conversation } ]) { |delta| output << delta }
       output if result && output.present?
+    end
+
+    # MergeCommentsJob always uses its own SYSTEM_PROMPT; CompressJob passes one.
+    def build_client(agent, creative, topic_id, requester, system_prompt = self.class::SYSTEM_PROMPT)
+      AiClient.new(
+        vendor: agent.llm_vendor, model: agent.llm_model, system_prompt: system_prompt,
+        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
+        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
+        context: { creative: creative, user: agent, requester: requester, topic_id: topic_id }
+      )
     end
 
     def build_ai_agent_policy_context(creative, topic_id)
