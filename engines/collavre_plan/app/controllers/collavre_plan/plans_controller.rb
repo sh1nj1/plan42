@@ -39,11 +39,8 @@ module CollavrePlan
           render html: render_to_string(Collavre::PlansTimelineComponent.new(plans: @plans, calendar_events: @calendar_events, registrations: @registrations, show_registrations: @show_registrations, modifications: @modifications, show_modifications: @show_modifications), layout: false)
         end
         format.json do
-          plan_jsons = @plans.map { |p| plan_json(p) }
-          event_jsons = @calendar_events.map { |e| calendar_json(e) }
-          registration_jsons = @registrations.map { |c| registration_json(c) }
-          modification_jsons = @modifications.map { |c| modification_json(c) }
-          render json: plan_jsons + event_jsons + registration_jsons + modification_jsons
+          render json: timeline_items.all(plans: @plans, calendar_events: @calendar_events,
+                                          registrations: @registrations, modifications: @modifications)
         end
       end
     end
@@ -57,19 +54,11 @@ module CollavrePlan
             redirect_back fallback_location: main_app.root_path, notice: t("collavre.plans.created")
           end
           format.json do
-            render json: plan_json(@plan), status: :created
+            render json: timeline_items.plan(@plan), status: :created
           end
         end
       else
-        respond_to do |format|
-          format.html do
-            flash[:alert] = @plan.errors.full_messages.join(", ")
-            redirect_back fallback_location: main_app.root_path
-          end
-          format.json do
-            render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
-          end
-        end
+        respond_with_plan_errors
       end
     end
 
@@ -98,23 +87,31 @@ module CollavrePlan
                           notice: t("collavre.plans.updated", default: "Plan updated.")
           end
           format.json do
-            render json: plan_json(@plan, creative_id: params[:creative_id] || @plan.creative_id), status: :ok
+            render json: timeline_items(params[:creative_id] || @plan.creative_id).plan(@plan), status: :ok
           end
         end
       else
-        respond_to do |format|
-          format.html do
-            flash[:alert] = @plan.errors.full_messages.join(", ")
-            redirect_back fallback_location: main_app.root_path
-          end
-          format.json do
-            render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
-          end
-        end
+        respond_with_plan_errors
       end
     end
 
     private
+
+    def timeline_items(creative_id = nil)
+      TimelineItems.new(creative_id: creative_id.presence || params[:id])
+    end
+
+    def respond_with_plan_errors
+      respond_to do |format|
+        format.html do
+          flash[:alert] = @plan.errors.full_messages.join(", ")
+          redirect_back fallback_location: main_app.root_path
+        end
+        format.json do
+          render json: { errors: @plan.errors.full_messages }, status: :unprocessable_entity
+        end
+      end
+    end
 
     def plan_params
       params.require(:plan).permit(:target_date, :start_date, :creative_id)
@@ -161,19 +158,6 @@ module CollavrePlan
       Collavre::Plan.where.not(creative_id: nil).select(:creative_id)
     end
 
-    def registration_json(creative)
-      {
-        id: "registration_#{creative.id}",
-        type: "registration",
-        name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.registration_fallback", id: creative.id)),
-        created_at: creative.created_at.to_date,
-        target_date: creative.created_at.to_date,
-        progress: creative.progress,
-        path: Collavre::Engine.routes.url_helpers.creative_path(creative),
-        deletable: false
-      }
-    end
-
     # Modified creatives owned by the current user, drawn at their updated_at.
     # We only include creatives genuinely edited after they came into being, so
     # the "Modified" chip stays distinct from "Registered" rather than duplicating
@@ -201,55 +185,6 @@ module CollavrePlan
                         .order(updated_at: :desc)
                         .limit(MODIFICATION_LIMIT)
                         .to_a
-    end
-
-    def modification_json(creative)
-      {
-        id: "modification_#{creative.id}",
-        type: "modification",
-        name: (creative.effective_description(nil, false).presence || I18n.t("collavre.plans.modification_fallback", id: creative.id)),
-        created_at: creative.updated_at.to_date,
-        target_date: creative.updated_at.to_date,
-        progress: creative.progress,
-        path: Collavre::Engine.routes.url_helpers.creative_path(creative),
-        deletable: false
-      }
-    end
-
-    def plan_json(plan, creative_id: nil)
-      {
-        id: plan.id,
-        name: (plan.creative&.effective_description(nil, false) || plan.name.presence || I18n.l(plan.target_date)),
-        created_at: plan.created_at.to_date,
-        start_date: plan.start_date,
-        target_date: plan.target_date,
-        progress: plan.progress,
-        path: plan_creatives_path(plan, creative_id: creative_id),
-        deletable: plan.owner_id == Current.user&.id
-      }
-    end
-
-    def calendar_json(event)
-      {
-        id: "calendar_event_#{event.id}",
-        name: event.summary.presence || I18n.l(event.start_time.to_date),
-        created_at: event.start_time.to_date,
-        target_date: event.end_time.to_date,
-        progress: event.creative&.progress || 0,
-        path: event.creative ? Collavre::Engine.routes.url_helpers.creative_path(event.creative) : event.html_link,
-        deletable: event.user_id == Current.user&.id
-      }
-    end
-
-    def plan_creatives_path(plan, creative_id: nil)
-      collavre_routes = Collavre::Engine.routes.url_helpers
-      if creative_id.present?
-        collavre_routes.creative_path(creative_id, tags: [ plan.id ])
-      elsif params[:id].present?
-        collavre_routes.creative_path(params[:id], tags: [ plan.id ])
-      else
-        collavre_routes.creatives_path(tags: [ plan.id ])
-      end
     end
   end
 end
