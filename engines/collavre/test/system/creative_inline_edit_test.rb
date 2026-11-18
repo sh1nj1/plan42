@@ -179,6 +179,9 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     fill_inline_editor("Second child")
     close_inline_editor
 
+    saved_child_rows = "#creative-children-#{@root_creative.id} .creative-tree[data-id]:not([data-id=''])"
+    assert_selector saved_child_rows, count: 2, visible: :all
+
     visit collavre.creative_path(@root_creative)
     assert_selector "#creatives > creative-tree-row:not([is-title]) .creative-row", count: 2
     assert_selector "#creatives > creative-tree-row[parent-id='#{@root_creative.id}']:nth-of-type(1) .creative-row", text: "First child"
