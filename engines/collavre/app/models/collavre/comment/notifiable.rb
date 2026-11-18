@@ -13,12 +13,12 @@ module Collavre
         after_create_commit :enqueue_create_notifications, if: :notification_eligible_on_create?
       end
 
-      def mentioned_users(notification_content = content)
+      def mentioned_users(notification_content = content, chat_only: true)
         return Collavre.user_class.none unless user
 
         emails = mentioned_emails(notification_content) - [ user.email.downcase ]
         names = mentioned_names(notification_content) - [ user.name.downcase ]
-        mentionable_users = Collavre.user_class.mentionable_for(creative.effective_origin)
+        mentionable_users = Collavre.user_class.mentionable_for(creative.effective_origin, chat_only: chat_only)
 
         scope = Collavre.user_class.none
         scope = scope.or(mentionable_users.where(email: emails)) if emails.any?

@@ -14,9 +14,9 @@
     "test": "node --test --experimental-strip-types \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "ws": "^8.21.0",
-    "zod": "^4.0"
+    "zod": "^4.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

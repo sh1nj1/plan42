@@ -1240,6 +1240,7 @@ module Collavre
       test "a pending fallback recipient loses assignment without restarting handled recipients" do
         child = fallback_child
         child.update!(ordinary_delivery: { "-1" => "handled", @agent.id.to_s => "pending" })
+        users(:channel_bot).update_column(:llm_vendor, "anthropic")
         @topic.update_column(:primary_agent_id, users(:channel_bot).id)
         assert_no_difference -> { enqueued_jobs.count { |job| job[:job] == AiAgentJob } } do
           deliver_child(child)

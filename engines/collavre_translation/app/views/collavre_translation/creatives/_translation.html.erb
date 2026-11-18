@@ -1,6 +1,7 @@
 <% if CollavreTranslation.enabled? %>
   <div data-controller="creative-translations"
        data-creative-translations-base-value="<%= collavre_translation.creative_translation_path(creative_id: '__ID__') %>"
+       data-creative-translations-auto-value="<%= Current.user ? Current.user.auto_translation_enabled? : true %>"
        data-creative-translations-original-value="<%= t('collavre_translation.original') %>"
        data-creative-translations-translated-value="<%= t('collavre_translation.show_translation') %>"></div>
 <% end %>

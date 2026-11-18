@@ -160,7 +160,7 @@ module Collavre
           .includes(:user)
           .each do |share|
             user = share.user
-            next unless user&.ai_user?
+            next unless user&.supports?(:chat)
             next if share.permission == "no_access"
 
             # Keep highest permission level

@@ -642,11 +642,10 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background-color: var(--border-drag-over);
 }
 
-creative-tree-row.chat-active .creative-row {
-    border: var(--border-1) solid var(--color-active);
-    border-radius: var(--radius-2);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--color-active) 25%, transparent),
-                0 0 14px color-mix(in srgb, var(--color-active) 12%, transparent);
+creative-tree-row.chat-active .creative-row,
+creative-tree-row.chat-active .creative-row:hover {
+    background-color: color-mix(in srgb, var(--color-active) 6%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-active);
 }
 
 .creative-row:hover,
@@ -654,6 +653,16 @@ creative-tree-row.chat-active .creative-row {
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
     background-color: var(--surface-hover);
+}
+
+creative-tree-row[is-title]:not(.chat-active) .creative-row,
+creative-tree-row[is-title]:not(.chat-active) .creative-row:hover {
+    background-color: transparent;
+}
+
+creative-tree-row.chat-active .creative-row.selected,
+creative-tree-row.chat-active .creative-row.selected:hover {
+    background-color: var(--border-drag-over);
 }
 
 .creative-progress {
@@ -2031,4 +2040,56 @@ creative-tree-row.is-being-edited .creative-tree {
     .creative-document-view .creative-row:hover .creative-drag-handle {
         opacity: 1;
     }
+}
+
+.ppt-attachment-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 0;
+}
+
+/* Lexical decorator wrappers must not constrain presentation previews. */
+.lexical-content-editable span:has(> .ppt-attachment-preview) {
+  display: block;
+  width: 100%;
+}
+
+/* Presentation attachments expand the row rather than using text's reading width. */
+.creative-row-start > :is(div, .page-title):has(.ppt-attachment-preview) {
+  flex: 1;
+  min-width: 0;
+}
+
+.creative-content:has(.ppt-attachment-preview),
+.creative-title-content:has(.ppt-attachment-preview) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.ppt-attachment-preview { position: relative; }
+.document-preview-frame { width: 100%; height: 100%; border: 0; display: block; }
+.ppt-attachment-preview[aria-busy="true"] > iframe { opacity: 0; }
+.media-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.media-loading[hidden] { display: none; }
+.media-loading::after {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-color, #ccc);
+  border-top-color: var(--text-color, #555);
+  border-radius: 50%;
+  animation: media-loading-spin 800ms linear infinite;
+}
+@keyframes media-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .media-loading::after { animation: none; }
 }

@@ -37,6 +37,9 @@ module Collavre
     # Scope types
     SCOPE_TYPES = %w[Creative Topic User].freeze
 
+    # Precedence of the context scopes; later levels override earlier ones.
+    CONTEXT_SCOPE_RANK = { nil => 0, "Creative" => 1, "Topic" => 2 }.freeze
+
     # Policy types
     POLICY_TYPES = %w[matching arbitration scheduling stuck_detection collaboration].freeze
 
@@ -62,35 +65,28 @@ module Collavre
       # Find policies applicable to a given context
       # Returns policies in priority order (global < creative < topic < agent)
       def for_context(context, policy_type:)
-        policies = enabled.for_type(policy_type).by_priority
+        for_context_by_type(context).fetch(policy_type, [])
+      end
 
-        applicable = []
+      # Every enabled context policy, grouped by policy type, in one query.
+      #
+      # A dispatch asks for several policy types (matching, arbitration,
+      # scheduling); one query per type and scope level repeated the same
+      # lookup up to nine times. Within each group the scope hierarchy
+      # (global < creative < topic) takes precedence, then priority, then id
+      # so that equal priorities resolve the same way on every database.
+      #
+      # Agent-level policies are handled separately per-agent.
+      def for_context_by_type(context)
+        scopes = [ global ]
+        scopes << where(scope_type: "Creative", scope_id: context["creative"]["id"]) if context["creative"].present?
+        scopes << where(scope_type: "Topic", scope_id: context["topic"]["id"]) if context["topic"].present?
 
-        # Global policies
-        applicable.concat(policies.global.to_a)
-
-        # Creative-level policies
-        if context["creative"].present?
-          creative_id = context["creative"]["id"]
-          applicable.concat(
-            policies.where(scope_type: "Creative", scope_id: creative_id).to_a
-          )
-        end
-
-        # Topic-level policies
-        if context["topic"].present?
-          topic_id = context["topic"]["id"]
-          applicable.concat(
-            policies.where(scope_type: "Topic", scope_id: topic_id).to_a
-          )
-        end
-
-        # Agent-level policies are handled separately per-agent
-
-        # Note: We don't sort by priority globally here because scope hierarchy
-        # (global < creative < topic) takes precedence. Each scope level is
-        # already sorted by priority from the query.
-        applicable
+        rows = enabled.and(scopes.reduce(:or)).order(:priority, :id).to_a
+        rows.each_with_index
+          .sort_by { |policy, index| [ CONTEXT_SCOPE_RANK.fetch(policy.scope_type), index ] }
+          .map(&:first)
+          .group_by(&:policy_type)
       end
 
       # Find policies for a specific agent

@@ -19,6 +19,19 @@ module Collavre
         Rack::Test::UploadedFile.new(StringIO.new(bytes), content_type, original_filename: filename)
       end
 
+      def quote_question_setup
+        creative = Collavre::Creative.create!(description: "<p>x</p>", user: @owner)
+        agent = users(:ai_bot)
+        Collavre::CreativeShare.create!(creative: creative, user: agent, shared_by: @owner, permission: :write)
+        topic = Collavre::Topic.create!(creative: creative, user: @owner, name: "Doc chat")
+        comment = Collavre::Comment.create!(creative: creative, topic: topic, user: @owner, content: "> x\n\nwhy?",
+                                            quoted_creative: creative, quoted_text: "x", review_type: :question,
+                                            skip_dispatch: true)
+        task = Collavre::Task.create!(agent: agent, creative: creative, topic_id: topic.id, name: "Question",
+                                      status: "running", trigger_comment_id: comment.id)
+        [ creative, agent, task ]
+      end
+
       def path_for(creative)
         Collavre::Engine.routes.url_helpers.creative_attachments_path(creative)
       end
@@ -77,6 +90,29 @@ module Collavre
         assert_equal :applied, applied.status
         assert_equal retained_blob.id, creative.reload.files.blobs.sole.id
         assert_includes creative.description, retained_blob.signed_id
+      end
+
+      test "refuses an agent upload during a document-mode question turn" do
+        creative, agent, task = quote_question_setup
+
+        post path_for(creative), params: { file: upload }, headers: { "Authorization" => "Bearer #{token_for(agent)}" }
+
+        assert_response :unprocessable_entity
+        assert_equal I18n.t("collavre.comments.creative_quote.question_read_only"), JSON.parse(response.body)["error"]
+        assert_equal "<p>x</p>", creative.reload.description
+        assert_equal 0, ActiveStorage::Blob.where(filename: "pic.png").count
+        assert task.reload.running?
+      end
+
+      test "an agent upload naming another active task is not blocked by a question turn" do
+        creative, agent, = quote_question_setup
+        plain = Collavre::Task.create!(agent: agent, creative: creative, name: "Plain", status: "running")
+
+        post path_for(creative), params: { file: upload },
+             headers: { "Authorization" => "Bearer #{token_for(agent)}", "X-Collavre-Task" => plain.id.to_s }
+
+        assert_response :success
+        assert_includes creative.reload.description, "<img"
       end
 
       test "uploads an mp4 and embeds <video controls>" do

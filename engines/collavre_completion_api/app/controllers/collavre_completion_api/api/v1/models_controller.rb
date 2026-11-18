@@ -5,7 +5,7 @@ module CollavreCompletionApi
     module V1
       class ModelsController < BaseController
         def index
-          ai_agents = Collavre::User.accessible_ai_agents_for(current_user)
+          ai_agents = Collavre::User.accessible_ai_agents_for(current_user).chat_capable
 
           models = ai_agents.map do |agent|
             {

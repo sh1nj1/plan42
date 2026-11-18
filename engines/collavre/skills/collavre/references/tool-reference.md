@@ -285,8 +285,58 @@ messages in one topic follow that topic's queue.
 An agent cannot call this tool on the topic of its current turn. Continue that
 work in the current turn; use this tool to start work in a different topic.
 
+**Returns:** the created comment payload, including top-level `comment_id` for
+tracking asynchronously dispatched tasks with `task_status`.
+
 Requires **feedback** or better on the topic's Creative. Archived Creatives,
 archived topics, and an inbox's reserved System topic reject new messages.
+
+### topic_tasks
+
+List visible tasks in a topic, newest first. Requires **read** on the topic's Creative.
+
+| Param | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `topic_id` | Integer | **Yes** | — | Topic to inspect |
+| `status` | String | No | `"active"` | `active`, `finished`, or `all` |
+| `limit` | Integer | No | 20 | Maximum tasks, 1–100 |
+
+**Returns:** `{ topic_id, tasks[], has_more }`. Each task includes `task_id`,
+`name`, `agent: { id, name }`, `status`, `active`, `trigger_comment_id`,
+`reply_comment_id`, `reply_summary` (up to 500 characters), `suspend_reason`,
+`created_at`, and `updated_at`. Active uses the same states as the Stop action;
+finished includes unsuccessful endings. Private instructions and replies respect
+message visibility, and approval prompts are excluded.
+
+### task_status
+
+Check an instruction using exactly one of these inputs:
+
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `comment_id` | Integer | One of | Instruction id returned by `topic_message_create` |
+| `task_ids` | String or Array | One of | Up to 100 task ids, comma-separated or as an array |
+
+**Returns:** `{ comment_id, status, tasks[] }`, with the same task fields as
+`topic_tasks`. Finds instructions coalesced into merged work, follows
+superseding tasks and descendants linked through event causation, checks read
+access to every task's Creative and instruction, and rejects chains exceeding
+200 tasks instead of returning a partial result.
+
+Aggregate status uses this priority: `not_started` when no task exists;
+`needs_attention` when any task is failed, escalated, or pending approval;
+`in_progress` when any task is active; `cancelled` when any remaining task is
+cancelled; otherwise `done`. Superseded cancellations do not affect the aggregate
+when successor work is available; individual rows retain their actual status.
+`not_started` does not guarantee future dispatch.
+`done` means agent turns ended successfully: inspect the replies to verify that
+the requested outcome was achieved.
+
+Keep `topic_message_create`'s returned `comment_id` and pass it to `task_status`.
+Tasks are created asynchronously, so check again later if dispatch is still
+pending. The indexed `tasks.trigger_comment_id` stores the instruction link;
+the original instruction link stays fixed when pending work is re-anchored.
+The migration backfills valid comment ids from existing task event payloads.
 
 ### topic_update
 

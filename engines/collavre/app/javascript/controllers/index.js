@@ -1,3 +1,4 @@
+import DocumentPreviewController from "./document_preview_controller"
 import InlineCreativePickerController from './inline_creative_picker_controller'
 import CreativeMoveController from "./creative_move_controller"
 
@@ -11,13 +12,16 @@ import CreativesSelectModeController from "./creatives/select_mode_controller"
 import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
 import CreativesDocumentViewController from "./creatives/document_view_controller"
+import CreativesDocumentSelectionController from "./creatives/document_selection_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
 import CreativesWorkflowRuleController from "./creatives/workflow_rule_controller"
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
+import CommentsLoadingController from "./comments/loading_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
+import CommentsCreativeQuoteReviewController from "./comments/creative_quote_review_controller"
 import CommentsRunOptionsController from "./comments/run_options_controller"
 import CommentsPresenceController from "./comments/presence_controller"
 import CommentsMentionMenuController from "./comments/mention_menu_controller"
@@ -74,11 +78,14 @@ export {
   CreativesDragDropController,
   CreativesExpansionController,
   CreativesDocumentViewController,
+  CreativesDocumentSelectionController,
   CreativesRowEditorController,
   CreativesTreeController,
   CreativesSyncController,
+  CommentsLoadingController,
   CommentsListController,
   CommentsFormController,
+  CommentsCreativeQuoteReviewController,
   CommentsPresenceController,
   CommentsMentionMenuController,
   CommentsTopicsController,
@@ -131,11 +138,13 @@ function registerAppChromeControllers(application) {
 }
 
 function registerCreativeControllers(application) {
+  application.register("document-preview", DocumentPreviewController)
   application.register("creatives--import", CreativesImportController)
   application.register("creatives--select-mode", CreativesSelectModeController)
   application.register("creatives--drag-drop", CreativesDragDropController)
   application.register("creatives--expansion", CreativesExpansionController)
   application.register("creatives--document-view", CreativesDocumentViewController)
+  application.register("creatives--document-selection", CreativesDocumentSelectionController)
   application.register("creatives--row-editor", CreativesRowEditorController)
   application.register("creatives--tree", CreativesTreeController)
   application.register("creatives--sync", CreativesSyncController)
@@ -158,8 +167,10 @@ export function registerControllers(application) {
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)
   registerCreativeControllers(application)
+  application.register("comments--loading", CommentsLoadingController)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
+  application.register("comments--creative-quote-review", CommentsCreativeQuoteReviewController)
   application.register("comments--run-options", CommentsRunOptionsController)
   application.register("comments--presence", CommentsPresenceController)
   application.register("comments--mention-menu", CommentsMentionMenuController)

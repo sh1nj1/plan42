@@ -2,6 +2,43 @@ require "test_helper"
 
 module Collavre
   class CommandMenuServiceTest < ActiveSupport::TestCase
+    test "keep arguments are localized in parser order" do
+      { en: "[--max 10] [--cooldown 10] [@agent:] [goal]", ko: "[--max 10] [--cooldown 10] [@에이전트:] [목표]" }.each do |locale, expected|
+        I18n.with_locale(locale) do
+          item = CommandMenuService.new(user: users(:one)).send(:keep_item)
+          assert_equal expected, item[:args]
+        end
+      end
+    end
+
+    test "keep exposes localized optional inputs in parser order" do
+      %i[en ko].each do |locale|
+        I18n.with_locale(locale) do
+          schema = CommandMenuService.new(user: users(:one)).send(:keep_item)[:input_schema]
+          assert_equal %w[max cooldown agent_name goal], schema.map { |param| param[:name] }
+          assert_equal "integer", schema.first[:type]
+          assert_equal "keep_agent", schema.third[:format]
+          assert_equal 1, schema.first[:minimum]
+          assert_equal 1000, schema.first[:maximum]
+          assert_equal "integer", schema.second[:type]
+          assert_equal 0, schema.second[:minimum]
+          assert_equal 3600, schema.second[:maximum]
+          schema.zip(%w[max cooldown agent goal]).each do |param, key|
+            assert_not param[:required]
+            assert_equal I18n.t("collavre.comments.keep_command.#{key}_hint", raise: true), param[:description]
+          end
+        end
+      end
+    end
+
+    test "registered keep tool does not duplicate the built-in popup" do
+      McpService.stub(:available_tools, [ { name: "keep", params: [] } ]) do
+        items = CommandMenuService.new(user: users(:one)).items.select { |item| item[:name] == "keep" }
+        assert_equal 1, items.size
+        assert_equal %w[max cooldown agent_name goal], items.first[:input_schema].pluck(:name)
+      end
+    end
+
     test "returns built-in calendar and topic items" do
       user = users(:one)
       items = CommandMenuService.new(user: user).items
@@ -166,6 +203,26 @@ module Collavre
 
       format_param = schema.find { |p| p[:name] == "format" }
       assert_nil format_param[:default_value], "Params without defaults should not have default_value"
+    end
+
+    test "tool items show the localized summary and carry details for the more toggle" do
+      tools = [ { name: "cron_list", description: "List recurring scheduled jobs. Long LLM text.", params: nil } ]
+      McpService.stub(:available_tools, tools) do
+        I18n.with_locale(:ko) do
+          item = CommandMenuService.new(user: users(:one)).items.find { |i| i[:name] == "cron_list" }
+          assert_equal I18n.t("collavre.tool_descriptions.cron_list.summary"), item[:description]
+          assert_equal I18n.t("collavre.tool_descriptions.cron_list.details"), item[:details]
+        end
+      end
+    end
+
+    test "tool items without details omit the details key" do
+      tools = [ { "name" => "my_tool", "description" => "Does one thing.", "params" => nil } ]
+      McpService.stub(:available_tools, tools) do
+        item = CommandMenuService.new(user: users(:one)).items.find { |i| i[:name] == "my_tool" }
+        assert_equal "Does one thing.", item[:description]
+        assert_not item.key?(:details)
+      end
     end
   end
 end

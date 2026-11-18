@@ -82,11 +82,11 @@ module Collavre
         # quotes. Enumerating the keys here means the list falls behind the
         # payload the ordinary door builds, silently, one key at a time.
         #
-        # Rebuilt, never merged onto: a key absent for this comment must be
-        # absent afterwards. Carrying the previous anchor's "from_ai" or its
-        # quoted comment forward is the same defect pointing the other way.
+        # Rebuild anchor attributes instead of inheriting "from_ai" or quoted
+        # comments from another turn. Keep identity belongs to the dispatch,
+        # so only a same-anchor rebuild preserves its original admission.
         moved = payload.merge(
-          comment.dispatch_payload.slice(:comment).deep_stringify_keys,
+          KeepDispatchAdmission.reanchor_comment(payload, comment),
           "chat" => SystemEvents::ContextBuilder.reanchor_chat(comment.content)
         )
         if previous_id && previous_id.to_i != comment.id
@@ -202,7 +202,7 @@ module Collavre
 
           # Status is re-checked against the locked rows too: a sibling promoted
           # or cancelled since the id read above is no longer ours to supersede.
-          siblings = reject_review_triggers(
+          siblings = reject_independent_triggers(
             locked.values.select { |t| t.id != keep.id && t.status == "queued" }
           )
           siblings = reject_other_workspace_principals(keep, siblings)
@@ -256,8 +256,10 @@ module Collavre
         end
       end
 
+      # A keep dispatch owns one generation and comment, so folding or moving
+      # its anchor would remove the evidence admission and completion require.
       def independent_trigger?(task)
-        task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
+        KeepLoop.dispatch?(task.trigger_event_payload) || task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
       end
 
       def foldable_survivor?(task)
@@ -308,14 +310,16 @@ module Collavre
       # they keep their own turn, which is the only shape ReviewHandler can run.
       def review_trigger?(task)
         anchor_id = (task.trigger_event_payload || {}).dig("comment", "id")
-        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+        anchor_id.present? && Comment.own_turn_message_ids([ anchor_id ]).any?
       end
 
       # One query for the whole burst rather than review_trigger? per sibling.
-      def reject_review_triggers(siblings)
-        siblings = siblings.reject { |task| task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) }
+      def reject_independent_triggers(siblings)
+        siblings = siblings.reject do |task|
+          KeepLoop.dispatch?(task.trigger_event_payload) || task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
+        end
         anchors = siblings.filter_map { |t| (t.trigger_event_payload || {}).dig("comment", "id") }
-        review_ids = Comment.review_message_ids(anchors).to_set
+        review_ids = Comment.own_turn_message_ids(anchors).to_set
         return siblings if review_ids.empty?
 
         siblings.reject do |task|

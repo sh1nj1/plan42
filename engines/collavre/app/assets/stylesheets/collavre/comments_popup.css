@@ -284,7 +284,8 @@ body.chat-fullscreen {
 }
 
 #new-comment-form textarea {
-    width: 96%;
+    box-sizing: border-box;
+    width: 100%;
     resize: none;
     font-size: var(--text-1);
     overflow-y: auto;
@@ -368,7 +369,7 @@ body.chat-fullscreen {
 
 .comment-user-popup-email {
     overflow: hidden;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
     text-overflow: ellipsis;
 }
@@ -377,7 +378,7 @@ body.chat-fullscreen {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
 }
 
@@ -385,7 +386,7 @@ body.chat-fullscreen {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--color-text-muted);
+    background: var(--text-muted);
 }
 
 .comment-user-popup-status.is-online .comment-user-popup-status-dot {
@@ -404,7 +405,7 @@ body.chat-fullscreen {
     margin: var(--space-2) var(--space-2) var(--space-1);
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-border);
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
     line-height: 1.4;
 }
@@ -614,6 +615,61 @@ body.chat-fullscreen {
     cursor: pointer;
     border-radius: var(--radius-2);
     white-space: nowrap;
+}
+
+/* Review / Ask side by side, in chat and in document mode */
+.quote-selection-popup ul {
+    display: flex;
+    gap: 0.2em;
+}
+
+/* Document-mode quotes */
+.review-quote-chip-source {
+    margin-right: 0.4em;
+    color: var(--color-muted);
+    font-size: 0.9em;
+}
+
+.comment-creative-quote-source {
+    display: inline-block;
+    margin-top: 0.3em;
+    font-size: 0.8em;
+    color: var(--color-muted);
+    text-decoration: none;
+}
+
+.comment-creative-quote-source:hover {
+    color: var(--color-text);
+    text-decoration: underline;
+}
+
+.creative-quote-review {
+    margin-top: 0.5em;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    padding: 0.4em 0.6em;
+}
+
+.creative-quote-review > details > summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.creative-quote-review .creative-history-state {
+    margin-left: 0.4em;
+    font-weight: normal;
+    color: var(--color-muted);
+}
+
+.creative-quote-review-warning {
+    margin: 0.4em 0;
+    font-size: 0.8em;
+}
+
+.creative-quote-highlight {
+    background: color-mix(in srgb, var(--color-active) 15%, transparent);
+    transition: background 0.3s ease;
 }
 
 .comment-reactions {
@@ -1522,7 +1578,7 @@ body.chat-fullscreen {
 .navigate-context-btn {
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     padding: 0 0.15em;
@@ -1537,7 +1593,7 @@ body.chat-fullscreen {
 .delete-context-btn {
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     padding: 0 0.15em;
@@ -2450,7 +2506,7 @@ li:hover .topic-create-option {
 .comment-agent-model-editor p {
     overflow-wrap: anywhere;
     margin: var(--space-1) 0;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
 }
 
@@ -2472,4 +2528,16 @@ li:hover .topic-create-option {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.comments-loading {
+    padding: 16px;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8em;
+}
+
+.comments-loading .creative-loading-indicator {
+    margin-left: 0;
 }

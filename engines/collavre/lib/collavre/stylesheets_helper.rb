@@ -19,6 +19,7 @@ module Collavre
       collavre/creatives
       collavre/workflow_editor
       collavre/actiontext
+      collavre/attachment_card
       collavre/activity_logs
       collavre/user_menu
       collavre/org_chart

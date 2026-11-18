@@ -137,10 +137,10 @@ module Collavre
     belongs_to :topic, class_name: "Collavre::Topic", optional: true
     belongs_to :quoted_comment, class_name: "Collavre::Comment", optional: true
 
-    scope :public_only, -> { where(private: false) }
+    scope :public_only, -> { not_deleting.where(private: false) }
 
     scope :visible_to, ->(user) {
-      where(
+      not_deleting.where(
         "comments.private = ? OR comments.user_id = ? OR comments.approver_id = ?",
         false, user.id, user.id
       )
@@ -162,10 +162,11 @@ module Collavre
 
     has_many_attached :images, dependent: :purge_later
 
+    include KeepLoop
     include Broadcastable
     include Notifiable
     include Approvable
-    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction
+    include ClaudeChannelPermission, CreationEvents, ImageCdnEviction, BulkFollowUpJobs, CreativeQuote, BatchDestruction
 
     attribute :skip_default_user, :boolean, default: false
     attribute :skip_dispatch, :boolean, default: false
@@ -182,7 +183,7 @@ module Collavre
     include DispatchRevocation
     after_commit :enqueue_link_preview, on: [ :create, :update ], if: :link_preview_enqueue_required?
     after_create_commit :dispatch_to_orchestration
-    after_create_commit :resume_trigger_loop_if_awaiting, unless: :skip_dispatch
+    include TriggerLoopResume
 
     validates :content, presence: true, unless: -> { images.attached? }
     validate :creative_must_be_origin_creative
@@ -229,7 +230,8 @@ module Collavre
           content: content,
           user_id: user_id,
           from_ai: user&.searchable? || false,
-          quoted_comment_id: quoted_comment_id
+          quoted_comment_id: quoted_comment_id,
+          keep_loop_generation: dispatch_loop_generation
         }.compact,
         creative: {
           id: creative_id,
@@ -238,9 +240,7 @@ module Collavre
         topic: {
           id: topic_id
         },
-        chat: {
-          content: content
-        }
+        chat: loop_dispatch_chat
       }
     end
 
@@ -258,7 +258,7 @@ module Collavre
       # existing tasks, so scoping would miss moved-comment tasks).
       # Include approval-paused and delegated work: both can resume side effects
       # after withdrawal and keep holding the topic/agent slot without a worker.
-      Task.where(status: Task::ACTIVE_STATUSES).find_each do |task|
+      active_tasks_for_withdrawal.each do |task|
         # An un-started task can be the survivor of a coalesced burst, answering
         # several comments at once. Cancelling it because its anchor was deleted
         # would throw away the absorbed comments too — they have no task of their
@@ -531,7 +531,7 @@ module Collavre
       # Orchestration::Matcher, which scopes a Claude session agent to its own
       # registered session topic — keeping non-System topics truly identical to a
       # normal topic whether or not a session is live.
-      return if creative.inbox? && inbox_system_topic?
+      return if orchestration_topic_blocked?
 
       # A Claude Channel session suspended on a native tool-permission prompt
       # parks its in-flight dispatch as a `delegated` task carrying a
@@ -547,7 +547,7 @@ module Collavre
       # when the local Claude TUI answered the prompt, leaving pending_tool_call
       # set on the server for the rest of a locally-approved tool run.
 
-      SystemEvents::Dispatcher.dispatch("comment_created", dispatch_payload, source: "comment_callback")
+      dispatch_loop_comment
     rescue StandardError => e
       Rails.logger.error(
         "[Comment#dispatch_to_orchestration] Failed for comment #{id}: " \
@@ -567,64 +567,6 @@ module Collavre
     def assign_default_user
       return if skip_default_user
       self.user ||= Collavre.current_user
-    end
-
-    # When a human user comments in a trigger topic that is awaiting user input,
-    # auto-resume the trigger loop so the agent can continue working.
-    def resume_trigger_loop_if_awaiting
-      return unless user_id                # must have a user (not system)
-      return if user&.ai_user?             # must be a human, not an AI agent
-      return if approval_action?           # approval surface is not a user-resume signal; the resumed @agent turn would otherwise carry it into history
-      return unless creative
-
-      # Use pessimistic lock to prevent duplicate resume from concurrent comments
-      iteration = nil
-      max = nil
-      creative.with_lock do
-        loop_data = creative.data&.dig("trigger", "loop")
-        return unless loop_data && loop_data["state"] == "awaiting_user"
-
-        # Only resume if this comment is in the trigger topic
-        trigger_topic_id = loop_data["trigger_topic_id"]
-        return if trigger_topic_id.present? && trigger_topic_id != topic_id
-
-        # Transition to running and post continue instruction atomically
-        data = creative.data || {}
-        trigger = data["trigger"] || {}
-        loop_cfg = trigger["loop"] || {}
-        iteration = loop_cfg["current_iteration"] || 0
-        max = loop_cfg["max_iterations"] || 10
-        loop_cfg["state"] = "running"
-        trigger["loop"] = loop_cfg
-        data["trigger"] = trigger
-        creative.update!(data: data)
-      end
-
-      # Post continue instruction outside lock (state already committed)
-      return unless iteration # guard: lock block returned early
-
-      parent = creative.parent
-      return unless parent&.drop_trigger_enabled?
-
-      agent = parent.find_ai_agent(:write)
-      return unless agent
-
-      creative.comments.create!(
-        content: "@#{agent.name}: #{I18n.t(
-          'collavre.trigger_loop.user_resumed',
-          iteration: iteration,
-          max: max
-        )}",
-        topic_id: topic_id,
-        private: false,
-        user: creative.user,
-        skip_dispatch: false
-      )
-    rescue StandardError => e
-      Rails.logger.error(
-        "[Comment#resume_trigger_loop_if_awaiting] Failed for comment #{id}: " \
-        "#{e.class} #{e.message}"
-      )
     end
 
     def use_origin_creative

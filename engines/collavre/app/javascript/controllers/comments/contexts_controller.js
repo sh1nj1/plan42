@@ -178,7 +178,7 @@ export default class extends Controller {
         this.contexts.forEach(ctx => {
             const disabledClass = ctx.disabled ? 'context-disabled' : ''
             const inheritedClass = ctx.inherited ? 'context-inherited' : ''
-            const draggable = this.canManage && !ctx.inherited ? 'draggable="true"' : ''
+            const draggable = this.canManage && !ctx.inherited && !ctx.order_locked ? 'draggable="true"' : ''
 
             html += `<span class="context-chip ${disabledClass} ${inheritedClass}" ${draggable}
                           data-action="click->comments--contexts#toggleContext"
@@ -421,8 +421,8 @@ export default class extends Controller {
 
     _registerDragDrop() {
         this.dnd = createDragDropRegistry({ root: this.element, getKind: getDragKind, readData: readDragData })
-        const selector = '.context-chip[draggable="true"]'
-        this.dnd.registerDragSource({ selector,
+        // Only contexts added on this creative move; ancestor-ordered chips are still drop targets.
+        this.dnd.registerDragSource({ selector: '.context-chip[draggable="true"]',
             onDragStart: ({ el, event }) => {
                 this.draggingContextId = el.dataset.contextId
                 writeDragData(event.dataTransfer, { kind: 'context', ids: [this.draggingContextId], payload: {} })
@@ -432,7 +432,7 @@ export default class extends Controller {
                 })
             },
             onDragEnd: ({ el }) => { this.draggingContextId = null; el.classList.remove('context-dragging') } })
-        this.dnd.registerDropZone({ selector, accepts: ['context'],
+        this.dnd.registerDropZone({ selector: '.context-chip[data-context-id]', accepts: ['context'],
             hitTest: ({ el, event }) => this.canManage && this.draggingContextId && el.dataset.contextId !== this.draggingContextId
                 ? horizontalHit({ el, event }) : null,
             preview: previewDrop, onDrop: this.handleReorderDrop.bind(this) })
@@ -446,7 +446,8 @@ export default class extends Controller {
         const insertBefore = hit === 'left'
 
         return this._enqueueContextMutation(() => {
-            const ids = this._ownContextIds()
+            if (!this.contexts.some(c => Number(c.id) === draggedId && !c.inherited && !c.order_locked)) return null
+            const ids = this.contexts.map(context => Number(context.id))
             const draggedIndex = ids.indexOf(draggedId)
             if (draggedIndex === -1 || ids.indexOf(targetId) === -1) return null
 
@@ -455,7 +456,7 @@ export default class extends Controller {
             if (!insertBefore) newIndex += 1
             ids.splice(newIndex, 0, draggedId)
             return ids
-        })
+        }, ids => this._patchContexts({ context_order: ids }))
     }
 
     // --- API calls ---
@@ -545,7 +546,7 @@ export default class extends Controller {
     // `update_contexts` replaces the complete direct-context list, so every whole-list write must
     // build its payload inside this queue. A payload computed while an earlier write was still in
     // flight would silently drop that write's result.
-    _enqueueContextMutation(computeIds) {
+    _enqueueContextMutation(computeIds, save = ids => this._updateContextIds(ids)) {
         const creativeId = this.creativeId
         const lifetime = this._contextMutationLifetime
         const run = async () => {
@@ -562,7 +563,7 @@ export default class extends Controller {
             }
             const ids = computeIds()
             if (!ids) return
-            const saved = await this._updateContextIds(ids)
+            const saved = await save(ids)
             if (!this._isContextMutationCurrent(creativeId, lifetime)) return
             this._contextDropNeedsRefresh = true
             if (saved === false) {

@@ -2,6 +2,7 @@ module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
     include UsageAttributionTracking
+    include TriggerLoopCompletion
     include ReplayLoopCompletion
     include WorkflowCompletion
     include ApprovalGateCleanup
@@ -12,6 +13,17 @@ module Collavre
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
+    has_many :task_merged_instructions, dependent: :delete_all
+    after_save :sync_merged_instructions, if: :saved_change_to_trigger_event_payload?
+
+    def sync_merged_instructions
+      ids = Array(trigger_event_payload&.fetch("merged_comment_ids", nil)).map(&:to_i).select(&:positive?).uniq
+      task_merged_instructions.where.not(comment_id: ids).delete_all
+      ids.each { |id| task_merged_instructions.find_or_create_by!(comment_id: id) }
+    end
+
+    before_validation :assign_trigger_comment_id
+    before_validation :assign_event_causation_id
     validates :name, presence: true
 
     enum :status, {
@@ -161,29 +173,12 @@ module Collavre
 
     private
 
-    def trigger_loop_candidate?
-      return false unless saved_change_to_attribute?("status")
-
-      trigger_loop_completion_eligible?
+    def assign_trigger_comment_id
+      self.trigger_comment_id ||= trigger_event_payload&.dig("comment", "id")
     end
 
-    # State-only eligibility check (no save-lifecycle dependency).
-    # Reused by trigger_loop_candidate? for the callback path and by
-    # fire_completion_callbacks_after_external_claim for explicit replay.
-    def trigger_loop_completion_eligible?
-      return false unless status == "done"
-      # Pending and completed replays own completion instead of the login card.
-      return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
-      return false unless trigger_event_name == "comment_created"
-      return false unless creative&.parent&.drop_trigger_enabled?
-
-      # Only trigger loop check for tasks in the loop's trigger topic
-      # to avoid cross-topic contamination from unrelated AI conversations
-      loop_config = creative.data&.dig("trigger", "loop")
-      return false unless loop_config && loop_config["state"] == "running"
-
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      trigger_topic_id.nil? || trigger_topic_id == topic_id
+    def assign_event_causation_id
+      self.event_causation_id = trigger_event_payload&.dig("event", "causation_id")
     end
 
     def became_terminal?
@@ -291,16 +286,6 @@ module Collavre
           partial: "collavre/comments/comment",
           locals: { comment: notice, streaming: false }
         )
-      end
-    end
-
-    def check_trigger_loop_completion
-      loop_config = creative.data&.dig("trigger", "loop")
-      cooldown = (loop_config&.dig("cooldown_seconds") || 10).to_i
-      if cooldown > 0
-        TriggerLoopCheckJob.set(wait: cooldown.seconds).perform_later(id)
-      else
-        TriggerLoopCheckJob.perform_later(id)
       end
     end
   end

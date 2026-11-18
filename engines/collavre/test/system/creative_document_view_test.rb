@@ -434,7 +434,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
 
     assert_selector ".creative-title-content", text: "Spec edited"
-    assert_equal "Spec edited", ActionController::Base.helpers.strip_tags(@root.reload.description).strip
+    # Closing renders the optimistic title before the queued save commits.
+    saved = -> { ActionController::Base.helpers.strip_tags(@root.reload.description).strip }
+    Timeout.timeout(15) { sleep 0.2 until saved.call == "Spec edited" }
+    assert_equal "Spec edited", saved.call
   end
 
   test "select mode selects rows instead of opening the editor" do

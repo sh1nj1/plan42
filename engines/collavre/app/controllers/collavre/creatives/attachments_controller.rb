@@ -29,7 +29,7 @@ module Collavre
         result = Collavre::Creatives::AiWritePolicy.capture(
           creatives: [ creative, creative.effective_origin ], anchor: creative, external_request: true
         ) { attach_file(creative, file) }
-        render json: result
+        render json: result, status: result[:success] == false ? :unprocessable_entity : :ok
       end
 
       private
@@ -78,6 +78,10 @@ module Collavre
 
         if user
           Current.user = user
+          # Same delegated-agent context /mcp sets, so a document-mode quote
+          # task binds (or blocks) this upload like any other agent write.
+          Current.mcp_agent_workspace = Collavre::AgentWorkspace.for_callback_access_token(token)
+          Current.mcp_task_id = request.headers[Collavre::Creatives::CreativeQuoteTurn::TASK_HEADER].presence
         else
           render json: { error: "Unauthorized" }, status: :unauthorized
         end

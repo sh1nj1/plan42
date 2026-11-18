@@ -62,6 +62,19 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
 
     const anchorEvent = () => ({ currentTarget: controller.participantListButtonTarget })
 
+    test('typing indicator overlays the initial on the default avatar', () => {
+        controller.participantsData = [{ ...USERS[0], default_avatar: true }]
+        controller.typingUsers = { 1: 'Ada' }
+        controller.activeAgentTasks = {}
+        controller.agentStates = {}
+        controller.renderTypingIndicator()
+
+        const wrapper = controller.typingIndicatorTarget.querySelector('.avatar-wrapper')
+        expect(wrapper.querySelector('img').getAttribute('src')).toBe('/avatars/1.png')
+        expect(wrapper.querySelector('.avatar-initial').textContent).toBe('A')
+        expect(wrapper.querySelector('.avatar-initial').style.fontSize).toBe('10px')
+    })
+
     test('renders no add button inside the scrolling avatar strip', () => {
         controller.participantsData = USERS
         controller.canShare = true

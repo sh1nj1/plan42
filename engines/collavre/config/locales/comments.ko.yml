@@ -11,6 +11,7 @@ ko:
       not_ai_agent: AI 에이전트만 Primary Agent로 설정할 수 있습니다.
       session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.
       agent_no_creative_access: "%{name}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요."
+      agent_chat_not_supported: "%{name}은(는) 채팅을 지원하지 않아 Primary Agent로 지정할 수 없습니다."
       session_agent_not_assignable: "%{name}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다."
       default_name_prefix: "토픽"
       branch_prefix: "분기"
@@ -30,6 +31,7 @@ ko:
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
         session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 이동할 수 없습니다.
         primary_agent_released: '@%{agent}은(는) "%{creative}"에 피드백 권한이 없어 Primary Agent 지정이 해제되었습니다. 계속 담당하게 하려면 해당 크리에이티브를 에이전트와 공유한 뒤 다시 지정하세요.'
+        primary_agent_released_chat_not_supported: "@%{agent}은(는) 채팅을 지원하지 않아 Primary Agent 지정이 해제되었습니다."
         primary_agent_released_session_agent: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. "%{creative}"은(는) 그 토픽이 아니어서 Primary Agent 지정이 해제되었습니다.'
         add_members:
           title: 새 위치에 멤버를 추가할까요?
@@ -133,6 +135,20 @@ ko:
       review_send_question: 질문 보내기
       review_type_review: 리뷰
       review_type_question: 질문
+      ask_button: 질의
+      review_button_hint: 선택한 부분을 수정합니다
+      ask_button_hint: 선택한 부분에 대해 질문합니다 (수정하지 않음)
+      creative_quote:
+        single_target: 메시지와 크리에이티브를 동시에 인용할 수 없습니다.
+        not_readable: 읽을 수 없는 크리에이티브는 인용할 수 없습니다.
+        question_read_only: 이번 턴은 문서에 대한 질의라서 크리에이티브를 수정할 수 없습니다. 채팅으로 답변하세요.
+        task_not_active: "%{header} 헤더로 지정한 작업이 이 에이전트의 진행 중인 작업이 아니어서 쓰기를 거부했습니다."
+        task_ambiguous: "이 에이전트에 진행 중인 작업이 여러 개이고 그중 문서 리뷰나 질의가 있어서, 이 쓰기가 어느 작업의 것인지 알 수 없습니다. %{header} 헤더에 작업 ID를 넣어 다시 시도하세요 (collavre CLI: COLLAVRE_TASK_ID=<작업 ID> collavre ...)."
+        chip_prefix: 문서
+        proposed_change: 변경 제안
+        out_of_scope: "선택한 부분 밖의 크리에이티브도 변경됩니다: %{ids}"
+        rejected_notice: "\"%{title}\"에 대한 변경 제안이 거절되었습니다. 바꿀 내용을 알려 주고 다시 요청하세요."
+        reject_reason_placeholder: 거절한 이유를 에이전트에게 알려 주세요...
       navigate_back: 이전 채팅
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅
@@ -221,6 +237,8 @@ ko:
         compress_instructions_hint: "추가 지시사항 (선택사항)"
         form_submit: "확인"
         form_cancel: "취소"
+        more: "더보기"
+        less: "접기"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
@@ -245,6 +263,7 @@ ko:
         already_exists: '토픽 "%{name}"이(가) 이미 존재합니다.'
         session_topic_locked: '토픽 "%{name}"은(는) 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.'
         agent_no_creative_access: '@%{agent}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요.'
+        agent_chat_not_supported: "@%{agent}은(는) 채팅을 지원하지 않아 Primary Agent로 지정할 수 없습니다."
         session_agent_not_assignable: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다.'
       versions:
         previous: 이전 버전
@@ -257,6 +276,10 @@ ko:
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
       activity_logs:
+        names:
+          llm_query: "모델 요청"
+          tool_execution: "도구 실행"
+          other: "에이전트 활동"
         duration: "수행 시간: %{duration}"
         inline_duration: "(%{duration})"
         duration_hint: "마지막 시도의 시작부터 모델 응답 완료까지이며, 위임 에이전트는 답글 저장 완료까지입니다. 큐 대기, 이전 재시도, 후속 작업 전달 시간은 제외합니다."

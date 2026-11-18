@@ -52,7 +52,7 @@ class CommentActivityDurationTest < ApplicationSystemTestCase
     end
     within("#comment_#{@logged.id}") do
       open_activity_log
-      assert_selector ".activity-name", text: "LLM"
+      assert_selector ".activity-name", text: "Agent activity"
       assert_no_selector ".activity-log-duration, .activity-execution-time"
     end
   end
