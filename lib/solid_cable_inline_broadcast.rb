@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
-# Keep stream updates synchronous while using Solid Cable 4.1.0.
-# The upstream inline_broadcasts option arrived after this release.
+# Keep stream updates synchronous on releases with batching but no inline option.
 module SolidCableInlineBroadcast
-  def self.install!
-    return unless SolidCable::VERSION == "4.1.0"
+  def self.install!(adapter = ActionCable::SubscriptionAdapter::SolidCable)
+    return if SolidCable.respond_to?(:inline_broadcasts?)
+    return unless adapter.private_method_defined?(:broadcaster)
 
-    adapter = ActionCable::SubscriptionAdapter::SolidCable
     adapter.include(SolidCable::Trimming)
     adapter.prepend(self)
   end
