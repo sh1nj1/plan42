@@ -37,7 +37,8 @@ export default class extends Controller {
     this.dnd.registerDragSource({ selector: '.ai-agent-draggable',
       onDragStart: ({ el, event }) => {
         const user = this.participantsData.find(user => String(user.id) === el.dataset.agentId)
-        if (!user) return false
+        // The wrapper also holds the profile popup; only the avatar may drag.
+        if (!user || event.target.closest?.('.comment-user-popup')) return false
         writeDragData(event.dataTransfer, { kind: 'agent', ids: [user.id],
           payload: { name: user.name, avatar_url: user.avatar_url } })
         event.dataTransfer.effectAllowed = 'copy'
