@@ -181,7 +181,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
 
     assert_selector "#creatives > creative-tree-row:nth-of-type(1) .creative-content", text: "Second paragraph"
     assert_selector "#creatives > creative-tree-row:nth-of-type(2) .creative-content", text: "First paragraph"
-    assert_equal [ @second.id, @first.id ], @root.reload.children.order(:sequence).pluck(:id)
+    # The drag action updates the DOM before the server persists the move.
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal [ @second.id, @first.id ], @root.reload.children.order(:sequence).pluck(:id)
+    end
 
     find("#document-view-btn").click
     assert_no_selector ".creative-drag-handle"
