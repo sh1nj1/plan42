@@ -41,7 +41,7 @@ class AgentGatewaySettingsTest < ApplicationSystemTestCase
                                   base_url: "https://second.example.com", admin_key: "second-secret")
     visit collavre.agent_gateways_path
     page.execute_script <<~JS
-      window.fetch = async () => ({ json: async () => ({ok: true, engines: ['codex']}) });
+      window.fetch = async () => ({ headers: new Headers(), json: async () => ({ok: true, engines: ['codex']}) });
     JS
     within(".gateway-card", text: "Second gateway") do
       click_button I18n.t("collavre.agent_gateways.check")

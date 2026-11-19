@@ -40,4 +40,20 @@ class UserThemesControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "button[onclick*='confirm']", count: 0
   end
+  test "generation failures re-render the user's existing themes" do
+    @user.user_themes.create!(name: "Saved Forest", variables: { "--surface-bg" => "#0f2d1f" })
+    post collavre.user_themes_url, params: { description: " " }
+    assert_response :success
+    assert_includes response.body, "Saved Forest"
+    assert_includes response.body, I18n.t("collavre.themes.alerts.description_empty")
+
+    generator = Object.new
+    generator.define_singleton_method(:generate) { |_description| {} }
+    Collavre::AutoThemeGenerator.stub(:new, generator) do
+      post collavre.user_themes_url, params: { description: "Unavailable" }
+    end
+    assert_response :success
+    assert_includes response.body, "Saved Forest"
+    assert_includes response.body, I18n.t("collavre.themes.alerts.generation_failed")
+  end
 end

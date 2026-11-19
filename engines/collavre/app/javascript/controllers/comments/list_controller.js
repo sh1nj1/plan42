@@ -125,10 +125,6 @@ export default class extends Controller {
     this.element.removeEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
   }
 
-  isColumnReverse() {
-    return false // Force false now
-  }
-
   get popupController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--popup')
   }
@@ -163,7 +159,6 @@ export default class extends Controller {
 
     this.resetState()
     this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
-    this.presenceController?.clearManualTypingMessage()
     this.loadInitialComments()
   }
 
@@ -959,7 +954,6 @@ export default class extends Controller {
   }
 
   updateDraggableState() {
-    const hasSelection = this.selection.size > 0
     this.listTarget.querySelectorAll('.comment-item').forEach((item) => {
       const checkbox = item.querySelector('.comment-select-checkbox')
       if (checkbox?.checked) {
@@ -1109,23 +1103,6 @@ export default class extends Controller {
   }
 
   // API Methods
-
-  async deleteComment(button) {
-    if (!(await confirmDialog(this.element.dataset.deleteConfirmText, { danger: true }))) return
-    const commentId = button.getAttribute('data-comment-id')
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}`, {
-      method: 'DELETE',
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-    }).then((response) => {
-      if (response.ok) {
-        // If deleted, remove from DOM
-        const el = document.getElementById(`comment_${commentId}`)
-        if (el) el.remove()
-        this.selection.delete(commentId)
-        this.notifySelectionChange()
-      }
-    })
-  }
 
   async convertComment(button) {
     // ... (Existing logic) ...

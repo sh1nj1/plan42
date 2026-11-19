@@ -835,7 +835,7 @@ module Collavre
       continuation = @child.comments.order(:id).last
       assert_includes continuation.content, I18n.t("collavre.trigger_loop.continue", iteration: 1, max: 3)
       refute_match(/@/, continuation.content)
-      assert_includes TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child, @ai_bot), "Deliver the feature"
+      assert_includes TriggerLoopCheckJob.new.send(:collect_loop_instructions, @child, @child, @ai_bot), "Deliver the feature"
     end
 
     test "late keep continuation retains the goal without the original command in history" do

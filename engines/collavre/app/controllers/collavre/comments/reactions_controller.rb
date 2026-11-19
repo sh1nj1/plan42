@@ -6,31 +6,29 @@ module Collavre
       before_action :set_creative
       before_action :set_comment
       before_action :authorize_feedback!
+      before_action :validate_emoji!, only: [ :create, :destroy ]
 
       def create
-        emoji = params[:emoji].to_s.strip
-        if emoji.blank?
-          render json: { error: I18n.t("collavre.comments.reaction_invalid") }, status: :unprocessable_entity and return
-        end
-
-        @comment.comment_reactions.find_or_create_by!(user: Current.user, emoji: emoji)
+        @comment.comment_reactions.find_or_create_by!(user: Current.user, emoji: @emoji)
         broadcast_reaction_update
         render json: build_reaction_payload
       end
 
       def destroy
-        emoji = params[:emoji].to_s.strip
-        if emoji.blank?
-          render json: { error: I18n.t("collavre.comments.reaction_invalid") }, status: :unprocessable_entity and return
-        end
-
-        reaction = @comment.comment_reactions.find_by(user: Current.user, emoji: emoji)
+        reaction = @comment.comment_reactions.find_by(user: Current.user, emoji: @emoji)
         reaction&.destroy
         broadcast_reaction_update
         render json: build_reaction_payload
       end
 
       private
+
+      def validate_emoji!
+        @emoji = params[:emoji].to_s.strip
+        return if @emoji.present?
+
+        render json: { error: I18n.t("collavre.comments.reaction_invalid") }, status: :unprocessable_entity
+      end
 
       def build_reaction_payload
         # Fetch fresh reactions

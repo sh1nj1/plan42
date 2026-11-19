@@ -131,21 +131,6 @@ export default class extends Controller {
     this._navigate((params) => applyFilterParam(params, 'cron'))
   }
 
-  // Toggle search mode (flat/tree)
-  applySearchMode(event) {
-    event.preventDefault()
-    const mode = event.currentTarget.dataset.mode
-    if (!mode) return
-
-    this._navigate((params) => {
-      if (mode === 'tree') {
-        params.set('search_mode', 'tree')
-      } else {
-        params.delete('search_mode')
-      }
-    })
-  }
-
   // Toggle archive visibility via URL parameter
   toggleArchive(event) {
     event.preventDefault()

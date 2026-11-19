@@ -115,7 +115,6 @@ describe('ReviewQuotesStore', () => {
     test('add defaults to a review quote with no creative', () => {
       const q = store.add(1, 'text')
       expect(q).toMatchObject({ commentId: 1, creativeId: null, label: '', type: 'review' })
-      expect(store.hasCreativeQuotes).toBe(false)
       expect(store.creativeQuotes).toEqual([])
     })
 
@@ -132,10 +131,9 @@ describe('ReviewQuotesStore', () => {
       expect(q).toMatchObject({ commentId: null, creativeId: '11', label: 'Intro', type: 'review' })
     })
 
-    test('creativeQuotes / hasCreativeQuotes only see creative quotes', () => {
+    test('creativeQuotes only sees creative quotes', () => {
       store.add(1, 'message')
       const c = store.add(null, 'passage', { creativeId: '11' })
-      expect(store.hasCreativeQuotes).toBe(true)
       expect(store.creativeQuotes).toEqual([c])
     })
   })

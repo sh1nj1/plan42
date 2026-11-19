@@ -74,5 +74,31 @@ module Comments
 
       assert_response :redirect # or 401 depending on app setup
     end
+    test "both reaction writes normalize emoji and reject missing input" do
+      post creative_comment_reactions_url(@creative, @comment), params: { emoji: "  👍  " }, as: :json
+      assert_response :success
+      assert_equal "👍", @comment.comment_reactions.last.emoji
+      delete creative_comment_reactions_url(@creative, @comment), params: { emoji: "  👍  " }, as: :json
+      assert_response :success
+      assert_empty @comment.comment_reactions.reload
+
+      [ :post, :delete ].each do |verb|
+        [ nil, "   " ].each do |emoji|
+          assert_no_difference("CommentReaction.count") do
+            public_send(verb, creative_comment_reactions_url(@creative, @comment), params: { emoji: emoji }, as: :json)
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.comments.reaction_invalid"), response.parsed_body["error"]
+        end
+      end
+    end
+
+    test "authorization precedes invalid emoji validation" do
+      Collavre::CreativeShare.create!(creative: @creative, user: @other_user, shared_by: @user, permission: :read)
+      sign_in_as(@other_user, password: "password")
+      post creative_comment_reactions_url(@creative, @comment), params: { emoji: " " }, as: :json
+      assert_response :forbidden
+      assert_equal I18n.t("collavre.comments.no_permission"), response.parsed_body["error"]
+    end
   end
 end

@@ -5,6 +5,7 @@ module Tools
   class CronUpdateService
     extend T::Sig
     extend ToolMeta
+    include Collavre::Crons::RecurringTaskArguments
 
     tool_name "cron_update"
     tool_description "Update the schedule, message, or description of an existing recurring job. Only jobs for creatives you have write access to can be updated."
@@ -29,8 +30,7 @@ module Tools
       return { error: "Cron job not found", key: key } unless task
 
       args = parse_arguments(task)
-      creative_id = args["creative_id"] || parse_creative_id_from_key(key)
-      creative = Creative.find_by(id: creative_id)
+      creative = recurring_task_creative(task, args)
 
       unless creative&.has_permission?(Current.user, :write)
         return { error: "No write permission to update this cron job", key: key }
@@ -62,20 +62,6 @@ module Tools
         description: task.description,
         next_run: task.next_time&.iso8601
       }
-    end
-
-    private
-
-    def parse_arguments(task)
-      args = task.arguments
-      return {} unless args.is_a?(Array) && args.first.is_a?(Hash)
-
-      args.first.stringify_keys
-    end
-
-    def parse_creative_id_from_key(key)
-      match = key.match(/\Acron_(\d+)_/)
-      match[1].to_i if match
     end
   end
 end

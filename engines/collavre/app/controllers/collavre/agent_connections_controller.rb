@@ -2,7 +2,9 @@
 
 module Collavre
   class AgentConnectionsController < ApplicationController
+    include Collavre::ProxyErrorResponse
     before_action :set_agent_and_workspace
+    rescue_from Collavre::CliProxy::Client::Error, with: :render_connection_proxy_error
 
     def show; end
 
@@ -24,8 +26,6 @@ module Collavre
           mode: @agent.agent_gateway.workspace_mode
         }
       }
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def create_auth_session
@@ -35,14 +35,10 @@ module Collavre
         provisioning_url: manifest_url
       )
       render json: response, status: :created
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def auth_session
       render json: proxy_client.auth_session(params[:engine], params[:session_id])
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def submit_auth_session
@@ -54,32 +50,22 @@ module Collavre
         params[:auth_secret],
         base_url: base_url
       )
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def cancel_auth_session
       render json: proxy_client.cancel_auth_session(params[:engine], params[:session_id])
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def provision_sync
       render json: sync_provisioning
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def provision_approve
       render json: proxy_client.provision_approve(params[:type], params[:name])
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def provision_delete
       render json: proxy_client.provision_delete(params[:type], params[:name])
-    rescue Collavre::CliProxy::Client::Error => e
-      render_proxy_error(e)
     end
 
     def rotate_tokens
@@ -88,6 +74,13 @@ module Collavre
     end
 
     private
+
+    def render_connection_proxy_error(error)
+      proxy_actions = %w[status create_auth_session auth_session submit_auth_session cancel_auth_session provision_sync provision_approve provision_delete]
+      raise error unless proxy_actions.include?(action_name)
+
+      render_proxy_error(error)
+    end
 
     def set_agent_and_workspace
       @agent = Collavre::User.find(params[:user_id] || params[:id])
@@ -137,11 +130,6 @@ module Collavre
         agent_id: @agent.id,
         token: @workspace.manifest_token
       )}"
-    end
-
-    def render_proxy_error(error)
-      status = error.status.to_i.between?(400, 599) ? error.status : :bad_gateway
-      render json: { error: { message: error.message, code: error.code } }, status: status
     end
 
     # A custom provider URL is supplied by an agent user but fetched by the

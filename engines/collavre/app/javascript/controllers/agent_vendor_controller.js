@@ -20,7 +20,7 @@ function fastModeSupported(model) {
 
 export default class extends Controller {
   static targets = ["vendor", "gateway", "gatewaySelect", "legacyCredential", "model",
-    "runOptions", "effort", "fastMode", "fastModeCheckbox"]
+    "runOptions", "effort", "fastMode"]
   static values = { defaultModel: String }
 
   connect() {

@@ -39,7 +39,7 @@ module Collavre
         return
       end
 
-      instructions = collect_instructions(child_creative, parent_creative, verifier)
+      instructions = collect_loop_instructions(child_creative, parent_creative, verifier)
       result = verify_completion(verifier, instructions, last_agent_comment.content.to_s, task)
 
       if result == :verified
@@ -74,30 +74,13 @@ module Collavre
 
     private
 
-    # Collect instructions from context creatives of both parent and child
-    def collect_instructions(child_creative, parent_creative, verifier)
-      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
-      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
-      contexts.each do |ctx|
-        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
-
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      child_desc = child_creative.description.to_s.strip
-      parts << "Task: #{child_desc}" if child_desc.present?
-
-      parts.join("\n\n---\n\n")
-    end
-
     # Pick a verifier AI agent: prefer one with feedback+ permission that
     # is NOT the original task agent. Fall back to the task agent only if
     # no other AI agent exists.
     def pick_verifier_agent(_creative, task_agent_id, child_creative)
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
       ai_agents = (child_creative.all_shared_users(:feedback).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
+                          .select { |agent| decision_capable?(agent, child_creative) }
 
       decision_agent(ai_agents, task_agent_id)
     end
@@ -150,7 +133,7 @@ module Collavre
       agent = task.creative.find_ai_agent(:feedback, capability: :chat)
       if result["source"] == "judge" && agent
         creative = task.creative
-        instructions = collect_instructions(creative, creative.trigger_loop_context, agent)
+        instructions = collect_loop_instructions(creative, creative.trigger_loop_context, agent)
         prompt = verification_prompt(instructions, agent_response)
         explanation = decision_client(agent, task, VERIFY_SYSTEM_PROMPT).chat([
           { role: "user", text: "#{prompt}\nThe decision is INCOMPLETE. List only the unexecuted actions as a short explanation." }

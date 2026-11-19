@@ -78,11 +78,6 @@ export default class ReviewQuotesStore {
     return removed
   }
 
-  setFeedback(quoteId, feedback) {
-    const quote = this._quotes.find(q => q.id === quoteId)
-    if (quote) quote.feedback = feedback.trim()
-  }
-
   saveActiveFeedback(textareaValue) {
     if (!this._activeId) return
     const quote = this._quotes.find(q => q.id === this._activeId)
@@ -182,10 +177,6 @@ export default class ReviewQuotesStore {
 
   get creativeQuotes() {
     return this._quotes.filter(q => q.creativeId)
-  }
-
-  get hasCreativeQuotes() {
-    return this._quotes.some(q => q.creativeId)
   }
 
   /** Button state: 'add' | 'send-review' | 'send-question' | 'normal' */

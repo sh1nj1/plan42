@@ -10,19 +10,14 @@ module CollavreLinear
       before_action :set_origin
       before_action :ensure_read_permission
       before_action :ensure_admin_permission, only: %i[create destroy resync update_secret options]
+      before_action :set_linear_account, only: %i[create destroy resync update_secret options]
+      before_action :set_linear_link, only: %i[destroy resync update_secret]
 
       # POST /linear/creatives/:creative_id/integration
       #
       # Links a Creative subtree to a Linear team + project, provisions a
       # webhook for the team, and enqueues an initial full export.
       def create
-        account = Current.user.linear_account
-        unless account
-          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
-                 status: :unprocessable_entity
-          return
-        end
-
         team_id          = params[:team_id].to_s.presence
         linear_project_id = params[:linear_project_id].to_s.presence
 
@@ -65,7 +60,7 @@ module CollavreLinear
             # or the same subtree claimed by another account. The ancestor/
             # descendant check above excludes @origin, so guard @origin here.
             origin_conflict = @origin.linear_project_links
-                                     .where.not(account: account, linear_project_id: linear_project_id)
+                                     .where.not(account: @linear_account, linear_project_id: linear_project_id)
                                      .exists?
 
             # One Linear project maps to exactly one Collavre root. Inbound
@@ -84,7 +79,7 @@ module CollavreLinear
               overlapping_link = true
             else
               link = @origin.linear_project_links.find_or_initialize_by(
-                account:           account,
+                account:           @linear_account,
                 linear_project_id: linear_project_id
               )
               link.team_id = team_id
@@ -129,21 +124,7 @@ module CollavreLinear
       # hand in Linear (we never learn its id), so there is nothing to
       # deregister here — the admin removes it in Linear's settings if desired.
       def destroy
-        account = Current.user.linear_account
-        unless account
-          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
-                 status: :unprocessable_entity
-          return
-        end
-
-        link = @origin.linear_project_links.find_by(account: account)
-        unless link
-          render json: { error: I18n.t("collavre_linear.errors.not_found") },
-                 status: :not_found
-          return
-        end
-
-        link.destroy!
+        @linear_link.destroy!
 
         render json: { success: true }
       end
@@ -156,19 +137,6 @@ module CollavreLinear
       # OutboundSyncJob protects against parent-before-child races, so enqueuing
       # the full subtree is safe.
       def resync
-        account = Current.user.linear_account
-        unless account
-          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
-                 status: :unprocessable_entity
-          return
-        end
-
-        unless @origin.linear_project_links.where(account: account).exists?
-          render json: { error: I18n.t("collavre_linear.errors.not_found") },
-                 status: :not_found
-          return
-        end
-
         # Resync is the human resolution path the conflict notice points to, so it
         # must break the :conflict freeze — CreativeExporter#update_issue! (and the
         # inbound applier) HALT on conflicted links, so without this the enqueued
@@ -189,20 +157,6 @@ module CollavreLinear
       # it), so the admin pastes it here and we propagate it to the team's sibling
       # links — the one value all of the team's deliveries verify against.
       def update_secret
-        account = Current.user.linear_account
-        unless account
-          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
-                 status: :unprocessable_entity
-          return
-        end
-
-        link = @origin.linear_project_links.find_by(account: account)
-        unless link
-          render json: { error: I18n.t("collavre_linear.errors.not_found") },
-                 status: :not_found
-          return
-        end
-
         secret = params[:webhook_secret].to_s.strip
         if secret.blank?
           render json: { error: I18n.t("collavre_linear.errors.missing_secret") },
@@ -210,7 +164,7 @@ module CollavreLinear
           return
         end
 
-        link.update_webhook_secret!(secret)
+        @linear_link.update_webhook_secret!(secret)
 
         render json: { success: true }
       end
@@ -220,14 +174,7 @@ module CollavreLinear
       # Teams and projects the connected account can see, so the link modal can
       # offer dropdowns instead of asking the user to type raw Linear IDs.
       def options
-        account = Current.user.linear_account
-        unless account
-          render json: { error: I18n.t("collavre_linear.errors.not_connected") },
-                 status: :unprocessable_entity
-          return
-        end
-
-        client = CollavreLinear::Client.new(account)
+        client = CollavreLinear::Client.new(@linear_account)
         render json: {
           teams:    client.list_teams,
           projects: client.list_projects,
@@ -240,6 +187,20 @@ module CollavreLinear
       end
 
       private
+
+      def set_linear_account
+        @linear_account = Current.user.linear_account
+        return if @linear_account
+
+        render json: { error: I18n.t("collavre_linear.errors.not_connected") }, status: :unprocessable_entity
+      end
+
+      def set_linear_link
+        @linear_link = @origin.linear_project_links.find_by(account: @linear_account)
+        return if @linear_link
+
+        render json: { error: I18n.t("collavre_linear.errors.not_found") }, status: :not_found
+      end
 
       # Enqueue an outbound export for every Creative in the @origin subtree.
       # Shared by create (initial link) and resync so both cover descendants.

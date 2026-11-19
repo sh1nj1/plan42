@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import csrfFetch from "../lib/api/csrf_fetch"
 
 export default class extends Controller {
   static values = { resumeUrl: String, resumed: String, expired: String }
@@ -219,10 +220,9 @@ export default class extends Controller {
   }
 
   async request(url, options = {}) {
-    const response = await fetch(url, {
+    const response = await csrfFetch(url, {
       ...options,
       headers: {
-        "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content || "",
         "Content-Type": "application/json",
         Accept: "application/json",
         ...(options.headers || {})

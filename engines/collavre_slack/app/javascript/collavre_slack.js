@@ -1,6 +1,6 @@
 import { filterChannels, reconcileSelection, buildChannelViewModels } from './slack_channel_list.js';
-import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
-import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
+import { showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose, requireCreativeId, resetConnectView, showSuccessAndClose } from 'collavre/modules/integration_wizard';
+import { confirmDialog } from 'collavre/lib/utils/dialog';
 
 let slackIntegrationInitialized = false;
 
@@ -48,19 +48,10 @@ if (!slackIntegrationInitialized) {
       if (connectedStatus) {
         connectedStatus.style.display = 'none';
       }
-      if (existingContainer) {
-        existingContainer.style.display = 'none';
-      }
-      if (existingList) {
-        existingList.innerHTML = '';
-      }
       if (addChannelSection) {
         addChannelSection.style.display = 'none';
       }
-      if (connectMessage) {
-        connectMessage.style.display = '';
-      }
-      if (loginBtn) loginBtn.style.display = 'inline-block';
+      resetConnectView({ existingContainer, existingList, connectMessage, loginBtn });
       if (channelListEl) channelListEl.innerHTML = '';
       updateStep();
     }
@@ -310,12 +301,7 @@ if (!slackIntegrationInitialized) {
         .then(response => response.json())
         .then(data => {
           if (data.success) {
-            statusEl.textContent = modal.dataset.successMessage || 'Channel linked successfully';
-            statusEl.style.color = 'green';
-            setTimeout(() => {
-              modal.style.display = 'none';
-              resetWizard();
-            }, 2000);
+            showSuccessAndClose(modal, statusEl, modal.dataset.successMessage || 'Channel linked successfully', resetWizard);
           } else {
             showError(errorEl, data.message || data.error || 'Failed to link channel');
           }
@@ -332,11 +318,8 @@ if (!slackIntegrationInitialized) {
 
     // Event listeners
     openBtn.addEventListener('click', function () {
-      creativeId = this.dataset.creativeId;
-      if (!creativeId) {
-        alertDialog(modal.dataset.noCreative);
-        return;
-      }
+      creativeId = requireCreativeId(this, modal);
+      if (!creativeId) return;
       modal.style.display = 'flex';
       resetWizard();
       loadIntegrationStatus();

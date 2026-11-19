@@ -5,7 +5,7 @@ import { previewDrop } from '../../lib/dnd/preview'
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
-import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
+import { fetchCommentRequest, parseCommentRequestResponse } from './comment_form_request'
 import ReviewQuotesStore from './review_quotes_store'
 import FormDraftManager from './form_draft_manager'
 import { appendRunOptions } from './run_options_controller'
@@ -298,7 +298,6 @@ export default class extends Controller {
     this.submitTarget.classList.remove('review-submit-btn')
     this.submitTarget.classList.remove('inbox-reply-btn')
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
-    this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
     this.textareaTarget.placeholder = this._defaultPlaceholder()
@@ -462,30 +461,10 @@ export default class extends Controller {
     }
 
     let settlementUi = Promise.resolve()
-    const doFetch = () => fetch(url, {
-      method,
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-      body: formData,
-    })
+    const doFetch = () => fetchCommentRequest(url, { method, body: formData })
 
     doFetch()
-      .then((response) => {
-        if (response.ok) return response.text()
-        // On 422, the CSRF token may have gone stale (e.g. after an OS
-        // window switch).  Refresh the token and retry once before giving up.
-        if (response.status === 422 && !this._hasRetried) {
-          this._hasRetried = true
-          return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
-            return retryResp.json().then((json) => {
-              throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-            })
-          })
-        }
-        return response.json().then((json) => {
-          throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-        })
-      })
+      .then((response) => parseCommentRequestResponse(response, doFetch, this))
       .then((html) => {
         if (submittedDraft.backupKey) {
 	  chatDrafts.clearSubmissionBackupsThrough(
@@ -666,7 +645,6 @@ export default class extends Controller {
   handleSearch(event) {
     event.preventDefault()
     const query = this.textareaTarget.value.trim()
-    this.presenceController?.clearManualTypingMessage()
     this.listController?.applySearchQuery(query || null)
   }
 
@@ -850,10 +828,6 @@ export default class extends Controller {
     return getCreativeLabelFromDom(creativeId)
   }
 
-  insertCreativeLink({ id, label }) {
-    this.insertCreativeLinks([{ id, label }])
-  }
-
   insertCreativeLinks(creatives) {
     if (!creatives.length) return
     const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
@@ -934,17 +908,6 @@ export default class extends Controller {
     })
   }
 
-  quoteComment(commentId, selectedText) {
-    if (!commentId || !selectedText) return
-    this.quotedCommentIdTarget.value = commentId
-    this.quotedTextTarget.value = selectedText
-    this.quoteIndicatorTarget.style.display = ''
-    this.quoteIndicatorTextTarget.textContent = selectedText.length > 80
-      ? selectedText.substring(0, 80) + '…'
-      : selectedText
-    this.focusTextarea({ explicit: true })
-  }
-
   // review_type (and a document-mode quote target) staged by handleSend.
   _appendPendingReview(formData) {
     if (!this._pendingReviewType) return
@@ -1017,28 +980,10 @@ export default class extends Controller {
     if (effectiveTopicId) formData.append('comment[topic_id]', effectiveTopicId)
 
     const url = `/creatives/${this.creativeId}/comments`
-    const doFetch = () => fetch(url, {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-      body: formData,
-    })
+    const doFetch = () => fetchCommentRequest(url, { method: 'POST', body: formData })
 
     doFetch()
-      .then((response) => {
-        if (response.ok) return response.text()
-        if (response.status === 422 && !this._hasRetried) {
-          this._hasRetried = true
-          return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
-            return retryResp.json().then((json) => {
-              throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-            })
-          })
-        }
-        return response.json().then((json) => {
-          throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-        })
-      })
+      .then((response) => parseCommentRequestResponse(response, doFetch, this))
       .then((html) => {
         this.renderCommentHtml(html)
         const listCtrl = this.application.getControllerForElementAndIdentifier(

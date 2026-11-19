@@ -15,6 +15,28 @@ module Collavre
       candidates.find { |agent| agent.id != task_agent_id } || candidates.first
     end
 
+    def decision_capable?(agent, child_creative)
+      (agent.supports?(:judge) || agent.supports?(:chat)) &&
+        Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback)
+    end
+
+    # Goal plus the context creatives of both parent and child the verifier may read.
+    def collect_loop_instructions(child_creative, parent_creative, verifier)
+      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
+      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
+      contexts.each do |ctx|
+        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
+
+        desc = ctx.description.to_s.strip
+        parts << desc if desc.present?
+      end
+
+      child_desc = child_creative.description.to_s.strip
+      parts << "Task: #{child_desc}" if child_desc.present?
+
+      parts.join("\n\n---\n\n")
+    end
+
     # Attribute evaluator usage without routing internal prompts into the working topic session.
     def decision_client(verifier, task, system_prompt)
       AiClient.new(

@@ -125,39 +125,6 @@ describe('FormController - Review Quote Chips', () => {
     })
   })
 
-  describe('quoteComment', () => {
-    test.each(['Quoted text', 'A'.repeat(81)])('quotes selected text and explicitly focuses the composer: %s', (text) => {
-      const otherInput = document.createElement('input')
-      container.appendChild(otherInput)
-      otherInput.focus()
-      expect(document.activeElement).toBe(otherInput)
-
-      controller.quoteComment(42, text)
-
-      expect(controller.quotedCommentIdTarget.value).toBe('42')
-      expect(controller.quotedTextTarget.value).toBe(text)
-      expect(controller.quoteIndicatorTarget.style.display).toBe('')
-      expect(controller.quoteIndicatorTextTarget.textContent).toBe(
-        text.length > 80 ? text.substring(0, 80) + '…' : text,
-      )
-      expect(document.activeElement).toBe(controller.textareaTarget)
-    })
-
-    test.each([[null, 'text'], [42, '']])('ignores an incomplete quote (%s, %s)', (id, text) => {
-      const focus = jest.spyOn(controller.textareaTarget, 'focus')
-      try {
-        controller.quoteComment(id, text)
-
-        expect(controller.quotedCommentIdTarget.value).toBe('')
-        expect(controller.quotedTextTarget.value).toBe('')
-        expect(controller.quoteIndicatorTarget.style.display).toBe('none')
-        expect(focus).not.toHaveBeenCalled()
-      } finally {
-        focus.mockRestore()
-      }
-    })
-  })
-
   test.each(['popup', 'button'])('review %s clears the message selection before focusing the composer', (entry) => {
     const comment = document.createElement('div')
     comment.dataset.commentId = '42'
@@ -703,8 +670,12 @@ describe('FormController - Review Quote Chips', () => {
   })
 
   describe('sending a question quote', () => {
-    test('carries the selected agent run options and topic', async () => {
+    test.each([false, true])('carries run options and topic through question submission (retry=%s)', async (retry) => {
       const fetchMock = jest.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve('') }))
+      if (retry) {
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 422 })
+          .mockResolvedValueOnce({ headers: new Headers({ 'X-CSRF-Token': 'question-fresh' }) })
+      }
       const originalFetch = global.fetch
       global.fetch = fetchMock
       const meta = document.createElement('meta')
@@ -729,6 +700,13 @@ describe('FormController - Review Quote Chips', () => {
         expect(body.get('comment[agent_run_options][model]')).toBeNull()
         expect(body.get('comment[quoted_text]')).toBeNull()
         await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(fetchMock).toHaveBeenCalledTimes(retry ? 3 : 1)
+        if (retry) {
+          expect(fetchMock.mock.calls[2][1].body).toBe(body)
+          expect(fetchMock.mock.calls[2][1].headers['X-CSRF-Token']).toBe('question-fresh')
+        }
+        expect(controller._hasRetried).toBe(false)
+        expect(controller.sending).toBe(false)
       } finally {
         global.fetch = originalFetch
         meta.remove()
