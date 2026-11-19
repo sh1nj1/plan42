@@ -1,8 +1,9 @@
 module CollavrePlan
   class TimelineItems
-    def initialize(creative_id: nil)
+    # routes: pass a request-aware proxy (e.g. helpers.collavre) to keep the caller's script name.
+    def initialize(creative_id: nil, routes: Collavre::Engine.routes.url_helpers)
       @creative_id = creative_id
-      @routes = Collavre::Engine.routes.url_helpers
+      @routes = routes
     end
 
     def all(plans:, calendar_events:, registrations:, modifications:)
