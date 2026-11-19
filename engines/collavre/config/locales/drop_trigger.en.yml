@@ -2,13 +2,15 @@ en:
   collavre:
     drop_trigger:
       child_entered: "🔔 Drop Trigger — Creative '%{child_description}' (ID: %{child_id}) was added to '%{parent_description}'. Please process this creative according to this stage's purpose."
-      no_agent: "⚠️ Drop Trigger failed — No AI agent with write permission found on '%{parent_description}'. Please share an AI agent with write permission to enable automatic processing."
+      no_agent: "⚠️ Drop Trigger failed — No chat-capable AI agent with write permission found on '%{parent_description}'. Please share a chat-capable AI agent with write permission to enable automatic processing."
 
       not_a_container: "Parent is not a trigger container"
       unknown_action: "Unknown action"
       toggle_on: "Drop Trigger enabled"
       toggle_off: "Drop Trigger disabled"
     trigger_loop:
+      incomplete_reason: "Required actions remain incomplete."
+      verification_error: "Completion verification failed. Please check the remaining work."
       instructions: |
         ---
         [LOOP INSTRUCTIONS]
@@ -23,6 +25,7 @@ en:
       stuck: "⚠️ Trigger Loop paused — Agent reported BLOCKED at iteration %{iteration}. User intervention may be needed."
       max_reached: "⚠️ Trigger Loop stopped — Reached maximum iterations (%{max}). Review progress and restart if needed."
       infra_stuck: "⚠️ Trigger Loop paused — %{count} consecutive infrastructure errors (timeout/connection). The service may be unavailable. User intervention needed."
+      prompt_too_large: "⚠️ Trigger Loop paused — the AI provider rejected the prompt as too large, and retrying would send the same prompt. Reduce the context (e.g. lower context.creative_children_level or context.max_prompt_chars in the agent settings) and resume."
       verification_failed: "🔍 Trigger Loop — iteration %{iteration}/%{max}. Your [STATUS: DONE] was not verified. The following actions were not completed:\n%{reason}\n\nPlease complete all remaining actions and report [STATUS: DONE/CONTINUE/BLOCKED]."
       start: "Start"
       pause: "Pause"

@@ -107,7 +107,7 @@ module Collavre
         result_comment: target_comment
       )
       target_comment.update!(content: merged_content, agent_run_options: nil)
-      creative.comments.where(id: comments[1..].map(&:id)).destroy_all
+      Comment.destroy_in_batch(creative.comments.where(id: comments[1..].map(&:id)))
     end
   end
 end

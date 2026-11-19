@@ -1,11 +1,18 @@
 import { createSubscription } from '../services/cable'
 import { highlightCodeBlocks } from '../lib/utils/markdown'
 import { addTableDownloadButtons } from '../lib/utils/table_download'
+import { decorateAttachmentLinks } from '../lib/lexical/attachment_presentation'
 import { sanitizeDescriptionHtml } from '../lib/utils/sanitize_description'
+
+function decorateInitialSlide(contentEl) {
+  decorateAttachmentLinks(contentEl);
+  highlightCodeBlocks(contentEl);
+  addTableDownloadButtons(contentEl);
+}
 
 document.addEventListener('DOMContentLoaded', function() {
   var container = document.getElementById('slide-view');
-  if (!container) return;
+  if (!container?.dataset.slideIds) return;
 
   var ids = container.dataset.slideIds.split(',').map(function(id) { return parseInt(id, 10); });
   var index = parseInt(container.dataset.initialIndex || '0', 10);
@@ -28,8 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateUrl(index);
     // Initial slide is server-rendered (static ERB): re-tokenize its code blocks
     // and attach table download buttons, same as the JS-loaded slides below.
-    highlightCodeBlocks(contentEl);
-    addTableDownloadButtons(contentEl);
+    decorateInitialSlide(contentEl);
   }
 
   function updateUrl(idx) {

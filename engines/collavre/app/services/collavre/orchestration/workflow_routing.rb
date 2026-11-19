@@ -13,7 +13,7 @@ module Collavre
         # Session pins identify the registered client, not an optional responder.
         return match_without_workflow if matched_topic&.session_id.present?
 
-        case PolicyResolver.new(@context).workflow_routing_mode
+        case (@policy_resolver || PolicyResolver.new(@context)).workflow_routing_mode
         when "off"
           match_without_workflow
         when "on"

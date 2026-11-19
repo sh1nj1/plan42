@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_14_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -275,6 +275,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_000000) do
     t.integer "user_id"
     t.string "waiting_notice_scope"
     t.integer "waiting_notice_task_id"
+    t.integer "quoted_creative_id"
+    t.datetime "deleting_at"
     t.index ["action_executed_by_id"], name: "index_comments_on_action_executed_by_id"
     t.index ["approver_id"], name: "index_comments_on_approver_id"
     t.index ["async_approval_recovery_pending"], name: "index_comments_on_pending_async_approval"
@@ -288,11 +290,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_000000) do
     t.index ["creative_id"], name: "index_comments_on_creative_id"
     t.index ["notification_key"], name: "index_comments_on_notification_key", unique: true, where: "notification_key IS NOT NULL"
     t.index ["quoted_comment_id"], name: "index_comments_on_quoted_comment_id"
+    t.index ["quoted_creative_id"], name: "index_comments_on_quoted_creative_id"
     t.index ["selected_version_id"], name: "index_comments_on_selected_version_id"
     t.index ["task_id"], name: "index_comments_on_task_id"
     t.index ["topic_id", "topic_assigned_at"], name: "index_comments_on_topic_and_assigned_at"
     t.index ["topic_id"], name: "index_comments_on_topic_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
+    t.check_constraint "quoted_comment_id IS NULL OR quoted_creative_id IS NULL", name: "comments_single_quote_target"
   end
 
   create_table "contacts", force: :cascade do |t|
@@ -1047,6 +1051,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_000000) do
     t.index ["task_id"], name: "index_task_actions_on_task_id"
   end
 
+  create_table "task_merged_instructions", force: :cascade do |t|
+    t.bigint "task_id", null: false
+    t.bigint "comment_id", null: false
+    t.index ["comment_id", "task_id"], name: "index_task_merged_instructions_on_comment_id_and_task_id", unique: true
+    t.index ["task_id"], name: "index_task_merged_instructions_on_task_id"
+  end
+
   create_table "tasks", force: :cascade do |t|
     t.integer "agent_id", null: false
     t.datetime "created_at", null: false
@@ -1067,10 +1078,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_14_000000) do
     t.string "waiting_notice_scope"
     t.integer "workflow_execution_id"
     t.string "workflow_stop_reason"
+    t.bigint "trigger_comment_id"
+    t.string "event_causation_id"
     t.index ["agent_id"], name: "index_tasks_on_agent_id"
     t.index ["creative_id"], name: "index_tasks_on_creative_id"
+    t.index ["event_causation_id"], name: "index_tasks_on_event_causation_id"
     t.index ["status", "resume_not_before"], name: "index_tasks_on_status_and_resume_not_before"
     t.index ["topic_id", "status"], name: "index_tasks_on_topic_id_and_status"
+    t.index ["trigger_comment_id"], name: "index_tasks_on_trigger_comment_id"
     t.index ["workflow_execution_id", "agent_id"], name: "workflow_task_identity", unique: true
     t.index ["workflow_execution_id"], name: "index_tasks_on_workflow_execution_id"
   end

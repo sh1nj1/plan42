@@ -58,6 +58,26 @@ class UsersControllerAiTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "tool selection shows the localized summary with details behind more" do
+    @admin.update!(locale: :ko)
+    tools = [ { name: "cron_list", description: "List recurring scheduled jobs.", params: {} },
+              { name: "my_tool", description: "Does one thing.", params: {} } ]
+
+    Collavre::McpService.stub(:available_tools, tools) do
+      get new_ai_users_url
+    end
+
+    assert_response :success
+    assert_select "label[for='tool_cron_list'] span", I18n.t("collavre.tool_descriptions.cron_list.summary", locale: :ko)
+    assert_select "label[for='tool_cron_list'] + details.tool-details" do
+      assert_select "summary", "더보기"
+      assert_select ".tool-details-body", text: I18n.t("collavre.tool_descriptions.cron_list.details", locale: :ko)
+    end
+    assert_select "label[for='tool_my_tool'] span", "Does one thing."
+    assert_select "label[for='tool_my_tool'] + details.tool-details", count: 0
+    assert_not_includes response.body, "List recurring scheduled jobs."
+  end
+
   test "new_ai groups tools into categories with a select-all toggle" do
     mock_tools = [
       { name: "topic_list", description: "List topics", parameters: {}, custom: false },

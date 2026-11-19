@@ -47,8 +47,9 @@ module Collavre
         data = parsed_args
         return I18n.t("collavre.comments.topic_command.missing_name") if data.blank?
 
-        # Find primary agent from @mentions using the same parsing as chat
-        primary_agent = comment.mentioned_users.find(&:ai_user?)
+        # Resolve explicit selectors before capability filtering so invalid agents
+        # are rejected rather than interpreted as a request to release the pin.
+        primary_agent = comment.mentioned_users(chat_only: false).find(&:ai_user?)
 
         # Find existing topic or create new one
         existing_topic = Topic.find_by(creative: creative, name: data[:name])
@@ -72,11 +73,7 @@ module Collavre
         rejection = primary_agent &&
           Topic.primary_agent_rejection(creative, primary_agent, topic: existing_topic)
         if rejection
-          key = if rejection == :session_agent_outside_session_topic
-                  "collavre.comments.topic_command.session_agent_not_assignable"
-          else
-                  "collavre.comments.topic_command.agent_no_creative_access"
-          end
+          key = "collavre.comments.topic_command.#{Topics::PinRejection.locale_key(rejection)}"
           return I18n.t(key, agent: primary_agent.display_name)
         end
 
@@ -135,11 +132,7 @@ module Collavre
       def broadcast_topic_created(topic, agent = nil)
         data = { action: "created", topic: topic.slice(:id, :name), user_id: user.id }
         if agent
-          data[:topic][:primary_agent] = {
-            id: agent.id,
-            name: agent.display_name,
-            avatar_url: resolve_avatar_url(agent)
-          }
+          data[:topic][:primary_agent] = Topics::Serializer.agent_json(agent)
         end
         TopicsChannel.broadcast_to(creative, data)
       end
@@ -149,22 +142,8 @@ module Collavre
       # client can actually remove the avatar rather than keep a stale one.
       def broadcast_topic_agent_updated(topic, agent)
         data = { action: "updated", topic: topic.slice(:id, :name), user_id: user.id }
-        data[:topic][:primary_agent] = if agent
-          { id: agent.id, name: agent.display_name, avatar_url: resolve_avatar_url(agent) }
-        end
+        data[:topic][:primary_agent] = agent ? Topics::Serializer.agent_json(agent) : nil
         TopicsChannel.broadcast_to(creative, data)
-      end
-
-      def resolve_avatar_url(agent)
-        if agent.avatar.attached?
-          Rails.application.routes.url_helpers.rails_blob_url(
-            agent.avatar, only_path: true
-          )
-        elsif agent.avatar_url.present?
-          agent.avatar_url
-        else
-          ActionController::Base.helpers.asset_path("default_avatar.svg")
-        end
       end
 
       def set_primary_agent(topic, agent)

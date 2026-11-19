@@ -41,7 +41,7 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".activity-log-duration", count: 0
     assert_select ".activity-time .activity-execution-time", text: "(1분 23초)"
-    assert_select ".activity-name", text: "LLM"
+    assert_select ".activity-name", text: "에이전트 활동"
     assert_select ".activity-time", text: /전\s*\(1분 23초\)/
     assert_select ".activity-log-yaml", text: /<script>alert\(1\)<\/script>/
     assert_select ".activity-log-yaml script", count: 0
@@ -86,21 +86,22 @@ class Comments::ActivityLogsControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_select ".activity-log-duration", count: 0
       assert_select ".activity-time .activity-execution-time", text: "(20s)", count: with_logs ? 1 : 0
-      assert_select ".activity-name", text: "Review LLM", count: with_logs ? 1 : 0
+      assert_select ".activity-name", text: "Agent activity", count: with_logs ? 1 : 0
       assert_equal 83, Collavre::TaskExecutionTime.seconds(original_task)
       assert_not Collavre::Comment.exists?(placeholder.id)
     end
   end
 
   test "shows task duration once beside the latest activity timestamp" do
-    @comment.activity_logs.create!(activity: "Earlier LLM", created_at: 90.seconds.ago)
-    @comment.activity_logs.create!(activity: "Latest LLM", created_at: 20.seconds.ago)
+    @comment.activity_logs.create!(activity: "Earlier LLM", log: { response: "Earlier response" }, created_at: 90.seconds.ago)
+    @comment.activity_logs.create!(activity: "Latest LLM", log: { response: "Latest response" }, created_at: 20.seconds.ago)
     get creative_comment_activity_log_path(@creative, @comment), params: { locale: :en }
 
     assert_response :success
     assert_select ".activity-execution-time", count: 1
     assert_select ".activity-log-item:first-child" do
-      assert_select ".activity-name", text: "Latest LLM"
+      assert_select ".activity-name", text: "Agent activity"
+      assert_select ".activity-log-yaml", text: /response: Latest response/
       assert_select ".activity-time", text: /ago\s*\(1m 23s\)/
       assert_select ".activity-execution-time[role='note'][title]", text: "(1m 23s)" do |elements|
         assert_equal "Execution time: 1m 23s", elements.first["aria-label"]

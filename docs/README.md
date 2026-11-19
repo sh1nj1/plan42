@@ -15,6 +15,9 @@ thin agent entry point that indexes into this directory.
 - [permissions.md](permissions.md) — the permission system and the converged
   `CreativeSharesCache` / `PermissionFilter` architecture.
 
+- [features/keep-command.md](features/keep-command.md) — start bounded agent
+  loops with `/keep` or the external `keep` tool, optional goals and agent selection,
+  and shared trigger controls.
 - [workflow_rule_editor.md](workflow_rule_editor.md) — edit workflow rules,
   understand pin scope, and roll out routing through matching policies.
 
@@ -34,6 +37,9 @@ thin agent entry point that indexes into this directory.
 - [test.md](test.md) — manual QA of the live site (test accounts, credentials).
 
 ## Integrations
+
+- [decision_adapter.md](decision_adapter.md) — native judgments, chat fallback,
+  agent capabilities, and trigger-loop verification.
 
 - [github_integration.md](github_integration.md)
 - [notion_integration.md](notion_integration.md)

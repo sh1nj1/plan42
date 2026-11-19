@@ -274,7 +274,7 @@ class CreativeTreeRow extends LitElement {
         data-parent-id=${this.parentId ?? ""}
         data-dnd-disabled=${titleDndDisabledAttr(this)}
       >
-        <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
+        <div class="creative-row" data-creatives--select-mode-target="row">
           <div class="creative-row-start" style="align-items: center;">
             ${this._renderActionButton()}
             <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>

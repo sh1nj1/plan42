@@ -26,6 +26,69 @@ module Collavre
       Current.reset
     end
 
+    test "drop never dispatches or creates a trigger comment while keep owns the slot" do
+      %w[running pending_verification].each do |state|
+        config = TriggerLoopConfig.build(@child.main_topic.id, source: "keep", state: state)
+        @child.update!(data: { "trigger" => { "loop" => config } })
+        SystemEvents::Dispatcher.stub(:dispatch_with_outcome, ->(*) { flunk "active keep must block drop dispatch" }) do
+          assert_no_difference -> { @child.comments.count } do
+            DropTriggerJob.perform_now(@parent.id, @child.id)
+          end
+        end
+        assert_equal config, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "replacement drop uses a fresh comment and retries that generation" do
+      dispatched = []
+      dispatcher = ->(_event, payload, **) { dispatched << payload.deep_stringify_keys.dig("comment", "id"); dispatch_outcome([ @ai_bot ]) }
+      SystemEvents::Dispatcher.stub(:dispatch_with_outcome, dispatcher) do
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+        old = @child.comments.order(:id).last
+        Task.create!(name: "Old drop", status: "done", creative: @child, topic_id: old.topic_id,
+                     agent: @ai_bot, trigger_event_payload: { "comment" => { "id" => old.id } })
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: "completed"
+        ) } })
+        DropTriggerJob.perform_now(@parent.id, @child.id)
+        fresh = @child.comments.order(:id).last
+        refute_equal old.id, fresh.id
+        assert_equal fresh.id, @child.reload.data.dig("trigger", "loop", "start_comment_id")
+        assert_equal fresh.id, dispatched.last.to_i
+        assert_no_difference -> { @child.comments.count } do
+          DropTriggerJob.perform_now(@parent.id, @child.id)
+        end
+        assert_equal fresh.id, dispatched.last.to_i
+      end
+    end
+
+    test "drop startup replaces inactive keep state and stays idempotent" do
+      %w[completed max_reached stuck paused awaiting_user idle].each do |state|
+        @child.update!(data: { "trigger" => { "loop" => TriggerLoopConfig.build(
+          @child.main_topic.id, source: "keep", state: state, goal: "Old goal"
+        ) } })
+        topic = @child.topics.find_or_create_by!(name: "Drop Trigger") { |record| record.user = @owner }
+        job = DropTriggerJob.new
+        job.send(:initialize_trigger_loop, @child, topic)
+        loop_data = @child.reload.data.dig("trigger", "loop")
+        assert_equal "running", loop_data["state"]
+        assert_equal topic.id, loop_data["trigger_topic_id"]
+        refute @child.keep_loop?
+        assert_nil loop_data["goal"]
+        job.send(:initialize_trigger_loop, @child, @child.main_topic)
+        assert_equal loop_data, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
+    test "drop startup preserves active keep loops" do
+      %w[running pending_verification].each do |state|
+        existing = TriggerLoopConfig.build(@child.main_topic.id, source: "keep", state: state, goal: "Active goal")
+        @child.update!(data: { "trigger" => { "loop" => existing } })
+        DropTriggerJob.new.send(:initialize_trigger_loop, @child, @child.main_topic)
+        assert_equal existing, @child.reload.data.dig("trigger", "loop")
+      end
+    end
+
     test "stale loop initialization preserves committed type and metadata" do
       stale = Creative.find(@child.id)
       latest = { "kind" => "project", "context_ids" => [ @parent.id ] }

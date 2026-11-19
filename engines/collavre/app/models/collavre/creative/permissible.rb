@@ -78,27 +78,12 @@ module Collavre
         end
       end
 
-      def find_ai_agent(required_permission = :write)
+      def find_ai_agent(required_permission = :write, capability: nil, excluding: nil)
         base_creative = effective_origin(Set.new)
         ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
-        required_permission_level = CreativeShare.permissions.fetch(required_permission.to_s)
-
-        shares = CreativeShare.where(creative_id: ancestor_ids)
-                              .joins(:user).merge(User.ai_agents)
-                              .includes(:user)
-        shares_for_user_hash = shares.group_by(&:user_id)
-
-        shares_for_user_hash.each_value do |user_shares|
-          closest_share = CreativeShare.closest_parent_share(ancestor_ids, user_shares)
-          next unless closest_share
-
-          closest_permission_level = CreativeShare.permissions.fetch(closest_share.permission.to_s)
-          next if closest_permission_level < required_permission_level
-
-          return closest_share.user
-        end
-
-        nil
+        all_shared_users(required_permission)
+          .select { |share| share.user&.ai_user? && share.user_id != excluding && (!capability || share.user.supports?(capability)) }
+          .min_by { |share| [ ancestor_ids.index(share.creative_id), share.id ] }&.user
       end
 
       private

@@ -23,8 +23,10 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     assert_field "inline-creative-type", with: "Workflow"
     find("#inline-close").click
     assert_no_selector "#inline-edit-form", visible: true
-    assert @creative.reload.workflow?
-    assert_includes @creative.effective_description, "Edited body and type"
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert @creative.reload.workflow?
+      assert_includes @creative.effective_description, "Edited body and type"
+    end
     open_editor
     assert_field "inline-creative-type", with: "Workflow"
     click_link "Edit rules"
@@ -47,7 +49,9 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     find("#inline-creative-type").send_keys(:enter)
     find("#inline-close").click
     assert_no_selector "#inline-edit-form", visible: true
-    assert_equal "project plan", @creative.reload.creative_type
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal "project plan", @creative.reload.creative_type
+    end
     open_editor
     assert_field "inline-creative-type", with: "project plan"
     fill_in "inline-creative-type", with: "project"
@@ -82,7 +86,9 @@ class CreativeTypeEditorTest < ApplicationSystemTestCase
     click_button "Cancel type change"
     find("#inline-close").click
     assert_no_selector "#inline-edit-form", visible: true
-    assert_includes @creative.reload.effective_description, "Keep this draft"
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_includes @creative.reload.effective_description, "Keep this draft"
+    end
   end
 
   test "canceling an unsent type on a new blank row does not create a creative" do

@@ -5,7 +5,11 @@ module Collavre
         @context = context
       end
 
-      def build
+      # `records` is the dispatch's DispatchRecords, so a sender the caller has
+      # already loaded is not read again.
+      def build(records: nil)
+        @records = records || Orchestration::DispatchRecords.new
+
         # Ensure context is a hash with string keys for Liquid
         ctx = @context.deep_stringify_keys
 
@@ -119,7 +123,7 @@ module Collavre
         user_id = ctx.dig("comment", "user_id")
         return nil unless user_id
 
-        self.class.sender_context_for(User.find_by(id: user_id))
+        self.class.sender_context_for(@records.find(User, user_id))
       end
 
       # A payload that already named its targets keeps them: its producer

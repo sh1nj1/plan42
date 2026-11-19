@@ -17,6 +17,8 @@ module Collavre
 
     def self.install!
       SERVING_CONTROLLERS.each { |name| install_once(name.constantize, ServeAuthorization) }
+      ActiveStorage::Blobs::ProxyController.prepend(Collavre::SvgStreaming) unless
+        ActiveStorage::Blobs::ProxyController.ancestors.any? { |ancestor| ancestor.name == Collavre::SvgStreaming.name }
       install_once(ActiveStorage::DirectUploadsController, UploadAuthentication)
       install_once(ActiveStorage::DiskController, OriginOnly)
     end
@@ -48,6 +50,11 @@ module Collavre
         return head(:not_found) unless blob && blob_readable?(blob)
 
         mark_private_blob_response!
+        if Rack::MediaType.type(blob.content_type) == "image/svg+xml" && is_a?(ActiveStorage::Blobs::RedirectController)
+          redirect_to Rails.application.routes.url_helpers.rails_storage_proxy_path(
+            blob, disposition: params[:disposition], only_path: true
+          )
+        end
       end
 
       # The proxy controllers wrap streaming in http_cache_forever(public: true),

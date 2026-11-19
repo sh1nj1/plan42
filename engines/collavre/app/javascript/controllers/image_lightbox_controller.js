@@ -1,3 +1,4 @@
+import { loadImageWithPlaceholder } from "../lib/media_loading"
 import { Controller } from "@hotwired/stimulus"
 import csrfFetch from "../lib/api/csrf_fetch"
 import { setupImagePan } from "../lib/image_lightbox_pan"
@@ -205,22 +206,8 @@ export default class extends Controller {
     const img = this._images[this._currentIndex]
     const imgEl = this._dialog.querySelector(".image-lightbox-image")
 
-    // Hide image during transition to prevent layout jump
-    imgEl.style.opacity = "0"
-
-    // Reset zoom before changing src
     this._resetZoom()
-
-    imgEl.src = img.fullSrc
-    imgEl.alt = img.alt || ""
-
-    // Show image once loaded (or immediately if cached)
-    const showImg = () => { imgEl.style.opacity = "1" }
-    if (imgEl.complete) {
-      showImg()
-    } else {
-      imgEl.onload = showImg
-    }
+    loadImageWithPlaceholder(imgEl, img)
 
     // Counter
     const counter = this._dialog.querySelector(".image-lightbox-counter")

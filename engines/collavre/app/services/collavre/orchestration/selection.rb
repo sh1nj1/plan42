@@ -6,9 +6,10 @@ module Collavre
     class Selection
       attr_reader :agents, :workflow_rule, :workflow_snapshot
 
-      def initialize(context, policy_resolver:, candidate_overrides: {})
+      def initialize(context, policy_resolver:, records: nil, candidate_overrides: {})
         @context = context
         @policy_resolver = policy_resolver
+        @records = records
         @candidate_overrides = candidate_overrides
       end
 
@@ -18,8 +19,8 @@ module Collavre
         return self if candidates.empty?
 
         # Workflow responders outrank the topic pin, but retain configured floor control.
-        policy = workflow_rule ? PolicyResolver.new(@context, ignore_topic_primary: true) : @policy_resolver
-        @arbiter = Arbiter.new(@context, policy_resolver: policy)
+        policy = workflow_rule ? @policy_resolver.ignoring_topic_primary : @policy_resolver
+        @arbiter = Arbiter.new(@context, policy_resolver: policy, records: @records)
         @agents = @arbiter.select(candidates, commit: false)
         self
       end
@@ -32,7 +33,7 @@ module Collavre
       private
 
       def candidates_for_contexts
-        matcher = Matcher.new(@context)
+        matcher = Matcher.new(@context, @policy_resolver, @records)
         base = matcher.match
         @workflow_rule = matcher.workflow_rule
         @workflow_snapshot = matcher.workflow_snapshot

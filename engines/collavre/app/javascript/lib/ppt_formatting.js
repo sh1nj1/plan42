@@ -23,7 +23,11 @@ export function applyPptFormatting(root = document) {
     slide.classList.add('ppt-slide--precise')
     const width = Number(slide.dataset.pptWidth)
     const height = Number(slide.dataset.pptHeight)
-    if (finite(width, 1, 1e9) && finite(height, 1, 1e9)) slide.style.aspectRatio = `${width} / ${height}`
+    if (finite(width, 1, 1e9) && finite(height, 1, 1e9)) {
+      slide.style.aspectRatio = `${width} / ${height}`
+      // The slide view fits the slide to the screen height with the same ratio.
+      slide.style.setProperty('--ppt-ratio', `${width} / ${height}`)
+    }
     for (const element of [slide, ...slide.querySelectorAll('[data-ppt-format]')]) applyElementFormatting(element, slide)
   }
 }

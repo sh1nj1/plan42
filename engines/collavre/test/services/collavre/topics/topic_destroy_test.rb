@@ -5,6 +5,31 @@ require "test_helper"
 module Collavre
   module Topics
     class TopicDestroyTest < ActiveSupport::TestCase
+      test "deleting a keep topic clears its loop and preserves other trigger settings" do
+        source = creatives(:tshirt)
+        topic = source.topics.create!(name: "Keep", user: users(:one))
+        source.update!(data: { "trigger" => { "enabled" => true, "loop" => {
+          "source" => "keep", "state" => "running", "trigger_topic_id" => topic.id
+        } } })
+
+        TopicDestroy.new(topic: topic, source_creative: source).call
+
+        assert_nil source.reload.data.dig("trigger", "loop")
+        assert_equal true, source.data.dig("trigger", "enabled")
+        assert_not source.keep_loop?
+      end
+
+      test "deleting another topic preserves keep and drop loops" do
+        source = creatives(:tshirt)
+        %w[keep drop].each do |kind|
+          topic = source.topics.create!(name: "Delete #{kind}", user: users(:one))
+          config = { "source" => kind, "state" => "running", "trigger_topic_id" => kind == "keep" ? -1 : topic.id }
+          source.update!(data: { "trigger" => { "loop" => config } })
+          TopicDestroy.new(topic: topic, source_creative: source).call
+          assert_equal config, source.reload.data.dig("trigger", "loop")
+        end
+      end
+
       test "rejects deletion when the topic moved before its lock" do
         user = users(:one)
         source = Creative.create!(description: "Source", user: user)

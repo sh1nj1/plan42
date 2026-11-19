@@ -35,6 +35,21 @@ module CollavreCompletionApi
           assert_includes model_ids, "bot"
         end
 
+        test "excludes owned and searchable judgment-only agents" do
+          @ai_bot.update!(llm_vendor: "typesafe", llm_model: "jev-latest")
+          searchable = @ai_bot.dup
+          searchable.email = "judgment-searchable@example.com"
+          searchable.created_by_id = users(:two).id
+          searchable.update!(llm_vendor: "typesafe", llm_model: "jev-latest", searchable: true)
+
+          get "/api/v1/models", headers: { "Authorization" => "Bearer #{@token.token}" }
+
+          assert_response :success
+          model_ids = JSON.parse(response.body)["data"].map { |model| model["id"] }
+          refute_includes model_ids, @ai_bot.email.split("@").first
+          refute_includes model_ids, searchable.email.split("@").first
+        end
+
         test "returns 401 without token" do
           get "/api/v1/models"
 

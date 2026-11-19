@@ -13,8 +13,9 @@ one execution appears in multiple groups or periods.
 
 ## Collection
 
-`llm_usages` stores one record per RubyLLM assistant response, including tool-loop
-intermediates and approval-summary requests. It retains normalized input/output,
+`llm_usages` stores one record per RubyLLM assistant response or native judgment,
+including tool-loop intermediates, approval-summary requests, and trigger-loop
+decisions. It retains normalized input/output,
 cache reads/writes, provider/model, task/creative/topic, source comment IDs,
 execution UUID, occurrence time, and a normalization version. Input includes
 cache reads and writes, so **do not add cache columns to input again**.

@@ -292,6 +292,111 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
                     "Regular unassigned contact should NOT appear in org chart"
   end
 
+  test "keep agent search excludes humans and agents without feedback before limiting" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Keep search")
+    agents = %w[Denied Readonly Eligible].map do |name|
+      User.create!(email: "keep-#{name.downcase}@example.com", name: "Keep #{name}",
+                   password: "password", llm_vendor: "openai", searchable: true)
+    end
+    denied, readonly, eligible = agents
+    CreativeShare.create!(creative: creative, user: readonly, permission: :read)
+    CreativeShare.create!(creative: creative, user: eligible, permission: :feedback)
+    @admin.update!(name: "Keep Human", searchable: true)
+    CreativeShare.create!(creative: creative, user: @admin, permission: :feedback)
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id, scope: "keep_agents", limit: 1 }
+    assert_response :success
+    assert_equal [ eligible.id ], response.parsed_body.map { |u| u["id"] }
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id }
+    assert_response :success
+    assert_includes response.parsed_body.map { |u| u["id"] }, denied.id
+    assert_includes response.parsed_body.map { |u| u["id"] }, @admin.id
+  end
+
+  test "keep picker excludes ambiguous and unparseable names before limiting" do
+    sign_in_as(@regular_user, password: "password")
+    creative = Creative.create!(user: @regular_user, description: "Keep identity")
+    names = [ "Keep Duplicate", "keep duplicate", "Keep Colon:Agent", "Keep Valid Agent" ]
+    agents = names.each_with_index.map do |name, index|
+      agent = User.create!(email: "keep-identity-#{index}@example.com", name: name,
+                           password: "password", llm_vendor: "openai", searchable: true)
+      CreativeShare.create!(creative: creative, user: agent, permission: :feedback)
+      agent
+    end
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id, scope: "keep_agents", limit: 1 }
+    assert_response :success
+    assert_equal [ agents.last.id ], response.parsed_body.map { |u| u["id"] }
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id }
+    assert_includes response.parsed_body.map { |u| u["id"] }, agents.first.id
+    assert_includes response.parsed_body.map { |u| u["id"] }, agents[2].id
+  end
+
+  test "keep agent eligibility is filtered in SQL before the result limit" do
+    creative = Creative.create!(user: @regular_user, description: "SQL picker")
+    agent = users(:ai_bot)
+    CreativeShare.create!(creative: creative, user: agent, permission: :feedback)
+    scope = Collavre::Creatives::KeepAgentScope.new(creative)
+    queries = []
+    capture = ->(*args) { queries << args.last[:sql] if args.last[:sql].match?(/SELECT/i) }
+    result = nil
+    ActiveRecord::Base.uncached do
+      ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+        result = scope.apply(User.ai_agents).limit(1).pluck(:id)
+      end
+    end
+    assert_equal [ agent.id ], result
+    assert_equal 2, queries.size
+    assert_match(/LIMIT/, queries.last)
+    assert_match(/IN \(SELECT/, queries.last)
+
+    creative.update!(user: agent)
+    CreativeSharesCache.where(creative: creative, user: agent).update_all(permission: :no_access)
+    assert_includes Collavre::Creatives::KeepAgentScope.new(creative).apply(User.ai_agents).pluck(:id), agent.id
+  end
+
+  test "keep agent search honors inherited linked public and denied permissions" do
+    sign_in_as(@regular_user, password: "password")
+    origin = Creative.create!(user: @regular_user, description: "Origin")
+    child = Creative.create!(user: @regular_user, parent: origin, description: "Child")
+    linked = Creative.create!(user: @regular_user, origin: child)
+    agent = User.create!(email: "keep-private@example.com", name: "Keep Private",
+                         password: "password", llm_vendor: "openai", searchable: false)
+    CreativeShare.create!(creative: origin, user: agent, permission: :feedback)
+
+    get collavre.search_users_path, params: { q: "Keep Private", creative_id: linked.id, scope: "keep_agents" }
+    assert_response :success
+    assert_equal [ agent.id ], response.parsed_body.map { |u| u["id"] }
+
+    public_creative = Creative.create!(user: @regular_user, description: "Public")
+    CreativeShare.create!(creative: public_creative, permission: :feedback)
+    agent.update!(searchable: true)
+    get collavre.search_users_path, params: { q: "Keep Private", creative_id: public_creative.id, scope: "keep_agents" }
+    assert_equal [ agent.id ], response.parsed_body.map { |u| u["id"] }
+
+    CreativeShare.create!(creative: public_creative, user: agent, permission: :no_access)
+    get collavre.search_users_path, params: { q: "Keep Private", creative_id: public_creative.id, scope: "keep_agents" }
+    assert_empty response.parsed_body
+  end
+
+  test "keep agent search requires a readable creative context" do
+    sign_in_as(@regular_user, password: "password")
+    get collavre.search_users_path, params: { q: "Keep", scope: "keep_agents" }
+    assert_response :success
+    assert_empty response.parsed_body
+
+    get collavre.search_users_path, params: { q: "Keep", creative_id: -1, scope: "keep_agents" }
+    assert_response :success
+    assert_empty response.parsed_body
+
+    creative = Creative.create!(user: @admin, description: "Private")
+    get collavre.search_users_path, params: { q: "Keep", creative_id: creative.id, scope: "keep_agents" }
+    assert_response :forbidden
+  end
+
   test "mention search includes feedback permitted users even if not searchable" do
     sign_in_as(@regular_user, password: "password")
 

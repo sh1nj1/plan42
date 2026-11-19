@@ -22,6 +22,7 @@ module Collavre
     # through the preference controller. Advance the ordering token first so a
     # client can distinguish that deletion from an older empty preference.
     before_destroy :advance_last_topic_preference_revisions, prepend: true
+    before_destroy :clear_keep_loop, prepend: true
 
     # --- Archive scopes ---
     scope :active, -> { where(archived_at: nil) }
@@ -35,6 +36,14 @@ module Collavre
     after_create :keep_history_topic_last
 
     default_scope { order(:position) }
+
+    # Registry changes can invalidate ordinary pins without updating the user.
+    # Session pins remain part of the session's identity and exclusive boundary.
+    def effective_primary_agent(agent = primary_agent)
+      return nil if agent && session_id.nil? && !agent.supports?(:chat)
+
+      agent
+    end
 
     # Sets or replaces the primary agent for this topic
     def set_primary_agent!(agent)
@@ -50,8 +59,8 @@ module Collavre
     # searchable agents regardless of creative access, so this is reachable from
     # plain drag-and-drop or `/topic "name" @agent:`, not just a crafted request.
     #
-    # This deliberately mirrors BOTH predicates Matcher applies before it will
-    # route to a primary agent — #has_creative_permission? and
+    # This deliberately mirrors the predicates Matcher applies before it will
+    # route to a primary agent — #supports?(:chat), #has_creative_permission?, and
     # #eligible_in_inbox? — so "assignable" and "can respond" cannot drift
     # apart. Checking only the permission is not enough: registration grants a
     # Claude Channel agent inbox-wide :feedback, so it passes that check on
@@ -69,6 +78,7 @@ module Collavre
     # before the inbox share exists, and must not be gated on it.
     def self.primary_agent_rejection(creative, agent, topic: nil)
       return :not_an_agent unless agent&.ai_user?
+      return :chat_not_supported unless agent.supports?(:chat)
       return :no_creative_access unless creative&.has_permission?(agent, :feedback)
 
       # Mirror Matcher#eligible_in_inbox?
@@ -100,6 +110,18 @@ module Collavre
     end
 
     private
+
+    def clear_keep_loop
+      lock!
+      creative.with_lock do
+        data = (creative.data || {}).deep_dup
+        config = data.dig("trigger", "loop")
+        next unless config && config["source"] == "keep" && config["trigger_topic_id"] == id
+
+        data["trigger"].delete("loop")
+        creative.update!(data: data)
+      end
+    end
 
     def advance_last_topic_preference_revisions
       user_creative_preferences_as_last_topic.update_all(

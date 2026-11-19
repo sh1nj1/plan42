@@ -14,12 +14,12 @@ module Collavre
     class AgentOrchestrator
       include WorkflowDispatch
       include JobEnqueue
-      def self.dispatch(event_name, context, **options)
-        new(event_name: event_name, context: context).dispatch(**options)
+      def self.dispatch(event_name, context, records: nil, **options)
+        new(event_name: event_name, context: context, records: records).dispatch(**options)
       end
 
-      def self.dispatch_with_outcome(event_name, context, **options)
-        new(event_name: event_name, context: context).dispatch_with_outcome(**options)
+      def self.dispatch_with_outcome(event_name, context, records: nil, **options)
+        new(event_name: event_name, context: context, records: records).dispatch_with_outcome(**options)
       end
 
       def self.select(event_name, context) = new(event_name: event_name, context: context).select
@@ -110,7 +110,7 @@ module Collavre
           end
           next if candidate.nil?
 
-          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending")
+          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending", updated_at: Time.current)
           claimed = candidate.reload if updated > 0
         end
 
@@ -411,7 +411,8 @@ module Collavre
       # payload is filtered by: public_only, no approval surface, and still in
       # this turn's creative/topic.
       def self.fixed_reply_anchor?(task, context)
-        task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_anchor?(context)
+        KeepLoop.dispatch?(context) ||
+          task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_anchor?(context)
       end
       private_class_method :fixed_reply_anchor?
 
@@ -425,7 +426,7 @@ module Collavre
 
       def self.review_anchor?(context)
         anchor_id = context.dig("comment", "id")
-        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+        anchor_id.present? && Comment.own_turn_message_ids([ anchor_id ]).any?
       end
       private_class_method :review_anchor?
 
@@ -456,10 +457,14 @@ module Collavre
       end
       private_class_method :revalidate_assignment!
 
-      def initialize(event_name:, context:)
+      # `records` carries what the caller has already read (see
+      # DispatchRecords.for_comment); without it this dispatch still reads
+      # each record once, shared by every component that decides it.
+      def initialize(event_name:, context:, records: nil)
         @event_name = event_name
+        @records = records || DispatchRecords.new
         # Build context ONCE here - no more duplicate builds
-        @context = SystemEvents::ContextBuilder.new(context).build
+        @context = SystemEvents::ContextBuilder.new(context).build(records: @records)
         @context["event_name"] = event_name
       end
 
@@ -467,12 +472,12 @@ module Collavre
         prepare_selection.commit!.agents
       end
 
-      def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, **options).call
+      def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, records: @records, **options).call
 
 
       private
 
-      def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context)
+      def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context, records: @records)
 
       def scheduler = @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
 

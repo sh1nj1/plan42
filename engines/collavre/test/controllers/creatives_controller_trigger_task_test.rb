@@ -125,4 +125,51 @@ class CreativesControllerTriggerTaskTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_entity
   end
+  test "linked keep status and controls use the origin without modifying shell data" do
+    origin = @normal_parent
+    origin.update!(data: { "trigger" => { "loop" => Collavre::TriggerLoopConfig.build(
+      origin.main_topic.id, source: "keep", state: "running", goal: "Finish work"
+    ) } })
+    shell = Collavre::Creative.create!(user: @user, origin: origin, data: { "shell" => true })
+
+    get creative_path(shell), as: :json
+    assert_response :success
+    assert_equal "running", response.parsed_body.dig("trigger_loop", "state")
+    etag = response.headers["ETag"]
+    patch trigger_action_creative_path(shell), params: { action_name: "pause" }, as: :json
+    assert_response :success
+    assert_equal "paused", origin.reload.data.dig("trigger", "loop", "state")
+    get creative_path(shell), headers: { "If-None-Match" => etag }, as: :json
+    assert_response :success
+    assert_equal "paused", response.parsed_body.dig("trigger_loop", "state")
+
+    dispatched = []
+    Collavre::SystemEvents::Dispatcher.stub(:dispatch, lambda { |_event, payload, **_options|
+      dispatched << payload
+      [ users(:ai_bot) ]
+    }) do
+      patch trigger_action_creative_path(shell), params: { action_name: "resume" }, as: :json
+      assert_response :success
+      assert_equal "running", origin.reload.data.dig("trigger", "loop", "state")
+      origin.update!(data: origin.data.deep_merge("trigger" => { "loop" => { "state" => "completed" } }))
+      patch trigger_action_creative_path(shell), params: { action_name: "restart" }, as: :json
+      assert_response :success
+      assert_equal "running", origin.reload.data.dig("trigger", "loop", "state")
+    end
+    assert_equal 2, dispatched.size
+    assert_equal 2, origin.comments.count
+    assert origin.comments.all? { |comment| comment.topic_id == origin.main_topic.id }
+    assert_equal({ "shell" => true }, shell.reload.data)
+    assert_empty shell.comments
+  end
+
+  test "linked keep controls require write permission on the origin" do
+    origin = Collavre::Creative.create!(user: users(:two), description: "Shared origin",
+      data: { "trigger" => { "loop" => { "source" => "keep", "state" => "running" } } })
+    Collavre::CreativeShare.create!(creative: origin, user: @user, permission: :read)
+    shell = Collavre::Creative.create!(user: @user, origin: origin)
+    patch trigger_action_creative_path(shell), params: { action_name: "pause" }, as: :json
+    assert_response :forbidden
+    assert_equal "running", origin.reload.data.dig("trigger", "loop", "state")
+  end
 end

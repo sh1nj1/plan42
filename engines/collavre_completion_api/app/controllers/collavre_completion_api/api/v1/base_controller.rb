@@ -68,19 +68,15 @@ module CollavreCompletionApi
         def resolve_agent_by_model(model_param)
           return nil if model_param.blank?
 
-          agent = if model_param.start_with?("collavre/")
+          candidates = Collavre::User.accessible_ai_agents_for(current_user).chat_capable
+          if model_param.start_with?("collavre/")
             # Legacy format: collavre/{id}
-            Collavre::User.find_by(id: model_param.sub("collavre/", ""))
+            candidates.find_by(id: model_param.sub("collavre/", ""))
           else
             # Email username format — sanitize to prevent LIKE wildcard injection
             sanitized = ActiveRecord::Base.sanitize_sql_like(model_param)
-            Collavre::User.where("email LIKE ?", "#{sanitized}@%").first
+            candidates.where("email LIKE ?", "#{sanitized}@%").first
           end
-
-          return nil unless agent&.ai_user?
-          return nil unless agent.created_by_id == current_user.id || agent.searchable?
-
-          agent
         end
 
         def collavre_creative

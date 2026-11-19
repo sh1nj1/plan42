@@ -11,6 +11,7 @@ en:
       not_ai_agent: Only AI agents can be set as primary agent.
       session_topic_locked: This topic belongs to a live agent session. Its primary agent cannot be changed or released.
       agent_no_creative_access: "%{name} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first."
+      agent_chat_not_supported: "%{name} does not support chat and cannot be assigned as primary agent."
       session_agent_not_assignable: "%{name} is a live agent session and only responds in its own session topic, so it cannot be the primary agent here."
       default_name_prefix: "Topic"
       branch_prefix: "Branch"
@@ -30,6 +31,7 @@ en:
         duplicate_name: A topic named '%{name}' already exists in the target creative.
         session_topic_locked: This topic belongs to a live agent session and cannot be moved.
         primary_agent_released: '@%{agent} was released as primary agent because it has no feedback access in "%{creative}". Share that creative with the agent and assign it again to keep it on this topic.'
+        primary_agent_released_chat_not_supported: "@%{agent} was released as primary agent because it does not support chat."
         primary_agent_released_session_agent: '@%{agent} was released as primary agent because it is a live agent session and only responds in its own session topic, which "%{creative}" is not.'
         add_members:
           title: Add members to the new location?
@@ -136,6 +138,20 @@ en:
       review_send_question: Send question
       review_type_review: Review
       review_type_question: Question
+      ask_button: Ask
+      review_button_hint: Revise the selected part
+      ask_button_hint: Ask about the selected part without changing it
+      creative_quote:
+        single_target: A message can quote either a message or a creative, not both.
+        not_readable: You cannot quote a creative you cannot read.
+        question_read_only: This turn answers a question about the document, so creatives cannot be modified. Answer in chat instead.
+        task_not_active: "The task named in the %{header} header is not an active task of this agent, so the write was refused."
+        task_ambiguous: "This agent has several active tasks and one is a document review or question, so the write cannot be matched to its task. Retry with the %{header} header set to the task id (collavre CLI: COLLAVRE_TASK_ID=<task id> collavre ...)."
+        chip_prefix: Doc
+        proposed_change: Proposed change
+        out_of_scope: "This change also touches creatives outside the selected part: %{ids}"
+        rejected_notice: "The proposed change to \"%{title}\" was rejected. Tell the agent what to change and ask again."
+        reject_reason_placeholder: Tell the agent why it was rejected...
       navigate_back: Previous chat
       navigate_forward: Next chat
       recent_chats: Recent chats
@@ -224,6 +240,8 @@ en:
         compress_instructions_hint: "Additional instructions (optional)"
         form_submit: "OK"
         form_cancel: "Cancel"
+        more: "More"
+        less: "Less"
       calendar_command:
         event_created: 'event created: [Google Calendar event](%{url})'
         event_created_local: 'event created (local only - connect Google Calendar to sync)'
@@ -248,6 +266,7 @@ en:
         already_exists: 'Topic "%{name}" already exists.'
         session_topic_locked: 'Topic "%{name}" belongs to a live agent session. Its primary agent cannot be changed or released.'
         agent_no_creative_access: '@%{agent} has no feedback access here, so it could not respond as primary agent. Share this creative with the agent first.'
+        agent_chat_not_supported: "@%{agent} does not support chat and cannot be assigned as primary agent."
         session_agent_not_assignable: '@%{agent} is a live agent session and only responds in its own session topic, so it cannot be the primary agent here.'
       versions:
         previous: Previous version
@@ -260,6 +279,10 @@ en:
       read_by: Read by %{name}
       activity_logs_summary: Activity Logs
       activity_logs:
+        names:
+          llm_query: "Model request"
+          tool_execution: "Tool execution"
+          other: "Agent activity"
         duration: "Execution time: %{duration}"
         inline_duration: "(%{duration})"
         duration_hint: "Latest attempt: from start to model response completion, or reply persistence for delegated agents. Excludes queue time, earlier retries, and follow-up dispatch."

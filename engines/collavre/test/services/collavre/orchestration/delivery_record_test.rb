@@ -303,13 +303,11 @@ module Collavre
                    "and its own dispatch is the only thing that would carry the image"
       end
 
-      # The same rule as the image, and the second thing it catches. A comment
-      # linking a creative brings that creative's rendered subtree with it —
-      # but only through append_referenced_creative_contexts, which scans the
-      # anchor and the merged blocks and never the history window. So the
-      # covering turn renders the link *text* and none of what it points at,
-      # and the dispatch that would have supplied it is the one being dropped.
-      test "a comment whose linked creative the history window left behind is not recorded" do
+      # A link is not withheld content. The trigger path only promises a
+      # reference card for a linked creative, and the link text the window
+      # renders already names what the agent can retrieve, so the covering
+      # turn carries the comment whole and its own dispatch is redundant.
+      test "a comment linking a creative outside the context is recorded" do
         other = Creative.create!(description: "Spec the agent needs", user: @user)
         anchor = comment("first")
         turn = task_for(anchor)
@@ -318,21 +316,12 @@ module Collavre
         resolved = resolved_for(turn, @agent)
         assert history_texts(resolved).any? { |t| t.include?("/creatives/#{other.id}") },
                "premise: the window did sweep it up, as link text"
-        assert_not_includes kinds_in(resolved), "referenced_creative",
-                            "premise: and the turn injected no subtree for it"
 
         DeliveryRecord.record!(turn, resolved)
 
-        assert_not_includes recorded(turn), linked.id,
-                            "the creative it points at was never handed over"
-        assert_nil DeliveryRecord.covering_task(@agent, linked.id, context_for(anchor), "comment_created"),
-                   "and its own dispatch is the only thing that would supply that subtree"
+        assert_includes recorded(turn), linked.id, "the link itself tells the agent what to retrieve"
       end
 
-      # ...and the filter is tied to what the turn was missing, not to links.
-      # A link to a creative already in context — the topic's own, most often —
-      # points at a subtree the agent was handed before the window ran, so the
-      # history entry does carry that comment whole.
       test "a comment linking a creative already in context is recorded" do
         anchor = comment("first")
         turn = task_for(anchor)
@@ -342,24 +331,6 @@ module Collavre
 
         assert_includes recorded(turn), linked.id,
                         "nothing was withheld, so the turn delivered it"
-      end
-
-      # Same rule, the other way a link supplies nothing:
-      # append_referenced_creative_contexts skips an id with no creative behind
-      # it, so a turn anchored on this comment would render exactly what the
-      # window rendered and the entry does carry it whole.
-      test "a comment linking a creative that no longer exists is recorded" do
-        gone = Creative.create!(description: "deleted before the turn ran", user: @user)
-        gone_id = gone.id
-        anchor = comment("first")
-        turn = task_for(anchor)
-        linked = comment("see [that](/creatives/#{gone_id})")
-        gone.destroy!
-
-        DeliveryRecord.record!(turn, resolved_for(turn, @agent))
-
-        assert_includes recorded(turn), linked.id,
-                        "there was no subtree to withhold"
       end
 
       # The record is written by whichever pass assembles, and merged onto the
@@ -479,6 +450,21 @@ module Collavre
         assert_equal 123, payload["inline_login_task_id"]
       end
 
+      test "restoration rejection leaves ordinary drop and unrelated keep dispatches retryable" do
+        anchor = comment("first")
+        late = comment("second")
+        turn = task_for(anchor)
+        DeliveryRecord.claim_drop!(turn, late.id)
+        Task.where(id: turn.id).update_all(status: "failed")
+        [ {}, { "source" => "drop", "current_comment_id" => late.id },
+          { "source" => "keep", "current_comment_id" => anchor.id } ].each do |config|
+          @creative.update!(data: { "trigger" => { "loop" => config } })
+          DeliveryRecord.reject_restore!(turn, late.id)
+          assert_empty DeliveryRecord.rejected_restore_ids_in(turn.reload.trigger_event_payload)
+          assert DeliveryRecord.pending_restoration?(turn, comment_id: late.id)
+        end
+      end
+
       # The same drift, on the other list. TURN_SCOPED_KEYS is what a restored
       # dispatch is stripped of, and it is right only while it names every key a
       # turn writes onto its own payload. Driving every writer over one
@@ -492,10 +478,16 @@ module Collavre
         dispatched = turn.trigger_event_payload.keys
 
         DeliveryRecord.record!(turn, resolved_for(turn, @agent))
+        @creative.update!(data: { "trigger" => { "loop" => { "source" => "keep", "current_comment_id" => late.id } } })
         DeliveryRecord.claim_drop!(turn.reload, late.id)
         DeliveryRecord.mark_handoff_failed!(turn.reload)
         DeliveryRecord.mark_handed_off!(turn.reload)
         DeliveryRecord.claim_restore!(turn.reload, late.id)
+        @creative.update!(data: { "trigger" => { "loop" => { "source" => "keep", "current_comment_id" => folded.id } } })
+        DeliveryRecord.reject_restore!(turn.reload, folded.id)
+        refute DeliveryRecord.claim_restore!(turn.reload, folded.id)
+        DeliveryRecord.reject_restore!(turn.reload, late.id)
+        assert_equal [ folded.id ], DeliveryRecord.rejected_restore_ids_in(turn.reload.trigger_event_payload)
         turn.update!(
           trigger_event_payload: TaskCoalescer.reanchor_payload(
             TaskCoalescer.absorb_into_payload(turn.reload.trigger_event_payload, [ folded.id ]),

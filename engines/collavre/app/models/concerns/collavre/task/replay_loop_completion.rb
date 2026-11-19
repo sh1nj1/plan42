@@ -54,14 +54,14 @@ module Collavre
       end
 
       def recheck_abandonment_candidate?
-        trigger_event_name == "comment_created" && (status.in?(%w[failed cancelled escalated]) || unsuccessful_loop_response?)
+        KeepLoop.turn?(self) && (status.in?(%w[failed cancelled escalated]) || unsuccessful_loop_response?)
       end
 
       def recheck_abandoned_replays
         return settle_inline_replay(completed: !ended_undelivered? && finalized_response?) if finished_inline_replay?
         return unless recheck_abandonment_candidate?
         return if !done? && settle_inline_replay
-        return unless creative&.parent&.drop_trigger_enabled?
+        return unless creative&.trigger_loop_enabled?
         return unless creative.data&.dig("trigger", "loop", "state") == "running"
 
         Task.where(creative_id: creative_id, topic_id: topic_id, trigger_event_name: "comment_created", status: "done")

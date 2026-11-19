@@ -277,21 +277,13 @@ module Collavre
     # matter what is shared — telling the user to share and re-assign would send
     # them after a fix that cannot work.
     def released_primary_agent_message(agent, rejection, target_creative)
-      key = if rejection == :session_agent_outside_session_topic
-              "collavre.topics.move.primary_agent_released_session_agent"
-      else
-              "collavre.topics.move.primary_agent_released"
-      end
+      key = "collavre.topics.move.#{Topics::PinRejection.release_locale_key(rejection)}"
 
       I18n.t(key, agent: agent.display_name, creative: target_creative.creative_snippet)
     end
 
     def unassignable_agent_message(agent, rejection)
-      if rejection == :session_agent_outside_session_topic
-        I18n.t("collavre.topics.session_agent_not_assignable", name: agent.display_name)
-      else
-        I18n.t("collavre.topics.agent_no_creative_access", name: agent.display_name)
-      end
+      I18n.t("collavre.topics.#{Topics::PinRejection.locale_key(rejection)}", name: agent.display_name)
     end
 
     # When a topic moves to a different creative, members who had access on the

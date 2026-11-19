@@ -263,7 +263,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
     assert_selector content_selector(@first), text: "First paragraph edited"
     assert_selector content_selector(@second), text: "Second paragraph"
-    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+    # The editor renders the draft before the queued save reaches the server.
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+    end
 
     # The next click opens the editor on the row it lands on.
     find(content_selector(@second)).click
@@ -434,7 +437,10 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
 
     assert_selector ".creative-title-content", text: "Spec edited"
-    assert_equal "Spec edited", ActionController::Base.helpers.strip_tags(@root.reload.description).strip
+    # Closing renders the optimistic title before the queued save commits.
+    saved = -> { ActionController::Base.helpers.strip_tags(@root.reload.description).strip }
+    Timeout.timeout(15) { sleep 0.2 until saved.call == "Spec edited" }
+    assert_equal "Spec edited", saved.call
   end
 
   test "select mode selects rows instead of opening the editor" do

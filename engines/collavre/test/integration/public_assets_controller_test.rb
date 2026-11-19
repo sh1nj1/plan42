@@ -57,6 +57,25 @@ module Collavre
       assert_includes response.headers["Content-Disposition"], 'filename="report.html"'
     end
 
+    test "serves public SVG images inline with a sandbox policy" do
+      publish(@creative)
+      content = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="20" height="20"/></svg>'
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new(content), filename: "image.svg", content_type: "image/svg+xml"
+      )
+      @creative.files.attach(blob)
+
+      get "/public-assets/blobs/#{blob.signed_id}/image.svg"
+
+      assert_response :success
+      assert_equal content, response.body
+      assert_equal "image/svg+xml", response.media_type
+      assert_match(/\Ainline;/, response.headers["Content-Disposition"])
+      assert_equal SvgStreaming::POLICY, response.headers["Content-Security-Policy"]
+      assert_equal "nosniff", response.headers["X-Content-Type-Options"]
+      assert_includes response.headers["Cache-Control"], "public"
+    end
+
     test "redirects a private blob to the authorized proxy without caching" do
       get "/public-assets/blobs/#{@blob.signed_id}/hello.txt"
 

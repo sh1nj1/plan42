@@ -9,6 +9,9 @@ Rails.application.configure do
   # Do not eager load code on boot.
   config.eager_load = false
 
+  # Keep recovery needs durable, inspectable queue ownership like production.
+  config.active_job.queue_adapter = :solid_queue
+
   # Show full error reports.
   config.consider_all_requests_local = true
 
