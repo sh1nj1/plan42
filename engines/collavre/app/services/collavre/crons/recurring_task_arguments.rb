@@ -7,8 +7,8 @@ module Collavre
     # `arguments` JSON (an array whose first element is the keyword hash), and
     # the creative id is also encoded in the key as `cron_<creative_id>_<hex>`.
     #
-    # Included by CronListService and Topics::OrphanedCronNotifier so the
-    # arguments format is parsed in exactly one place.
+    # Included wherever cron tasks are read so the arguments format is parsed
+    # in exactly one place.
     module RecurringTaskArguments
       private
 
@@ -22,6 +22,14 @@ module Collavre
       def parse_creative_id_from_key(key)
         match = key.match(/\Acron_(\d+)_/)
         match[1].to_i if match
+      end
+
+      def recurring_task_creative_id(task, args = parse_arguments(task))
+        args["creative_id"] || parse_creative_id_from_key(task.key)
+      end
+
+      def recurring_task_creative(task, args = parse_arguments(task))
+        Creative.find_by(id: recurring_task_creative_id(task, args))
       end
     end
   end

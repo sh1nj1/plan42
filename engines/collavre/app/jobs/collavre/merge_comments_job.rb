@@ -29,12 +29,6 @@ module Collavre
       target_comment = comments.first
       topic_id = target_comment.topic_id
 
-      # Build conversation text
-      conversation = comments.map do |c|
-        author = c.user&.name || I18n.t("collavre.comments.anonymous")
-        "#{author}: #{c.content}"
-      end.join("\n\n")
-
       # Resolve AI agent (same as /compress — agent is required)
       agent = resolve_ai_agent(creative, topic_id)
 
@@ -43,16 +37,9 @@ module Collavre
         return
       end
 
-      client = build_client(agent, creative, topic_id, User.find(user_id))
-
-      merged_content = String.new
-      result = client.chat([ { role: "user", text: conversation } ]) do |delta|
-        merged_content << delta
-      end
-
-      # AiClient returns nil on error (but still yields error text as delta).
-      # Check both: return value must be truthy AND content must be non-blank.
-      if result.nil? || merged_content.blank?
+      merged_content = ai_digest_comments(agent, comments, system_prompt: SYSTEM_PROMPT,
+        creative: creative, topic_id: topic_id, requester: User.find(user_id))
+      unless merged_content
         Rails.logger.error("[MergeCommentsJob] AI failed for comments #{comment_ids}")
         return
       end
@@ -66,22 +53,6 @@ module Collavre
     end
 
     private
-
-    def build_client(agent, creative, topic_id, user)
-      AiClient.new(
-        vendor: agent.llm_vendor,
-        model: agent.llm_model,
-        system_prompt: SYSTEM_PROMPT,
-        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
-        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
-        context: {
-          creative: creative,
-          user: agent,
-          requester: user,
-          topic_id: topic_id
-        }
-      )
-    end
 
     def mergeable_selection?(comments)
       comments.size >= 2 && comments.map(&:topic_id).uniq.size == 1

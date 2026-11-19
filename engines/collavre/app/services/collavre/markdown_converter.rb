@@ -187,16 +187,7 @@ module Collavre
 
       # Convert a data-URI image to an Active Storage attachment <img> tag.
       def data_image_to_attachment(data_url, alt)
-        if data_url =~ %r{\Adata:(image/[\w.+-]+);base64,(.+)\z}
-          content_type = Regexp.last_match(1)
-          data = Base64.decode64(Regexp.last_match(2))
-          ext = Mime::Type.lookup(content_type).symbol.to_s
-          filename = "import-#{SecureRandom.hex}.#{ext}"
-          blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new(data), filename: filename, content_type: content_type)
-          "<img src=\"#{Rails.application.routes.url_helpers.rails_blob_url(blob, only_path: true)}\" alt=\"#{alt}\" />"
-        else
-          "<img src=\"#{data_url}\" alt=\"#{alt}\" />"
-        end
+        "<img src=\"#{data_uri_to_blob_path(data_url)}\" alt=\"#{alt}\" />"
       end
 
       # Rewrite data-URI image references in Markdown source to point at
