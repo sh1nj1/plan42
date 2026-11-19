@@ -16,7 +16,7 @@ class PlansTimelineComponent < ViewComponent::Base
 
   # Called after component enters render context - safe to use helpers here
   def plan_data
-    @plan_data ||= CollavrePlan::TimelineItems.new(creative_id: helpers.params[:id]).all(
+    @plan_data ||= CollavrePlan::TimelineItems.new(creative_id: helpers.params[:id], routes: helpers.collavre).all(
       plans: @plans, calendar_events: @calendar_events, registrations: @registrations, modifications: @modifications
     )
   end
