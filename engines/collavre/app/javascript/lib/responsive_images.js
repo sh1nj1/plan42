@@ -40,15 +40,3 @@ export function updateResponsiveImages(container, targetWidth) {
         }
     })
 }
-
-// Observer to watch for resizing
-export function observeResponsiveImages(container) {
-    if (!container) return null
-
-    const observer = new ResizeObserver(() => {
-        updateResponsiveImages(container)
-    })
-
-    observer.observe(container)
-    return observer
-}
