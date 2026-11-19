@@ -270,7 +270,7 @@ module Collavre
         return :continue
       end
 
-      instructions = collect_fallback_instructions(child_creative, parent_creative, verifier)
+      instructions = collect_loop_instructions(child_creative, parent_creative, verifier)
 
       prompt = <<~PROMPT
         ## Task instructions:
@@ -303,31 +303,14 @@ module Collavre
     def pick_fallback_agent(_creative, child_creative, task_agent_id = nil)
       ai_agents = child_creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
+                          .select { |agent| decision_capable?(agent, child_creative) }
 
       return decision_agent(ai_agents) if ai_agents.any?
 
       # Prefer task write agents before the independently authorized keep task agent.
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
       (child_creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-              .find { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
-    end
-
-    # Collect instructions from context creatives for LLM evaluation
-    def collect_fallback_instructions(child_creative, parent_creative, verifier)
-      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
-      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
-      contexts.each do |ctx|
-        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
-
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      child_desc = child_creative.description.to_s.strip
-      parts << "Task: #{child_desc}" if child_desc.present?
-
-      parts.join("\n\n---\n\n")
+              .find { |agent| decision_capable?(agent, child_creative) }
     end
   end
 end

@@ -329,7 +329,7 @@ module Collavre
         verifier.perform(@task.id)
       end
       assert_equal "completed", @child.reload.data.dig("trigger", "loop", "state")
-      instructions = TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child.trigger_loop_context, @ai_bot)
+      instructions = TriggerLoopCheckJob.new.send(:collect_loop_instructions, @child, @child.trigger_loop_context, @ai_bot)
       assert_includes instructions, instruction.description
     end
 
@@ -344,7 +344,7 @@ module Collavre
       data["trigger"]["loop"].merge!("source" => "keep", "generation" => 1, "current_comment_id" => 999, "goal" => "Deliver keep")
       @child.update!(data: data)
       job = TriggerLoopVerifyJob.new
-      assert_includes job.send(:collect_instructions, @child, @child, @ai_bot), "Deliver keep"
+      assert_includes job.send(:collect_loop_instructions, @child, @child, @ai_bot), "Deliver keep"
       job.send(:post_verification_failed, @child, @topic, @ai_bot, 2, 10, "Missing tests")
       refute_match(/@/, @child.comments.order(:id).last.content)
     end
