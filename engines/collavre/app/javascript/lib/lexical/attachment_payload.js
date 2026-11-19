@@ -242,12 +242,6 @@ export function attachmentPayloadToHTMLElement(payload, options = {}) {
   return {element, payload: sanitized}
 }
 
-export function ensureSgid(payload) {
-  if (payload.sgid) return payload
-  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
-  return {...payload, sgid: `temp-${id}`}
-}
-
 function attachmentIdentity(payload) {
   if (payload.sgid) return `sgid:${payload.sgid}`
   const parts = [payload.url || "", payload.filename || ""]
