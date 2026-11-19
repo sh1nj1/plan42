@@ -1075,10 +1075,6 @@ export default class extends Controller {
         return this._topicListToggleGuard
     }
 
-    get topicListTogglePointerDown() {
-        return this.topicListToggleGuard.pointerDown
-    }
-
     prepareTopicListToggle(event) {
         const modal = document.getElementById('topic-list-modal')
         const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')

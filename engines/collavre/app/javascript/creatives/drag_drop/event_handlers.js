@@ -45,7 +45,6 @@ import {
   readDropSignal,
 } from '../../lib/dnd/session';
 
-const coordPrecision = 5;
 export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
 
 let hoverExpandTimer = null;
@@ -194,10 +193,6 @@ function resolveTargetTree(targetTreeId) {
   const row = asTreeRow(tree);
   if (!row) return null;
   return { tree, row };
-}
-
-function relaxedCoord(value) {
-  return Math.round(value / coordPrecision) * coordPrecision;
 }
 
 function removeDroppedCreative({ creativeId, treeId }) {

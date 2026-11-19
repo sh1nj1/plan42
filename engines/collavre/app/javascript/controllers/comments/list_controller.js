@@ -954,7 +954,6 @@ export default class extends Controller {
   }
 
   updateDraggableState() {
-    const hasSelection = this.selection.size > 0
     this.listTarget.querySelectorAll('.comment-item').forEach((item) => {
       const checkbox = item.querySelector('.comment-select-checkbox')
       if (checkbox?.checked) {

@@ -507,16 +507,7 @@ class CreativeTreeRow extends LitElement {
     }
     event.preventDefault();
     event.stopPropagation();
-    this.dispatchEvent(new CustomEvent("creative-toggle-click", {
-      detail: {
-        creativeId: this.creativeId ?? this.getAttribute("creative-id"),
-        component: this,
-        button: event.currentTarget,
-        treeElement: this.querySelector(".creative-tree")
-      },
-      bubbles: true,
-      composed: true
-    }));
+    this._dispatchRowClick("creative-toggle-click", event.currentTarget);
   }
 
   _handleEditClick(event) {
@@ -526,7 +517,11 @@ class CreativeTreeRow extends LitElement {
   }
 
   dispatchEditClick(button) {
-    this.dispatchEvent(new CustomEvent("creative-edit-click", {
+    this._dispatchRowClick("creative-edit-click", button);
+  }
+
+  _dispatchRowClick(name, button) {
+    this.dispatchEvent(new CustomEvent(name, {
       detail: {
         creativeId: this.creativeId ?? this.getAttribute("creative-id"),
         component: this,
@@ -541,16 +536,7 @@ class CreativeTreeRow extends LitElement {
   _handleCommentsClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    this.dispatchEvent(new CustomEvent("creative-comments-click", {
-      detail: {
-        creativeId: this.creativeId ?? this.getAttribute("creative-id"),
-        component: this,
-        button: event.currentTarget,
-        treeElement: this.querySelector(".creative-tree")
-      },
-      bubbles: true,
-      composed: true
-    }));
+    this._dispatchRowClick("creative-comments-click", event.currentTarget);
   }
 
   async _handleProgressToggle(event) {

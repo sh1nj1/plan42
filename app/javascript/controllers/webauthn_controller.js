@@ -5,7 +5,6 @@ import { alertDialog, confirmDialog } from "collavre/lib/utils/dialog"
 export default class extends Controller {
     static targets = ["nickname"]
     static values = {
-        callbackUrl: String,
         notSupportedMessage: String
     }
     connect() {

@@ -179,10 +179,6 @@ export default class ReviewQuotesStore {
     return this._quotes.filter(q => q.creativeId)
   }
 
-  get hasCreativeQuotes() {
-    return this._quotes.some(q => q.creativeId)
-  }
-
   /** Button state: 'add' | 'send-review' | 'send-question' | 'normal' */
   get buttonState() {
     if (this._quotes.length === 0) return 'normal'
