@@ -146,17 +146,33 @@ module Creatives
         propagate_share(ancestor_share) if ancestor_share
       end
 
-      # 조상 share를 재구축 대상 서브트리(creative + 자손)에만 전파한다.
-      # 조상 share의 전체 서브트리를 다시 쓰지 않으므로 비용은 조상 트리 크기가 아니라
-      # 재구축 대상 서브트리 크기에 비례한다.
-      # 사용자(nil = public 포함)별로 가장 가까운 조상 share 하나만 적용한다
-      # (closest share wins). 서브트리 내부의 직접 share는 rebuild_for_creative가
-      # 이후에 재적용하면서 자기 영역을 덮어쓴다.
-      # no_access도 포함 - 캐시에 저장하여 public share를 override
+      # Propagate ancestor shares only into the subtree being rebuilt (creative +
+      # descendants) instead of rewriting each ancestor share's whole subtree, so
+      # the cost scales with the rebuilt subtree, not with the ancestor tree.
+      # Per user (nil = public), only the closest ancestor share applies
+      # (closest share wins). Regions owned by a direct share inside the subtree
+      # are skipped, so a broader ancestor grant is never written over a closer
+      # share (e.g. no_access), not even transiently; rebuild_for_creative
+      # re-applies those direct shares afterwards.
+      # no_access shares are included - they are cached to override public shares.
       def rebuild_from_ancestors_for_subtree(creative, subtree_ids)
+        direct_share_ids_by_user = CreativeShare
+          .where(creative_id: subtree_ids)
+          .pluck(:user_id, :creative_id)
+          .group_by(&:first)
+          .transform_values { |pairs| pairs.map(&:last) }
+
         closest_ancestor_shares(creative).each do |share|
-          write_cache_rows(share, subtree_ids)
+          closer_ids = direct_share_ids_by_user.fetch(share.user_id, [])
+          write_cache_rows(share, ids_outside_subtrees(subtree_ids, closer_ids))
         end
+      end
+
+      def ids_outside_subtrees(ids, subtree_root_ids)
+        return ids if subtree_root_ids.empty?
+
+        excluded_ids = CreativeHierarchy.where(ancestor_id: subtree_root_ids).pluck(:descendant_id).to_set
+        ids.reject { |id| excluded_ids.include?(id) }
       end
 
       def closest_ancestor_shares(creative)

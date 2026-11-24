@@ -320,6 +320,29 @@ module Creatives
       assert_equal grandchild_share.id, grandchild_cache.source_share_id
     end
 
+    test "ancestor propagation never writes over a closer direct share region" do
+      third_user = users(:three)
+      root_share = third_share = nil
+      perform_enqueued_jobs do
+        root_share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "write")
+        third_share = CreativeShare.create!(creative: @root, user: third_user, permission: "read")
+        CreativeShare.create!(creative: @grandchild, user: @shared_user, permission: "no_access")
+      end
+      subtree_ids = @child.self_and_descendant_ids
+      CreativeSharesCache.where(creative_id: subtree_ids).where.not(source_share_id: nil).delete_all
+
+      # Only the ancestor step: the direct no_access share is not re-applied yet.
+      Collavre::Creatives::PermissionCacheBuilder.send(:rebuild_from_ancestors_for_subtree, @child, subtree_ids)
+
+      assert_equal root_share.id, CreativeSharesCache.find_by(creative: @child, user: @shared_user).source_share_id
+      assert_not CreativeSharesCache.exists?(creative: @grandchild, user: @shared_user),
+                 "ancestor grant must not be exposed inside a closer no_access region"
+      # A user without a closer share still gets the ancestor share everywhere.
+      [ @child, @grandchild ].each do |creative|
+        assert_equal third_share.id, CreativeSharesCache.find_by(creative: creative, user: third_user).source_share_id
+      end
+    end
+
     test "rebuild_for_creative rebuilds a moved subtree from the new ancestors only" do
       third_user = users(:three)
       other_root = other_share = nil
