@@ -1,6 +1,8 @@
 module Collavre
 module Creatives
   class PermissionCacheBuilder
+    UPSERT_BATCH_SIZE = 1000
+
     # Creative 생성 시 소유자 캐시 추가
     def self.cache_owner(creative)
       return unless creative.user_id
@@ -38,7 +40,6 @@ module Creatives
 
       creative = creative_share.creative
       user_id = creative_share.user_id
-      permission = creative_share.permission
 
       # 해당 creative + 모든 자손 ID (closure_tree 사용)
       all_descendant_ids = [ creative.id ] + creative.descendant_ids
@@ -64,38 +65,7 @@ module Creatives
 
       ids_to_update = all_descendant_ids.reject { |id| excluded_ids.include?(id) }
 
-      return if ids_to_update.empty?
-
-      permission_value = CreativeShare.permissions[permission]
-
-      # Handle NULL user_id (public shares) separately since SQLite treats NULL as distinct in unique indexes
-      if user_id.nil?
-        ids_to_update.each do |cid|
-          CreativeSharesCache.find_or_initialize_by(creative_id: cid, user_id: nil).tap do |cache|
-            cache.assign_attributes(
-              permission: permission_value,
-              source_share_id: creative_share.id
-            )
-            cache.save!
-          end
-        end
-      else
-        records = ids_to_update.map do |cid|
-          {
-            creative_id: cid,
-            user_id: user_id,
-            permission: permission_value,
-            source_share_id: creative_share.id
-          }
-        end
-
-        # Single bulk operation instead of N individual saves
-        CreativeSharesCache.upsert_all(
-          records,
-          unique_by: [ :creative_id, :user_id ],
-          update_only: [ :permission, :source_share_id ]
-        )
-      end
+      write_cache_rows(creative_share, ids_to_update)
     end
 
     # CreativeShare 삭제 시 호출
@@ -143,7 +113,7 @@ module Creatives
                          .delete_all
 
       # 새 부모 기준으로 조상 share 전파
-      rebuild_from_ancestors_for_subtree(creative)
+      rebuild_from_ancestors_for_subtree(creative, descendant_ids)
 
       # 이동된 서브트리 내의 직접 share들 재적용
       # (closest-share-wins 의미론으로 올바르게 전파됨)
@@ -176,16 +146,76 @@ module Creatives
         propagate_share(ancestor_share) if ancestor_share
       end
 
-      def rebuild_from_ancestors_for_subtree(creative)
-        ancestor_ids = creative.ancestor_ids
-        return if ancestor_ids.empty?
+      # Propagate ancestor shares only into the subtree being rebuilt (creative +
+      # descendants) instead of rewriting each ancestor share's whole subtree, so
+      # the cost scales with the rebuilt subtree, not with the ancestor tree.
+      # Per user (nil = public), only the closest ancestor share applies
+      # (closest share wins). Regions owned by a direct share inside the subtree
+      # are skipped, so a broader ancestor grant is never written over a closer
+      # share (e.g. no_access), not even transiently; rebuild_for_creative
+      # re-applies those direct shares afterwards.
+      # no_access shares are included - they are cached to override public shares.
+      def rebuild_from_ancestors_for_subtree(creative, subtree_ids)
+        direct_share_ids_by_user = CreativeShare
+          .where(creative_id: subtree_ids)
+          .pluck(:user_id, :creative_id)
+          .group_by(&:first)
+          .transform_values { |pairs| pairs.map(&:last) }
 
-        # 조상들의 모든 share 가져오기
-        # no_access도 포함 - 캐시에 저장하여 public share를 override
-        ancestor_shares = CreativeShare.where(creative_id: ancestor_ids)
+        closest_ancestor_shares(creative).each do |share|
+          closer_ids = direct_share_ids_by_user.fetch(share.user_id, [])
+          write_cache_rows(share, ids_outside_subtrees(subtree_ids, closer_ids))
+        end
+      end
 
-        ancestor_shares.each do |share|
-          propagate_share(share)
+      def ids_outside_subtrees(ids, subtree_root_ids)
+        return ids if subtree_root_ids.empty?
+
+        excluded_ids = CreativeHierarchy.where(ancestor_id: subtree_root_ids).pluck(:descendant_id).to_set
+        ids.reject { |id| excluded_ids.include?(id) }
+      end
+
+      def closest_ancestor_shares(creative)
+        CreativeShare
+          .joins("INNER JOIN creative_hierarchies ch ON creative_shares.creative_id = ch.ancestor_id")
+          .where("ch.descendant_id = ? AND ch.generations > 0", creative.id)
+          .order("ch.generations ASC, creative_shares.id ASC")
+          .to_a
+          .uniq(&:user_id)
+      end
+
+      def write_cache_rows(creative_share, creative_ids)
+        return if creative_ids.empty?
+
+        attributes = {
+          permission: CreativeShare.permissions[creative_share.permission],
+          source_share_id: creative_share.id
+        }
+
+        # Handle NULL user_id (public shares) separately since SQLite treats NULL as distinct in unique indexes
+        if creative_share.user_id.nil?
+          write_public_cache_rows(creative_ids, attributes)
+        else
+          upsert_user_cache_rows(creative_ids, creative_share.user_id, attributes)
+        end
+      end
+
+      def write_public_cache_rows(creative_ids, attributes)
+        creative_ids.each do |cid|
+          cache = CreativeSharesCache.find_or_initialize_by(creative_id: cid, user_id: nil)
+          cache.assign_attributes(attributes)
+          cache.save!
+        end
+      end
+
+      # Bulk upsert (in batches) instead of N individual saves
+      def upsert_user_cache_rows(creative_ids, user_id, attributes)
+        creative_ids.each_slice(UPSERT_BATCH_SIZE) do |batch_ids|
+          CreativeSharesCache.upsert_all(
+            batch_ids.map { |cid| attributes.merge(creative_id: cid, user_id: user_id) },
+            unique_by: [ :creative_id, :user_id ],
+            update_only: [ :permission, :source_share_id ]
+          )
         end
       end
     end
