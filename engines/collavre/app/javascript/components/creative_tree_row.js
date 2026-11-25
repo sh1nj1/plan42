@@ -11,6 +11,8 @@ import {
   isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
 } from "./creative_tree_row_document_view";
 
+import "./creative_header_progress";
+
 const BULLET_STARTING_LEVEL = 3;
 
 class CreativeTreeRow extends LitElement {
@@ -27,6 +29,7 @@ class CreativeTreeRow extends LitElement {
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
+    progressValue: { type: Number, attribute: "data-progress-value" },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
@@ -291,6 +294,8 @@ class CreativeTreeRow extends LitElement {
              </h1>
           </div>
         </div>
+        <creative-header-progress class="document-header-progress" .value=${this.progressValue}
+                                  label=${this.dataset.progressLabel || ""}></creative-header-progress>
       </div>
     `;
   }

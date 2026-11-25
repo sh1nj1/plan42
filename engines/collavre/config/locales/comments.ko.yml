@@ -48,6 +48,7 @@ ko:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
     comments:
+      creative_progress: Creative 진행률
       agent_model:
         label: "에이전트 모델"
         help: "이 에이전트의 모든 채팅에 적용되는 기본 모델과 추론 수준을 저장합니다. 채팅창의 임시 선택과는 별개입니다."

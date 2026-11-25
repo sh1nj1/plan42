@@ -48,6 +48,7 @@ en:
       login_first: Please sign in first.
       connected: Github account connected successfully.
     comments:
+      creative_progress: Creative progress
       agent_model:
         label: "Agent model"
         help: "Saves this agent’s default model and Thinking level for all chats, independently of the chat’s temporary choice."

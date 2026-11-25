@@ -1,5 +1,6 @@
 import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
+import '../../components/creative_header_progress'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
@@ -14,6 +15,7 @@ const LONG_PRESS_MS = 500
 export default class extends Controller {
   static targets = [
     'title',
+    'progress',
     'list',
     'form',
     'closeButton',
@@ -166,6 +168,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.progressObserver?.disconnect()
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
     if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
@@ -306,6 +309,7 @@ export default class extends Controller {
     this.element.dataset.canComment = 'false'
     this.element.dataset.creativeSnippet = ''
     setCreativeTitle(this.titleTarget, this.element.dataset.defaultTitle || '', '')
+    this.observeCreativeProgress(null)
     this._clearChatActiveRow()
     this._hideNavDropdown()
 
@@ -1001,6 +1005,23 @@ export default class extends Controller {
     if (!creativeId) return
     const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
     if (row) row.classList.add('chat-active')
+    this.observeCreativeProgress(row, creativeId)
+  }
+
+  observeCreativeProgress(row, creativeId) {
+    if (!this.hasProgressTarget) return
+    this.progressObserver?.disconnect()
+    if (this.progressCreativeId !== creativeId) this.progressTarget.value = undefined
+    this.progressCreativeId = creativeId
+    if (!row) return
+
+    const sync = () => {
+      const value = row.dataset.progressValue
+      this.progressTarget.value = value === undefined || value === '' ? undefined : Number(value)
+    }
+    sync()
+    this.progressObserver = new MutationObserver(sync)
+    this.progressObserver.observe(row, { attributeFilter: ['data-progress-value'] })
   }
 
   _clearChatActiveRow() {

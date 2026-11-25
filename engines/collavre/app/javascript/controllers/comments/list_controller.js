@@ -356,7 +356,8 @@ export default class extends Controller {
     if (this.currentTopicId) {
       urlParams.set('topic_id', this.currentTopicId)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
+    const creativeId = this.creativeId
+    return fetch(`/creatives/${creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
       // Keep the CSRF meta tag in sync with the session cookie.
       // This is critical after the browser returns from a background/frozen state.
       updateCsrfTokenFromResponse(response)
@@ -376,6 +377,13 @@ export default class extends Controller {
       const renderedTopicIds = response.headers.get("X-Rendered-Topic-Ids")
       const renderedTopicWatermarks = response.headers.get("X-Rendered-Topic-Watermarks")
       const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
+      const progress = response.headers.get('X-Creative-Progress')
+      const progressBar = this.element.querySelector('creative-header-progress')
+      if (progressBar && progress !== null && !superseded && !pagination &&
+          creativeId === this.creativeId && String(creativeId) === this.element.dataset.creativeId &&
+          !Number.isFinite(progressBar.value)) {
+        progressBar.value = Number(progress)
+      }
       // Only replace this snapshot for a full list load. Pagination requests
       // happen later and may observe a topic-strip archive change without
       // rendering that topic's existing history.
