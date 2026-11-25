@@ -1,3 +1,4 @@
+import { workspaceChatOptions } from '../lib/utils/workspace_chat_navigation'
 import { Controller } from '@hotwired/stimulus'
 import {
   cancelPendingLastVisitedCreative,
@@ -438,13 +439,16 @@ export default class extends Controller {
   handleFrameLoad(event) {
     if (event.target.id !== 'creative-workspace-content') return
 
-    this.syncFromWorkspaceFrame(event.target, { authoritative: event.type === 'turbo:frame-load' })
+    const authoritative = event.type === 'turbo:frame-load'
+    this.syncFromWorkspaceFrame(event.target, { authoritative })
+    if (authoritative) this.frameRequestUrl = undefined
   }
 
   handleFrameRequest(event) {
     if (event.target.id !== 'creative-workspace-content') return
 
     this.frameRequestGeneration = this.invalidationGeneration
+    this.frameRequestUrl = event.detail?.url
   }
 
   handleFetchRequest(event) {
@@ -583,9 +587,7 @@ export default class extends Controller {
     this.setActiveId(activeId)
 
     if (syncChat) {
-      this.openChat(state, {
-        highlightId: authoritative ? this.commentIdFromLocation() : undefined,
-      })
+      this.openChat(state, workspaceChatOptions(this.frameRequestUrl, authoritative))
     }
 
     if (rememberLastVisited) this.rememberLastVisitedCreative(stateCreativeId)
@@ -625,13 +627,14 @@ export default class extends Controller {
     this.activeId = String(id)
   }
 
-  openChat(link, { highlightId } = {}) {
+  openChat(link, { highlightId, openRequested = false } = {}) {
     document.dispatchEvent(new CustomEvent('creative-comments-click', {
       detail: {
         button: link,
         creativeId: link.dataset.creativeId,
         workspaceSync: true,
         highlightId,
+	openRequested,
       },
     }))
   }
@@ -738,17 +741,6 @@ export default class extends Controller {
     if (queryId) return queryId
 
     return window.location.pathname.match(/\/creatives\/(\d+)/)?.[1]
-  }
-
-  commentIdFromLocation() {
-    const params = new URLSearchParams(window.location.search)
-    const queryCommentId = params.get('comment_id') || params.get('highlight_comment_id')
-    if (queryCommentId) return queryCommentId
-
-    const pathCommentId = window.location.pathname.match(/\/creatives\/\d+\/comments\/(\d+)/)?.[1]
-    if (pathCommentId) return pathCommentId
-
-    return window.location.hash.match(/comment_(\d+)/)?.[1]
   }
 
   rootState() {

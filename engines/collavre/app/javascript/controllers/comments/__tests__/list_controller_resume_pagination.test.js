@@ -135,6 +135,33 @@ describe('comment pagination after returning to the app', () => {
     expect(list.innerHTML).toBe(comment(30))
   })
 
+  test('refresh cancels queued previous-message steps and discards their late page', async () => {
+    const oldPage = deferred()
+    global.fetch = jest.fn().mockReturnValueOnce(oldPage.promise)
+    controller.prevMsgNavigator.commit('20', 0)
+    const navigation = controller.loadAndNavigateToPreviousMessage('20')
+    controller.loadAndNavigateToPreviousMessage('20')
+    expect(controller.pendingPreviousMessageNavigation.steps).toBe(2)
+
+    const refresh = deferred()
+    global.fetch.mockReturnValueOnce(refresh.promise)
+    popup.handleWindowFocus()
+    expect(controller.pendingPreviousMessageNavigation).toBeNull()
+    expect(controller.loadingOlderPromise).toBeNull()
+    expect(await controller.loadOlderComments()).toBe(false)
+
+    oldPage.resolve(response(comment(10)))
+    expect(await navigation).toBe(false)
+    expect(controller.loadingOlder).toBe(true)
+    expect(list.innerHTML).toBe(comment(20))
+
+    refresh.resolve(response(comment(30)))
+    await settle()
+    expect(controller.loadingOlder).toBe(false)
+    expect(list.querySelector('[data-highlighted="true"]')).toBeNull()
+    expect(list.innerHTML).toBe(comment(30))
+  })
+
   test('recovers pagination after a failed refresh is retried', async () => {
     global.fetch = jest.fn().mockRejectedValueOnce(new Error('offline'))
     popup.handleWindowFocus()
