@@ -11,9 +11,12 @@ module Collavre
         return Verdict.new(verdict: "passed", screener_id: "none") if chunks.empty?
 
         Current.set(screening: true) do
-          verdicts = ScreenerResolver.for(agent: agent, creative: creative, task: task)
-                                     .map { |screener| scan(screener, chunks) }
-          record!(task, verdicts, Screening.digest(texts))
+          screeners = ScreenerResolver.for(agent: agent, creative: creative, task: task)
+          verdicts_by_screener = screeners.map do |screener|
+            chunks.map { |chunk| scan(screener, chunk) }
+          end
+          record!(task, verdicts_by_screener.map { |verdicts| Verdict.strictest(verdicts) }, Screening.digest(texts))
+          verdicts = verdicts_by_screener.flatten
           answered = Verdict.strictest(verdicts.reject { |v| v.verdict == "error" })
           Verdict.strictest(verdicts).tap { |v| v.residual = answered&.verdict || "passed" }
         end
@@ -21,8 +24,8 @@ module Collavre
 
       private
 
-      def scan(screener, chunks)
-        Verdict.strictest(chunks.map { |chunk| Verdict.from(screener.judge(chunk), screener) })
+      def scan(screener, chunk)
+        Verdict.from(screener.judge(chunk), screener)
       rescue StandardError => e
         Rails.logger.warn("[Screening] #{screener.id} failed: #{e.class}")
         Verdict.error(screener, e)

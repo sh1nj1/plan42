@@ -48,6 +48,31 @@ module Collavre
         assert_equal 2, screener.calls.size
       end
 
+      test "a later chunk error preserves an earlier block" do
+        screener = fake_screener([ 0.99, Timeout::Error.new ])
+        texts = [ { source: "doc", text: "x" * (Input::MAX_CHARS + 1) } ]
+
+        with_screeners([ screener ]) do
+          verdict = gate(texts)
+          assert_equal "blocked", verdict.verdict
+          assert_equal "blocked", verdict.residual
+        end
+      end
+
+      test "a malformed chunk preserves the flags from chunks before and after it" do
+        texts = [ { source: "doc", text: "x" * (Input::MAX_CHARS + 1) } ]
+
+        [ [ 0.6, "invalid" ], [ "invalid", 0.6 ] ].each do |answers|
+          screener = fake_screener(answers)
+          with_screeners([ screener ]) do
+            verdict = gate(texts)
+            assert_equal "error", verdict.verdict
+            assert_equal "flagged", verdict.residual
+          end
+          assert_equal 2, screener.calls.size
+        end
+      end
+
       test "each screener's verdict is audited on the task" do
         with_screeners([ fake_screener(0.2), fake_screener(0.7, id: "agent:9") ]) { gate }
         payloads = @task.task_actions.where(action_type: ACTION_TYPE).order(:id).map(&:payload)
