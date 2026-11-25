@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "open3"
+
 module Collavre
   # Restarts Solid Queue workers whose poll loop has wedged while their
   # heartbeat thread keeps them registered. Observed after a Postgres restart:
@@ -8,7 +10,7 @@ module Collavre
   #
   # A restart requires an old ready execution, spare capacity, and unchanged
   # ready and claimed execution IDs across watchdog runs at least a minute apart.
-  # Only local workers are signalled. The supervisor replaces a killed worker
+  # Only verified local forked workers are signalled. The supervisor replaces a killed worker
   # and fails its claims, which RecoverInterruptedTasksJob then resumes.
   class SolidQueueWorkerWatchdogJob < ApplicationJob
     queue_as :default
@@ -77,7 +79,21 @@ module Collavre
       [ ready, claims ]
     end
 
+    def forked_worker?(process)
+      supervisor = process.supervisor
+      return false unless supervisor&.kind == "Supervisor(fork)" && supervisor.hostname == process.hostname
+      return false if process.pid == supervisor.pid || process.pid <= 1
+
+      output, status = Open3.capture2("/bin/ps", "-ww", "-o", "ppid=,command=", "-p", process.pid.to_s, err: File::NULL)
+      parent_pid, command = output.strip.split(/\s+/, 2)
+      status.success? && parent_pid.to_i == supervisor.pid && command&.start_with?("solid-queue-worker(")
+    rescue Errno::ENOENT
+      false
+    end
+
     def restart(process)
+      return unless forked_worker?(process)
+
       Rails.logger.warn(
         "[SolidQueueWorkerWatchdog] Killing wedged worker pid=#{process.pid} " \
         "name=#{process.name} queues=#{process.metadata["queues"]}"

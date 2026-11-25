@@ -6,6 +6,7 @@ module Collavre
       @previous_queue_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
       @killed = []
+      @processes = {}
       @cache = ActiveSupport::Cache::MemoryStore.new
       freeze_time
     end
@@ -129,18 +130,74 @@ module Collavre
       assert_empty @killed
     end
 
+    test "skips workers registered under an async supervisor" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      worker.supervisor.update!(kind: "Supervisor(async)", pid: worker.pid)
+      assert_skips_stalled_worker
+    end
+
+    test "skips workers without a local supervisor registration" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      worker.supervisor.update!(hostname: "other-host")
+      assert_skips_stalled_worker
+    end
+
+    test "skips a worker PID shared with its fork supervisor registration" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      worker.supervisor.update!(pid: worker.pid)
+      assert_skips_stalled_worker
+    end
+
+    test "skips a PID that no longer belongs to the registered supervisor" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      @processes[worker.pid] = "1 solid-queue-worker(1.7.2): waiting"
+      assert_skips_stalled_worker
+    end
+
+    test "skips a PID reused by another child of the same supervisor" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      @processes[worker.pid] = "#{worker.supervisor.pid} solid-queue-dispatcher(1.7.2): dispatching"
+      assert_skips_stalled_worker
+    end
+
+    test "skips a PID absent from the OS process table" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      @processes.delete(worker.pid)
+      assert_skips_stalled_worker
+    end
+
     private
+
+    def assert_skips_stalled_worker
+      enqueue_ready("ai_agents", age: 4.minutes)
+      assert_empty perform_watchdog
+      travel 1.minute
+      assert_empty perform_watchdog
+      assert_empty @killed
+    end
 
     def perform_watchdog(kill: ->(signal, pid) { @killed << [ signal, pid ] })
       Rails.stub(:cache, @cache) do
-        ::Process.stub(:kill, kill) { SolidQueueWorkerWatchdogJob.perform_now }
+        Open3.stub(:capture2, method(:process_listing)) do
+          ::Process.stub(:kill, kill) { SolidQueueWorkerWatchdogJob.perform_now }
+        end
       end
     end
 
+    def process_listing(*arguments, **)
+      output = @processes[arguments.last.to_i]
+      [ output.to_s, Struct.new(:success?).new(output.present?) ]
+    end
+
     def register_worker(queues:, pool_size:, hostname: Socket.gethostname, heartbeat: Time.current, created: 10.minutes.ago)
-      SolidQueue::Process.create!(kind: "Worker", name: SecureRandom.uuid, pid: rand(100_000..999_999),
+      supervisor = SolidQueue::Process.create!(kind: "Supervisor(fork)", name: SecureRandom.uuid,
+        pid: 10_000 + @processes.size, hostname: hostname, last_heartbeat_at: heartbeat)
+      worker = SolidQueue::Process.create!(kind: "Worker", name: SecureRandom.uuid, pid: 20_000 + @processes.size,
+        supervisor: supervisor,
         hostname: hostname, last_heartbeat_at: heartbeat, created_at: created,
         metadata: { queues: queues, pool_size: pool_size })
+      @processes[worker.pid] = "#{supervisor.pid} solid-queue-worker(1.7.2): waiting"
+      worker
     end
 
     def enqueue_ready(queue, age:)
