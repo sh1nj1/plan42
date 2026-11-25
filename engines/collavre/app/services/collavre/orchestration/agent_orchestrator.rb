@@ -426,7 +426,7 @@ module Collavre
 
       def self.review_anchor?(context)
         anchor_id = context.dig("comment", "id")
-        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+        anchor_id.present? && Comment.own_turn_message_ids([ anchor_id ]).any?
       end
       private_class_method :review_anchor?
 

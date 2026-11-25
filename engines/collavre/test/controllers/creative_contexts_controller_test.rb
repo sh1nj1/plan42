@@ -166,4 +166,142 @@ class CreativeContextsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
   end
+  test "GET contexts returns contexts in the saved context order" do
+    @features.update!(data: { "context_ids" => [ @development.id ] })
+    @feature_a.update!(data: { "context_ids" => [ @project.id ], "context_order" => [ @project.id, @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    assert_response :success
+    contexts = JSON.parse(response.body)["contexts"]
+    assert_equal [ @project.id, @development.id ], contexts.map { |c| c["id"] }
+    assert_equal [ false, true ], contexts.map { |c| c["inherited"] }
+    assert_equal [ false, true ], contexts.map { |c| c["order_locked"] }
+  end
+
+  test "GET contexts locks the order of a direct pin that an ancestor also provides" do
+    @features.update!(data: { "context_ids" => [ @development.id ] })
+    @feature_a.update!(data: { "context_ids" => [ @development.id ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+    ctx = JSON.parse(response.body)["contexts"].sole
+    refute ctx["inherited"]
+    assert ctx["order_locked"]
+  end
+
+  test "PATCH update_contexts saves context_order" do
+    @features.update!(data: { "context_ids" => [ @project.id, @development.id ] })
+
+    patch update_contexts_creative_path(@features), params: {
+      context_order: [ @development.id, @project.id, @development.id, 0 ]
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    assert_equal [ @development.id, @project.id ], @features.reload.data["context_order"]
+  end
+
+  test "PATCH update_contexts removes an empty context_order" do
+    @features.update!(data: { "context_order" => [ @development.id ] })
+
+    patch update_contexts_creative_path(@features), params: { context_order: [] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    refute @features.reload.data.key?("context_order")
+  end
+
+  test "PATCH update_contexts drops a removed context from context_order so re-adding appends it" do
+    @features.update!(data: {
+      "context_ids" => [ @development.id, @project.id, @feature_a.id ],
+      "context_order" => [ @development.id, @project.id, @feature_a.id ]
+    })
+
+    patch update_contexts_creative_path(@features), params: { context_ids: [ @project.id, @feature_a.id ] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+    assert_response :success
+    assert_equal [ @project.id, @feature_a.id ], @features.reload.data["context_order"]
+
+    patch update_contexts_creative_path(@features), params: { context_ids: [ @project.id, @feature_a.id, @development.id ] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+    assert_response :success
+    assert_equal [ @project.id, @feature_a.id, @development.id ], @features.reload.ordered_context_ids
+  end
+
+  test "PATCH update_contexts merges into the latest data instead of a stale copy" do
+    @features.update!(data: { "context_ids" => [ @development.id, @project.id ] })
+    stale = Collavre::Creative.find(@features.id)
+    # Another tab removes a context after this request loaded the creative.
+    concurrent_removal = lambda do |*|
+      Collavre::Creative.find_by(id: @features.id).update!(data: { "context_ids" => [ @project.id ] })
+      true
+    end
+
+    Collavre::Creative.stub(:find, stale) do
+      stale.stub(:has_permission?, concurrent_removal) do
+        patch update_contexts_creative_path(@features), params: { context_order: [ @project.id ] },
+          headers: { "ACCEPT" => "application/json" }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal({ "context_ids" => [ @project.id ], "context_order" => [ @project.id ] }, @features.reload.data)
+  end
+
+  test "PATCH update_contexts drops reordered IDs that another tab just removed" do
+    @features.update!(data: { "context_ids" => [ @development.id, @project.id ] })
+    stale = Collavre::Creative.find(@features.id)
+    concurrent_removal = lambda do |*|
+      Collavre::Creative.find_by(id: @features.id).update!(data: { "context_ids" => [ @project.id ] })
+      true
+    end
+
+    Collavre::Creative.stub(:find, stale) do
+      stale.stub(:has_permission?, concurrent_removal) do
+        patch update_contexts_creative_path(@features), params: { context_order: [ @development.id, @project.id ] },
+          headers: { "ACCEPT" => "application/json" }, as: :json
+      end
+    end
+
+    assert_response :success
+    assert_equal [ @project.id ], @features.reload.data["context_order"]
+  end
+
+  test "PATCH update_contexts keeps the order of a removed pin that is still inherited" do
+    @features.update!(data: { "context_ids" => [ @development.id ] })
+    @feature_a.update!(data: {
+      "context_ids" => [ @development.id, @project.id ],
+      "context_order" => [ @development.id, @project.id ]
+    })
+
+    patch update_contexts_creative_path(@feature_a), params: { context_ids: [ @project.id ] },
+      headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    assert_equal [ @development.id, @project.id ], @feature_a.reload.data["context_order"]
+  end
+
+  test "GET contexts treats digit-string own and disabled IDs as own disabled contexts" do
+    @feature_a.update!(data: { "context_ids" => [ @development.id.to_s ], "disabled_context_ids" => [ @development.id.to_s ] })
+
+    get contexts_creative_path(@feature_a), headers: { "ACCEPT" => "application/json" }
+
+    ctx = JSON.parse(response.body)["contexts"].sole
+    assert_equal @development.id, ctx["id"]
+    refute ctx["inherited"]
+    assert ctx["disabled"]
+  end
+
+  test "PATCH update_contexts ignores malformed persisted and inherited IDs" do
+    @features.update!(data: { "context_ids" => [ {}, true, @project.id ] })
+    @feature_a.update!(data: { "context_ids" => [ {}, true, @development.id.to_s ], "disabled_context_ids" => [ {} ] })
+
+    patch update_contexts_creative_path(@feature_a), params: {
+      context_ids: [], context_order: [ @project.id ], disabled_context_ids: []
+    }, headers: { "ACCEPT" => "application/json" }, as: :json
+
+    assert_response :success
+    @feature_a.reload
+    assert_equal [], @feature_a.data["context_ids"]
+    assert_equal [ @project.id ], @feature_a.data["context_order"]
+    assert_equal [ @project.id ], @feature_a.ordered_context_ids
+  end
 end

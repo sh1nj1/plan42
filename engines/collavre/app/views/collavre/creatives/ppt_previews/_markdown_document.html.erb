@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="<%= I18n.locale %>">
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { margin: 0; padding: 24px; font: 16px/1.6 system-ui, sans-serif; color: #24292f; overflow-wrap: anywhere; }
+    h1, h2, h3 { line-height: 1.25; }
+    img { max-width: 100%; height: auto; }
+    table { border-collapse: collapse; display: block; overflow: auto; }
+    th, td { border: 1px solid #d0d7de; padding: 6px 12px; }
+    pre { padding: 16px; overflow: auto; background: #f6f8fa; border-radius: 6px; }
+    code { font-size: 0.9em; }
+    blockquote { margin-left: 0; padding-left: 16px; border-left: 4px solid #d0d7de; color: #57606a; }
+  </style>
+</head>
+<body><%= @document.html_safe %></body>
+</html>

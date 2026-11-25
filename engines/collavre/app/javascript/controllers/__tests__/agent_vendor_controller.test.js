@@ -30,7 +30,7 @@ describe('agent-vendor run options', () => {
             ${['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((v) => `<option value="${v}">${v}</option>`).join('')}
           </select>
         </div>
-        <div data-agent-vendor-target="fastMode"><input type="checkbox" data-agent-vendor-target="fastModeCheckbox"></div>
+        <div data-agent-vendor-target="fastMode"><input type="checkbox"></div>
       </div>`
     document.querySelector('[data-agent-vendor-target="vendor"]').value = vendor
     document.querySelector('[data-agent-vendor-target="effort"]').value = effort

@@ -427,9 +427,10 @@ module CollavreOpenclaw
     def build_session_key
       creative_id = extract_id(@context, :creative) || @context[:creative_id]
       topic_id = @context[:thread_id] || @context[:topic_id] || infer_topic_id
-      agent_id = extract_agent_id_from_email || "main"
+      parts = [ "agent", extract_agent_id_from_email || "main", "collavre", @user.id ]
+      # Evaluator calls must not reuse working or other evaluation transcripts.
+      return (parts + [ "evaluation", @context[:evaluation_session_id] ]).join(":") if @context[:evaluation_session_id].present?
 
-      parts = [ "agent", agent_id, "collavre", @user.id ]
       parts << "creative:#{creative_id}" if creative_id
       parts << "topic:#{topic_id}" if topic_id
 

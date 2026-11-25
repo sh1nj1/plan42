@@ -54,7 +54,7 @@ module Collavre
       end
 
       def recheck_abandonment_candidate?
-        trigger_event_name == "comment_created" && (status.in?(%w[failed cancelled escalated]) || unsuccessful_loop_response?)
+        KeepLoop.turn?(self) && (status.in?(%w[failed cancelled escalated]) || unsuccessful_loop_response?)
       end
 
       def recheck_abandoned_replays

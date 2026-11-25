@@ -7,6 +7,9 @@
 *   **Progress Tracking**: Visualize progress with value ranges (0.0 - 1.0). Parent progress is calculated from children.
 *   **Visual Boundaries**: Clear distinction of creative areas and child regions.
 *   **Styles**: Auto-styling for top-level creatives (h1, h2, h3).
+*   **SVG Images**: SVG attachments display as image previews. Click an image to open the enlarged viewer and use its zoom controls.
+*   **Document Attachments**: Markdown, HTML, PDF, and PowerPoint attachments share inline previews, fullscreen, download, and the image viewer’s loading indicator. Markdown renders headings, tables, and code; HTML is sandboxed without scripts; PDF supports page navigation and zoom.
+*   **PowerPoint Controls**: View attached `.pptx` files at their attachment position in both the editor and Creative view, immediately after upload, without importing creatives. Hover or focus to reveal transparent left/right chevrons; click the slide to enter fullscreen. On touch devices, tap to toggle controls and use the fullscreen button. Fullscreen provides download and close buttons. Use ←/→ to navigate and Esc to exit (where the browser supports fullscreen).
 
 ### Creative Page Menu
 *   **New Creative**: Add creative with '+' button.
@@ -111,14 +114,12 @@
 *   **MCP Server**: Integration with Model Context Protocol servers.
 
 ### External Services
-*   **Notion**: Integration for import/export or syncing.
 *   **Google Calendar**: Integration for meeting scheduling.
 *   **Github**:
     *   **Webhooks**: Handle GitHub events.
     *   **PR Analysis**: Automatic analysis of Pull Requests.
     *   **Popup**: GitHub integration interface.
     *   **Admin Control**: Configuration restricted to admins.
-*   **Linear**: Bidirectional Creative ↔ Linear issue sync (OAuth, HMAC webhooks, echo-free loop, LWW + conflict handling). See `engines/collavre_linear/docs/linear_integration.md`.
 
 ## Administration
 

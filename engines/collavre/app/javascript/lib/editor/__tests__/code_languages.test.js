@@ -1,4 +1,4 @@
-import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages, DEFAULT_CODE_LANGUAGE } from "../code_languages"
+import { detectCodeLanguage, normalizeFenceLang, bridgeCodeFenceLanguages } from "../code_languages"
 
 const RUBY = `# frozen_string_literal: true
 module CollavreCompat
@@ -46,10 +46,6 @@ describe("detectCodeLanguage", () => {
   it("does not detect from a too-short snippet", () => {
     expect(detectCodeLanguage("x = 1", "javascript")).toBe("javascript")
     expect(detectCodeLanguage("x = 1", "")).toBe("")
-  })
-
-  it("exposes the javascript default constant", () => {
-    expect(DEFAULT_CODE_LANGUAGE).toBe("javascript")
   })
 })
 

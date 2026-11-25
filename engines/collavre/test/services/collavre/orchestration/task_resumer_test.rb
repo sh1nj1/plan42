@@ -60,6 +60,10 @@ module Collavre
         users(:channel_bot).tap { |agent| agent.update!(llm_model: "claude-code") }
       end
 
+      def waiter_agent
+        users(:two).tap { |agent| agent.update!(llm_vendor: "google", llm_model: "gemini-1.5-flash") }
+      end
+
       # --- suspend! -----------------------------------------------------------
 
       test "suspend! sets a running turn aside and gives back its slot" do
@@ -84,7 +88,7 @@ module Collavre
 
       test "suspend! promotes the waiter queued behind the suspended turn" do
         holder = task_for(status: "running")
-        waiter = task_for(status: "queued", agent: users(:two), trigger: comment("Another request"))
+        waiter = task_for(status: "queued", agent: waiter_agent, trigger: comment("Another request"))
         OrchestratorPolicy.create!(policy_type: "scheduling", scope_type: nil,
                                    config: { "topic_max_concurrent_jobs" => 1 })
 
@@ -672,7 +676,7 @@ module Collavre
 
       test "suspension side effects wait for the caller's transaction to commit" do
         holder = task_for(status: "running")
-        waiter = task_for(status: "queued", agent: users(:two), trigger: comment("Another request"))
+        waiter = task_for(status: "queued", agent: waiter_agent, trigger: comment("Another request"))
 
         Task.transaction do
           assert_equal :suspended, TaskResumer.suspend!(holder, reason: :agent_offline)
@@ -686,7 +690,7 @@ module Collavre
 
       test "a rolled-back suspension neither drains the topic nor announces itself" do
         holder = task_for(status: "running")
-        waiter = task_for(status: "queued", agent: users(:two), trigger: comment("Another request"))
+        waiter = task_for(status: "queued", agent: waiter_agent, trigger: comment("Another request"))
 
         Task.transaction do
           TaskResumer.suspend!(holder, reason: :agent_offline)

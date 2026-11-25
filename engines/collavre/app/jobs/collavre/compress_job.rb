@@ -22,12 +22,6 @@ module Collavre
 
       return if target_comments.size < 2
 
-      # Build conversation text
-      conversation = target_comments.map do |c|
-        author = c.user&.name || I18n.t("collavre.comments.anonymous")
-        "#{author}: #{c.content}"
-      end.join("\n\n")
-
       # Build AI prompt
       system_prompt = Comments::CompressCommand::SYSTEM_PROMPT.dup
       if extra_prompt.present?
@@ -46,16 +40,9 @@ module Collavre
         return
       end
 
-      client = build_client(agent, creative, topic_id, user, system_prompt)
-
-      summary = String.new
-      result = client.chat([ { role: "user", text: conversation } ]) do |delta|
-        summary << delta
-      end
-
-      # AiClient returns nil on error (but still yields error text as delta).
-      # Check both: return value must be truthy AND content must be non-blank.
-      if result.nil? || summary.blank?
+      summary = ai_digest_comments(agent, target_comments, system_prompt: system_prompt,
+        creative: creative, topic_id: topic_id, requester: user)
+      unless summary
         Rails.logger.error("[CompressJob] AI failed for topic #{topic_id}")
         return
       end
@@ -73,22 +60,6 @@ module Collavre
     end
 
     private
-
-    def build_client(agent, creative, topic_id, user, system_prompt)
-      AiClient.new(
-        vendor: agent.llm_vendor,
-        model: agent.llm_model,
-        system_prompt: system_prompt,
-        llm_api_key: agent.llm_api_key || agent.creator&.llm_api_key,
-        gateway_url: agent.gateway_url.presence || agent.creator&.gateway_url,
-        context: {
-          creative: creative,
-          user: agent,
-          requester: user,
-          topic_id: topic_id
-        }
-      )
-    end
 
     def persist_summary(comments, summary_content, agent, user, compress_pattern)
       comments = lock_matching_comments(comments)

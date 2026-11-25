@@ -30,7 +30,7 @@ end
 For sensitive data, use `encrypts`:
 
 ```ruby
-class NotionAccount < ApplicationRecord
+class Account < ApplicationRecord
   encrypts :token, deterministic: false  # Non-deterministic for security
 end
 ```
@@ -82,13 +82,13 @@ export default class extends Controller {
 Collavre uses Solid Queue (Rails 8 default):
 
 ```ruby
-# app/jobs/notion_export_job.rb
-class NotionExportJob < ApplicationJob
+# app/jobs/my_export_job.rb
+class MyExportJob < ApplicationJob
   queue_as :default
 
   def perform(creative_id)
     creative = Creative.find(creative_id)
-    NotionCreativeExporter.new(creative).export
+    MyCreativeExporter.new(creative).export
   end
 end
 ```

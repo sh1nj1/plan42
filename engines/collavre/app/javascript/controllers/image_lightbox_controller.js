@@ -1,4 +1,6 @@
+import { loadImageWithPlaceholder } from "../lib/media_loading"
 import { Controller } from "@hotwired/stimulus"
+import csrfFetch from "../lib/api/csrf_fetch"
 import { setupImagePan } from "../lib/image_lightbox_pan"
 import imageLightboxValues from "./image_lightbox_values"
 import { confirmDialog } from "../lib/utils/dialog"
@@ -204,22 +206,8 @@ export default class extends Controller {
     const img = this._images[this._currentIndex]
     const imgEl = this._dialog.querySelector(".image-lightbox-image")
 
-    // Hide image during transition to prevent layout jump
-    imgEl.style.opacity = "0"
-
-    // Reset zoom before changing src
     this._resetZoom()
-
-    imgEl.src = img.fullSrc
-    imgEl.alt = img.alt || ""
-
-    // Show image once loaded (or immediately if cached)
-    const showImg = () => { imgEl.style.opacity = "1" }
-    if (imgEl.complete) {
-      showImg()
-    } else {
-      imgEl.onload = showImg
-    }
+    loadImageWithPlaceholder(imgEl, img)
 
     // Counter
     const counter = this._dialog.querySelector(".image-lightbox-counter")
@@ -315,13 +303,11 @@ export default class extends Controller {
     if (!(await confirmDialog(this.i18nDeleteConfirmValue, { danger: true }))) return
 
     const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
-    const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
 
     try {
-      const resp = await fetch(url, {
+      const resp = await csrfFetch(url, {
         method: "DELETE",
-        credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrfToken }
+        credentials: "same-origin"
       })
       if (!resp.ok) return
 

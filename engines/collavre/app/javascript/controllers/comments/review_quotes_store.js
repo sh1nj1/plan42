@@ -51,12 +51,16 @@ export default class ReviewQuotesStore {
 
   // --- Mutations ---
 
-  add(commentId, text) {
+  // A quote comes from a chat message (commentId) or, in document mode, from a
+  // creative (creativeId + label); never both.
+  add(commentId, text, { type = 'review', creativeId = null, label = '' } = {}) {
     const quote = {
       id: _nextId++,
-      commentId,
+      commentId: creativeId ? null : commentId,
+      creativeId,
+      label,
       text,
-      type: 'review', // 'review' | 'question'
+      type: type === 'question' ? 'question' : 'review', // 'review' | 'question'
       feedback: '',
     }
     this._quotes.push(quote)
@@ -72,11 +76,6 @@ export default class ReviewQuotesStore {
       this._activeId = null
     }
     return removed
-  }
-
-  setFeedback(quoteId, feedback) {
-    const quote = this._quotes.find(q => q.id === quoteId)
-    if (quote) quote.feedback = feedback.trim()
   }
 
   saveActiveFeedback(textareaValue) {
@@ -175,6 +174,10 @@ export default class ReviewQuotesStore {
   }
 
   // --- Query ---
+
+  get creativeQuotes() {
+    return this._quotes.filter(q => q.creativeId)
+  }
 
   /** Button state: 'add' | 'send-review' | 'send-question' | 'normal' */
   get buttonState() {

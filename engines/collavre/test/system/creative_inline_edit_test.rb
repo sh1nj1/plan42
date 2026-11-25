@@ -71,10 +71,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def expand_creative(creative)
     wait_for_network_idle(timeout: 10)
-    find("#creative-#{creative.id}").hover
-    # Force visibility for test stability as hover can be flaky
-    execute_script("document.querySelector('#creative-#{creative.id} .creative-toggle-btn').style.visibility = 'visible'")
-    find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
+    toggle_selector = "#creative-#{creative.id} .creative-toggle-btn:has(svg)"
+    page.document.synchronize(5) do
+      # A childless row has an empty placeholder, and saving can replace the row.
+      toggle = find(toggle_selector, visible: :all, wait: 0)
+      page.execute_script("arguments[0].style.visibility = 'visible'", toggle)
+      toggle.click
+    end
   end
 
   def attach_inline_image(file_path)
@@ -179,14 +182,18 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     fill_inline_editor("Second child")
     close_inline_editor
 
-    expand_creative(@root_creative)
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5, visible: :all
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      saved_descriptions = @root_creative.children.order(:created_at).pluck(:description).map do |description|
+        ActionController::Base.helpers.strip_tags(description)
+      end
+      assert_equal [ "First child", "Second child" ], saved_descriptions
+    end
 
-    @root_creative.reload
-    first_child = @root_creative.children.order(:created_at).first
-    assert_equal "First child", ActionController::Base.helpers.strip_tags(first_child.description)
+    expand_creative(@root_creative)
+    child_rows = "#creative-children-#{@root_creative.id} > creative-tree-row"
+    assert_selector child_rows, count: 2, wait: 5, visible: :all
+    assert_selector "#{child_rows}:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
+    assert_selector "#{child_rows}:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
   end
 
   test "supports keyboard shortcuts for add and close" do
@@ -200,7 +207,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     fill_inline_editor("Second child")
     inline_editor_field.send_keys(:escape)
-    sleep 0.5
+    assert_no_selector ".lexical-content-editable", wait: 10
 
     expand_creative(@root_creative)
 
@@ -319,14 +326,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     close_inline_editor
 
-    @root_creative.reload
-    wait_for_network_idle(timeout: 10)
-
     assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all
-    assert_equal 1, @root_creative.description.scan(/<img/).length
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal 1, @root_creative.reload.description.scan(/<img/).length
+    end
 
     open_inline_editor(@root_creative)
     assert_selector ".lexical-content-editable img", count: 1, wait: 5

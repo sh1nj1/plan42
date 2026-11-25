@@ -246,4 +246,25 @@ describe('EntityListController', () => {
             expect(document.activeElement).toBe(controller.closeTarget)
         })
     })
+    test('reconnect removes old input, keyboard and close listeners', () => {
+        controller.disconnect()
+        controller.connect()
+        const input = jest.spyOn(controller, 'setItems')
+        controller.inputTarget.dispatchEvent(new Event('input'))
+        expect(input).toHaveBeenCalledTimes(1)
+        const key = jest.spyOn(controller, 'handleKey')
+        controller.inputTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+        expect(key).toHaveBeenCalledTimes(1)
+        const close = jest.spyOn(controller, 'close')
+        controller.closeTarget.click()
+        expect(close).toHaveBeenCalledTimes(1)
+    })
+
+    test('refresh falls back to first row when the active item disappears', () => {
+        controller.updateItems([{ id: 1, label: 'One' }, { id: 2, label: 'Two' }])
+        controller.popup.setActiveIndex(1)
+        controller.updateItems([{ id: 1, label: 'One' }])
+        expect(controller.popup.activeIndex).toBe(0)
+    })
+
 })

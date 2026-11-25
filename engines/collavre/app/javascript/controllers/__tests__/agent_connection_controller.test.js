@@ -47,7 +47,7 @@ describe("AgentConnectionController", () => {
   beforeEach(() => {
     global.fetch = async () => ({
       ok: true,
-      text: async () => JSON.stringify({
+      headers: new Headers(), text: async () => JSON.stringify({
         engines: [{ engine: "claude", status: { state: "unknown" }, flows: [] }],
         provision: { items: [{ type: "skill", name: "collavre", status: "installed" }] }
       })
@@ -151,7 +151,7 @@ describe("AgentConnectionController", () => {
     let submitted
     global.fetch = async (_url, options) => {
       submitted = JSON.parse(options.body)
-      return { ok: true, text: async () => JSON.stringify({ engine: "codex", status: "pending" }) }
+      return { ok: true, headers: new Headers(), text: async () => JSON.stringify({ engine: "codex", status: "pending" }) }
     }
 
     await controller.submit({ params: { engine: "codex", session: "session-1" } })
@@ -180,7 +180,7 @@ describe("AgentConnectionController", () => {
     let submitted
     global.fetch = async (_url, options) => {
       submitted = JSON.parse(options.body)
-      return { ok: true, text: async () => JSON.stringify({ engine: "codex_custom", status: "pending" }) }
+      return { ok: true, headers: new Headers(), text: async () => JSON.stringify({ engine: "codex_custom", status: "pending" }) }
     }
     await controller.submit({ params: { engine: "codex_custom", session: "session-1" } })
 
@@ -236,7 +236,7 @@ describe("AgentConnectionController", () => {
     const calls = []
     global.fetch = async (url, options = {}) => {
       calls.push({ url, body: options.body && JSON.parse(options.body) })
-      return { ok: true, text: async () => JSON.stringify(url === "/resume" ? { resumed: true } : {
+      return { ok: true, headers: new Headers(), text: async () => JSON.stringify(url === "/resume" ? { resumed: true } : {
         engine: "claude", sessionId: "one", flow: "paste-code",
         status: url === "/auth/claude" ? "pending" : "authorized",
         verificationUrl: "https://claude.com/login"
@@ -259,7 +259,7 @@ describe("AgentConnectionController", () => {
     const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
     let polled
     controller.poll = async (...args) => { polled = args }
-    global.fetch = async () => ({ ok: true, text: async () => JSON.stringify({
+    global.fetch = async () => ({ ok: true, headers: new Headers(), text: async () => JSON.stringify({
       engine: "codex", flow: "device-code", status: "pending", sessionId: "device",
       userCode: "ABCD-EFGH", verificationUrl: "https://auth.openai.com/codex/device", expiresAt: "2099-01-01T00:00:00Z"
     }) })
@@ -287,14 +287,14 @@ describe("AgentConnectionController", () => {
   test("login errors remain visible and a disconnected pending start cannot render its response", async () => {
     await mount()
     const controller = application.getControllerForElementAndIdentifier(document.querySelector('[data-controller="agent-connection"]'), "agent-connection")
-    global.fetch = async () => ({ ok: false, text: async () => JSON.stringify({ error: { code: "session_superseded", message: "Start again" } }) })
+    global.fetch = async () => ({ ok: false, headers: new Headers(), text: async () => JSON.stringify({ error: { code: "session_superseded", message: "Start again" } }) })
     await controller.login({ currentTarget: { dataset: { engine: "codex", flow: "device-code" } } })
     expect(controller.errorTarget.textContent).toContain("Start again")
     let finish
     global.fetch = () => new Promise(resolve => { finish = resolve })
     const pending = controller.login({ currentTarget: { dataset: { engine: "claude", flow: "paste-code" } } })
     controller.disconnect()
-    finish({ ok: true, text: async () => JSON.stringify({ status: "pending", engine: "claude", sessionId: "late" }) })
+    finish({ ok: true, headers: new Headers(), text: async () => JSON.stringify({ status: "pending", engine: "claude", sessionId: "late" }) })
     await pending
     expect(controller.sessionTarget.childElementCount).toBe(0)
   })
@@ -306,7 +306,7 @@ describe("AgentConnectionController", () => {
       expiresAt: "2099-01-01T00:00:00Z"
     }
     const event = { params: { engine: "codex", session: "device" } }
-    const response = (data, ok = true) => ({ ok, text: async () => JSON.stringify(data) })
+    const response = (data, ok = true) => ({ ok, headers: new Headers(), text: async () => JSON.stringify(data) })
 
     beforeEach(async () => {
       await mount()
@@ -545,7 +545,7 @@ describe("AgentConnectionController", () => {
     test("cancelling stops pending polling, clears the session and refreshes login choices", async () => {
       controller.renderSession(session)
       global.fetch = jest.fn()
-        .mockResolvedValueOnce({ ok: true, text: async () => "" })
+        .mockResolvedValueOnce({ ok: true, headers: new Headers(), text: async () => "" })
         .mockResolvedValueOnce(response({ engines: [] }))
       const polling = controller.poll("codex", "device", session.expiresAt, 1)
 

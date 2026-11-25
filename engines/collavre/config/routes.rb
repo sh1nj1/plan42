@@ -49,7 +49,7 @@ Collavre::Engine.routes.draw do
   # OAuth callback routes (paths match OmniAuth provider names)
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
 
-  delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
+  draw :attachments
   get "/public-assets/blobs/:signed_id/*filename",
       to: "public_assets#show",
       as: :public_asset,
@@ -80,7 +80,7 @@ Collavre::Engine.routes.draw do
   resources :creatives do
     resources :crons, only: %i[update destroy], param: :key
     draw :creative_history
-    resources :attachments, :file_drops, only: [ :create ], module: :creatives
+    draw :creative_attachments
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do

@@ -29,7 +29,7 @@ module Tools
 
       results = tasks.filter_map do |task|
         args = parse_arguments(task)
-        task_creative_id = args["creative_id"] || parse_creative_id_from_key(task.key)
+        task_creative_id = recurring_task_creative_id(task, args)
         task_creative = Creative.find_by(id: task_creative_id)
         next unless task_creative&.has_permission?(Current.user, :read)
 

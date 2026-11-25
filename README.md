@@ -89,7 +89,7 @@ To point an agent at it over MCP, see [docs/mcp-configuration.md](docs/mcp-confi
 
 - **Rails 8**, 8 isolated engines — `collavre` is the core, and every `collavre_*` engine depends on it, never the reverse
 - An **MCP server** and an **OpenAI-compatible completion API**
-- **Two-way sync** with GitHub, Linear, Slack, and Notion
+- **Two-way sync** with GitHub and Slack
 - **Real-time chat** on every block (ActionCable), organized into topics
 - **Hierarchical permissions** backed by a materialized permission cache
 - **WebAuthn** and **OAuth** authentication

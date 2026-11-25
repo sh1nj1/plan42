@@ -94,9 +94,7 @@ module Collavre
     end
 
     def find_trigger_agent(creative)
-      creative.all_shared_users(:write)
-              .map(&:user)
-              .find(&:ai_user?)
+      creative.find_ai_agent(:write, capability: :chat)
     end
 
     def find_or_create_trigger_topic(creative, agent)

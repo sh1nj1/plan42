@@ -57,6 +57,28 @@ module Collavre
           Serializer.call(@topic)[:primary_agent].deep_stringify_keys
       end
 
+      test "capability-invalidated pins are cleared in ordinary topic payloads only" do
+        @topic.set_primary_agent!(@agent)
+        session = @creative.topics.create!(name: "Session", user: @user,
+                                          primary_agent: @agent, session_id: "serializer-session")
+        capabilities = AiClient.vendor_capabilities.deep_dup
+
+        AiClient.stub :vendor_capabilities, capabilities do
+          AiClient.register_vendor_capabilities("google", capabilities: [ :judge ])
+
+          assert_nil Serializer.call(@topic.reload)[:primary_agent]
+          assert Serializer.call(@topic).key?(:primary_agent)
+          assert_nil Serializer.with_agent(@topic, @agent)[:primary_agent]
+          assert_not Serializer.for_tool(@topic).key?(:primary_agent)
+          assert_equal @agent.id, Serializer.call(session)[:primary_agent][:id]
+          assert_equal @agent.id, Serializer.with_agent(session, @agent)[:primary_agent][:id]
+          assert_equal @agent.id, Serializer.for_tool(session)[:primary_agent][:id]
+          assert_equal @agent.id, @topic.reload.primary_agent_id
+        end
+
+        assert_equal @agent.id, Serializer.call(@topic)[:primary_agent][:id]
+      end
+
       test "unread_count and archived_at are omitted when absent" do
         data = Serializer.call(@topic)
 

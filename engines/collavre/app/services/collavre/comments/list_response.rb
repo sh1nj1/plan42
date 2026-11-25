@@ -13,6 +13,7 @@ module Collavre
       end
 
       def render
+        response.headers["X-Creative-Progress"] = @history_scope_creative.progress.to_f.to_s
         return render_history if history_topic?
 
         comments, topic_id, all_messages = load_comments

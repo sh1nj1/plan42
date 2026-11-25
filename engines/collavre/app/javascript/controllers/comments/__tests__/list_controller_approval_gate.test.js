@@ -37,3 +37,15 @@ test('existing approvals without a reason field still submit', () => {
   document.querySelector('textarea').remove()
   expect(approvalRequestOptions(document.querySelector('button')).body).toBe('{}')
 })
+
+test.each(['approve', 'deny'])('%s buttons of a creative change set are left to the creative-history controller', action => {
+  document.body.innerHTML = '<div class="comment-item"><div data-controller="creative-history"><button></button></div></div>'
+  const controller = Object.create(ListController.prototype)
+  global.fetch = jest.fn()
+  const button = document.querySelector('button')
+  button.classList.add(`${action}-comment-btn`)
+  const event = { target: button, preventDefault: jest.fn() }
+  controller.handleClick(event)
+  expect(event.preventDefault).not.toHaveBeenCalled()
+  expect(fetch).not.toHaveBeenCalled()
+})

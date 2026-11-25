@@ -1,16 +1,14 @@
 module Collavre
   class UserThemesController < ApplicationController
     def index
-      @themes = Current.user.user_themes.order(created_at: :desc)
-      @new_theme = UserTheme.new
+      prepare_theme_form
     end
 
     def create
       description = params[:description]
       if description.blank?
         @error = t("collavre.themes.alerts.description_empty")
-        @themes = Current.user.user_themes.order(created_at: :desc)
-        @new_theme = UserTheme.new
+        prepare_theme_form
         render :index
         return
       end
@@ -19,8 +17,7 @@ module Collavre
 
       if variables.empty?
         @error = t("collavre.themes.alerts.generation_failed")
-        @themes = Current.user.user_themes.order(created_at: :desc)
-        @new_theme = UserTheme.new
+        prepare_theme_form
         render :index
         return
       end
@@ -53,6 +50,13 @@ module Collavre
       else
         redirect_to user_themes_path, alert: t("collavre.themes.alerts.apply_failed", errors: Current.user.errors.full_messages.join(", "))
       end
+    end
+
+    private
+
+    def prepare_theme_form
+      @themes = Current.user.user_themes.order(created_at: :desc)
+      @new_theme = UserTheme.new
     end
   end
 end

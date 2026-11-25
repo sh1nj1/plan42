@@ -28,6 +28,23 @@ class QuotaRecoveryTest < ActiveSupport::TestCase
     end
   end
 
+  test "Claude five-hour limit schedules the suspended task after the reported reset" do
+    travel_to(Time.utc(2026, 11, 19, 18)) do
+      reset = Time.utc(2026, 11, 19, 20, 40)
+      message = "Claude run failed: subtype=success: You've hit your 5-hour limit · resets 5:40am (Asia/Seoul)"
+      response = Faraday::Response.new(status: 429, body: {
+        "error" => { "code" => "rate_limit_exceeded", "message" => message }
+      })
+      error = Collavre::Quota::ExceededError.from_response(RubyLLM::RateLimitError.new(message, response: response))
+
+      assert_enqueued_with(job: Collavre::ResumeSuspendedTasksJob, args: [ { task_id: @task.id } ],
+                           at: ->(time) { time.between?(reset + 5.seconds, reset + 30.seconds) }) do
+        assert_equal :suspended, Collavre::Quota::Recovery.suspend!(@task, error)
+      end
+      assert_equal "suspended", @task.reload.status
+    end
+  end
+
   test "missing reset uses increasing bounded probes then blocks further attempts" do
     freeze_time do
       3.times do |attempt|

@@ -9,6 +9,8 @@ module Collavre
       names = ToolMeta.registry.select { |klass| klass.name&.match?(BUILT_IN_TOOL) }
                       .map { |klass| klass.tool_metadata[:name] }
       assert_includes names, "cron_list"
+      assert_includes names, "task_status"
+      assert_includes names, "topic_tasks"
 
       %i[en ko].each do |locale|
         I18n.with_locale(locale) do

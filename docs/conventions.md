@@ -31,7 +31,7 @@ Collavre uses a Rails 8 multi-engine architecture (see
 |--------|---------|
 | `engines/collavre/` | Core (users, creatives, permissions) |
 | `engines/collavre_openclaw/` | AI agent integration |
-| `engines/collavre_notion/` | Notion export |
+| `engines/collavre_github/` | GitHub integration |
 
 ### Separation Rules
 
@@ -44,8 +44,8 @@ Collavre uses a Rails 8 multi-engine architecture (see
 
 ```ruby
 # Good: Association injection via initializer
-initializer "collavre_notion.associations" do
-  Collavre.user_class.has_one :notion_account, class_name: "CollavreNotion::NotionAccount"
+initializer "collavre_github.associations" do
+  Collavre.user_class.has_one :github_account, class_name: "CollavreGithub::Account"
 end
 
 # Bad: Direct engine dependency
@@ -181,7 +181,7 @@ tighten. Run `bin/complexity_check` locally to see what a PR would report. See
 Collavre::Creative
 Collavre::User
 CollavreOpenclaw::OpenclawAccount
-CollavreNotion::NotionAccount
+CollavreGithub::Account
 ```
 
 ### Namespaced ViewComponents
@@ -215,7 +215,7 @@ See [permissions.md](permissions.md) for the full permission architecture.
 ### Engine Route Helpers (Tests)
 ```ruby
 main_app.creative_github_integration_path(@creative)
-notion_engine.creative_notion_integration_path(@creative)
+github_engine.creative_github_integration_path(@creative)
 ```
 
 ## WebSocket Conventions

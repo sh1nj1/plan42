@@ -747,6 +747,25 @@ describe('WorkspaceTreeController', () => {
     expect(document.activeElement).toBe(leafLink)
   })
 
+  test.each(['textarea', 'input', 'editor'])('preserves a %s focused while the sidebar refreshes', async (tag) => {
+    document.querySelector('.creative-workspace-tree-link').focus()
+    let finishRefresh
+    fetchMock.mockReturnValueOnce(new Promise(resolve => { finishRefresh = resolve }))
+    const refreshing = controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    const input = document.createElement(tag === 'editor' ? 'div' : tag)
+    if (tag === 'editor') {
+      input.contentEditable = 'true'
+      input.tabIndex = 0
+    }
+    document.getElementById('creative-workspace-content').append(input)
+    input.focus()
+    finishRefresh({ ok: true, json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1' }] }) })
+    await refreshing
+
+    expect(document.activeElement).toBe(input)
+  })
+
   test('keeps the rendered branch state when a lazy reload fails', async () => {
     fetchMock.mockRejectedValueOnce(new Error('offline'))
     jest.spyOn(console, 'error').mockImplementation(() => {})

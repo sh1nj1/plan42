@@ -7,6 +7,7 @@ import {
   restoreTreeEmptyState,
   PAGINATION_PENDING_ATTRIBUTE,
 } from '../../modules/creative_tree_empty_state'
+import { listenForTreeReloads } from '../../creatives/tree_reload_events'
 import {
   captureCreativeTreeViewState,
   restoreCreativeTreeViewState,
@@ -61,10 +62,10 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
-    this._handleSyncRefetch = () => this.requestReload()
-    document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
-    this._handleCreativeDrop = () => this.requestReload()
-    window.addEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
+    this._stopReloadEvents = listenForTreeReloads({
+      reload: () => this.requestReload(),
+      release: () => this._drainPendingReload(),
+    })
     this._setupArchiveToggle()
   }
 
@@ -82,8 +83,7 @@ export default class extends Controller {
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.removeEventListener('creative-editing:start', this._handleEditStart)
     document.removeEventListener('creative-editing:stop', this._handleEditStop)
-    document.removeEventListener('creative-sync:refetch', this._handleSyncRefetch)
-    window.removeEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
+    this._stopReloadEvents()
     this._teardownPagination()
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
@@ -194,6 +194,8 @@ export default class extends Controller {
     this._drainPendingReload()
   }
 
+  // Runs a reload that was deferred, and only that: `creative-sync:release`
+  // announces that a save settled, which is not by itself a reason to refetch.
   _drainPendingReload() {
     if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0 || hasPendingCreativeSaves(this.element)) return
     this._pendingRefetch = false

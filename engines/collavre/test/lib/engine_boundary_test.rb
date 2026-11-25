@@ -75,9 +75,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   KNOWN_VIOLATIONS = {
     "engines/collavre/db/migrate/20260120045354_encrypt_oauth_tokens.rb" => [
       "CollavreGithub::Account",        # defined? guard
-      "CollavreGithub::Account",        # encrypt_column argument
-      "CollavreNotion::NotionAccount",  # defined? guard
-      "CollavreNotion::NotionAccount"   # encrypt_column argument
+      "CollavreGithub::Account"         # encrypt_column argument
     ]
   }.freeze
 
@@ -164,7 +162,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   test "detector ignores satellite names in comments and strings" do
     source = <<~RUBY
       # see CollavreSlack::Channel for the pattern
-      log("CollavreNotion::NotionAccount handles this")
+      log("CollavreSlack::SlackAccount handles this")
     RUBY
 
     assert_empty constant_references_in(source)
@@ -186,10 +184,10 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   test "detector flags load and autoload of a satellite engine" do
     source = <<~RUBY
       load "collavre_slack/channel.rb"
-      autoload :Channel, "collavre_notion/channel"
+      autoload :Channel, "collavre_github/account"
     RUBY
 
-    assert_equal [ "collavre_slack/channel.rb", "collavre_notion/channel" ], loader_paths_in(source)
+    assert_equal [ "collavre_slack/channel.rb", "collavre_github/account" ], loader_paths_in(source)
   end
 
   test "detector ignores requires of the core engine and third-party gems" do
@@ -244,7 +242,7 @@ class EngineBoundaryTest < ActiveSupport::TestCase
   end
 
   # Lexing rather than grepping: `# see CollavreSlack for the pattern` and
-  # "CollavreNotion" inside a doc string are not dependencies, and the two
+  # "CollavreSlack" inside a doc string are not dependencies, and the two
   # existing mentions in the core engine are both comments. A regex would fail
   # this test on day one for no reason.
   #

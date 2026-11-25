@@ -569,3 +569,15 @@ test('double-click toggles zoom through the pointer capture stage', () => {
   expect(image.style.transform).toBe('translate(0px, 0px) scale(1)')
   expect(stage.style.cursor).toBe('')
 })
+
+test('image loading uses the same media placeholder and clears on success and failure', () => {
+  document.head.innerHTML = '<meta name="document-loading" content="불러오는 중…">'
+  click('#first')
+  expect(dialog().querySelector('.media-loading').getAttribute('aria-label')).toBe('불러오는 중…')
+  dialog().querySelector('img').onload()
+  expect(dialog().querySelector('.media-loading')).toBeNull()
+  click('.image-lightbox-next')
+  expect(dialog().querySelector('.media-loading')).not.toBeNull()
+  dialog().querySelector('img').onerror()
+  expect(dialog().querySelector('.media-loading')).toBeNull()
+})

@@ -66,7 +66,7 @@ export function save(action, method, form) {
   return csrfFetch(action, {
     method,
     headers: JSON_HEADERS,
-    body: new FormData(form),
+    body: form instanceof FormData ? form : new FormData(form),
   }).then(invalidateWorkspaceTreeOnSuccess)
 }
 

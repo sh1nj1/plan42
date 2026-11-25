@@ -77,6 +77,29 @@ module Collavre
       assert ActiveStorage::Blob.exists?(blob.id)
     end
 
+    test "purge rechecks references added after orphan authorization" do
+      blob = make_blob
+      controller = Collavre::AttachmentsController.new
+      assert controller.send(:orphan_blob?, blob)
+
+      Collavre::Creative.create!(description: blob_ref_html(blob.signed_id), user: @user)
+      controller.send(:purge_unless_referenced, blob)
+
+      assert ActiveStorage::Blob.exists?(blob.id)
+    end
+
+    test "purge rechecks attachments added after orphan authorization" do
+      blob = make_blob
+      controller = Collavre::AttachmentsController.new
+      assert controller.send(:orphan_blob?, blob)
+
+      creative = Collavre::Creative.create!(description: "<p>x</p>", user: @user)
+      creative.files.attach(blob)
+      controller.send(:purge_unless_referenced, blob)
+
+      assert ActiveStorage::Blob.exists?(blob.id)
+    end
+
     test "403 when caller cannot reference or own the blob" do
       sign_out
       other = User.create!(email: "attach_other@example.com", password: TEST_PASSWORD,

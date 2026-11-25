@@ -13,8 +13,8 @@ module Collavre
     # Status flow:
     #   idle → running → completed | awaiting_user | stuck | max_reached
     def perform(task_id)
-      task = Task.find_by(id: task_id)
-      return unless task&.creative
+      task = loop_task(task_id)
+      return unless task
 
       child_creative = task.creative
       parent_creative = child_creative.trigger_loop_context
@@ -31,11 +31,7 @@ module Collavre
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
-      # Infrastructure errors (timeout, connection failure) → retry without consuming iteration
-      if infrastructure_error?(last_agent_comment)
-        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
-        return
-      end
+      return if handle_error_reply(last_agent_comment, child_creative, topic, parent_creative, loop_config, task)
 
       status = evaluate_response(child_creative, parent_creative, last_agent_comment, task, loop_config)
 
@@ -45,7 +41,7 @@ module Collavre
         enqueue_verification(child_creative, task)
       when :awaiting_user
         update_loop_data(child_creative, state: "awaiting_user", infra_retry_count: 0)
-        post_system_notice(child_creative, topic, I18n.t(
+        post_loop_notice(child_creative, topic, I18n.t(
           "collavre.trigger_loop.awaiting_user",
           iteration: loop_config["current_iteration"]
         ))
@@ -72,12 +68,44 @@ module Collavre
 
     private
 
+    # An approval continuation now owns a handed-off turn; its stale BLOCKED reply must not pause the loop.
+    def loop_task(task_id)
+      task = Task.find_by(id: task_id)
+      return unless task&.creative
+      return if task.trigger_event_payload&.dig(KeepLoop::CONTINUED_KEY)
+
+      @loop_task_id = task.id
+      task
+    end
+
+    # Recheck under the creative lock: the approval handoff may land after perform's early return.
+    def validate_loop_snapshot!(loop_data, creative)
+      super
+      raise StaleLoopError if Task.where(id: @loop_task_id).pick(:trigger_event_payload)&.dig(KeepLoop::CONTINUED_KEY)
+    end
+
     def enqueue_verification(creative, task)
       update_loop_data(creative, state: "pending_verification", infra_retry_count: 0)
       raise ActiveJob::EnqueueError, "Verification enqueue rejected" if TriggerLoopVerifyJob.perform_later(task.id) == false
     rescue StandardError
       restore_retryable_loop_turn(creative)
       raise
+    end
+
+    # An error reply is not a task result. A prompt the provider rejected as
+    # too large fails the same way on every retry, so the loop pauses;
+    # infrastructure errors (timeout, connection failure) retry without
+    # consuming an iteration. Returns whether the reply was handled here.
+    def handle_error_reply(comment, child_creative, topic, parent_creative, loop_config, task)
+      if prompt_too_large_error?(comment)
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
+        post_loop_notice(child_creative, topic, I18n.t("collavre.trigger_loop.prompt_too_large"))
+      elsif infrastructure_error?(comment)
+        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
+      else
+        return false
+      end
+      true
     end
 
     # Detect infrastructure errors (timeout, connection failure, etc.)
@@ -107,6 +135,23 @@ module Collavre
       def infrastructure_error_patterns
         BUILTIN_INFRASTRUCTURE_ERROR_PATTERNS + registered_infrastructure_error_patterns
       end
+    end
+
+    # Provider rejections of an oversized prompt, as AiClient#chat streams
+    # them into the reply ("⚠️ AI Error: ..."). Matched only on that error
+    # line so an agent merely discussing context limits does not stop a loop.
+    PROMPT_TOO_LARGE_PATTERNS = [
+      /input_too_large/i,
+      /context_length_exceeded/i,
+      /maximum context length/i,
+      /prompt is too long/i,
+      /input token count exceeds/i,
+      /exceeds the maximum (?:input )?length/i
+    ].freeze
+
+    def prompt_too_large_error?(comment)
+      error_line = comment.content.to_s[/⚠️ AI Error:.*/]
+      error_line.present? && PROMPT_TOO_LARGE_PATTERNS.any? { |pattern| error_line.match?(pattern) }
     end
 
     def infrastructure_error?(comment)
@@ -215,18 +260,17 @@ module Collavre
       - CONTINUE: The agent made progress but explicitly mentions remaining work it intends to do.
       - BLOCKED: The agent cannot proceed without external help (missing permissions, unclear requirements, dependency on others).
 
-      Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
     PROMPT
 
     def llm_fallback_evaluate(child_creative, parent_creative, agent_comment, task)
       verifier = pick_fallback_agent(parent_creative, child_creative, task&.agent_id)
 
-      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :read)
+      unless verifier && Creatives::PermissionChecker.current_allowed?(child_creative.id, verifier, :feedback)
         # No AI agent available for fallback — default to continue
         return :continue
       end
 
-      instructions = collect_fallback_instructions(child_creative, parent_creative, verifier)
+      instructions = collect_loop_instructions(child_creative, parent_creative, verifier)
 
       prompt = <<~PROMPT
         ## Task instructions:
@@ -237,31 +281,16 @@ module Collavre
 
         ## Question:
         Based on the agent's response, is the task DONE, should it CONTINUE, or is it BLOCKED?
-        Respond with exactly one word: DONE, CONTINUE, or BLOCKED.
       PROMPT
 
-      client = AiClient.new(
-        vendor: verifier.llm_vendor,
-        model: verifier.llm_model,
-        system_prompt: LLM_FALLBACK_SYSTEM_PROMPT,
-        llm_api_key: verifier.llm_api_key || verifier.creator&.llm_api_key,
-        gateway_url: verifier.gateway_url.presence || verifier.creator&.gateway_url,
-        context: { user: verifier, usage_source_task: task }
-      )
-
-      response_text = +""
-      client.chat([ { role: "user", text: prompt } ]) do |delta|
-        response_text << delta
-      end
-
-      cleaned = response_text.strip.upcase
-      case cleaned
-      when /\ADONE\b/
-        :done
-      when /\ABLOCKED\b/
-        :awaiting_user
-      else
-        :continue
+      result = decision_client(verifier, task, LLM_FALLBACK_SYSTEM_PROMPT).judge(prompt, questions: {
+        status: { type: :choice, instructions: "Determine the current task status.",
+                  options: { DONE: "All required actions executed", CONTINUE: "Work remains", BLOCKED: "External help needed" } }
+      })
+      case result.dig("answers", "status", "choice")
+      when "DONE" then :done
+      when "BLOCKED" then :awaiting_user
+      else :continue
       end
     rescue StandardError => e
       Rails.logger.error("[TriggerLoopCheckJob] LLM fallback failed: #{e.class} #{e.message}")
@@ -271,34 +300,17 @@ module Collavre
 
     # Pick an AI agent for fallback evaluation — prefer feedback+ agents,
     # fall back to the trigger agent itself.
-    def pick_fallback_agent(creative, child_creative, task_agent_id = nil)
-      ai_agents = creative.all_shared_users(:feedback)
+    def pick_fallback_agent(_creative, child_creative, task_agent_id = nil)
+      ai_agents = child_creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
+                          .select { |agent| decision_capable?(agent, child_creative) }
 
-      return ai_agents.first if ai_agents.any?
+      return decision_agent(ai_agents) if ai_agents.any?
 
-      # Prefer parent write agents before the independently authorized keep task agent.
+      # Prefer task write agents before the independently authorized keep task agent.
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
-      (creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-              .find { |agent| agent.ai_user? && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :read) }
-    end
-
-    # Collect instructions from context creatives for LLM evaluation
-    def collect_fallback_instructions(child_creative, parent_creative, verifier)
-      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
-      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
-      contexts.each do |ctx|
-        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
-
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      child_desc = child_creative.description.to_s.strip
-      parts << "Task: #{child_desc}" if child_desc.present?
-
-      parts.join("\n\n---\n\n")
+      (child_creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
+              .find { |agent| decision_capable?(agent, child_creative) }
     end
   end
 end

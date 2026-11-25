@@ -55,6 +55,33 @@ describe('CommentsPopupController', () => {
         application.stop()
     })
 
+    test('rebinds chat progress when the tree replaces its rows', async () => {
+        const progress = document.createElement('creative-header-progress')
+        progress.setAttribute('data-comments--popup-target', 'progress')
+        controller.element.appendChild(progress)
+
+        const tree = document.createElement('div')
+        tree.innerHTML = '<creative-tree-row creative-id="123" data-progress-value="0.2"></creative-tree-row>'
+        container.appendChild(tree)
+        await controller.open(document.getElementById('trigger-btn'))
+        expect(progress.value).toBe(0.2)
+
+        tree.innerHTML = '<creative-tree-row creative-id="123" data-progress-value="0.4"></creative-tree-row>'
+        const row = tree.firstElementChild
+        tree.dispatchEvent(new CustomEvent('creative-tree:updated', { bubbles: true }))
+        expect(progress.value).toBe(0.4)
+        expect(row.classList.contains('chat-active')).toBe(true)
+
+        row.dataset.progressValue = '0.6'
+        await Promise.resolve()
+        expect(progress.value).toBe(0.6)
+
+        tree.replaceChildren()
+        tree.dispatchEvent(new CustomEvent('creative-tree:updated', { bubbles: true }))
+        expect(progress.hasAttribute('data-row-progress')).toBe(false)
+        controller.close()
+    })
+
     test('onboarding URL opens chat on a mobile viewport', () => {
         const previousWidth = window.innerWidth
         const previousUrl = window.location.href

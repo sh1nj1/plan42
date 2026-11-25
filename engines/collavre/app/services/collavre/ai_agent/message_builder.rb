@@ -7,6 +7,9 @@ module Collavre
     # Extracts creative context, chat history, and the trigger comment
     # into the format expected by AiClient.
     class MessageBuilder
+      DEFAULT_CREATIVE_CONTEXT_SIZE = 100_000
+      DEFAULT_CONTEXT_CREATIVES_TOTAL_SIZE = 50_000
+
       def initialize(agent:, context:, original_comment: nil, task: nil)
         @task = task
         @agent = agent
@@ -24,6 +27,7 @@ module Collavre
         history_count = append_chat_history(messages)
         append_trigger_message(messages)
         append_task_identity(messages)
+        PromptBudget.enforce!(messages, @agent)
 
         {
           messages: messages,
@@ -60,11 +64,7 @@ module Collavre
           messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}" } ] }
         else
           # Full self-context: inject the creative subtree with ancestry breadcrumb
-          children_level = @agent.creative_children_level
-          max_depth = 1 + children_level
-          markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
-          )
+          markdown = tree_renderer.render(creative, context_size("creative_context_size", DEFAULT_CREATIVE_CONTEXT_SIZE))
 
           @injected_creative_ids << creative.id
           messages << { role: "user", kind: :creative_context, parts: [ { text: "Creative Path: #{ancestry}#{topic_info}\n#{markdown}" } ] }
@@ -86,15 +86,15 @@ module Collavre
         return unless creative && Kollavy::AccessScope.allowed?(creative, @agent)
 
         effective_origin = creative.effective_origin(Set.new)
-        context_ids = effective_origin.effective_context_ids
+        # Same order as the chat context bar, so the prompt follows what the user arranged.
+        context_ids = effective_origin.ordered_context_ids
         disabled_ids = effective_origin.effective_disabled_context_ids
         active_ids = context_ids - disabled_ids - [ creative_id, effective_origin.id ]
         return if active_ids.empty?
 
-        children_level = @agent.creative_children_level
-        max_depth = 1 + children_level
-
         creatives_by_id = load_prompt_context_creatives(active_ids)
+        # One budget shared by all Context Creatives, claimed in display order.
+        remaining = context_size("context_creatives_total_size", DEFAULT_CONTEXT_CREATIVES_TOTAL_SIZE)
 
         active_ids.each do |ctx_id|
           next if @injected_creative_ids.include?(ctx_id)
@@ -103,9 +103,8 @@ module Collavre
           next unless ctx
 
           @injected_creative_ids << ctx_id
-          markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ ctx ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
-          )
+          markdown = tree_renderer.render(ctx, remaining)
+          remaining -= markdown.length
 
           messages << {
             role: "user",
@@ -113,6 +112,16 @@ module Collavre
             parts: [ { text: "Context Creative (id: #{ctx.id}):\n#{markdown}" } ]
           }
         end
+      end
+
+      def tree_renderer
+        @tree_renderer ||= BudgetedTreeRenderer.new(
+          max_depth: 1 + @agent.creative_children_level, prune: method(:workflow_context?)
+        )
+      end
+
+      def context_size(key, default)
+        (@agent.parsed_agent_conf.dig("context", key) || default).to_i
       end
 
       # Workflow creatives are machine-readable routing configuration. Only
@@ -142,9 +151,13 @@ module Collavre
         contents = contents.compact
         return if contents.empty? && workflow_referenced_ids.empty?
 
-        children_level = @agent.creative_children_level
-        max_depth = 1 + children_level
+        renderer = ReferencedCreativeRenderer.new(
+          agent: @agent, max_depth: 1 + @agent.creative_children_level,
+          prune: method(:workflow_context?), ancestry: method(:build_ancestry_chain)
+        )
 
+        # Order is priority: the trigger's own links claim the budget first,
+        # then the coalesced comments, then the workflow source message.
         referenced_ids = (contents.flat_map { |c| referenced_creative_ids(c) } + workflow_referenced_ids).uniq
         referenced_ids.reject! { |cid| @injected_creative_ids.include?(cid) }
         creatives_by_id = load_prompt_context_creatives(referenced_ids)
@@ -154,16 +167,13 @@ module Collavre
           next unless creative
 
           @injected_creative_ids << creative_id
-          markdown = ApplicationController.helpers.render_creative_tree_markdown(
-            [ creative ], 1, true, max_depth: max_depth, prune: method(:workflow_context?)
-          )
-
-          messages << {
-            role: "user",
-            kind: :referenced_creative,
-            parts: [ { text: "Referenced Creative (id: #{creative.id}):\n#{markdown}" } ]
-          }
+          append_referenced_text(messages, renderer.render(creative))
         end
+        append_referenced_text(messages, renderer.overflow_note)
+      end
+
+      def append_referenced_text(messages, text)
+        messages << { role: "user", kind: :referenced_creative, parts: [ { text: text } ] } if text
       end
 
       def workflow_referenced_ids
@@ -181,35 +191,19 @@ module Collavre
       # Whether a history entry carries its comment whole.
       #
       # A history entry is text: this window renders `content` and nothing
-      # else. Two things ride only on the trigger path — the blobs
-      # append_trigger_message attaches, and the subtree
-      # append_referenced_creative_contexts renders for a linked creative,
-      # which scans the anchor and the merged blocks and never this window. A
-      # comment carrying either is *partly* delivered here, and the turn that
-      # swept it up is not a substitute for its own dispatch.
+      # else. Only the blobs append_trigger_message attaches ride solely on the
+      # trigger path, so a comment with images is *partly* delivered here and
+      # the turn that swept it up is not a substitute for its own dispatch.
+      #
+      # A creative link is not withheld: the trigger path itself only promises
+      # a reference card for it (see append_referenced_creative_contexts), and
+      # the link text in this entry already tells the agent what to retrieve.
       #
       # Decided here rather than at Orchestration::DeliveryRecord, which reads
       # the :comment_id tag as a delivery claim: this is the only place that
-      # knows what was rendered, and in particular which creatives were
-      # already injected. A link to the topic's own creative — the common case
-      # — withholds nothing, and a rule written anywhere else could not tell
-      # that apart from a link to a subtree the agent never saw.
-      #
-      # Deliberately the same test append_referenced_creative_contexts applies,
-      # @injected_creative_ids and all, so the two answer alike: whatever that
-      # path would have injected for this comment is what this window failed to
-      # supply. It holds only roots, not the descendants a rendered subtree
-      # also covers, so a link to a descendant reads as withheld when its text
-      # was in fact rendered. That asymmetry costs a redundant turn; the
-      # opposite one costs the message.
+      # knows what was rendered.
       def delivered_whole?(comment)
-        return false if comment.images.attached?
-
-        missing = referenced_creative_ids(comment.content) - @injected_creative_ids.to_a
-        return true if missing.empty?
-
-        # Excluded routing configuration supplies no subtree on the trigger path either.
-        load_prompt_context_creatives(missing).empty?
+        !comment.images.attached?
       end
 
       # Appends chat history messages and returns the count of messages added.
@@ -286,6 +280,7 @@ module Collavre
           review_parts << "---\nOriginal message:\n#{quoted_body}\n---" if quoted_body.present?
           payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
         end
+        payload_text = CreativeQuoteContext.prepend_to(payload_text, @original_comment)
 
         sender_name = @context.dig("sender", "name")
         if sender_name
@@ -297,13 +292,14 @@ module Collavre
         # (a burst of messages answered as one turn). They belong *in* the
         # trigger, not in chat history: a session-backed agent receives only the
         # :trigger message, so history-only placement would lose them entirely.
+        anchor_size = payload_text.length
         merged_blocks = merged_trigger.blocks
         payload_text = (merged_blocks.map(&:text) + [ payload_text ]).join("\n\n") if merged_blocks.any?
         # A resumed turn is told what its interrupted attempt already did, in the
         # trigger for the same reason as the merged blocks above.
         payload_text = Orchestration::ResumeContext.prepend_to(payload_text, @context)
 
-        trigger_parts = [ { text: payload_text } ]
+        trigger_parts = [ { text: payload_text, anchor_offset: payload_text.length - anchor_size } ]
 
         merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
@@ -338,10 +334,7 @@ module Collavre
       end
 
       def trigger_comment
-        @trigger_comment ||= begin
-          id = @context.dig("comment", "id")
-          Comment.find_by(id: id) if id
-        end
+        @trigger_comment ||= Comment.find_by(id: @context.dig("comment", "id"))
       end
 
       def current_topic
