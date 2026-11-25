@@ -669,7 +669,7 @@ export function handleDrop(event, intent = null, { partialFailureMessage = '', d
       creativeIds: result.succeededIds,
     };
     if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail);
-    dispatchDropCompletion({ ...detail, context: 'target' });
+    dispatchDropCompletion({ ...detail, context: 'target', rendered: Boolean(moveContext?.rendered && result.ok) });
     return result;
   }).catch((error) => {
     // Only an unusable command or a synchronous transport failure lands here;

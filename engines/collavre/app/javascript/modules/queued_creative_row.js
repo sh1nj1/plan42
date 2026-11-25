@@ -1,27 +1,62 @@
 import { treeRowElement } from './creative_row_editor_helpers'
 import { creativeSaveSnapshotIsEmpty } from './creative_save_state'
+import { branchShownElsewhere, refreshProgressAbove, shownElsewhere } from '../creatives/row_progress'
 
 const revisions = new WeakMap()
 const retryAttachmentIds = new WeakMap()
 const refreshes = new WeakMap()
+const owedRefetches = new WeakSet()
 
 // Only the latest queued snapshot may acknowledge or rewrite a row.
-export function queuedCreativeCompletion(tree, onComplete) {
+// `refreshMissed` refetches the row when an update broadcast was dropped while
+// the save was pending: applying it then would have painted over the draft.
+// `progressChanged` says the save wrote progress. The server rolls that up
+// through ancestors, linked placements and, on completion, descendants; the
+// saving user gets no broadcast for any of it, so the list is refetched. A
+// later snapshot of text alone supersedes that save without undoing its
+// write, so the refetch stays owed until the latest snapshot settles.
+export function queuedCreativeCompletion(tree, onComplete, refreshMissed, progressChanged = false) {
   const previous = revisions.get(tree) || 0
   const revision = previous + 1
   revisions.set(tree, revision)
+  if (progressChanged) owedRefetches.add(tree)
   tree.dataset.saveState = 'pending'
-  const complete = () => {
+  const complete = (data) => {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
     const row = treeRowElement(tree)
-    if (row) delete row.dataset.pendingSyncData
+    const missedSync = row?.dataset.missedSync === 'true'
+    if (row) {
+      delete row.dataset.pendingSyncData
+      delete row.dataset.missedSync
+    }
+    applyRenderedDescription(row, data?.description_embedded_html)
     onComplete()
-    document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
+    if (missedSync) refreshMissed(tree)
+    // Saved text is already on this row, so unless the creative is drawn in
+    // another row too, all that is owed for it is a reload the save held back.
+    const refetch = owedRefetches.delete(tree) || shownElsewhere(row)
+    document.dispatchEvent(new CustomEvent(refetch ? 'creative-sync:refetch' : 'creative-sync:release'))
     return true
   }
   complete.rollback = () => revisions.set(tree, previous)
   return complete
+}
+
+function applyRenderedDescription(row, html) {
+  if (!row || typeof html !== 'string') return
+  row.descriptionHtml = html
+  row.dataset.descriptionHtml = html
+  row.requestUpdate?.()
+}
+
+// A background create refreshes its own row and parent. Repeated branches
+// and an adopted child still need the list to reconcile the hierarchy.
+export function releaseCreatedRow(tree, adoptedChildId) {
+  const parentId = tree.dataset.parentId
+  const refetch = adoptedChildId || branchShownElsewhere(parentId)
+  if (!refetch) refreshProgressAbove(parentId)
+  document.dispatchEvent(new CustomEvent(refetch ? 'creative-sync:refetch' : 'creative-sync:release'))
 }
 
 // A row refresh applies its response only if no later refresh was asked for

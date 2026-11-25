@@ -23,12 +23,18 @@ module Collavre
     end
 
     def creative_update_payload(base)
-      {
+      payload = {
         id: base.id, creative_type: base.creative_type,
         progress: base.progress, progress_html: view_context.render_creative_progress(base),
         has_children: base.children.exists?, content_type: base.data&.dig("content_type"),
         markdown_editor: base.data&.dig("editor")
       }
+      # A read-only link recipient can move the placement without editing its origin.
+      if @creative.has_permission?(Current.user, :write)
+        payload[:markdown_source] = base.data&.dig("markdown_source")
+        payload[:description_embedded_html] = view_context.embed_youtube_iframe(@creative.effective_description)
+      end
+      payload
     end
 
     def type_input?

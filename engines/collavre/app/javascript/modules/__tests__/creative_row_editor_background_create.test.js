@@ -1101,21 +1101,26 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(first.dataset.id).toBe('77')
   })
 
-  test('a background create refreshes the created row and asks for the deferred reload', async () => {
+  test.each(['', '42'])('a background create reconciles the list when adopting child %j', async (childId) => {
     const refetch = jest.fn()
+    const release = jest.fn()
     document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('creative-sync:release', release)
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)
     await startNewRow('first creative')
+    document.getElementById('inline-child-id').value = childId
     await pressEnter()
     creativesApi.get.mockClear()
 
     firstPost.resolve(created(77))
     await flush()
     document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('creative-sync:release', release)
 
     expect(creativesApi.get).toHaveBeenCalledWith('77')
-    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(release).toHaveBeenCalledTimes(childId ? 0 : 1)
+    expect(refetch).toHaveBeenCalledTimes(childId ? 1 : 0)
   })
 
   function frameRender(frame) {

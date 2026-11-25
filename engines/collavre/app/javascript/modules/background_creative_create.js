@@ -1,5 +1,5 @@
 import { applyCreativeSaveResponse } from './creative_save_state'
-import { cacheSavedMarkdownSource } from './queued_creative_row'
+import { cacheSavedMarkdownSource, releaseCreatedRow } from './queued_creative_row'
 import { siblingTreeRow, creativeIdFrom } from './creative_tree_dom'
 import { treeRowElement } from './creative_row_editor_helpers'
 
@@ -184,8 +184,7 @@ async function postCreate(tree, { action, body, snapshot, deletedIds }, fallback
     delete tree.dataset.saveState
     applyCreativeSaveResponse(snapshot, data, { applyCachedMarkdownSource: cacheSavedMarkdownSource(tree) })
     created(data)
-    // A reload deferred while the row was pending has nothing else to release it.
-    document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
+    releaseCreatedRow(tree, body.get('child_id'))
     return { afterId: String(data.id), beforeId: '' }
   } catch (error) {
     // The row keeps showing the text; flag it and say so, since the editor

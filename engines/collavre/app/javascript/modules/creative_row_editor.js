@@ -1298,7 +1298,7 @@ function setupEditorSession() {
       const complete = queuedCreativeCompletion(tree, () => {
         if (cascade) refreshChildren(tree);
         if (form.dataset.creativeId === startCreativeId) setSaveStatus(isDirty || pendingSave ? 'pending' : 'saved');
-      });
+      }, refreshRow, snapshot.persistProgress);
       if (form.dataset.creativeId === startCreativeId) setSaveStatus('pending');
       enqueueCreativeSnapshot(apiQueue, {
         path: `/creatives/${creativeId}`,
@@ -1307,7 +1307,7 @@ function setupEditorSession() {
         dedupeKey: `creative_${creativeId}`,
         deletedAttachmentIds: deletedAttachmentIds,  // Store as data for serialization
         onSuccess: function (data) {
-          if (!complete()) return;
+          if (!complete(data)) return;
           if (!isMarkdownSave) return;
           const canApplyToCurrentEditor = form.dataset.creativeId === onSuccessCreativeId
             && markdownMode

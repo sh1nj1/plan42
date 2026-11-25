@@ -247,6 +247,18 @@ class CreativesControllerUpdateTest < ActionDispatch::IntegrationTest
     assert_equal "메타데이터는 객체여야 합니다.", body["error"]
   end
 
+  test "update JSON includes rendered description for the creative list" do
+    creative = Creative.create!(description: "<p>Original</p>", user: @user)
+    description = '<a href="https://youtu.be/dQw4w9WgXcQ">Video</a>'
+
+    patch creative_url(creative), params: { creative: { description: description } },
+      headers: { "Accept" => "application/json" }
+
+    assert_response :success
+    assert_includes response.parsed_body["description_embedded_html"], 'src="https://www.youtube.com/embed/dQw4w9WgXcQ"'
+    assert_includes creative.reload.description, "https://youtu.be/dQw4w9WgXcQ"
+  end
+
   test "update JSON response exposes rewritten markdown_source for client sync" do
     png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjAAAAAgABc3UBGAAAAABJRU5ErkJggg=="
     md_src  = "Hello ![img](data:image/png;base64,#{png_b64}) world"

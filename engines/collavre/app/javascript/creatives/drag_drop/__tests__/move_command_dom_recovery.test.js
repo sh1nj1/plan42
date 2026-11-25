@@ -7,12 +7,16 @@
 // is adapter work — `move_command.js` stays DOM-free — and this file pins the
 // seam between the two.
 import { jest } from '@jest/globals'
-import {
+const refreshMovedBranchProgress = jest.fn()
+const branchShownElsewhere = jest.fn(() => false)
+jest.unstable_mockModule('../../row_progress', () => ({ branchShownElsewhere, refreshMovedBranchProgress }))
+const {
   createMoveContext,
   applyMove,
+  revertMove,
   runMoveWithDomRecovery,
-} from '../operations'
-import { createMoveCommand, InvalidMoveCommandError } from '../move_command'
+} = await import('../operations')
+const { createMoveCommand, InvalidMoveCommandError } = await import('../move_command')
 
 function mountTree() {
   document.body.innerHTML = `
@@ -62,6 +66,115 @@ const COMMAND = () => createMoveCommand({ ids: ['3'], targetId: '9', direction: 
 
 afterEach(() => {
   document.body.innerHTML = ''
+  refreshMovedBranchProgress.mockClear()
+})
+
+// No refetch follows a move the list keeps as rendered, so the roll-up of the
+// branch it left and the one it joined has to be refreshed with it.
+test('an accepted in-place move refreshes the progress of both branches', async () => {
+  const { moveContext, newParentId } = optimisticallyDropAsChild()
+
+  await runMoveWithDomRecovery({
+    command: COMMAND(),
+    moveContext,
+    attemptedParentId: newParentId,
+    execute: jest.fn().mockResolvedValue({ status: 'success', ok: true }),
+  })
+
+  expect(refreshMovedBranchProgress).toHaveBeenCalledTimes(1)
+  expect(refreshMovedBranchProgress).toHaveBeenCalledWith('1', '9')
+})
+
+test.each([
+  ['a move the list will refetch anyway', { rendered: false }, 'success'],
+  ['a move with no optimistic DOM', null, 'success'],
+  ['a rejected move', { rendered: true }, 'failure'],
+])('%s leaves branch progress alone', async (_name, overrides, status) => {
+  const { moveContext, newParentId } = optimisticallyDropAsChild()
+
+  await runMoveWithDomRecovery({
+    command: COMMAND(),
+    moveContext: overrides && Object.assign(moveContext, overrides),
+    attemptedParentId: newParentId,
+    execute: jest.fn().mockResolvedValue({ status, ok: status === 'success' }),
+  })
+
+  expect(refreshMovedBranchProgress).not.toHaveBeenCalled()
+})
+
+// `rendered` lets the tree skip its refetch after the drop. A row dropped into a
+// branch whose children were never fetched is the only one on screen there, so
+// that move must not claim the tree is up to date.
+test.each([
+  ['beside a row', 'up', () => {}, true],
+  ['into a row with no children', 'child', () => {}, true],
+  ['into a loaded branch', 'child', (target) => {
+    target.setAttribute('has-children', '')
+    target.insertAdjacentHTML('afterend', '<div class="creative-children" id="creative-children-9" data-loaded="true"></div>')
+  }, true],
+  ['into a branch that was never loaded', 'child', (target) => {
+    target.setAttribute('has-children', '')
+    target.insertAdjacentHTML('afterend', '<div class="creative-children" id="creative-children-9" data-loaded="false"></div>')
+  }, false],
+  ['into a branch with no container yet', 'child', (target) => target.setAttribute('has-children', ''), false],
+])('a move %s records whether the tree is left up to date', (_name, direction, arrange, rendered) => {
+  const { draggedRow, targetRow } = mountTree()
+  arrange(targetRow)
+  const draggedState = { row: draggedRow, parentId: '1', level: 2, isRoot: false }
+  const moveContext = createMoveContext(draggedState, targetRow, null)
+
+  applyMove({ direction, targetRow, draggedState, draggedChildren: null, moveContext })
+
+  expect(moveContext.rendered).toBe(rendered)
+})
+
+// A branch drawn a second time (a linked placement) changes in rows the move
+// does not touch, whichever side of the move it is on.
+test.each([
+  ['out of a branch shown elsewhere', 'up', '3'],
+  ['beside a row in a branch shown elsewhere', 'up', '1'],
+  ['into a row shown elsewhere', 'child', '9'],
+])('a move %s does not claim the tree is up to date', (_name, direction, elsewhere) => {
+  const { draggedRow, targetRow } = mountTree()
+  branchShownElsewhere.mockImplementation((id) => id === elsewhere)
+  const draggedState = { row: draggedRow, parentId: '1', level: 2, isRoot: false }
+  const moveContext = createMoveContext(draggedState, targetRow, null)
+
+  applyMove({ direction, targetRow, draggedState, draggedChildren: null, moveContext })
+  branchShownElsewhere.mockImplementation(() => false)
+
+  expect(moveContext.rendered).toBe(false)
+})
+
+// The children of a collapsed branch are fetched later, at the level its load
+// URL names, so a move to another depth has to rewrite that URL too.
+test('a move to another depth carries the lazy-load level of every branch below it', () => {
+  const { draggedRow, targetRow } = mountTree()
+  draggedRow.insertAdjacentHTML('afterend', `
+    <div class="creative-children" id="creative-children-3" data-level="3" data-loaded="true" data-load-url="/creatives/3/children?level=3&select_mode=0">
+      <creative-tree-row creative-id="4" parent-id="3" level="3"></creative-tree-row>
+      <div class="creative-children" id="creative-children-4" data-loaded="false" data-load-url="/creatives/4/children?select_mode=0&level=4"></div>
+      <creative-tree-row creative-id="5" parent-id="3" level="3"></creative-tree-row>
+      <div class="creative-children" id="creative-children-5"></div>
+    </div>`)
+  const draggedChildren = document.getElementById('creative-children-3')
+  const draggedState = { row: draggedRow, parentId: '1', level: 2, isRoot: false }
+  const moveContext = createMoveContext(draggedState, targetRow, draggedChildren)
+
+  const { newParentId } = applyMove({ direction: 'child', targetRow, draggedState, draggedChildren, moveContext })
+
+  expect(moveContext.rendered).toBe(true)
+  expect(draggedChildren.dataset.level).toBe('4')
+  expect(draggedChildren.dataset.loadUrl).toBe('/creatives/3/children?level=4&select_mode=0')
+  expect(document.getElementById('creative-children-4').dataset.loadUrl).toBe('/creatives/4/children?select_mode=0&level=5')
+  expect(document.getElementById('creative-children-4').dataset.level).toBeUndefined()
+  expect(document.getElementById('creative-children-5').dataset.loadUrl).toBeUndefined()
+
+  revertMove(moveContext, newParentId)
+
+  expect(draggedChildren.dataset.level).toBe('3')
+  expect(draggedChildren.dataset.loadUrl).toBe('/creatives/3/children?level=3&select_mode=0')
+  expect(document.getElementById('creative-children-4').dataset.loadUrl).toBe('/creatives/4/children?select_mode=0&level=4')
 })
 
 test('an accepted move leaves the optimistic DOM exactly where the drop put it', async () => {

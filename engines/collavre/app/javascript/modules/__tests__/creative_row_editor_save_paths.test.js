@@ -461,6 +461,61 @@ test('autosave queues edits and ignores an older acknowledgment after another sa
   expect(save).not.toHaveBeenCalled()
 })
 
+test('a queued save asks only for a deferred reload, and refetches the row when a broadcast was dropped mid-save', async () => {
+  jest.useFakeTimers()
+  const refetch = jest.fn()
+  const release = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  document.addEventListener('creative-sync:release', release)
+  const { tree, rowComponent } = appendMarkdownRow('42', 'before')
+  openRow(tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'first'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  get.mockClear()
+  enqueue.mock.calls[0][0].onSuccess({ markdown_source: 'first' })
+  expect(release).toHaveBeenCalledTimes(1)
+  expect(get).not.toHaveBeenCalled()
+
+  textarea.value = 'second'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  rowComponent.dataset.missedSync = 'true'
+  enqueue.mock.calls[1][0].onSuccess({ markdown_source: 'second' })
+  document.removeEventListener('creative-sync:refetch', refetch)
+  document.removeEventListener('creative-sync:release', release)
+
+  expect(get).toHaveBeenCalledWith('42')
+  expect(rowComponent.dataset.missedSync).toBeUndefined()
+  expect(release).toHaveBeenCalledTimes(2)
+  expect(refetch).not.toHaveBeenCalled()
+})
+
+// Progress rolls up through ancestors, linked placements and descendants the
+// row cannot paint, so a save that wrote it still ends in a list refetch.
+test('a queued save that wrote progress requests a list refetch', async () => {
+  jest.useFakeTimers()
+  const refetch = jest.fn()
+  const release = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  document.addEventListener('creative-sync:release', release)
+  const { tree } = appendMarkdownRow('42', 'before')
+  openRow(tree)
+  const progress = document.getElementById('inline-creative-progress')
+  progress.checked = true
+  progress.dispatchEvent(new Event('change'))
+  await flushPromises()
+
+  expect(enqueue.mock.calls[0][0].body['creative[progress]']).toBe(1)
+  enqueue.mock.calls[0][0].onSuccess({ markdown_source: 'before' })
+  document.removeEventListener('creative-sync:refetch', refetch)
+  document.removeEventListener('creative-sync:release', release)
+
+  expect(refetch).toHaveBeenCalledTimes(1)
+  expect(release).not.toHaveBeenCalled()
+})
+
 test('reopening an unacknowledged row preserves pending status and the local body', async () => {
   jest.useFakeTimers()
   const first = appendMarkdownRow('42', 'before')
