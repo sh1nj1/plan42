@@ -8,6 +8,11 @@ module Collavre
     class ScreeningApprovalHandler < ApprovalGateHandler
       private
 
+      def validate_attempt!(error)
+        super
+        raise CancelledError if Orchestration::ExecutionFence.superseded?(@task, error.execution_generation)
+      end
+
       def update_task(error)
         @task.update!(status: "pending_approval", pending_tool_call: {
           kind: Screening::PENDING_KIND, tool_name: error.tool_name, tool_call_id: error.tool_call_id,

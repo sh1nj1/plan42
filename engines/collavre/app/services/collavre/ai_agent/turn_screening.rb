@@ -12,6 +12,7 @@ module Collavre
       # flagged turn is not delivered at all. The screened text is what #call
       # delivers.
       def screen_channel_turn!
+        generation = Orchestration::ExecutionFence.generation(@task)
         @creative = find_creative
         content = ClaudeChannelAdapter.trigger_content(@context, @agent)
         2.times do
@@ -23,7 +24,10 @@ module Collavre
           content = refreshed_content
         end
 
-        @task.cancel_if_active!
+        @task.with_lock do
+          @task.update!(status: "cancelled") if @task.running? &&
+            !Orchestration::ExecutionFence.superseded?(@task, generation)
+        end
         raise CancelledError
       rescue ApprovalPendingError => e
         handle_approval_pending(e)

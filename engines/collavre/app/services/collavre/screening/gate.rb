@@ -7,6 +7,7 @@ module Collavre
     # screener's answer is audited on the task; nothing is cached.
     class Gate
       def call(texts, agent:, creative:, task:)
+        generation = Orchestration::ExecutionFence.generation(task)
         chunks = Input.chunks(texts)
         return Verdict.new(verdict: "passed", screener_id: "none") if chunks.empty?
 
@@ -15,7 +16,11 @@ module Collavre
           verdicts_by_screener = screeners.map do |screener|
             chunks.map { |chunk| scan(screener, chunk) }
           end
-          record!(task, verdicts_by_screener.map { |verdicts| Verdict.strictest(verdicts) }, Screening.digest(texts))
+          task.with_lock do
+            raise CancelledError if Orchestration::ExecutionFence.superseded?(task, generation)
+
+            record!(task, verdicts_by_screener.map { |verdicts| Verdict.strictest(verdicts) }, Screening.digest(texts))
+          end
           verdicts = verdicts_by_screener.flatten
           answered = Verdict.strictest(verdicts.reject { |v| v.verdict == "error" })
           Verdict.strictest(verdicts).tap { |v| v.residual = answered&.verdict || "passed" }

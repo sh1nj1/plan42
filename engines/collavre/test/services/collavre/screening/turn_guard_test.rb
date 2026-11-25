@@ -69,6 +69,36 @@ module Collavre
         assert @task.reload.running?
       end
 
+      test "a verdict from a superseded execution cannot change the restarted task" do
+        @task.update!(trigger_event_payload: { "execution_generation" => "first" })
+        screener = fake_screener(0.99)
+        replace_attempt = ->(_input) do
+          Task.find(@task.id).update!(trigger_event_payload: { "execution_generation" => "replacement" })
+          { "answers" => { "injection" => { "probability" => 0.99 } } }
+        end
+
+        screener.stub(:judge, replace_attempt) do
+          with_screeners([ screener ]) do
+            assert_raises(CancelledError) { guard.call(@texts, block_flagged: true) }
+          end
+        end
+        assert @task.reload.running?
+        assert_empty @task.task_actions.where(action_type: ACTION_TYPE)
+        assert_empty @creative.comments
+      end
+
+      test "an approval request from a superseded execution cannot pause the restarted task" do
+        @task.update!(trigger_event_payload: { "execution_generation" => "first" })
+        error = assert_raises(ScreeningPendingError) { run_guard(RuntimeError.new("timeout")) }
+        Task.find(@task.id).update!(trigger_event_payload: { "execution_generation" => "replacement" })
+        handler = AiAgent::ScreeningApprovalHandler.new(task: @task, agent: @agent, creative: @creative, context: {})
+
+        assert_raises(CancelledError) { handler.handle(error) }
+        assert @task.reload.running?
+        assert_nil @task.pending_tool_call
+        assert_empty @creative.comments
+      end
+
       test "an owner who cannot read the creative cannot decide, so an error blocks" do
         CreativeShare.where(creative: @creative, user: @owner).delete_all
         @creative.stub(:has_permission?, false) do

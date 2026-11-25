@@ -5,12 +5,16 @@ module Collavre
     class ApprovalGateHandler < ApprovalHandler
       def handle(error, summary: nil)
         @task.with_lock do
-          raise CancelledError unless @task.running?
+          validate_attempt!(error)
           super
         end
       end
 
       private
+
+      def validate_attempt!(_error)
+        raise CancelledError unless @task.running?
+      end
 
       def update_task(error)
         @task.update!(status: "pending_approval", pending_tool_call: {

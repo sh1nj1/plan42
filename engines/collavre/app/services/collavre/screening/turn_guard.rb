@@ -17,6 +17,7 @@ module Collavre
 
       def initialize(task:, agent:, creative:, context:, principal:, authors: [])
         @task, @agent, @creative = task, agent, creative
+        @execution_generation = Orchestration::ExecutionFence.generation(task)
         @context, @principal, @authors = context || {}, principal, authors
       end
 
@@ -82,6 +83,7 @@ module Collavre
 
         raise ScreeningPendingError.new(
           task: @task, approver: approver, content_digest: digest, residual: verdict.residual,
+          execution_generation: @execution_generation,
           question: approval_question(texts, verdict, approver)
         )
       end
@@ -99,7 +101,12 @@ module Collavre
       end
 
       def block!(notice)
-        @task.with_lock { @task.update!(status: "failed") if @task.status.in?(%w[running delegated]) }
+        @task.with_lock do
+          raise CancelledError if Orchestration::ExecutionFence.superseded?(@task, @execution_generation)
+          raise CancelledError unless @task.status.in?(%w[running delegated])
+
+          @task.update!(status: "failed")
+        end
         post_notice(notice)
         raise CancelledError
       end

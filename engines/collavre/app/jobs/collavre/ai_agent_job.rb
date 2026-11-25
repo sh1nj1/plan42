@@ -131,7 +131,10 @@ module Collavre
         # answer exists: AiAgentService's ensure has recorded whether the
         # payload got there on the way up to here.
         # Reloaded because the status was written to the row by somebody else.
-        Orchestration::DeliveryRecord.restore_if_undelivered!(task.reload)
+        task.reload
+        unless Orchestration::ExecutionFence.superseded?(task, attempt_generation)
+          Orchestration::DeliveryRecord.restore_if_undelivered!(task)
+        end
       rescue StandardError => e
         fail_turn!(task, e)
       ensure
