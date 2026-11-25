@@ -21,7 +21,7 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed, progre
   revisions.set(tree, revision)
   if (progressChanged) owedRefetches.add(tree)
   tree.dataset.saveState = 'pending'
-  const complete = () => {
+  const complete = (data) => {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
     const row = treeRowElement(tree)
@@ -30,6 +30,7 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed, progre
       delete row.dataset.pendingSyncData
       delete row.dataset.missedSync
     }
+    applyRenderedDescription(row, data?.description_embedded_html)
     onComplete()
     if (missedSync) refreshMissed(tree)
     // Saved text is already on this row, so unless the creative is drawn in
@@ -40,6 +41,13 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed, progre
   }
   complete.rollback = () => revisions.set(tree, previous)
   return complete
+}
+
+function applyRenderedDescription(row, html) {
+  if (!row || typeof html !== 'string') return
+  row.descriptionHtml = html
+  row.dataset.descriptionHtml = html
+  row.requestUpdate?.()
 }
 
 // A background create refreshes its own row and parent. Repeated branches

@@ -1307,7 +1307,7 @@ function setupEditorSession() {
         dedupeKey: `creative_${creativeId}`,
         deletedAttachmentIds: deletedAttachmentIds,  // Store as data for serialization
         onSuccess: function (data) {
-          if (!complete()) return;
+          if (!complete(data)) return;
           if (!isMarkdownSave) return;
           const canApplyToCurrentEditor = form.dataset.creativeId === onSuccessCreativeId
             && markdownMode

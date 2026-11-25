@@ -188,3 +188,19 @@ test('a text save of a creative drawn once only releases', () => {
   expect(refetch).not.toHaveBeenCalled()
   expect(release).toHaveBeenCalledTimes(1)
 })
+
+test('only the latest save updates the display HTML and leaves editable HTML intact', () => {
+  document.body.innerHTML = '<creative-tree-row creative-id="1"><div class="creative-tree"></div></creative-tree-row>'
+  const row = document.querySelector('creative-tree-row')
+  const tree = row.querySelector('.creative-tree')
+  const raw = '<a href="https://youtu.be/dQw4w9WgXcQ">Video</a>'
+  updateQueuedCreativeRow(tree, { content: raw, contentType: 'html' })
+  const older = queuedCreativeCompletion(tree, jest.fn())
+  const newer = queuedCreativeCompletion(tree, jest.fn())
+
+  expect(newer({ description_embedded_html: '<iframe></iframe>' })).toBe(true)
+  expect(older({ description_embedded_html: '<p>Old</p>' })).toBe(false)
+  expect(row.descriptionHtml).toBe('<iframe></iframe>')
+  expect(row.dataset.descriptionHtml).toBe('<iframe></iframe>')
+  expect(row.dataset.descriptionRawHtml).toBe(raw)
+})
