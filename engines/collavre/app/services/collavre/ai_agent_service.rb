@@ -142,7 +142,10 @@ module Collavre
         agent: @agent,
         messages_data: messages_data,
         system_prompt: system_prompt
-      ).resolve.tap { |resolved| screen_llm_turn!(resolved) }
+      ).resolve.tap do |resolved|
+        check_screening_authorization!
+        screen_llm_turn!(resolved)
+      end
     end
 
     def find_creative

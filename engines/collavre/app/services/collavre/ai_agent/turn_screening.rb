@@ -35,6 +35,14 @@ module Collavre
 
       private
 
+      def check_screening_authorization!
+        return unless Screening.enabled? && @creative
+        return if Creatives::PermissionChecker.current_tree_allowed?(@creative.id, @agent, :feedback)
+
+        @task.cancel_if_active!
+        raise CancelledError
+      end
+
       # Screens what this LLM turn hands the provider, after the session filter
       # and before anything is recorded as delivered. A flagged turn proceeds
       # only where every tool call passes through the server's approval gate
@@ -46,10 +54,11 @@ module Collavre
         pending = @task.pending_tool_call
         @screening_flagged =
           if ApprovalConversation.restoring_snapshot?(pending)
-            Screening.flagged?(@task) || screen_gate_reason(pending) == "flagged"
+            reason_flagged = screen_gate_reason(pending) == "flagged"
+            Screening.flagged?(@task) || reason_flagged
           else
             texts = Screening.texts_for(resolved[:messages], owner_id: @agent.created_by_id)
-            screening_guard.call(texts, block_flagged: !server_gated_tools?) == "flagged"
+            screening_guard(resolved[:messages]).call(texts, block_flagged: !server_gated_tools?) == "flagged"
           end
       end
 
@@ -95,17 +104,18 @@ module Collavre
         nil
       end
 
-      def screening_guard
+      def screening_guard(messages = [])
         Screening::TurnGuard.new(task: @task, agent: @agent, creative: @creative,
-                                 context: @context, principal: workspace_user, authors: screening_authors)
+                                 context: @context, principal: workspace_user, authors: screening_authors(messages))
       end
 
       # Who wrote the comments this turn carries: the anchor, the comments
-      # folded into it and a workflow's source message.
-      def screening_authors
+      # folded into it, a workflow's source message and retained chat history.
+      def screening_authors(messages)
         ids = [ @context.dig("comment", "id"), *Array(@context["merged_comment_ids"]),
                 Workflow::SourceMessage.comment_id(@context, @agent) ].compact
-        User.where(id: Comment.where(id: ids).select(:user_id)).to_a
+        history_ids = messages.filter_map { |message| message[:author_id] if message[:kind] == :chat_history }
+        User.where(id: Comment.where(id: ids).pluck(:user_id) | history_ids).to_a
       end
     end
   end

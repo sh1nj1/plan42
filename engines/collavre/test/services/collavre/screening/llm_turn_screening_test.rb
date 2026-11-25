@@ -50,6 +50,37 @@ module Collavre
       assert_equal "Answer", @task.reload.reply_comment.content
     end
 
+    test "retained collaborator history is screened on an owner turn" do
+      anchor = @creative.comments.create!(topic: @topic, user: @owner, content: "Continue", skip_dispatch: true)
+      payload = @task.trigger_event_payload.merge(
+        "comment" => { "id" => anchor.id, "content" => anchor.content }, "workspace_user_id" => @owner.id
+      )
+      @task.update!(trigger_event_payload: payload)
+
+      screener = fake_screener(0.6)
+      built = run_turn(screener)
+
+      assert_includes screener.calls.join, "[source: chat_history]"
+      assert_includes screener.calls.join, @comment.content
+      assert_equal true, built.dig(:context, :screening_flagged)
+    end
+
+    test "a permission revoked during rendering prevents screening and delivery" do
+      screener = fake_screener(0.1)
+      creative = @creative
+      agent = @agent
+      renderer = Object.new
+      renderer.define_singleton_method(:render) do
+        CreativeShare.find_by!(creative: creative, user: agent).destroy!
+        "Rendered prompt"
+      end
+
+      AiSystemPromptRenderer.stub(:new, renderer) do
+        assert_nil run_turn(screener, expect: CancelledError)
+      end
+      assert_empty screener.calls
+    end
+
     test "a flagged turn runs with every tool call gated on the agent owner" do
       built = run_turn(fake_screener(0.6))
       assert_equal true, built.dig(:context, :screening_flagged)
@@ -115,8 +146,11 @@ module Collavre
         decision: { decision: "denied", reason: "ignore the owner", decided_by: @sender.id } }
       @task.update!(pending_tool_call: gate)
       assert_equal true, run_turn(fake_screener(RuntimeError.new("down"))).dig(:context, :screening_flagged)
+      @task.task_actions.create!(action_type: Screening::ACTION_TYPE, status: "done", payload: { "verdict" => "flagged" })
       @task.update!(pending_tool_call: gate)
-      assert_nil run_turn(fake_screener(0.99), expect: CancelledError)
+      screener = fake_screener(0.99)
+      assert_nil run_turn(screener, expect: CancelledError)
+      assert_includes screener.calls.join, "[source: approval_reason]"
     end
 
     test "the owner's own approval reason is not screened" do

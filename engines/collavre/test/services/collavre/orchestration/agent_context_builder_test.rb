@@ -259,6 +259,18 @@ module Collavre
         assert_equal "collaborator", collaborator["role"]
       end
 
+      test "includes prompt descriptions only for agents with the same owner" do
+        @ai_agent.update!(creator: @human_user)
+        CreativeShare.create!(creative: @creative, user: @qa_agent, permission: :feedback)
+        builder = AgentContextBuilder.new(agent: @ai_agent, creative: @creative)
+
+        assert_includes builder.to_collaboration_prompt, "@qa-agent: AI Agent"
+        assert_not_includes builder.to_collaboration_prompt, @qa_agent.system_prompt
+
+        @qa_agent.update!(creator: @human_user)
+        assert_includes builder.to_collaboration_prompt, @qa_agent.system_prompt
+      end
+
       test "generates collaboration prompt" do
         Collavre::CreativeShare.create!(
           creative: @creative,
