@@ -74,10 +74,8 @@ module Collavre
       # Rendered creative context and document quotes can include other
       # authors' text. A session filter can drop the context but keep the quote.
       def unverified_creative_context?(messages)
-        messages.any? do |message|
-          message[:unverified_creative_context] ||
-            message[:kind].in?(%i[creative_context context_creative referenced_creative])
-        end
+        messages.any? { |message| message[:kind].in?(%i[creative_context context_creative referenced_creative]) } ||
+          (@original_comment&.creative_quote? && messages.any? { |message| message[:kind] == :trigger })
       end
 
       # An approval_request decision is replayed to the model as its tool
