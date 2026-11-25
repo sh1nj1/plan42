@@ -12,7 +12,7 @@ import {
   syncParentHasChildren,
 } from './dom';
 import { MOVE_STATUSES, executeMoveCommand } from './move_command';
-import { refreshMovedBranchProgress } from '../row_progress';
+import { branchShownElsewhere, refreshMovedBranchProgress } from '../row_progress';
 
 export function createMoveContext(draggedState, targetRow, draggedChildren) {
   return {
@@ -32,8 +32,12 @@ export function createMoveContext(draggedState, targetRow, draggedChildren) {
 
 // Whether a move leaves the tree showing what the server will hold, so its
 // completion needs no refetch. A row dropped into a branch whose children were
-// never fetched is the only one on screen there.
+// never fetched is the only one on screen there, and a branch that is drawn a
+// second time (a linked placement) changes in rows this move does not touch.
 function leavesTreeRendered(direction, moveContext, targetContainer) {
+  const { draggedRow, targetRow } = moveContext;
+  const joinedId = targetRow.getAttribute(direction === 'child' ? 'creative-id' : 'parent-id');
+  if (branchShownElsewhere(draggedRow.getAttribute('creative-id')) || branchShownElsewhere(joinedId)) return false;
   if (direction !== 'child' || !moveContext.targetPreviousHasChildren) return true;
   return targetContainer?.dataset.loaded === 'true';
 }

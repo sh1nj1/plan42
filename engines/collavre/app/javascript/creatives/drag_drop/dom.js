@@ -83,11 +83,20 @@ export function updateRowLevel(row, delta) {
   row.requestUpdate?.();
 }
 
+// A branch whose children were never fetched asks for them at the level
+// written into its load URL, so that level follows the row.
+function setChildrenLevel(container, level) {
+  if (container.dataset.level) container.dataset.level = String(level);
+  const url = container.dataset.loadUrl;
+  if (url) container.dataset.loadUrl = url.replace(/([?&]level=)\d+/, `$1${level}`);
+}
+
 export function applyLevelDelta(row, delta) {
   if (!row || delta === 0) return;
   updateRowLevel(row, delta);
   const childrenContainer = getChildrenContainer(row);
   if (!childrenContainer) return;
+  setChildrenLevel(childrenContainer, Number(row.getAttribute('level')) + 1);
   const childRows = childrenContainer.querySelectorAll(':scope > creative-tree-row');
   childRows.forEach((childRow) => applyLevelDelta(childRow, delta));
 }

@@ -8,7 +8,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({ default: { get } })
 jest.unstable_mockModule('../tree_renderer', () => ({ replaceProgressControl, syncProgressHtmlFromDom }))
 const listIsFiltered = jest.fn()
 jest.unstable_mockModule('../tree_reload_events', () => ({ listIsFiltered }))
-const { refreshMovedBranchProgress, refreshProgressAbove } = await import('../row_progress')
+const { refreshMovedBranchProgress, refreshProgressAbove, shownElsewhere, branchShownElsewhere } = await import('../row_progress')
 
 const row = (id) => document.querySelector(`creative-tree-row[creative-id="${id}"]`)
 
@@ -102,4 +102,35 @@ test('a filtered list is left for its own refetch', async () => {
 
   expect(get).not.toHaveBeenCalled()
   expect(shown(2)).toEqual([undefined, undefined, undefined])
+})
+
+// A linked placement carries its origin's id beside its own.
+test.each([
+  ['a linked placement whose origin is on screen', '<creative-tree-row creative-id="9" data-origin-id="1"></creative-tree-row><creative-tree-row creative-id="1"></creative-tree-row>', true],
+  ['an origin with a linked placement on screen', '<creative-tree-row creative-id="1"></creative-tree-row><creative-tree-row creative-id="9" data-origin-id="1"></creative-tree-row>', true],
+  ['a linked placement beside another of the same origin', '<creative-tree-row creative-id="9" data-origin-id="1"></creative-tree-row><creative-tree-row creative-id="8" data-origin-id="1"></creative-tree-row>', true],
+  ['a row repeated below an expanded placement', '<creative-tree-row creative-id="1"></creative-tree-row><creative-tree-row creative-id="1"></creative-tree-row>', true],
+  ['a creative drawn once', '<creative-tree-row creative-id="1"></creative-tree-row><creative-tree-row creative-id="2"></creative-tree-row><creative-tree-row creative-id="3" data-origin-id="2"></creative-tree-row><creative-tree-row></creative-tree-row>', false],
+  ['a row with no id', '<creative-tree-row></creative-tree-row><creative-tree-row></creative-tree-row>', false],
+])('%s is shown elsewhere: %#', (_name, html, expected) => {
+  document.body.innerHTML = html
+
+  expect(shownElsewhere(document.querySelector('creative-tree-row'))).toBe(expected)
+})
+
+test('nothing is shown elsewhere without a row', () => {
+  expect(shownElsewhere(null)).toBe(false)
+})
+
+test('a branch is shown elsewhere when the row or any row above it is', () => {
+  document.body.insertAdjacentHTML('beforeend', '<creative-tree-row creative-id="7" data-origin-id="2"></creative-tree-row>')
+
+  expect(branchShownElsewhere('3')).toBe(true)
+  expect(branchShownElsewhere('2')).toBe(true)
+  expect(branchShownElsewhere('7')).toBe(true)
+  expect(branchShownElsewhere('4')).toBe(false)
+  expect(branchShownElsewhere('1')).toBe(false)
+  expect(branchShownElsewhere('6')).toBe(false)
+  expect(branchShownElsewhere('5')).toBe(false)
+  expect(branchShownElsewhere(null)).toBe(false)
 })

@@ -12,7 +12,27 @@ import { listIsFiltered } from './tree_reload_events'
 // itself after a save or a drop instead (see tree_reload_events.js).
 
 function rowFor(id) {
-  return document.querySelector(`creative-tree-row[creative-id="${id}"]`)
+  return id && document.querySelector(`creative-tree-row[creative-id="${id}"]`)
+}
+
+// A linked placement and its origin show the same creative, and an expanded
+// placement repeats the rows below its origin.
+export function shownElsewhere(row) {
+  const id = row?.getAttribute('creative-id')
+  if (!id) return false
+  const origin = row.dataset.originId || id
+  return Array.from(document.querySelectorAll('creative-tree-row')).some((other) => (
+    other !== row && [other.getAttribute('creative-id'), other.dataset.originId].includes(origin)
+  ))
+}
+
+// Whether the row for `id`, or any row above it, is drawn a second time. What
+// a move does to such a branch shows in rows the move never touched.
+export function branchShownElsewhere(id) {
+  for (let row = rowFor(id); row; row = rowFor(row.getAttribute('parent-id'))) {
+    if (shownElsewhere(row)) return true
+  }
+  return false
 }
 
 function paint(row, entry) {

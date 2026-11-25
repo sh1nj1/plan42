@@ -3,7 +3,8 @@ import { jest } from '@jest/globals'
 const applyRowProperties = jest.fn()
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({ applyRowProperties }))
 const refreshProgressAbove = jest.fn()
-jest.unstable_mockModule('../../creatives/row_progress', () => ({ refreshProgressAbove }))
+const shownElsewhere = jest.fn(() => false)
+jest.unstable_mockModule('../../creatives/row_progress', () => ({ refreshProgressAbove, shownElsewhere }))
 const { applyPendingCreativeSyncData } = await import('../pending_creative_sync')
 const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus, revealCreativeRow, releaseCreatedRow } = await import('../queued_creative_row')
 const { waitForQueuedRequests, mergeQueueCallbacks } = await import('../../lib/api/queue_completion')
@@ -131,4 +132,52 @@ test('a settled create refreshes the progress above its parent and releases a he
   expect(refreshProgressAbove).toHaveBeenCalledWith('7')
   expect(release).toHaveBeenCalledTimes(1)
   expect(refetch).not.toHaveBeenCalled()
+})
+
+function settle(tree, progressChanged = false) {
+  const refetch = jest.fn()
+  const release = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  document.addEventListener('creative-sync:release', release)
+  const complete = queuedCreativeCompletion(tree, jest.fn(), jest.fn(), progressChanged)
+  const settled = complete()
+  document.removeEventListener('creative-sync:refetch', refetch)
+  document.removeEventListener('creative-sync:release', release)
+  return { settled, refetch, release }
+}
+
+// The text-only snapshot supersedes the progress one in the revision gate, but
+// the queue still sends the progress write.
+test('a text save that supersedes a progress save still ends in one refetch', () => {
+  document.body.innerHTML = '<creative-tree-row creative-id="1"><div class="creative-tree"></div></creative-tree-row>'
+  const tree = document.querySelector('.creative-tree')
+  const superseded = queuedCreativeCompletion(tree, jest.fn(), jest.fn(), true)
+
+  const first = settle(tree)
+  expect(superseded()).toBe(false)
+  expect(first.refetch).toHaveBeenCalledTimes(1)
+  expect(first.release).not.toHaveBeenCalled()
+
+  const next = settle(tree)
+  expect(next.refetch).not.toHaveBeenCalled()
+  expect(next.release).toHaveBeenCalledTimes(1)
+})
+
+test('a text save of a creative drawn in another row too refetches the list', () => {
+  document.body.innerHTML = '<creative-tree-row creative-id="1"><div class="creative-tree"></div></creative-tree-row>'
+  shownElsewhere.mockReturnValueOnce(true)
+  const { settled, refetch, release } = settle(document.querySelector('.creative-tree'))
+
+  expect(settled).toBe(true)
+  expect(shownElsewhere).toHaveBeenCalledWith(document.querySelector('creative-tree-row'))
+  expect(refetch).toHaveBeenCalledTimes(1)
+  expect(release).not.toHaveBeenCalled()
+})
+
+test('a text save of a creative drawn once only releases', () => {
+  document.body.innerHTML = '<creative-tree-row creative-id="1"><div class="creative-tree"></div></creative-tree-row>'
+  const { refetch, release } = settle(document.querySelector('.creative-tree'))
+
+  expect(refetch).not.toHaveBeenCalled()
+  expect(release).toHaveBeenCalledTimes(1)
 })
