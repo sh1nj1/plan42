@@ -44,7 +44,7 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
 
     find("#comment_#{comment.id} .comment-content a", text: "Open target").click
 
-    assert_frame_navigation_to_target
+    assert_frame_navigation_to_target(collavre.creatives_path(id: @target.id, open_comments: true))
   end
 
   test "trailing-slash canonical description link advances the URL within the workspace frame" do
@@ -77,7 +77,7 @@ class CreativeLinkNavigationTest < ApplicationSystemTestCase
 
     find("#comment_#{comment.id} .comment-content a", text: "Open target").click
 
-    assert_frame_navigation_to_target
+    assert_frame_navigation_to_target(collavre.creatives_path(id: @target.id, open_comments: true))
     assert_selector "#comments-popup[data-creative-id='#{@target.id}']", visible: :visible, wait: 10
   end
 
