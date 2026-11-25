@@ -65,6 +65,25 @@ module Collavre
       assert_equal true, built.dig(:context, :screening_flagged)
     end
 
+    test "a linked creative is screened on an owner turn without collaborator history" do
+      linked = Creative.create!(description: "<p>Untrusted linked creative text</p>", user: @sender)
+      perform_enqueued_jobs(only: PermissionCacheJob) do
+        CreativeShare.create!(creative: linked, user: @agent, permission: :read)
+      end
+      content = "Read [the linked creative](/creatives/#{linked.id})"
+      @comment.update_columns(user_id: @owner.id, content: content)
+      @task.update!(trigger_event_payload: @task.trigger_event_payload.merge(
+        "comment" => { "id" => @comment.id, "content" => content }, "workspace_user_id" => @owner.id
+      ))
+
+      screener = fake_screener(0.6)
+      built = run_turn(screener)
+
+      assert_includes screener.calls.join, "[source: referenced_creative]"
+      assert_includes screener.calls.join, "Untrusted linked creative text"
+      assert_equal true, built.dig(:context, :screening_flagged)
+    end
+
     test "a permission revoked during rendering prevents screening and delivery" do
       screener = fake_screener(0.1)
       creative = @creative

@@ -58,8 +58,16 @@ module Collavre
             Screening.flagged?(@task) || reason_flagged
           else
             texts = Screening.texts_for(resolved[:messages], owner_id: @agent.created_by_id)
-            screening_guard(resolved[:messages]).call(texts, block_flagged: !server_gated_tools?) == "flagged"
+            screening_guard(resolved[:messages]).call(
+              texts, block_flagged: !server_gated_tools?, unverified_context: unverified_creative_context?(texts)
+            ) == "flagged"
           end
+      end
+
+      # Rendered context can contain text from several creatives, including
+      # ancestors and descendants, without per-part author information.
+      def unverified_creative_context?(texts)
+        texts.any? { |entry| entry[:source].in?(%w[creative_context context_creative referenced_creative]) }
       end
 
       # An approval_request decision is replayed to the model as its tool

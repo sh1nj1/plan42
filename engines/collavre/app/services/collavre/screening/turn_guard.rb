@@ -22,14 +22,14 @@ module Collavre
       end
 
       # Returns "skipped", "passed", "approved" or "flagged".
-      def call(texts, block_flagged:)
+      def call(texts, block_flagged:, unverified_context: false)
         return "skipped" if Current.screening
 
         # Taken first: a denial ends the turn even if screening was turned
         # off while it waited.
         decision = take_decision!
         return "skipped" unless Screening.enabled?
-        return "skipped" if Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
+        return "skipped" if !unverified_context && outside_scope?
 
         digest = Screening.digest(texts)
         if decision && decision["content_digest"] == digest
@@ -53,7 +53,7 @@ module Collavre
       # (the turn is mid-conversation), so an unanswered screening flags it.
       def screen_followup(texts, block_flagged:)
         return "skipped" if Current.screening || !Screening.enabled?
-        return "skipped" if Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
+        return "skipped" if outside_scope?
 
         case Gate.new.call(texts, agent: @agent, creative: @creative, task: @task).verdict
         when "passed" then "passed"
@@ -64,6 +64,10 @@ module Collavre
       end
 
       private
+
+      def outside_scope?
+        Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
+      end
 
       def flag_unanswered_followup!(texts, block_flagged)
         block!(:blocked_notice) if block_flagged
