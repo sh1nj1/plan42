@@ -1298,7 +1298,7 @@ function setupEditorSession() {
       const complete = queuedCreativeCompletion(tree, () => {
         if (cascade) refreshChildren(tree);
         if (form.dataset.creativeId === startCreativeId) setSaveStatus(isDirty || pendingSave ? 'pending' : 'saved');
-      });
+      }, refreshRow);
       if (form.dataset.creativeId === startCreativeId) setSaveStatus('pending');
       enqueueCreativeSnapshot(apiQueue, {
         path: `/creatives/${creativeId}`,

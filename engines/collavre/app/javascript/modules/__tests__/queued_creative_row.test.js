@@ -33,6 +33,29 @@ test('handles a detached row, HTML caches, and an absent status', () => {
   expect(document.querySelector('creative-tree-row').dataset.markdownEditor).toBe('')
 })
 
+test('completion refreshes a row that missed a broadcast once and releases without requesting a refetch', () => {
+  document.body.innerHTML = '<creative-tree-row data-missed-sync="true" data-pending-sync-data="{}"><div class="creative-tree"></div></creative-tree-row>'
+  const tree = document.querySelector('.creative-tree')
+  const row = document.querySelector('creative-tree-row')
+  const refetch = jest.fn()
+  const release = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  document.addEventListener('creative-sync:release', release)
+  const refreshMissed = jest.fn()
+
+  expect(queuedCreativeCompletion(tree, jest.fn(), refreshMissed)()).toBe(true)
+  expect(queuedCreativeCompletion(tree, jest.fn(), refreshMissed)()).toBe(true)
+  document.removeEventListener('creative-sync:refetch', refetch)
+  document.removeEventListener('creative-sync:release', release)
+
+  expect(refreshMissed).toHaveBeenCalledTimes(1)
+  expect(refreshMissed).toHaveBeenCalledWith(tree)
+  expect(row.dataset.missedSync).toBeUndefined()
+  expect(row.dataset.pendingSyncData).toBeUndefined()
+  expect(release).toHaveBeenCalledTimes(2)
+  expect(refetch).not.toHaveBeenCalled()
+})
+
 test('reveals a hidden row painted from a non-empty buffer snapshot only', () => {
   document.body.innerHTML = '<creative-tree-row><div class="creative-tree"><div class="creative-row" style="display: none"></div></div></creative-tree-row>'
   const tree = document.querySelector('.creative-tree')

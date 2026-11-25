@@ -6,7 +6,7 @@ import { jest } from '@jest/globals'
 // The move itself belongs to T2's command layer, which has its own suite. Here
 // only the wiring matters: which command handleDrop builds, when it declines to
 // build one at all, and what it broadcasts once the command settles.
-const createMoveContext = jest.fn(() => ({ context: true }))
+const createMoveContext = jest.fn(() => ({ context: true, rendered: true }))
 const applyMove = jest.fn(() => ({ newParentId: '2' }))
 const revertMove = jest.fn()
 const runMoveWithDomRecovery = jest.fn()
@@ -270,7 +270,7 @@ describe('right creative tree drop wiring', () => {
       await flush()
       expect(runMoveWithDomRecovery).toHaveBeenCalledWith(expect.objectContaining({
         command: { ids: ['2'], targetId: '1', direction: 'up', mode: 'move' },
-        moveContext: { context: true },
+        moveContext: { context: true, rendered: true },
       }))
     } finally {
       registry.destroy()
@@ -315,7 +315,7 @@ describe('right creative tree drop wiring', () => {
     expect(createMoveContext).toHaveBeenCalled()
     expect(runMoveWithDomRecovery).toHaveBeenCalledWith(expect.objectContaining({
       command: { ids: ['2'], targetId: '1', direction: 'up', mode: 'move' },
-      moveContext: { context: true },
+      moveContext: { context: true, rendered: true },
     }))
   })
 
@@ -333,18 +333,41 @@ describe('right creative tree drop wiring', () => {
     expect(applyMove).toHaveBeenCalledWith(expect.objectContaining({ direction: 'up' }))
     expect(runMoveWithDomRecovery).toHaveBeenCalledWith({
       command: { ids: ['2'], targetId: '1', direction: 'up', mode: 'move' },
-      moveContext: { context: true },
+      moveContext: { context: true, rendered: true },
       attemptedParentId: '2',
     })
     expect(completion).toHaveBeenCalledWith(expect.objectContaining({
       detail: expect.objectContaining({
-        creativeIds: ['2'], targetCreativeId: '1', direction: 'up', context: 'target',
+        creativeIds: ['2'], targetCreativeId: '1', direction: 'up', context: 'target', rendered: true,
       }),
     }))
     expect(window.localStorage.getItem(DROP_SIGNAL_STORAGE_KEY)).toBeNull()
   })
 
+  // `rendered` is the move's own verdict on whether the tree is up to date; a
+  // move the server did not fully accept never is.
+  test.each([
+    ['an in-place move the tree is left behind by', false, true, false],
+    ['an in-place move the server did not confirm', true, undefined, false],
+  ])('%s does not claim the tree is up to date', async (_name, contextRendered, ok, rendered) => {
+    createMoveContext.mockReturnValueOnce({ context: true, rendered: contextRendered })
+    runMoveWithDomRecovery.mockImplementationOnce(({ command }) => Promise.resolve({
+      command, status: 'success', ok, succeededIds: [...command.ids], failedIds: [], failures: [],
+    }))
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
+    const dataTransfer = transfer()
+
+    handleDragStart(dragEvent(tree('2'), dataTransfer))
+    handleDrop(dragEvent(tree('1'), dataTransfer, { clientY: 10 }))
+    await flush()
+
+    expect(completion.mock.calls[0][0].detail.rendered).toBe(rendered)
+  })
+
   test('links with shift without staging an optimistic move', async () => {
+    const completion = jest.fn()
+    window.addEventListener('collavre:creative-drop-complete', completion, { once: true })
     const dataTransfer = transfer()
 
     handleDragStart(dragEvent(tree('2'), dataTransfer, { shiftKey: true }))
@@ -356,6 +379,7 @@ describe('right creative tree drop wiring', () => {
     expect(runMoveWithDomRecovery).toHaveBeenCalledWith(expect.objectContaining({
       command: { ids: ['2'], targetId: '1', direction: 'child', mode: 'link' },
     }))
+    expect(completion.mock.calls[0][0].detail.rendered).toBe(false)
   })
 
   test('stays silent when the command reports it did not move anything', async () => {
@@ -396,6 +420,7 @@ describe('right creative tree drop wiring', () => {
     expect(alertDialog).toHaveBeenCalledWith('Not allowed')
     // The rows that did move still need both trees to refresh.
     expect(completion).toHaveBeenCalled()
+    expect(completion.mock.calls[0][0].detail.rendered).toBe(false)
   })
 
   test('the registered drop path uses the translated partial failure message', async () => {

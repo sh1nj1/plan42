@@ -6,7 +6,9 @@ const retryAttachmentIds = new WeakMap()
 const refreshes = new WeakMap()
 
 // Only the latest queued snapshot may acknowledge or rewrite a row.
-export function queuedCreativeCompletion(tree, onComplete) {
+// `refreshMissed` refetches the row when an update broadcast was dropped while
+// the save was pending: applying it then would have painted over the draft.
+export function queuedCreativeCompletion(tree, onComplete, refreshMissed) {
   const previous = revisions.get(tree) || 0
   const revision = previous + 1
   revisions.set(tree, revision)
@@ -15,9 +17,16 @@ export function queuedCreativeCompletion(tree, onComplete) {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
     const row = treeRowElement(tree)
-    if (row) delete row.dataset.pendingSyncData
+    const missedSync = row?.dataset.missedSync === 'true'
+    if (row) {
+      delete row.dataset.pendingSyncData
+      delete row.dataset.missedSync
+    }
     onComplete()
-    document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
+    if (missedSync) refreshMissed(tree)
+    // The row already shows what was saved; only a reload held back by the
+    // pending save is still owed.
+    document.dispatchEvent(new CustomEvent('creative-sync:release'))
     return true
   }
   complete.rollback = () => revisions.set(tree, previous)

@@ -64,6 +64,32 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+// `rendered` lets the tree skip its refetch after the drop. A row dropped into a
+// branch whose children were never fetched is the only one on screen there, so
+// that move must not claim the tree is up to date.
+test.each([
+  ['beside a row', 'up', () => {}, true],
+  ['into a row with no children', 'child', () => {}, true],
+  ['into a loaded branch', 'child', (target) => {
+    target.setAttribute('has-children', '')
+    target.insertAdjacentHTML('afterend', '<div class="creative-children" id="creative-children-9" data-loaded="true"></div>')
+  }, true],
+  ['into a branch that was never loaded', 'child', (target) => {
+    target.setAttribute('has-children', '')
+    target.insertAdjacentHTML('afterend', '<div class="creative-children" id="creative-children-9" data-loaded="false"></div>')
+  }, false],
+  ['into a branch with no container yet', 'child', (target) => target.setAttribute('has-children', ''), false],
+])('a move %s records whether the tree is left up to date', (_name, direction, arrange, rendered) => {
+  const { draggedRow, targetRow } = mountTree()
+  arrange(targetRow)
+  const draggedState = { row: draggedRow, parentId: '1', level: 2, isRoot: false }
+  const moveContext = createMoveContext(draggedState, targetRow, null)
+
+  applyMove({ direction, targetRow, draggedState, draggedChildren: null, moveContext })
+
+  expect(moveContext.rendered).toBe(rendered)
+})
+
 test('an accepted move leaves the optimistic DOM exactly where the drop put it', async () => {
   const { draggedRow, moveContext, newParentId } = optimisticallyDropAsChild()
   const execute = jest.fn().mockResolvedValue({ status: 'success', ok: true })

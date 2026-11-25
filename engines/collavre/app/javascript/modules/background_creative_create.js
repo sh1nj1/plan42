@@ -185,7 +185,7 @@ async function postCreate(tree, { action, body, snapshot, deletedIds }, fallback
     applyCreativeSaveResponse(snapshot, data, { applyCachedMarkdownSource: cacheSavedMarkdownSource(tree) })
     created(data)
     // A reload deferred while the row was pending has nothing else to release it.
-    document.dispatchEvent(new CustomEvent('creative-sync:refetch'))
+    document.dispatchEvent(new CustomEvent('creative-sync:release'))
     return { afterId: String(data.id), beforeId: '' }
   } catch (error) {
     // The row keeps showing the text; flag it and say so, since the editor

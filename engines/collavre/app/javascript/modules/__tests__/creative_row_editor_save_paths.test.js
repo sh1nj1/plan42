@@ -461,6 +461,37 @@ test('autosave queues edits and ignores an older acknowledgment after another sa
   expect(save).not.toHaveBeenCalled()
 })
 
+test('a queued save asks only for a deferred reload, and refetches the row when a broadcast was dropped mid-save', async () => {
+  jest.useFakeTimers()
+  const refetch = jest.fn()
+  const release = jest.fn()
+  document.addEventListener('creative-sync:refetch', refetch)
+  document.addEventListener('creative-sync:release', release)
+  const { tree, rowComponent } = appendMarkdownRow('42', 'before')
+  openRow(tree)
+  const textarea = document.getElementById('markdown-editor-textarea')
+  textarea.value = 'first'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  get.mockClear()
+  enqueue.mock.calls[0][0].onSuccess({ markdown_source: 'first' })
+  expect(release).toHaveBeenCalledTimes(1)
+  expect(get).not.toHaveBeenCalled()
+
+  textarea.value = 'second'
+  textarea.dispatchEvent(new Event('input'))
+  await jest.advanceTimersByTimeAsync(5000)
+  rowComponent.dataset.missedSync = 'true'
+  enqueue.mock.calls[1][0].onSuccess({ markdown_source: 'second' })
+  document.removeEventListener('creative-sync:refetch', refetch)
+  document.removeEventListener('creative-sync:release', release)
+
+  expect(get).toHaveBeenCalledWith('42')
+  expect(rowComponent.dataset.missedSync).toBeUndefined()
+  expect(release).toHaveBeenCalledTimes(2)
+  expect(refetch).not.toHaveBeenCalled()
+})
+
 test('reopening an unacknowledged row preserves pending status and the local body', async () => {
   jest.useFakeTimers()
   const first = appendMarkdownRow('42', 'before')

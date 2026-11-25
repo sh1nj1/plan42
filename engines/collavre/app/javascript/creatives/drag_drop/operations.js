@@ -29,6 +29,14 @@ export function createMoveContext(draggedState, targetRow, draggedChildren) {
   };
 }
 
+// Whether a move leaves the tree showing what the server will hold, so its
+// completion needs no refetch. A row dropped into a branch whose children were
+// never fetched is the only one on screen there.
+function leavesTreeRendered(direction, moveContext, targetContainer) {
+  if (direction !== 'child' || !moveContext.targetPreviousHasChildren) return true;
+  return targetContainer?.dataset.loaded === 'true';
+}
+
 export function applyMove({
   direction,
   targetRow,
@@ -40,6 +48,8 @@ export function applyMove({
   let newParentId;
   let newLevel;
   let targetContainer = direction === 'child' ? getChildrenContainer(targetRow) : null;
+  // Read before the branch below marks that container as loaded.
+  moveContext.rendered = leavesTreeRendered(direction, moveContext, targetContainer);
 
   if (direction === 'child') {
     targetContainer = targetContainer || ensureChildrenContainer(targetRow);

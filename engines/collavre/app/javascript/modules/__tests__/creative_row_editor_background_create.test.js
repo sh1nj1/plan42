@@ -1101,9 +1101,11 @@ describe('Enter on a new creative saves it in the background', () => {
     expect(first.dataset.id).toBe('77')
   })
 
-  test('a background create refreshes the created row and asks for the deferred reload', async () => {
+  test('a background create refreshes the created row and releases a deferred reload without asking for one', async () => {
     const refetch = jest.fn()
+    const release = jest.fn()
     document.addEventListener('creative-sync:refetch', refetch)
+    document.addEventListener('creative-sync:release', release)
     const firstPost = deferred()
     saveMock.mockImplementationOnce(() => firstPost.promise)
     await startNewRow('first creative')
@@ -1113,9 +1115,11 @@ describe('Enter on a new creative saves it in the background', () => {
     firstPost.resolve(created(77))
     await flush()
     document.removeEventListener('creative-sync:refetch', refetch)
+    document.removeEventListener('creative-sync:release', release)
 
     expect(creativesApi.get).toHaveBeenCalledWith('77')
-    expect(refetch).toHaveBeenCalledTimes(1)
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(refetch).not.toHaveBeenCalled()
   })
 
   function frameRender(frame) {
