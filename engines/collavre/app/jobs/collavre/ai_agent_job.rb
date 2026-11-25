@@ -131,10 +131,7 @@ module Collavre
         # answer exists: AiAgentService's ensure has recorded whether the
         # payload got there on the way up to here.
         # Reloaded because the status was written to the row by somebody else.
-        task.reload
-        unless Orchestration::ExecutionFence.superseded?(task, attempt_generation)
-          Orchestration::DeliveryRecord.restore_if_undelivered!(task)
-        end
+        restore_cancelled_delivery!(task, attempt_generation)
       rescue StandardError => e
         fail_turn!(task, e)
       ensure
@@ -144,6 +141,14 @@ module Collavre
     end
 
     private
+
+    def restore_cancelled_delivery!(task, attempt_generation)
+      task.with_lock do
+        next if Orchestration::ExecutionFence.superseded?(task, attempt_generation)
+
+        Orchestration::DeliveryRecord.restore_if_undelivered!(task)
+      end
+    end
 
     # Screened while still running, so an unanswered screening can pause the
     # turn for approval before anything is handed to the session.
