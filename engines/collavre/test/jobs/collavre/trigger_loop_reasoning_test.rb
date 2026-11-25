@@ -25,7 +25,7 @@ module Collavre
       request = stub_verifier_response("BLOCKED")
       job = TriggerLoopCheckJob.new
       job.stub(:pick_fallback_agent, @verifier) do
-        job.stub(:collect_fallback_instructions, "Complete the task") do
+        job.stub(:collect_loop_instructions, "Complete the task") do
           result = job.send(:llm_fallback_evaluate, creatives(:tshirt), creatives(:tshirt),
                             Struct.new(:content).new("Cannot continue"), @task)
           assert_equal :awaiting_user, result

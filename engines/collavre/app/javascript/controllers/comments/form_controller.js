@@ -5,7 +5,7 @@ import { previewDrop } from '../../lib/dnd/preview'
 import { Controller } from '@hotwired/stimulus'
 import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import { wrapHtmlInCodeBlocks } from '../../lib/html_code_block_wrapper'
-import { refreshCsrfToken } from '../../lib/api/csrf_fetch'
+import { fetchCommentRequest, parseCommentRequestResponse } from './comment_form_request'
 import ReviewQuotesStore from './review_quotes_store'
 import FormDraftManager from './form_draft_manager'
 import { appendRunOptions } from './run_options_controller'
@@ -13,6 +13,7 @@ import { alertDialog } from '../../lib/utils/dialog'
 import chatDrafts from '../../lib/chat_drafts'
 import { focusWhenAvailable } from '../../lib/utils/focus'
 import { openingFocusOptions } from './popup_focus'
+import { applyQuoteTarget, creativeQuoteSource, creativeQuoteTarget, scrollToQuoteSource } from '../../lib/creative_quote'
 
 // In-flight comment sends, keyed by creative id. This lives at module scope —
 // not on the controller instance — so the duplicate-submit guard survives a
@@ -297,7 +298,6 @@ export default class extends Controller {
     this.submitTarget.classList.remove('review-submit-btn')
     this.submitTarget.classList.remove('inbox-reply-btn')
     if (this.cancelTarget) this.cancelTarget.style.display = 'none'
-    this.presenceController?.clearManualTypingMessage()
     this.clearImageAttachments()
     this.cancelQuote()
     this.textareaTarget.placeholder = this._defaultPlaceholder()
@@ -389,6 +389,7 @@ export default class extends Controller {
     // Build final content from review quotes + user text
     if (hasQuotes) {
       store.backup(this.textareaTarget.value)
+      this._pendingCreativeQuote = creativeQuoteTarget(store.creativeQuotes)
       this.textareaTarget.value = store.buildContent(this.textareaTarget.value)
       this._pendingReviewType = 'review'
     }
@@ -450,10 +451,7 @@ export default class extends Controller {
     if (effectiveTopicId) {
       formData.append('comment[topic_id]', effectiveTopicId)
     }
-    if (this._pendingReviewType) {
-      formData.append('comment[review_type]', this._pendingReviewType)
-      this._pendingReviewType = null
-    }
+    this._appendPendingReview(formData)
 
     let url = `/creatives/${this.creativeId}/comments`
     let method = 'POST'
@@ -463,30 +461,10 @@ export default class extends Controller {
     }
 
     let settlementUi = Promise.resolve()
-    const doFetch = () => fetch(url, {
-      method,
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-      body: formData,
-    })
+    const doFetch = () => fetchCommentRequest(url, { method, body: formData })
 
     doFetch()
-      .then((response) => {
-        if (response.ok) return response.text()
-        // On 422, the CSRF token may have gone stale (e.g. after an OS
-        // window switch).  Refresh the token and retry once before giving up.
-        if (response.status === 422 && !this._hasRetried) {
-          this._hasRetried = true
-          return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
-            return retryResp.json().then((json) => {
-              throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-            })
-          })
-        }
-        return response.json().then((json) => {
-          throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-        })
-      })
+      .then((response) => parseCommentRequestResponse(response, doFetch, this))
       .then((html) => {
         if (submittedDraft.backupKey) {
 	  chatDrafts.clearSubmissionBackupsThrough(
@@ -667,7 +645,6 @@ export default class extends Controller {
   handleSearch(event) {
     event.preventDefault()
     const query = this.textareaTarget.value.trim()
-    this.presenceController?.clearManualTypingMessage()
     this.listController?.applySearchQuery(query || null)
   }
 
@@ -851,10 +828,6 @@ export default class extends Controller {
     return getCreativeLabelFromDom(creativeId)
   }
 
-  insertCreativeLink({ id, label }) {
-    this.insertCreativeLinks([{ id, label }])
-  }
-
   insertCreativeLinks(creatives) {
     if (!creatives.length) return
     const link = creatives.map(({ id, label }) => `[${label}](/creatives/${id})`).join(' ')
@@ -935,30 +908,27 @@ export default class extends Controller {
     })
   }
 
-  quoteComment(commentId, selectedText) {
-    if (!commentId || !selectedText) return
-    this.quotedCommentIdTarget.value = commentId
-    this.quotedTextTarget.value = selectedText
-    this.quoteIndicatorTarget.style.display = ''
-    this.quoteIndicatorTextTarget.textContent = selectedText.length > 80
-      ? selectedText.substring(0, 80) + '…'
-      : selectedText
-    this.focusTextarea({ explicit: true })
+  // review_type (and a document-mode quote target) staged by handleSend.
+  _appendPendingReview(formData) {
+    if (!this._pendingReviewType) return
+    formData.append('comment[review_type]', this._pendingReviewType)
+    if (this._pendingCreativeQuote) applyQuoteTarget(formData, this._pendingCreativeQuote)
+    this._pendingReviewType = null
+    this._pendingCreativeQuote = null
   }
 
   // Append a review quote as a visual chip above the textarea.
-  appendReviewQuote(commentId, selectedText) {
+  // options: { type, creativeId, label } — creativeId marks a document-mode quote.
+  appendReviewQuote(commentId, selectedText, options = {}) {
     if (!selectedText) return
 
     const store = this._reviewStore
     if (store.isEmpty) this._flushDraftSave()
     store.saveActiveFeedback(this.textareaTarget.value)
 
-    if (commentId) {
-      this.quotedCommentIdTarget.value = commentId
-    }
+    if (commentId && !options.creativeId) this.quotedCommentIdTarget.value = commentId
 
-    store.add(commentId, selectedText)
+    store.add(commentId, selectedText, options)
     this._renderReviewQuoteChips()
     this._updateSubmitButton()
 
@@ -1002,7 +972,7 @@ export default class extends Controller {
     const formData = new FormData()
     formData.append('comment[content]', content)
     formData.append('comment[review_type]', 'question')
-    if (quote.commentId) formData.append('comment[quoted_comment_id]', quote.commentId)
+    applyQuoteTarget(formData, quote)
     const isPrivate = this.privateCheckboxTarget?.checked ?? false
     if (isPrivate) formData.append('comment[private]', '1')
     appendRunOptions(this.formTarget, formData)
@@ -1010,28 +980,10 @@ export default class extends Controller {
     if (effectiveTopicId) formData.append('comment[topic_id]', effectiveTopicId)
 
     const url = `/creatives/${this.creativeId}/comments`
-    const doFetch = () => fetch(url, {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-      body: formData,
-    })
+    const doFetch = () => fetchCommentRequest(url, { method: 'POST', body: formData })
 
     doFetch()
-      .then((response) => {
-        if (response.ok) return response.text()
-        if (response.status === 422 && !this._hasRetried) {
-          this._hasRetried = true
-          return refreshCsrfToken().then(() => doFetch()).then((retryResp) => {
-            if (retryResp.ok) return retryResp.text()
-            return retryResp.json().then((json) => {
-              throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-            })
-          })
-        }
-        return response.json().then((json) => {
-          throw new Error(json.errors?.join(', ') || 'Unable to save comment')
-        })
-      })
+      .then((response) => parseCommentRequestResponse(response, doFetch, this))
       .then((html) => {
         this.renderCommentHtml(html)
         const listCtrl = this.application.getControllerForElementAndIdentifier(
@@ -1098,19 +1050,14 @@ export default class extends Controller {
         : quote.text
       textSpan.textContent = preview
       textSpan.title = quote.text
+      if (quote.creativeId) textSpan.prepend(creativeQuoteSource(quote, this._getI18nText('creativeQuotePrefix', 'Doc')))
 
       // Click chip to edit its feedback
       textSpan.addEventListener('click', () => {
         if (quote.id === store.activeId) {
-          const commentEl = document.querySelector(`[data-comment-id="${quote.commentId}"]`)
-          if (commentEl) {
-            // Programmatic list scroll — drop the prev-message anchor so the next
-            // previous-message click resolves from the quoted comment now in view.
-            this.listController?.notifyProgrammaticScroll()
-            commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            commentEl.classList.add('comment-highlight')
-            setTimeout(() => commentEl.classList.remove('comment-highlight'), 2000)
-          }
+          // A programmatic list scroll drops the prev-message anchor so the next
+          // previous-message click resolves from the quoted comment now in view.
+          scrollToQuoteSource(quote, () => this.listController?.notifyProgrammaticScroll())
           return
         }
         store.saveActiveFeedback(this.textareaTarget.value)
@@ -1180,6 +1127,8 @@ export default class extends Controller {
   }
 
   _restoreOrdinaryDraft() {
+    this.quotedCommentIdTarget.value = ''
+    this.quotedTextTarget.value = ''
     this.textareaTarget.value = ''
     this.textareaTarget.placeholder = this._defaultPlaceholder()
     this._restoreDraft()
@@ -1254,10 +1203,7 @@ export default class extends Controller {
       }
     }
     // Get the content element from the latest system message
-    if (latest) {
-      return latest.querySelector('.comment-content')
-    }
-    return null
+    return latest?.querySelector('.comment-content') || null
   }
 
   cancelQuote() {

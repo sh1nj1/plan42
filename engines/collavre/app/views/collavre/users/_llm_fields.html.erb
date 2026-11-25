@@ -52,8 +52,7 @@
   <div class="form-group" data-agent-vendor-target="fastMode">
     <label>
       <%= form.check_box :codex_fast_mode,
-                         { checked: run_source&.codex_fast_mode? || false,
-                           data: { agent_vendor_target: "fastModeCheckbox" } },
+                         { checked: run_source&.codex_fast_mode? || false },
                          "1", "0" %>
       <%= t("collavre.users.new_ai.codex_fast_mode_label") %>
     </label>

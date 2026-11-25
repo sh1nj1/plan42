@@ -196,6 +196,20 @@ function buildServer(
     });
     quotaState.remove(taskId, record.execution_generation);
 
+    // Benign dedup: another session sharing this agent already claimed and
+    // answered this dispatch (server returned 409 already_completed). Nothing
+    // was posted by us, and that is correct — report it as a non-error so the
+    // model doesn't treat a normal multi-session race as a failed reply.
+    if (!result.handled) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Already answered by another session sharing this agent — nothing to send.",
+          },
+        ],
+      };
+    }
 
     return {
       content: [

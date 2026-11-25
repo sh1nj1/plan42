@@ -473,7 +473,7 @@ module Collavre
         # off the anchor, never off the history window. Having been read as
         # context is not having been answered, so a review is never dropped —
         # the same boundary TaskCoalescer and refresh_deferred_context! keep.
-        return nil if Comment.review_message_ids([ comment_id ]).any?
+        return nil if Comment.own_turn_message_ids([ comment_id ]).any?
 
         Task.where(
           agent_id: agent.id,
@@ -719,8 +719,8 @@ module Collavre
 
       # The comments the history window carried *whole*, read off the tag
       # MessageBuilder#append_chat_history writes. A window entry can render a
-      # comment without delivering it — a blob or a linked creative's subtree
-      # rides only on the trigger path — and those entries go untagged, so this
+      # comment without delivering it — a blob rides only on the trigger
+      # path — and those entries go untagged, so this
       # record never claims them. That judgement lives with the builder, which
       # is the only place that knows what it rendered; see
       # MessageBuilder#delivered_whole?.

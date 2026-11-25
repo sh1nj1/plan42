@@ -215,4 +215,21 @@ class AgentConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_entity
     assert_equal "insecure_base_url", response.parsed_body.dig("error", "code")
   end
+  test "status retains per-engine failures without converting the entire response to an error" do
+    proxy = Object.new
+    proxy.define_singleton_method(:engines) { { "data" => [ { "engine" => "codex" }, { "engine" => "claude" } ] } }
+    proxy.define_singleton_method(:engine_status) do |engine|
+      raise Collavre::CliProxy::Client::Error.new("Engine unavailable", status: 503, code: "unavailable") if engine == "codex"
+      { "state" => "ready" }
+    end
+    proxy.define_singleton_method(:provision_status) { { "state" => "ready" } }
+    sign_in_as(@owner, password: "password")
+    Collavre::CliProxy::Client.stub(:new, proxy) do
+      get collavre.agent_connection_status_path(user_id: @agent.id), as: :json
+    end
+    assert_response :ok
+    rows = response.parsed_body.fetch("engines")
+    assert_equal({ "state" => "unknown", "error" => "Engine unavailable", "code" => "unavailable" }, rows.first["status"])
+    assert_equal({ "state" => "ready" }, rows.last["status"])
+  end
 end

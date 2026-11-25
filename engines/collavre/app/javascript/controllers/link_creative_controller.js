@@ -1,3 +1,4 @@
+import { escapeHtmlAttribute } from '../lib/html_escape'
 import CommonPopupController from './common_popup_controller'
 import creativesApi from '../lib/api/creatives'
 import { CHEVRON_COLLAPSED, CHEVRON_EXPANDED } from '../utils/chevron_icons'
@@ -596,12 +597,7 @@ export default class extends CommonPopupController {
     }
 
     _escape(text) {
-        return String(text || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;')
+        return escapeHtmlAttribute(String(text || ''))
     }
 
     dispatchClose(reason) {

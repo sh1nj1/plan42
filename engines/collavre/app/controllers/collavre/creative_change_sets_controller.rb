@@ -24,6 +24,7 @@ module Collavre
     def apply
       change_set = CreativeChangeSet.for_creative_scope(@requested_creative).find(params[:id])
       result = valid_mode?(change_set) ? apply_service(change_set).call : invalid_action_result
+      Comments::CreativeQuoteRejectionNotice.call(result.change_set) if result.status == :rejected
 
       render json: payload_for(result), status: response_status(result)
     end

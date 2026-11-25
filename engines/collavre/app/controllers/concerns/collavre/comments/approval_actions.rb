@@ -19,8 +19,7 @@ module Collavre
 
         begin
           ::Comments::ActionExecutor.new(comment: @comment, executor: Current.user).call
-          @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-          render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
+          render_comment_response
         rescue ::Comments::ActionExecutor::ExecutionError => e
           render json: { error: e.message }, status: :unprocessable_entity
         end
@@ -68,19 +67,7 @@ module Collavre
 
           if status_in_lock != :ok
             approver_mismatch_error = true
-            status_error_key = case status_in_lock
-            when :invalid_action_format then "collavre.comments.approve_invalid_format"
-            when :missing_action then "collavre.comments.approve_missing_action"
-            when :missing_approver then "collavre.comments.approve_missing_approver"
-            when :admin_required then "collavre.comments.approve_admin_required"
-            else "collavre.comments.approve_not_allowed"
-            end
-            status_http_status = case status_in_lock
-            when :invalid_action_format, :missing_action, :missing_approver
-                            :unprocessable_entity
-            else
-                            :forbidden
-            end
+            status_error_key, status_http_status = approval_status_error(status_in_lock)
           elsif @comment.action_executed_at.present?
             executed_error = true
           else
@@ -107,8 +94,7 @@ module Collavre
         elsif executed_error
           render json: { error: I18n.t("collavre.comments.approve_already_executed") }, status: :unprocessable_entity
         elsif update_success
-          @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-          render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
+          render_comment_response
         else
           error_message = @comment.errors.full_messages.to_sentence.presence || I18n.t("collavre.comments.action_update_error")
           render json: { error: error_message }, status: :unprocessable_entity
@@ -143,11 +129,15 @@ module Collavre
         end
 
         @comment.broadcast_claude_channel_permission_decision(behavior, reason: reason, decided_by: decided_by)
-        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-        render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
+        render_comment_response
       end
 
       def render_approval_status_error(status)
+        error_key, http_status = approval_status_error(status)
+        render json: { error: I18n.t(error_key) }, status: http_status
+      end
+
+      def approval_status_error(status)
         error_key = case status
         when :invalid_action_format then "collavre.comments.approve_invalid_format"
         when :missing_action then "collavre.comments.approve_missing_action"
@@ -161,7 +151,7 @@ module Collavre
         else
                         :forbidden
         end
-        render json: { error: I18n.t(error_key) }, status: http_status
+        [ error_key, http_status ]
       end
     end
   end

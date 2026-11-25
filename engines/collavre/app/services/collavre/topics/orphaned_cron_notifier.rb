@@ -42,13 +42,11 @@ module Collavre
         return false unless task.class_name == "Collavre::CronActionJob"
         return false unless @topic_name == Creative::MAIN_TOPIC_NAME && @creative_id.present?
 
-        creative_id = args["creative_id"] || parse_creative_id_from_key(task.key)
-        Creative.find_by(id: creative_id)&.effective_origin&.id == @creative_id.to_i
+        recurring_task_creative(task, args)&.effective_origin&.id == @creative_id.to_i
       end
 
       def notify_for(task, args)
-        creative_id = args["creative_id"] || parse_creative_id_from_key(task.key)
-        creative = Creative.find_by(id: creative_id)
+        creative = recurring_task_creative(task, args)
         return unless creative
 
         # The recurring task stores the original (possibly linked/child) creative

@@ -69,31 +69,6 @@ AI agent integration via OpenClaw Gateway.
 
 ---
 
-## Notion Engine (`engines/collavre_notion/`)
-
-Export creative trees to Notion.
-
-### Models
-- `CollavreNotion::NotionAccount` - OAuth tokens
-- `CollavreNotion::NotionPageLink` - Creative ↔ Notion page mapping
-- `CollavreNotion::NotionBlockLink` - Block-level sync tracking
-
-### Key Classes
-- `CollavreNotion::NotionClient` - Notion API wrapper
-- `CollavreNotion::NotionCreativeExporter` - Tree export logic
-- `CollavreNotion::NotionService` - High-level operations
-
-### Routes
-```
-/notion/creative/:id/notion_integration  # Integration UI
-/auth/notion/callback                    # OAuth callback
-```
-
-### Jobs
-- `NotionExportJob` - Async export
-- `NotionSyncJob` - Sync updates
-
----
 
 ## GitHub Engine (`engines/collavre_github/`)
 

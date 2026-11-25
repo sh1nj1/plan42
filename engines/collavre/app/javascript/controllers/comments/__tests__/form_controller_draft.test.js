@@ -2251,12 +2251,4 @@ describe('FormController - draft persistence', () => {
     expect(input).not.toHaveBeenCalled()
   })
 
-  test('single-link callers preserve the shared insertion behavior', () => {
-    controller.textareaTarget.value = 'See'
-    controller.textareaTarget.setSelectionRange(3, 3)
-    controller.insertCreativeLink({ id: '10', label: 'Task' })
-    expect(controller.textareaTarget.value).toBe('See [Task](/creatives/10) ')
-    expect(document.activeElement).toBe(controller.textareaTarget)
-  })
-
 })

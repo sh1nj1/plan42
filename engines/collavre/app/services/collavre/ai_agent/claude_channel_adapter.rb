@@ -15,6 +15,9 @@ module Collavre
       # so that what was screened is exactly what is sent (content:).
       def self.trigger_content(context, agent)
         text = Workflow::SourceMessage.prepend_to(context.dig("comment", "content"), context, agent)
+        comment_id = context.dig("comment", "id")
+        comment = Comment.find_by(id: comment_id) if comment_id
+        text = CreativeQuoteContext.prepend_to(text, comment)
         Orchestration::ResumeContext.prepend_to(
           MergedTriggerComments.prepend_to(text, context, agent: agent), context)
       end

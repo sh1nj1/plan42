@@ -223,12 +223,21 @@
 .ppt-viewer.ppt-controls-visible #slide-controls :is(button, a),
 .ppt-viewer #slide-controls:has(:focus-visible) :is(button, a) { pointer-events: auto; }
 
+/* Fractional iframe dimensions can round a slide past the viewport by a pixel.
+   Inline presentations need no scrolling; a classic scrollbar would shrink the slide. */
+.ppt-viewer:not(:fullscreen):not(.document-viewer) #slide-view {
+  overflow: hidden;
+}
+
 /* Inline slides follow their frame width; fullscreen still fits both axes. */
 .ppt-viewer:not(:fullscreen) #slide-view .ppt-slide {
   width: 100%;
 }
 
-.document-viewer { height: 100dvh; cursor: default; }
+.document-viewer { height: 100dvh; }
+.document-viewer:not(.pdf-viewer) { cursor: default; }
+.pdf-viewer #slide-view { height: 100dvh; }
+.pdf-viewer [data-pdf-zoom] { bottom: 0; left: 0; }
 .document-viewer #slide-content { position: relative; height: 100%; }
 .document-viewer #slide-content .document-viewer-content {
   width: 100%;
@@ -237,8 +246,8 @@
   border: 0;
   background: white;
 }
-.document-viewer #slide-view { height: calc(100dvh - 44px); }
-.document-viewer #slide-controls {
+.document-viewer:not(.pdf-viewer) #slide-view { height: calc(100dvh - 44px); }
+.document-viewer:not(.pdf-viewer) #slide-controls {
   position: relative;
   left: 0;
   bottom: 0;
@@ -249,7 +258,7 @@
   opacity: 1;
   background: var(--surface-bg);
 }
-.document-viewer #slide-controls :is(button, a) {
+.document-viewer:not(.pdf-viewer) #slide-controls :is(button, a) {
   position: static;
   pointer-events: auto;
   padding: 6px;
@@ -257,16 +266,16 @@
   color: var(--text-color);
   filter: none;
 }
-.document-viewer #slide-controls svg { width: 24px; height: 24px; }
-.document-viewer #slide-controls [data-ppt-fullscreen]:not([hidden]) { display: block; }
-.document-viewer:fullscreen #slide-controls [data-ppt-fullscreen] { display: none; }
-.document-viewer #slide-controls [data-ppt-previous],
-.document-viewer #slide-controls [data-ppt-next],
-.document-viewer #slide-controls [data-ppt-counter] {
+.document-viewer:not(.pdf-viewer) #slide-controls svg { width: 24px; height: 24px; }
+.document-viewer:not(.pdf-viewer) #slide-controls [data-ppt-fullscreen]:not([hidden]) { display: block; }
+.document-viewer:not(.pdf-viewer):fullscreen #slide-controls [data-ppt-fullscreen] { display: none; }
+.document-viewer:not(.pdf-viewer) #slide-controls [data-ppt-previous],
+.document-viewer:not(.pdf-viewer) #slide-controls [data-ppt-next],
+.document-viewer:not(.pdf-viewer) #slide-controls [data-ppt-counter] {
   position: static;
   transform: none;
 }
-.document-viewer #slide-controls [data-ppt-counter] {
+.document-viewer:not(.pdf-viewer) #slide-controls [data-ppt-counter] {
   color: var(--text-color);
   text-shadow: none;
   white-space: nowrap;

@@ -114,14 +114,12 @@
 *   **MCP Server**: Integration with Model Context Protocol servers.
 
 ### External Services
-*   **Notion**: Integration for import/export or syncing.
 *   **Google Calendar**: Integration for meeting scheduling.
 *   **Github**:
     *   **Webhooks**: Handle GitHub events.
     *   **PR Analysis**: Automatic analysis of Pull Requests.
     *   **Popup**: GitHub integration interface.
     *   **Admin Control**: Configuration restricted to admins.
-*   **Linear**: Bidirectional Creative ↔ Linear issue sync (OAuth, HMAC webhooks, echo-free loop, LWW + conflict handling). See `engines/collavre_linear/docs/linear_integration.md`.
 
 ## Administration
 

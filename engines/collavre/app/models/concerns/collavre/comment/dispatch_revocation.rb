@@ -12,6 +12,33 @@ module Collavre
         after_destroy_commit :abandon_pending_logins
       end
 
+      class_methods do
+        # Every comment a task speaks for: its anchor, the siblings it absorbed,
+        # and a workflow's fixed anchor.
+        def dispatch_source_ids(task)
+          payload = task.trigger_event_payload || {}
+          (Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
+            [ payload.dig("comment", "id"), task.workflow_execution&.context&.dig("comment", "id") ])
+            .compact.map(&:to_i).uniq
+        end
+
+        # Settle the inline login cards of every withdrawn source in one scan.
+        # The payload predicate cannot use an index, so a batch asks it once
+        # rather than once per deleted comment.
+        def abandon_pending_logins_for(comment_ids:, task_ids:)
+          comment_ids = Array(comment_ids).compact.map(&:to_s).uniq
+          task_ids = Array(task_ids).compact.uniq
+          return if comment_ids.empty? && task_ids.empty?
+
+          Task.where(status: %w[running done])
+              .where("id IN (:task_ids) OR CAST(trigger_event_payload -> 'comment' ->> 'id' AS TEXT) IN (:comment_ids)",
+                     task_ids: task_ids.presence || [ nil ], comment_ids: comment_ids.presence || [ nil ])
+              .find_each do |candidate|
+            CliProxy::InlineLogin.abandon_replay!(candidate, pending: true)
+          end
+        end
+      end
+
       # Prepare withdrawal inside a caller's transaction; queue/session cleanup
       # remains the caller's responsibility after commit.
       def cancel_task_for_withdrawn_source(task)
@@ -39,10 +66,7 @@ module Collavre
       end
 
       def dispatch_source_ids(task)
-        payload = task.trigger_event_payload || {}
-        (Array(payload[Orchestration::TaskCoalescer::PAYLOAD_KEY]) +
-          [ payload.dig("comment", "id"), task.workflow_execution&.context&.dig("comment", "id") ])
-          .compact.map(&:to_i).uniq
+        Comment.dispatch_source_ids(task)
       end
 
       def replay_route_preserved?(task, payload)
@@ -64,11 +88,11 @@ module Collavre
       def abandon_pending_logins
         # Deletion can precede enqueue, or revocation can cancel an admitted
         # replay. Neither case guarantees another replay job will settle the card.
-        Task.where(status: %w[running done])
-            .where("id = :task_id OR CAST(trigger_event_payload -> 'comment' ->> 'id' AS TEXT) = :comment_id",
-                   task_id: task_id, comment_id: id.to_s).find_each do |candidate|
-          CliProxy::InlineLogin.abandon_replay!(candidate, pending: true)
+        if (batch = Comment.current_batch_destruction)
+          return batch.defer_login_abandon(self)
         end
+
+        Comment.abandon_pending_logins_for(comment_ids: [ id ], task_ids: [ task_id ])
       end
     end
   end

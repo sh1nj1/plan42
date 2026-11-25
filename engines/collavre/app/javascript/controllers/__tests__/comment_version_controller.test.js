@@ -23,7 +23,7 @@ describe('comment version run metadata', () => {
     app.register('comment-version', Controller)
     await tick()
     controller = app.getControllerForElementAndIdentifier(document.querySelector('[data-controller]'), 'comment-version')
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ versions, selected_version_id: 2, total: 2 }) })
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, headers: new Headers(), json: async () => ({ versions, selected_version_id: 2, total: 2 }) })
   })
   afterEach(() => { app.stop(); document.body.innerHTML = ''; jest.restoreAllMocks() })
   test('navigation displays content and audit options from the same version', async () => {

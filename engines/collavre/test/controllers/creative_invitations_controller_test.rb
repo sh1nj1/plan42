@@ -54,4 +54,14 @@ class CreativeInvitationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :no_content
   end
+  test "invitation permission updates preserve HTML notice and JSON permission" do
+    sign_in_as(@owner, password: "password")
+    url = collavre.creative_invitation_path(@creative, @invitation)
+    patch url, params: { permission: :write }
+    assert_redirected_to root_path
+    assert_equal I18n.t("collavre.creatives.share.permission_updated"), flash[:notice]
+    patch url, params: { permission: :read }, as: :json
+    assert_response :ok
+    assert_equal({ "permission" => "read" }, response.parsed_body)
+  end
 end

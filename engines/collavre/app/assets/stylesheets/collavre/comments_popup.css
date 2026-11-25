@@ -345,6 +345,7 @@ body.chat-fullscreen {
 .comment-user-popup {
     width: 240px;
     min-width: 240px;
+    overscroll-behavior: contain;
     padding: var(--space-2);
 }
 
@@ -615,6 +616,61 @@ body.chat-fullscreen {
     cursor: pointer;
     border-radius: var(--radius-2);
     white-space: nowrap;
+}
+
+/* Review / Ask side by side, in chat and in document mode */
+.quote-selection-popup ul {
+    display: flex;
+    gap: 0.2em;
+}
+
+/* Document-mode quotes */
+.review-quote-chip-source {
+    margin-right: 0.4em;
+    color: var(--color-muted);
+    font-size: 0.9em;
+}
+
+.comment-creative-quote-source {
+    display: inline-block;
+    margin-top: 0.3em;
+    font-size: 0.8em;
+    color: var(--color-muted);
+    text-decoration: none;
+}
+
+.comment-creative-quote-source:hover {
+    color: var(--color-text);
+    text-decoration: underline;
+}
+
+.creative-quote-review {
+    margin-top: 0.5em;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    padding: 0.4em 0.6em;
+}
+
+.creative-quote-review > details > summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.creative-quote-review .creative-history-state {
+    margin-left: 0.4em;
+    font-weight: normal;
+    color: var(--color-muted);
+}
+
+.creative-quote-review-warning {
+    margin: 0.4em 0;
+    font-size: 0.8em;
+}
+
+.creative-quote-highlight {
+    background: color-mix(in srgb, var(--color-active) 15%, transparent);
+    transition: background 0.3s ease;
 }
 
 .comment-reactions {
@@ -1647,7 +1703,13 @@ body.chat-fullscreen {
 }
 
 .ai-agent-draggable {
+    display: inline-flex;
+    vertical-align: middle;
     cursor: grab;
+}
+
+.ai-agent-draggable .comment-user-menu-trigger {
+    cursor: inherit;
 }
 
 .ai-agent-draggable:active,
@@ -1656,8 +1718,6 @@ body.chat-fullscreen {
 }
 
 .ai-agent-draggable.dragging {
-    /* Opacity on :active traps the fixed profile menu in a stacking context
-       during a tap, redirecting the native click to content beneath it. */
     opacity: 0.5;
 }
 
@@ -2485,4 +2545,53 @@ li:hover .topic-create-option {
 
 .comments-loading .creative-loading-indicator {
     margin-left: 0;
+}
+
+.comments-popup-header,
+.creative-tree-title {
+    position: relative;
+}
+
+.document-header-progress {
+    display: none;
+}
+
+.creative-document-view .document-header-progress {
+    display: contents;
+}
+
+.creative-header-progress {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 4px;
+}
+
+.creative-header-progress::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(to right,
+        var(--color-active) var(--creative-header-progress),
+        var(--border-color) var(--creative-header-progress));
+}
+
+.creative-header-progress:focus-visible {
+    outline: 1px solid var(--color-active);
+    outline-offset: 1px;
+}
+
+.creative-header-progress:is(:hover, :focus-visible)::after {
+    content: attr(data-progress-tooltip);
+    position: absolute;
+    z-index: 1;
+    inset-inline-end: 0;
+    top: 100%;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--color-text);
+    background: var(--surface-hover);
+    font-size: 0.75rem;
 }

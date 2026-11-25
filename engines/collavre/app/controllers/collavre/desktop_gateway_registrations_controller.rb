@@ -7,6 +7,8 @@ module Collavre
   # browser session or CSRF cookie; authorization is the signed, short-lived
   # grant issued to the authenticated desktop webview.
   class DesktopGatewayRegistrationsController < ActionController::API
+    include Collavre::LoopbackRequest
+
     # Native code calls this before it creates Keychain credentials or starts
     # the local proxy. The signed token is the administrator's short-lived
     # setup consent and remains the sole authorization for the sessionless
@@ -149,25 +151,6 @@ module Collavre
       Collavre::User.find(payload.fetch("user_id")).tap do |user|
         raise ActiveSupport::MessageVerifier::InvalidSignature unless user.system_admin?
       end
-    end
-
-    def require_loopback!
-      addr = IPAddr.new(request.remote_addr.to_s)
-      addr = addr.native if addr.respond_to?(:ipv4_mapped?) && addr.ipv4_mapped?
-      return true if addr.loopback?
-
-      head :forbidden
-      false
-    rescue IPAddr::InvalidAddressError
-      head :forbidden
-      false
-    end
-
-    def require_desktop_mode!
-      return true if Rails.application.config.x.desktop_proxy_setup == true
-
-      head :not_found
-      false
     end
   end
 end

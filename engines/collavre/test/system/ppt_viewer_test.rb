@@ -9,9 +9,10 @@ class PptViewerTest < ApplicationSystemTestCase
     @creative = Creative.create!(user: @user, description: "Presentation")
     Tempfile.create([ "viewer", ".pptx" ]) do |file|
       Zip::OutputStream.open(file.path) do |zip|
-        if name.include?("standard")
+        if name.include?("standard") || name.include?("noncanonical")
           zip.put_next_entry("ppt/presentation.xml")
-          zip.write %(<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldSz cx="9144000" cy="6858000"/></p:presentation>)
+          height = name.include?("noncanonical") ? 6096000 : 6858000
+          zip.write %(<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sldSz cx="9144000" cy="#{height}"/></p:presentation>)
         end
         2.times do |index|
           zip.put_next_entry("ppt/slides/slide#{index + 1}.xml")
@@ -122,6 +123,37 @@ class PptViewerTest < ApplicationSystemTestCase
     find("#creative-#{@creative.id} .edit-inline-btn").click
     assert_selector "[data-lexical-editor-root][data-editor-ready='true'] iframe.document-preview-frame"
     assert_preview_fills_container(4.0 / 3)
+  end
+
+  test "standard slides fill fractional frame widths with classic scrollbars" do
+    visit collavre.creatives_path(id: @creative.id)
+    assert_selector 'iframe.document-preview-frame[style*="aspect-ratio"]'
+    within_frame(first("iframe.document-preview-frame")) do
+      page.execute_script(<<~JS)
+        const style = document.createElement('style');
+        style.textContent = '::-webkit-scrollbar { width: 15px; height: 15px; }';
+        document.head.append(style);
+      JS
+    end
+    [ 421.8125, 631.8125 ].each do |width|
+      page.execute_script("document.querySelector('.ppt-attachment-preview').style.width = arguments[0] + 'px'", width)
+      assert_preview_fills_container(4.0 / 3)
+    end
+  end
+
+  test "noncanonical slides fit the inline viewport without clipping" do
+    visit collavre.creatives_path(id: @creative.id)
+    assert_preview_fills_container(3.0 / 2)
+    within_frame(first("iframe.document-preview-frame")) do
+      dimensions = page.evaluate_script(<<~JS)
+        (() => {
+          const slide = document.querySelector('.ppt-slide').getBoundingClientRect();
+          return { bottom: slide.bottom, height: slide.height, width: slide.width, viewport: innerHeight };
+        })()
+      JS
+      assert_in_delta dimensions["width"] / 1.5, dimensions["height"], 1
+      assert_operator dimensions["bottom"], :<=, dimensions["viewport"] + 1
+    end
   end
 
   test "touch controls toggle and fullscreen provides download and close" do
@@ -236,18 +268,34 @@ class PptViewerTest < ApplicationSystemTestCase
     end
   end
 
-  test "pdf renders locally and navigates pages with the common toolbar" do
+  test "pdf uses shared overlay controls for navigation zoom and fullscreen" do
     blob = ActiveStorage::Blob.create_and_upload!(io: File.open(File.expand_path("../fixtures/files/document_viewer.pdf", __dir__)), filename: "paper.pdf", content_type: "application/pdf")
     @creative.embed_attachment_blob!(blob)
     visit collavre.creatives_path(id: @creative.id)
     within_frame(all("iframe.document-preview-frame").last) do
       assert_selector ".pdf-document canvas"
+      assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
+      find(".pdf-viewer").hover
+      assert_selector "#slide-controls", style: { position: "absolute", opacity: "1" }
+      assert_selector "[data-ppt-previous]", style: { left: "0px" }
+      assert_selector "[data-ppt-next]", style: { right: "0px" }
       assert_selector "[data-ppt-counter]", text: "1 / 2"
       assert_no_selector ".media-loading"
       find("[data-ppt-next]").click
       assert_selector "[data-ppt-counter]", text: "2 / 2"
+      assert_no_selector ".media-loading"
+      find(".pdf-viewer").send_keys(:arrow_left)
+      assert_selector "[data-ppt-counter]", text: "1 / 2"
+      assert_no_selector ".media-loading"
       find("[data-pdf-zoom]").click
+      assert_no_selector ".media-loading"
       assert_no_selector "[data-document-error]"
+      find(".pdf-document canvas").click
+      assert_selector ".pdf-viewer:fullscreen"
+      find(".pdf-document canvas").click
+      assert_selector ".ppt-controls-visible"
+      find("[data-ppt-close]").click
+      assert_no_selector ".pdf-viewer:fullscreen"
     end
   end
 

@@ -145,6 +145,7 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
     @blob.update!(filename: "report.pdf")
     get @path
     assert_response :success
+    assert_select ".ppt-viewer.document-viewer.pdf-viewer"
     assert_select ".pdf-document[data-pdf-src][data-pdf-worker]" do |elements|
       assert_match %r{/collavre_pdf_worker[^/]*\.js}, elements.first["data-pdf-worker"]
     end
@@ -175,6 +176,13 @@ class PptPreviewsControllerTest < ActionDispatch::IntegrationTest
         end
       end
     end
+  end
+
+  test "markdown nested beyond the commonmarker limit returns translated error" do
+    @creative.files.attach(ActiveStorage::Blob.create_and_upload!(io: StringIO.new(("> " * 1500) + "deep"), filename: "deep.md"))
+    get collavre.ppt_preview_path(@creative.files.last.blob.signed_id)
+    assert_response :unprocessable_entity
+    assert_equal I18n.t("collavre.ppt_viewer.invalid"), response.body
   end
 
   test "document size limit is applied before downloading" do

@@ -7,8 +7,8 @@ module CollavreGithub
     belongs_to :markdown_root_creative, class_name: "Collavre::Creative", optional: true
 
     # HMAC secret GitHub signs webhook deliveries with. Encrypted at rest so a
-    # DB/backup leak can't forge webhooks (mirrors CollavreGithub::Account#token
-    # and CollavreLinear::ProjectLink#webhook_secret). Non-deterministic: the
+    # DB/backup leak can't forge webhooks (mirrors CollavreGithub::Account#token).
+    # Non-deterministic: the
     # value is only ever read back decrypted (WebhooksController, provisioner),
     # never queried by ciphertext. A backfill migration re-encrypts pre-existing
     # plaintext rows.

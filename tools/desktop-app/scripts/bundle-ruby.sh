@@ -12,10 +12,11 @@
 # Run from the repo root (or anywhere — paths resolve from this script).
 set -euo pipefail
 
-RUBY_VERSION="${RUBY_VERSION:-3.4.4}"
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$(cd -P "$SCRIPT_DIR/.." && pwd)"
 APP_ROOT="$(cd -P "$DESKTOP_DIR/../.." && pwd)"
+RUBY_VERSION="${RUBY_VERSION:-$(<"$APP_ROOT/.ruby-version")}"
+RUBY_VERSION="${RUBY_VERSION#ruby-}"
 VENDOR_DIR="$DESKTOP_DIR/vendor"
 RUBY_PREFIX="$VENDOR_DIR/ruby"
 
@@ -27,10 +28,11 @@ mkdir -p "$VENDOR_DIR"
 
 if [ -x "$RUBY_PREFIX/bin/ruby" ]; then
   ruby_build_is_portable="$("$RUBY_PREFIX/bin/ruby" -rrbconfig -e 'print RbConfig::CONFIG.fetch("LIBRUBY_RELATIVE") == "yes"')"
-  if [ "$ruby_build_is_portable" = "true" ]; then
+  installed_ruby_version="$("$RUBY_PREFIX/bin/ruby" -e 'print RUBY_VERSION')"
+  if [ "$ruby_build_is_portable" = "true" ] && [ "$installed_ruby_version" = "$RUBY_VERSION" ]; then
     echo "[bundle-ruby] reusing portable vendored Ruby at $RUBY_PREFIX"
   else
-    echo "[bundle-ruby] replacing non-relocating vendored Ruby at $RUBY_PREFIX"
+    echo "[bundle-ruby] replacing vendored Ruby $installed_ruby_version with portable Ruby $RUBY_VERSION"
     rm -rf "$RUBY_PREFIX" "$VENDOR_DIR/bundle"
   fi
 fi

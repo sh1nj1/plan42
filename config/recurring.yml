@@ -14,6 +14,10 @@ production: &production
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
+  solid_queue_worker_watchdog:
+    class: Collavre::SolidQueueWorkerWatchdogJob
+    queue: default
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -63,6 +67,10 @@ desktop:
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
     schedule: every minute
+  solid_queue_worker_watchdog:
+    class: Collavre::SolidQueueWorkerWatchdogJob
+    queue: default
+    schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob
     queue: default
@@ -111,6 +119,10 @@ development:
     schedule: every minute
   workflow_recovery:
     class: Collavre::WorkflowSweepJob
+    schedule: every minute
+  solid_queue_worker_watchdog:
+    class: Collavre::SolidQueueWorkerWatchdogJob
+    queue: default
     schedule: every minute
   stuck_detector:
     class: Collavre::StuckDetectorJob

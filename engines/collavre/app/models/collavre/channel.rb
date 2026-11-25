@@ -27,6 +27,23 @@ module Collavre
 
     scope :not_dismissed, -> { where(dismissed_at: nil) }
 
+    # The single "Channel" speaker for channel-injected comments. Created on
+    # demand so a skipped `db:seed` cannot drop webhook events.
+    def self.bot_user
+      User.find_by(email: BOT_EMAIL) || ensure_bot_user!
+    end
+
+    def self.ensure_bot_user!
+      user = User.find_or_initialize_by(email: BOT_EMAIL)
+      user.name = BOT_NAME
+      user.password = SecureRandom.hex(32) if user.new_record?
+      user.email_verified_at ||= Time.current
+      user.searchable = false if user.respond_to?(:searchable=)
+      user.llm_vendor = nil
+      user.save!
+      user
+    end
+
     def handle(event:, payload:)
       raise NotImplementedError, "#{self.class} must implement #handle"
     end

@@ -16,7 +16,6 @@ For production environments, dedicated encryption keys should be configured via 
 | User | google_access_token | No |
 | User | google_refresh_token | No |
 | GithubAccount | token | No |
-| NotionAccount | token | No |
 
 ## Key Rotation Procedure
 

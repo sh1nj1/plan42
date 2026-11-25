@@ -140,8 +140,6 @@ describe('SearchPopupController filter navigation', () => {
         <button data-filter-state="archived"
                 data-label-on="Hide archived" data-label-off="Show archived"
                 data-action="click->search-popup#toggleArchive">Show archived</button>
-        <button data-mode="tree" data-action="click->search-popup#applySearchMode"></button>
-        <button data-mode="flat" data-action="click->search-popup#applySearchMode"></button>
       </div>
     `
 
@@ -254,29 +252,6 @@ describe('SearchPopupController filter navigation', () => {
     await mount()
 
     click('[data-filter-state="archived"]')
-
-    expect(visit).toHaveBeenCalledWith('/creatives', {
-      action: 'advance',
-      frame: WORKSPACE_FRAME_ID
-    })
-  })
-
-  test('applies the tree search mode', async () => {
-    await mount()
-
-    click('[data-mode="tree"]')
-
-    expect(visit).toHaveBeenCalledWith('/creatives?search_mode=tree', {
-      action: 'advance',
-      frame: WORKSPACE_FRAME_ID
-    })
-  })
-
-  test('drops the search mode param when returning to flat mode', async () => {
-    setLocation('http://localhost/creatives?search_mode=tree')
-    await mount()
-
-    click('[data-mode="flat"]')
 
     expect(visit).toHaveBeenCalledWith('/creatives', {
       action: 'advance',
@@ -445,16 +420,6 @@ describe('SearchPopupController filter navigation', () => {
     await mount()
     const button = document.querySelector('[data-filter="all"]')
     button.removeAttribute('data-filter')
-
-    button.click()
-
-    expect(visit).not.toHaveBeenCalled()
-  })
-
-  test('does nothing when a search mode button carries no mode', async () => {
-    await mount()
-    const button = document.querySelector('[data-mode="tree"]')
-    button.removeAttribute('data-mode')
 
     button.click()
 

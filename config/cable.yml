@@ -15,6 +15,7 @@ production: &production
       writing: cable
   polling_interval: 0.1.seconds
   message_retention: 1.day
+  inline_broadcasts: true
   # Backoff (seconds) between retries when the listener thread hits an
   # ActiveRecord connection error. solid_cable defaults to a single immediate
   # retry, after which the polling thread exits silently and the process stops
