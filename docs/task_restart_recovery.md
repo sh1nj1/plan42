@@ -34,6 +34,14 @@ The implementation targets the installed Solid Queue 1.7.0 behavior:
   `ProcessPrunedError` on their jobs; a known terminated worker produces
   `ProcessExitError`, orphaned claims produce `ProcessMissingError`, and an
   async worker thread exit produces `ThreadTerminatedError`.
+- `SolidQueueWorkerWatchdogJob` (every minute, `default` queue) handles a
+  worker whose poll loop wedges while its heartbeat thread keeps it registered,
+  so the supervisor never replaces it (observed on the `ai_agents` worker after
+  a Postgres restart). If a non-paused queue holds a ready execution older than
+  three minutes, every same-host worker serving that queue with a fresh
+  heartbeat, spare pool capacity and an age above the threshold receives
+  `SIGKILL`. The supervisor forks a replacement and records `ProcessExitError`
+  on the killed worker's claims, which the recovery below then resumes.
 - The application records the Active Job ID in the task's
   `trigger_event_payload.execution_job_id` when execution starts.
 - `RecoverInterruptedTasksJob` recovers `running` tasks and explicitly

@@ -16,7 +16,7 @@ WORKDIR /rails
 
 # Install base packages (including PostgreSQL runtime library)
 RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y curl libjemalloc2 libvips sqlite3 libpq5 && \
+    apt-get install --no-install-recommends -y curl libjemalloc2 libvips sqlite3 libpq5 procps && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Set production environment
