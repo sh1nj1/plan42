@@ -2,7 +2,30 @@
  * @jest-environment jsdom
  */
 import { jest } from '@jest/globals'
-import { listenForTreeReloads } from '../tree_reload_events'
+import { listenForTreeReloads, listIsFiltered } from '../tree_reload_events'
+
+function mountList(url) {
+  document.body.innerHTML = url === undefined ? '' : `<div id="creatives" data-creatives--tree-url-value="${url}"></div>`
+}
+
+afterEach(() => mountList(undefined))
+
+describe('listIsFiltered', () => {
+  test.each([
+    ['no list on the page', undefined, false],
+    ['a list with no URL', '', false],
+    ['a plain list', '/creatives?id=5&show_archived=true', false],
+    ['a blank filter param', '/creatives?id=5&search=&tags[]=', false],
+    ['a tag filter', '/creatives?tags[]=3', true],
+    ['a progress filter', '/creatives?id=5&min_progress=0&max_progress=0.99', true],
+    ['a comment filter', '/creatives?comment=true', true],
+    ['a search', '/creatives?search=report', true],
+  ])('%s', (_name, url, filtered) => {
+    mountList(url)
+
+    expect(listIsFiltered()).toBe(filtered)
+  })
+})
 
 function dropCompleted(detail) {
   window.dispatchEvent(new CustomEvent('collavre:creative-drop-complete', { detail }))
@@ -51,6 +74,18 @@ describe('listenForTreeReloads', () => {
     dropCompleted(detail)
 
     expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  // Which rows a filtered list holds, and the progress they show, come from
+  // the filter, so a save or a drop there is only settled by a refetch.
+  test('a filtered list reloads after a settled save and after a drop it rendered', () => {
+    mountList('/creatives?id=5&min_progress=1')
+
+    document.dispatchEvent(new CustomEvent('creative-sync:release'))
+    dropCompleted({ creativeIds: ['2'], context: 'target', rendered: true })
+
+    expect(reload).toHaveBeenCalledTimes(2)
+    expect(release).not.toHaveBeenCalled()
   })
 
   test('nothing is heard once stopped', () => {

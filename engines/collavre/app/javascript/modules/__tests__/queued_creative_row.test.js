@@ -3,9 +3,10 @@ import { jest } from '@jest/globals'
 const applyRowProperties = jest.fn()
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({ applyRowProperties }))
 const applySavedProgress = jest.fn()
-jest.unstable_mockModule('../../creatives/row_progress', () => ({ applySavedProgress }))
+const refreshProgressAbove = jest.fn()
+jest.unstable_mockModule('../../creatives/row_progress', () => ({ applySavedProgress, refreshProgressAbove }))
 const { applyPendingCreativeSyncData } = await import('../pending_creative_sync')
-const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus, revealCreativeRow } = await import('../queued_creative_row')
+const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus, revealCreativeRow, releaseCreatedRow } = await import('../queued_creative_row')
 const { waitForQueuedRequests, mergeQueueCallbacks } = await import('../../lib/api/queue_completion')
 
 beforeEach(() => {
@@ -107,4 +108,21 @@ test('only the latest completion applies the progress its response carries', () 
   expect(latest(saved)).toBe(true)
   expect(applySavedProgress).toHaveBeenCalledTimes(1)
   expect(applySavedProgress).toHaveBeenCalledWith(row, saved)
+})
+
+test('a settled create refreshes the progress above its parent and releases a held reload', () => {
+  const tree = document.createElement('div')
+  tree.dataset.parentId = '7'
+  const release = jest.fn()
+  const refetch = jest.fn()
+  document.addEventListener('creative-sync:release', release)
+  document.addEventListener('creative-sync:refetch', refetch)
+
+  releaseCreatedRow(tree)
+  document.removeEventListener('creative-sync:release', release)
+  document.removeEventListener('creative-sync:refetch', refetch)
+
+  expect(refreshProgressAbove).toHaveBeenCalledWith('7')
+  expect(release).toHaveBeenCalledTimes(1)
+  expect(refetch).not.toHaveBeenCalled()
 })

@@ -1,6 +1,6 @@
 import { treeRowElement } from './creative_row_editor_helpers'
 import { creativeSaveSnapshotIsEmpty } from './creative_save_state'
-import { applySavedProgress } from '../creatives/row_progress'
+import { applySavedProgress, refreshProgressAbove } from '../creatives/row_progress'
 
 const revisions = new WeakMap()
 const retryAttachmentIds = new WeakMap()
@@ -35,6 +35,14 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed) {
   }
   complete.rollback = () => revisions.set(tree, previous)
   return complete
+}
+
+// A background create settled. Its row and parent are already refreshed; what
+// a refetch used to cover besides is the progress further up, and letting a
+// reload that waited on the pending row go ahead.
+export function releaseCreatedRow(tree) {
+  refreshProgressAbove(tree.dataset.parentId)
+  document.dispatchEvent(new CustomEvent('creative-sync:release'))
 }
 
 // A row refresh applies its response only if no later refresh was asked for

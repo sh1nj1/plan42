@@ -6,12 +6,15 @@ const syncProgressHtmlFromDom = jest.fn()
 const replaceProgressControl = jest.fn((current, control) => `${current}+${control}`)
 jest.unstable_mockModule('../../lib/api/creatives', () => ({ default: { get } }))
 jest.unstable_mockModule('../tree_renderer', () => ({ replaceProgressControl, syncProgressHtmlFromDom }))
-const { applySavedProgress, refreshMovedBranchProgress } = await import('../row_progress')
+const listIsFiltered = jest.fn()
+jest.unstable_mockModule('../tree_reload_events', () => ({ listIsFiltered }))
+const { applySavedProgress, refreshMovedBranchProgress, refreshProgressAbove } = await import('../row_progress')
 
 const row = (id) => document.querySelector(`creative-tree-row[creative-id="${id}"]`)
 
 beforeEach(() => {
   jest.clearAllMocks()
+  listIsFiltered.mockReturnValue(false)
   // 1 > 2 > 3 and 1 > 4; 5 names a parent that is not on screen.
   document.body.innerHTML = `
     <creative-tree-row creative-id="1"></creative-tree-row>
@@ -90,4 +93,29 @@ test('a refetch that rejects or throws leaves the row as it was', async () => {
 
   await expect(refreshMovedBranchProgress('4', null)).resolves.toEqual([undefined, undefined])
   expect(shown(4)).toEqual([undefined, undefined, undefined])
+})
+
+test('a created row refetches the rows above its parent, which the editor refetches itself', async () => {
+  get.mockImplementation((id) => Promise.resolve({ progress: 0.5, progress_html: `<${id}>` }))
+
+  await refreshProgressAbove('3')
+  await refreshProgressAbove('1')
+  await refreshProgressAbove('')
+  await refreshProgressAbove('77')
+
+  expect(get.mock.calls.map(([id]) => id)).toEqual(['2', '1'])
+  expect(shown(2)).toEqual(['0.5', '<2>', '<2>'])
+})
+
+// The progress a filtered list shows is the filter's own; the list refetches
+// itself instead, and unfiltered values must not be painted over it meanwhile.
+test('a filtered list is left for its own refetch', async () => {
+  listIsFiltered.mockReturnValue(true)
+
+  applySavedProgress(row(3), { progress: 1, progress_html: '<own>', ancestors: [{ id: 2, progress: 1 }] })
+  await refreshMovedBranchProgress('2', '4')
+  await refreshProgressAbove('3')
+
+  expect(get).not.toHaveBeenCalled()
+  expect([3, 2].map((id) => shown(id))).toEqual([[undefined, undefined, undefined], [undefined, undefined, undefined]])
 })
