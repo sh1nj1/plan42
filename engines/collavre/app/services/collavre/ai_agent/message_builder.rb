@@ -40,6 +40,7 @@ module Collavre
 
       def append_task_identity(messages)
         return unless @task && @agent.cli_proxy_agent?
+        return unless AgentToolPermission.allowed?("approval_request", agent: @agent)
 
         messages.last[:parts].unshift(text: I18n.t("collavre.approval_gate.task_context", task_id: @task.id))
       end
