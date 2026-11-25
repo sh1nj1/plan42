@@ -713,10 +713,9 @@ export default class extends Controller {
     if (!viewState) return
 
     this.treeTarget.scrollTop = viewState.scrollTop
-    if (!viewState.focusCreativeId || !viewState.focusControl) return
     // Replacing a focused sidebar node leaves focus on the body. A control
     // focused while the request was in flight should keep its focus.
-    if (document.activeElement !== document.body) return
+    if (!viewState.focusCreativeId || !viewState.focusControl || document.activeElement !== document.body) return
 
     const item = [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
       .find((candidate) => candidate.dataset.creativeId === String(viewState.focusCreativeId))
