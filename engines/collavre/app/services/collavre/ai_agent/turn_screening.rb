@@ -14,8 +14,17 @@ module Collavre
       def screen_channel_turn!
         @creative = find_creative
         content = ClaudeChannelAdapter.trigger_content(@context, @agent)
-        result = screening_guard.call([ { source: "trigger", text: content } ], block_flagged: true)
-        @screened_channel_content = content unless result == "skipped"
+        2.times do
+          screening_guard.call([ { source: "trigger", text: content } ], block_flagged: true)
+          # Comments can leave this creative or topic while the screener runs.
+          refreshed_content = Comment.uncached { ClaudeChannelAdapter.trigger_content(@context, @agent) }
+          return @screened_channel_content = content if refreshed_content == content
+
+          content = refreshed_content
+        end
+
+        @task.cancel_if_active!
+        raise CancelledError
       rescue ApprovalPendingError => e
         handle_approval_pending(e)
       end

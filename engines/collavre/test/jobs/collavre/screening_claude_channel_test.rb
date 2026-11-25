@@ -88,6 +88,44 @@ module Collavre
       assert Task.find_by!(agent: @agent).delegated?
     end
 
+    test "a merged comment moved during screening is removed and the new payload is screened" do
+      merged = @creative.comments.create!(topic: @topic, user: @sender, content: "Comment being moved", skip_dispatch: true)
+      @context["merged_comment_ids"] = [ merged.id ]
+      destination = @creative.topics.create!(name: "Other topic", user: @sender)
+      screener = fake_screener(0.1)
+      judge = screener.method(:judge)
+
+      broadcasts = screener.stub(:judge, ->(input) {
+        merged.update_columns(topic_id: destination.id) if screener.calls.empty?
+        judge.call(input)
+      }) do
+        with_screeners([ screener ]) { capture_broadcasts { dispatch } }
+      end
+
+      assert_equal 2, screener.calls.size
+      assert_includes screener.calls.first, merged.content
+      assert_not_includes screener.calls.last, merged.content
+      assert_equal [ @comment.content ], broadcasts.map { |data| data.dig(:comment, :content) }.uniq
+    end
+
+    test "a payload that changes during both screening attempts is not delivered" do
+      merged = @creative.comments.create!(topic: @topic, user: @sender, content: "Original text", skip_dispatch: true)
+      @context["merged_comment_ids"] = [ merged.id ]
+      screener = fake_screener(0.1)
+      judge = screener.method(:judge)
+
+      broadcasts = screener.stub(:judge, ->(input) {
+        merged.update_columns(content: "Changed text #{screener.calls.size}")
+        judge.call(input)
+      }) do
+        with_screeners([ screener ]) { capture_broadcasts { dispatch } }
+      end
+
+      assert_equal 2, screener.calls.size
+      assert_empty broadcasts
+      assert Task.find_by!(agent: @agent).cancelled?
+    end
+
     test "the owner's own turn is not screened" do
       @comment.update_columns(user_id: @owner.id)
       screener = fake_screener(0.99)
