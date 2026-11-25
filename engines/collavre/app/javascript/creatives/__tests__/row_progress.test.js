@@ -134,3 +134,22 @@ test('a branch is shown elsewhere when the row or any row above it is', () => {
   expect(branchShownElsewhere('5')).toBe(false)
   expect(branchShownElsewhere(null)).toBe(false)
 })
+
+test('a branch detects a linked placement even when the physical parent is absent', () => {
+  document.body.insertAdjacentHTML('beforeend', '<creative-tree-row creative-id="7" data-origin-id="5"></creative-tree-row>')
+
+  expect(branchShownElsewhere('6')).toBe(true)
+  expect(branchShownElsewhere('5')).toBe(true)
+})
+
+test('a delayed progress response cannot overwrite a newer reconciliation', async () => {
+  let resolveOldProgress
+  const oldProgress = new Promise((resolve) => { resolveOldProgress = resolve })
+  const older = refreshMovedBranchProgress('2', null, () => oldProgress)
+  await refreshMovedBranchProgress('2', null, () => Promise.resolve({ progress: 1, progress_html: 'new' }))
+
+  resolveOldProgress({ progress: 0, progress_html: 'old' })
+  await older
+
+  expect(shown(2)).toEqual(['1', 'new', 'new'])
+})

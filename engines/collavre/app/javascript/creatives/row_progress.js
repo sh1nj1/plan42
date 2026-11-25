@@ -2,6 +2,8 @@ import creativesApi from '../lib/api/creatives'
 import { replaceProgressControl, syncProgressHtmlFromDom } from './tree_renderer'
 import { listIsFiltered } from './tree_reload_events'
 
+const pendingProgress = new WeakMap()
+
 // Progress roll-ups the list shows but did not compute. A drop between parents
 // and a new row both change the progress of every row above them, the actor is
 // left out of the broadcast that tells everyone else, and neither endpoint
@@ -26,11 +28,14 @@ export function shownElsewhere(row) {
   ))
 }
 
-// Whether the row for `id`, or any row above it, is drawn a second time. What
-// a move does to such a branch shows in rows the move never touched.
+// Whether a visible linked placement or duplicate needs the list to reconcile
+// the branch. A child can name its physical parent even if only a link is visible.
 export function branchShownElsewhere(id) {
-  for (let row = rowFor(id); row; row = rowFor(row.getAttribute('parent-id'))) {
+  while (id) {
+    const row = rowFor(id)
+    if (!row) return Boolean(document.querySelector(`creative-tree-row[data-origin-id="${id}"]`))
     if (shownElsewhere(row)) return true
+    id = row.getAttribute('parent-id')
   }
   return false
 }
@@ -58,13 +63,15 @@ function rowsAbove(parentId, rows) {
 }
 
 function refetch(rows, fetchCreative) {
-  return Promise.all(Array.from(rows, (row) => (
-    Promise.resolve(row.getAttribute('creative-id'))
+  return Promise.all(Array.from(rows, (row) => {
+    const token = {}
+    pendingProgress.set(row, token)
+    return Promise.resolve(row.getAttribute('creative-id'))
       .then(fetchCreative)
-      .then((data) => paint(row, data))
+      .then((data) => pendingProgress.get(row) === token && paint(row, data))
       // A stale percentage is repaired by the next sync; nothing to undo here.
       .catch(() => {})
-  )))
+  }))
 }
 
 // A row that changed parents changes the roll-up of both branches, and the
