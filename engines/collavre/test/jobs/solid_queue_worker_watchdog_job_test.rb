@@ -6,6 +6,8 @@ module Collavre
       @previous_queue_adapter = ActiveJob::Base.queue_adapter
       ActiveJob::Base.queue_adapter = :test
       @killed = []
+      @cache = ActiveSupport::Cache::MemoryStore.new
+      freeze_time
     end
 
     teardown { ActiveJob::Base.queue_adapter = @previous_queue_adapter }
@@ -14,6 +16,10 @@ module Collavre
       worker = register_worker(queues: "ai_agents", pool_size: 12)
       enqueue_ready("ai_agents", age: 4.minutes)
 
+      assert_empty perform_watchdog
+      travel 30.seconds
+      assert_empty perform_watchdog
+      travel 30.seconds
       assert_equal [ worker ], perform_watchdog
       assert_equal [ [ :KILL, worker.pid ] ], @killed
     end
@@ -22,6 +28,8 @@ module Collavre
       register_worker(queues: "ai_*", pool_size: 2)
       enqueue_ready("ai_agents", age: 4.minutes)
 
+      assert_empty perform_watchdog
+      travel 1.minute
       assert_equal 1, perform_watchdog.size
     end
 
@@ -61,17 +69,71 @@ module Collavre
       register_worker(queues: "ai_agents", pool_size: 12)
       enqueue_ready("ai_agents", age: 4.minutes)
 
-      result = ::Process.stub(:kill, ->(*) { raise Errno::ESRCH }) do
-        SolidQueueWorkerWatchdogJob.perform_now
-      end
-      assert_empty result
+      assert_empty perform_watchdog
+      travel 1.minute
+      assert_empty perform_watchdog(kill: ->(*) { raise Errno::ESRCH })
+    end
+
+    test "a worker that frees a slot during a backlog gets a new observation window" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      finished = claim(worker, "ai_agents")
+      claim(worker, "ai_agents")
+      enqueue_ready("ai_agents", age: 4.minutes)
+      assert_empty perform_watchdog
+
+      finished.destroy!
+      travel 1.minute
+      assert_empty perform_watchdog
+      assert_empty @killed
+    end
+
+    test "a new claim resets the observation even when the claim count is unchanged" do
+      worker = register_worker(queues: "ai_agents", pool_size: 2)
+      finished = claim(worker, "ai_agents")
+      enqueue_ready("ai_agents", age: 4.minutes)
+      assert_empty perform_watchdog
+
+      finished.destroy!
+      claim(worker, "ai_agents")
+      travel 1.minute
+      assert_empty perform_watchdog
+      assert_empty @killed
+
+      travel 1.minute
+      assert_equal [ worker ], perform_watchdog
+    end
+
+    test "replacing the oldest ready execution resets the observation" do
+      register_worker(queues: "ai_agents", pool_size: 2)
+      first = enqueue_ready("ai_agents", age: 5.minutes)
+      enqueue_ready("ai_agents", age: 4.minutes)
+      assert_empty perform_watchdog
+
+      first.ready_execution.destroy!
+      travel 1.minute
+      assert_empty perform_watchdog
+      assert_empty @killed
+    end
+
+    test "pausing a queue clears the observation" do
+      register_worker(queues: "ai_agents", pool_size: 2)
+      enqueue_ready("ai_agents", age: 4.minutes)
+      assert_empty perform_watchdog
+
+      pause = SolidQueue::Pause.create!(queue_name: "ai_agents")
+      travel 1.minute
+      assert_empty perform_watchdog
+      pause.destroy!
+      travel 1.minute
+      assert_empty perform_watchdog
+      assert_empty @killed
     end
 
     private
 
-    def perform_watchdog
-      ::Process.stub(:kill, ->(signal, pid) { @killed << [ signal, pid ] }) do
-        SolidQueueWorkerWatchdogJob.perform_now
+    def perform_watchdog(kill: ->(signal, pid) { @killed << [ signal, pid ] })
+      Rails.stub(:cache, @cache) do
+        ::Process.stub(:kill, kill) { SolidQueueWorkerWatchdogJob.perform_now }
       end
     end
 
