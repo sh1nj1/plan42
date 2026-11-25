@@ -12,6 +12,7 @@ import {
   syncParentHasChildren,
 } from './dom';
 import { MOVE_STATUSES, executeMoveCommand } from './move_command';
+import { refreshMovedBranchProgress } from '../row_progress';
 
 export function createMoveContext(draggedState, targetRow, draggedChildren) {
   return {
@@ -171,6 +172,9 @@ export function runMoveWithDomRecovery({
   return running.then(
     (result) => {
       if (!result || result.status !== MOVE_STATUSES.SUCCESS) recoverDom();
+      // A move the list keeps as rendered gets no refetch, so the progress of
+      // the branches it left and joined is brought up to date here.
+      else if (moveContext?.rendered) refreshMovedBranchProgress(moveContext.originalParentId, attemptedParentId);
       return result;
     },
     (error) => {

@@ -2,6 +2,8 @@
 import { jest } from '@jest/globals'
 const applyRowProperties = jest.fn()
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({ applyRowProperties }))
+const applySavedProgress = jest.fn()
+jest.unstable_mockModule('../../creatives/row_progress', () => ({ applySavedProgress }))
 const { applyPendingCreativeSyncData } = await import('../pending_creative_sync')
 const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus, revealCreativeRow } = await import('../queued_creative_row')
 const { waitForQueuedRequests, mergeQueueCallbacks } = await import('../../lib/api/queue_completion')
@@ -90,4 +92,19 @@ test('a failed callback cannot prevent later callbacks from acknowledging the sa
   expect(next).toHaveBeenCalledWith({ id: 42 })
   expect(error).toHaveBeenCalledTimes(1)
   error.mockRestore()
+})
+
+test('only the latest completion applies the progress its response carries', () => {
+  document.body.innerHTML = '<creative-tree-row><div class="creative-tree"></div></creative-tree-row>'
+  const tree = document.querySelector('.creative-tree')
+  const row = document.querySelector('creative-tree-row')
+  const superseded = queuedCreativeCompletion(tree, jest.fn(), jest.fn())
+  const latest = queuedCreativeCompletion(tree, jest.fn(), jest.fn())
+  const saved = { progress: 1, progress_html: '<done>', ancestors: [{ id: 1, progress: 0.5 }] }
+
+  expect(superseded({ progress: 0 })).toBe(false)
+  expect(applySavedProgress).not.toHaveBeenCalled()
+  expect(latest(saved)).toBe(true)
+  expect(applySavedProgress).toHaveBeenCalledTimes(1)
+  expect(applySavedProgress).toHaveBeenCalledWith(row, saved)
 })

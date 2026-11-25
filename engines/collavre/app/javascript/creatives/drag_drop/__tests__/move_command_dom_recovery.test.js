@@ -7,12 +7,14 @@
 // is adapter work — `move_command.js` stays DOM-free — and this file pins the
 // seam between the two.
 import { jest } from '@jest/globals'
-import {
+const refreshMovedBranchProgress = jest.fn()
+jest.unstable_mockModule('../../row_progress', () => ({ refreshMovedBranchProgress }))
+const {
   createMoveContext,
   applyMove,
   runMoveWithDomRecovery,
-} from '../operations'
-import { createMoveCommand, InvalidMoveCommandError } from '../move_command'
+} = await import('../operations')
+const { createMoveCommand, InvalidMoveCommandError } = await import('../move_command')
 
 function mountTree() {
   document.body.innerHTML = `
@@ -62,6 +64,40 @@ const COMMAND = () => createMoveCommand({ ids: ['3'], targetId: '9', direction: 
 
 afterEach(() => {
   document.body.innerHTML = ''
+  refreshMovedBranchProgress.mockClear()
+})
+
+// No refetch follows a move the list keeps as rendered, so the roll-up of the
+// branch it left and the one it joined has to be refreshed with it.
+test('an accepted in-place move refreshes the progress of both branches', async () => {
+  const { moveContext, newParentId } = optimisticallyDropAsChild()
+
+  await runMoveWithDomRecovery({
+    command: COMMAND(),
+    moveContext,
+    attemptedParentId: newParentId,
+    execute: jest.fn().mockResolvedValue({ status: 'success', ok: true }),
+  })
+
+  expect(refreshMovedBranchProgress).toHaveBeenCalledTimes(1)
+  expect(refreshMovedBranchProgress).toHaveBeenCalledWith('1', '9')
+})
+
+test.each([
+  ['a move the list will refetch anyway', { rendered: false }, 'success'],
+  ['a move with no optimistic DOM', null, 'success'],
+  ['a rejected move', { rendered: true }, 'failure'],
+])('%s leaves branch progress alone', async (_name, overrides, status) => {
+  const { moveContext, newParentId } = optimisticallyDropAsChild()
+
+  await runMoveWithDomRecovery({
+    command: COMMAND(),
+    moveContext: overrides && Object.assign(moveContext, overrides),
+    attemptedParentId: newParentId,
+    execute: jest.fn().mockResolvedValue({ status, ok: status === 'success' }),
+  })
+
+  expect(refreshMovedBranchProgress).not.toHaveBeenCalled()
 })
 
 // `rendered` lets the tree skip its refetch after the drop. A row dropped into a

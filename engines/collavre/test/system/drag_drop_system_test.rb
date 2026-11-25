@@ -53,4 +53,21 @@ class DragDropSystemTest < ApplicationSystemTestCase
 
     assert_selector "#creatives creative-tree-row[data-kept-across-drop='true']", count: 2
   end
+
+  # No refetch follows an in-place drop, and the user who dropped is left out of
+  # the broadcast, so the progress the new parent rolls up has to arrive with it.
+  test "nesting a row updates its new parent's progress without reloading the tree" do
+    @child_a.update!(progress: 1.0)
+    visit collavre.creative_path(@root)
+
+    assert_selector "#creative-#{@child_a.id}", wait: 5
+    assert_selector "#creative-#{@child_b.id}", wait: 5
+    page.execute_script("document.querySelectorAll('#creatives creative-tree-row').forEach((row) => { row.dataset.keptAcrossDrop = 'true' })")
+
+    drag_and_drop_with_offset(find("#creative-#{@child_a.id}"), find("#creative-#{@child_b.id}"), 0, 0)
+
+    assert_selector "creative-tree-row[creative-id='#{@child_b.id}'][data-progress-value='1']", wait: 5
+    assert_equal @child_b, @child_a.reload.parent
+    assert_selector "#creatives creative-tree-row[data-kept-across-drop='true']", count: 2
+  end
 end

@@ -1,5 +1,6 @@
 import { treeRowElement } from './creative_row_editor_helpers'
 import { creativeSaveSnapshotIsEmpty } from './creative_save_state'
+import { applySavedProgress } from '../creatives/row_progress'
 
 const revisions = new WeakMap()
 const retryAttachmentIds = new WeakMap()
@@ -13,7 +14,7 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed) {
   const revision = previous + 1
   revisions.set(tree, revision)
   tree.dataset.saveState = 'pending'
-  const complete = () => {
+  const complete = (saved) => {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
     const row = treeRowElement(tree)
@@ -23,9 +24,12 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed) {
       delete row.dataset.missedSync
     }
     onComplete()
+    // The row shows the saved text already. Its progress control, and the
+    // roll-up of the rows above it, come from the response; nothing else
+    // delivers them to the user who saved.
+    applySavedProgress(row, saved)
     if (missedSync) refreshMissed(tree)
-    // The row already shows what was saved; only a reload held back by the
-    // pending save is still owed.
+    // Only a reload held back by the pending save is still owed.
     document.dispatchEvent(new CustomEvent('creative-sync:release'))
     return true
   }
