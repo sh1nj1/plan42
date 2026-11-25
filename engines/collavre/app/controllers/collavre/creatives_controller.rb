@@ -313,14 +313,6 @@ module Collavre
           format.json do
             base.reload
             response_data = creative_update_payload(base)
-            # Expose the post-rewrite markdown source so the client can sync its
-            # textarea after the server replaces inline data: URIs with blob paths.
-            # Gated on write permission so a read-only share recipient moving a
-            # linked creative (parent_id-only PATCH bypasses the origin_changes
-            # write check) cannot read the origin's raw Markdown source.
-            if @creative.has_permission?(Current.user, :write)
-              response_data[:markdown_source] = base.data&.dig("markdown_source")
-            end
             # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
             ancestor_records = base.ancestors.order(:id)
             if ancestor_records.any?

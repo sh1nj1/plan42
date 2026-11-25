@@ -5,6 +5,8 @@ module Collavre
   # local proxy process live in Tauri; this controller only persists the
   # resulting gateway after verifying a short-lived, local-only handoff token.
   class DesktopSetupController < ApplicationController
+    include Collavre::LoopbackRequest
+
     allow_unauthenticated_access only: %i[show create_account]
 
     STEPS = %w[account install adapters ready].freeze
@@ -95,25 +97,6 @@ module Collavre
 
     def registration_verifier
       Rails.application.message_verifier("desktop-gateway-registration")
-    end
-
-    def require_loopback!
-      addr = IPAddr.new(request.remote_addr.to_s)
-      addr = addr.native if addr.respond_to?(:ipv4_mapped?) && addr.ipv4_mapped?
-      return true if addr.loopback?
-
-      head :forbidden
-      false
-    rescue IPAddr::InvalidAddressError
-      head :forbidden
-      false
-    end
-
-    def require_desktop_mode!
-      return true if Rails.application.config.x.desktop_proxy_setup == true
-
-      head :not_found
-      false
     end
   end
 end

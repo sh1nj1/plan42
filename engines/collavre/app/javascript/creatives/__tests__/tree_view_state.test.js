@@ -227,6 +227,22 @@ describe('creative tree view state', () => {
     expect(document.activeElement.textContent).toBe('Second')
   })
 
+  test('leaves focus on a control the user moved to while the list reloaded', async () => {
+    document.body.innerHTML = `
+      <main><div id="creatives">${row('1')}</div></main>
+      <textarea id="chat-input"></textarea>
+    `
+    const tree = document.getElementById('creatives')
+    document.getElementById('toggle-1').focus()
+    const state = captureCreativeTreeViewState(tree)
+
+    tree.innerHTML = row('1')
+    document.getElementById('chat-input').focus()
+    await restoreCreativeTreeViewState(tree, state)
+
+    expect(document.activeElement.id).toBe('chat-input')
+  })
+
   test('restores a scroll position captured without any expansion record', async () => {
     document.body.innerHTML = `<main><div id="creatives">${row('1')}</div></main>`
     const main = document.querySelector('main')

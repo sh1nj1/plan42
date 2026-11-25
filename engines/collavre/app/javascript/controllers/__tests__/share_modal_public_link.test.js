@@ -73,4 +73,41 @@ describe('share modal public link', () => {
 
     expect(writeText).toHaveBeenCalledWith('https://example.test/p/AbCdEf1234/plan')
   })
+  test('permission failure restores styling and displays the modal error', async () => {
+    fetch.mockResolvedValueOnce({ text: async () => MODAL_HTML.replace('<h2>Share</h2>', '<h2>Share</h2><select class="share-modal-permission-select org-chart-permission-read" data-update-url="/shares/1"><option value="write">Write</option></select>') })
+    await openModal()
+    const select = document.querySelector('select')
+    const original = select.className
+    fetch.mockRejectedValueOnce(new Error('offline'))
+    select.dispatchEvent(new Event('change'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(select.className).toBe(original)
+    expect(document.querySelector('.share-modal-message').textContent).toBe('An error occurred')
+  })
+
+  test('refresh reloads and initializes modal without another opened event', async () => {
+    const opened = jest.fn()
+    document.addEventListener('share-modal:opened', opened)
+    fetch.mockResolvedValueOnce({ text: async () => MODAL_HTML.replace('<h2>Share</h2>', '<h2>Share</h2><form action="/shares/1"><input name="_method" value="delete"><button type="submit">Delete</button></form>') })
+    await openModal()
+    expect(opened).toHaveBeenCalledTimes(1)
+    fetch.mockResolvedValueOnce({ ok: true })
+    document.querySelector('form').dispatchEvent(new Event('submit', { cancelable: true }))
+    await new Promise(resolve => setTimeout(resolve, 350))
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(document.getElementById('share-creative-modal').style.display).toBe('flex')
+    expect(opened).toHaveBeenCalledTimes(1)
+    document.removeEventListener('share-modal:opened', opened)
+  })
+
+  test('load failure preserves error context and emits no opened event', async () => {
+    const error = new Error('offline')
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {})
+    fetch.mockRejectedValueOnce(error)
+    await openModal()
+    expect(log).toHaveBeenCalledWith('share-modal: Failed to load modal', error)
+    expect(document.getElementById('share-creative-modal')).toBeNull()
+  })
+
 })

@@ -1,4 +1,4 @@
-import { csrfToken, showError, clearError, updateStepVisibility, openOAuthPopup, fetchWithCsrf, setupModalClose } from 'collavre/modules/integration_wizard';
+import { csrfToken, showError, clearError, updateStepVisibility, requireCreativeId, resetConnectView, sendJson, appendLabeledInput } from 'collavre/modules/integration_wizard';
 import { alertDialog, confirmDialog } from 'collavre/lib/utils/dialog';
 import { deriveConnectState, shouldShowConnectNext } from './github_wizard_state.js';
 
@@ -72,23 +72,11 @@ if (!githubIntegrationInitialized) {
       userConnected = false;
       selectedReposForDeletion = new Set();
       statusEl.textContent = '';
-      errorEl.style.display = 'none';
-      errorEl.textContent = '';
+      clearError(errorEl);
       if (summaryInstructions) summaryInstructions.style.display = 'none';
-      
-      if (existingContainer) {
-        existingContainer.style.display = 'none';
-      }
-      if (existingList) {
-        existingList.innerHTML = '';
-      }
-      if (connectMessage) {
-        connectMessage.style.display = '';
-      }
-      if (deleteBtn) deleteBtn.style.display = 'none';
+      resetConnectView({ existingContainer, existingList, connectMessage, deleteBtn, loginBtn });
       if (resyncBtn) resyncBtn.style.display = 'none';
       updateDeleteButtonState();
-      if (loginBtn) loginBtn.style.display = 'inline-block';
       updateStep();
     }
 
@@ -98,12 +86,7 @@ if (!githubIntegrationInitialized) {
     }
 
     function updateStep() {
-      ['connect', 'organization', 'repositories', 'markdown-sync', 'summary']
-        .forEach(function (step) {
-          const el = document.getElementById(`github-step-${step}`);
-          if (!el) return;
-          el.style.display = (step === currentStep) ? 'block' : 'none';
-        });
+      updateStepVisibility(currentStep, ['connect', 'organization', 'repositories', 'markdown-sync', 'summary'], 'github-step');
 
       if (currentStep === 'connect') {
         prevBtn.style.display = 'none';
@@ -149,13 +132,6 @@ if (!githubIntegrationInitialized) {
         return;
       }
       repos.forEach(function (fullName) {
-        const label = document.createElement('label');
-        label.style.display = 'flex';
-        label.style.alignItems = 'center';
-        label.style.gap = '0.5em';
-        label.style.marginBottom = '0.5em';
-        label.style.cursor = 'pointer';
-
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.value = fullName;
@@ -168,12 +144,7 @@ if (!githubIntegrationInitialized) {
           }
         });
 
-        const span = document.createElement('span');
-        span.textContent = fullName + ' — Markdown Sync';
-
-        label.appendChild(input);
-        label.appendChild(span);
-        markdownSyncList.appendChild(label);
+        appendLabeledInput(markdownSyncList, input, fullName + ' — Markdown Sync');
       });
     }
 
@@ -187,23 +158,12 @@ if (!githubIntegrationInitialized) {
       document.body.classList.remove('no-scroll');
     }
 
-    function showError(message) {
-      if (!message) return;
-      errorEl.textContent = message;
-      errorEl.style.display = 'block';
-    }
-
-    function clearError() {
-      errorEl.textContent = '';
-      errorEl.style.display = 'none';
-    }
-
     function fetchStatus() {
       if (!creativeId) {
-        showError(modal.dataset.noCreative);
+        showError(errorEl, modal.dataset.noCreative);
         return;
       }
-      clearError();
+      clearError(errorEl);
       fetch(`/github/creatives/${creativeId}/integration`, { headers: { Accept: 'application/json' } })
         .then(function (response) { return response.json(); })
         .then(function (data) {
@@ -261,7 +221,7 @@ if (!githubIntegrationInitialized) {
           }
         })
         .catch(function () {
-          showError('Github 연동 정보를 불러오지 못했습니다.');
+          showError(errorEl, 'Github 연동 정보를 불러오지 못했습니다.');
         });
     }
 
@@ -338,7 +298,7 @@ if (!githubIntegrationInitialized) {
           renderOrganizations();
         })
         .catch(function () {
-          showError('Organization 목록을 불러오지 못했습니다.');
+          showError(errorEl, 'Organization 목록을 불러오지 못했습니다.');
         });
     }
 
@@ -352,13 +312,6 @@ if (!githubIntegrationInitialized) {
         return;
       }
       organizations.forEach(function (org) {
-        const label = document.createElement('label');
-        label.style.display = 'flex';
-        label.style.alignItems = 'center';
-        label.style.gap = '0.5em';
-        label.style.marginBottom = '0.5em';
-        label.style.cursor = 'pointer';
-
         const input = document.createElement('input');
         input.type = 'radio';
         input.name = 'github-organization';
@@ -371,19 +324,14 @@ if (!githubIntegrationInitialized) {
           nextBtn.disabled = false;
         });
 
-        const span = document.createElement('span');
-        span.textContent = org.name || org.login;
-
-        label.appendChild(input);
-        label.appendChild(span);
-        orgList.appendChild(label);
+        appendLabeledInput(orgList, input, org.name || org.login);
       });
       nextBtn.disabled = !selectedOrg;
     }
 
     function loadRepositories() {
       if (!selectedOrg) return;
-      clearError();
+      clearError(errorEl);
       if (repoList) {
         repoList.textContent = '...';
       }
@@ -396,7 +344,7 @@ if (!githubIntegrationInitialized) {
         })
         .catch(function () {
           if (repoList) repoList.textContent = '';
-          showError('Repository 목록을 불러오지 못했습니다.');
+          showError(errorEl, 'Repository 목록을 불러오지 못했습니다.');
         });
     }
 
@@ -410,13 +358,6 @@ if (!githubIntegrationInitialized) {
         return;
       }
       repositories.forEach(function (repo) {
-        const label = document.createElement('label');
-        label.style.display = 'flex';
-        label.style.alignItems = 'center';
-        label.style.gap = '0.5em';
-        label.style.marginBottom = '0.5em';
-        label.style.cursor = 'pointer';
-
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.value = repo.full_name;
@@ -429,12 +370,7 @@ if (!githubIntegrationInitialized) {
           }
         });
 
-        const span = document.createElement('span');
-        span.textContent = repo.full_name;
-
-        label.appendChild(input);
-        label.appendChild(span);
-        repoList.appendChild(label);
+        appendLabeledInput(repoList, input, repo.full_name);
       });
     }
 
@@ -497,25 +433,17 @@ if (!githubIntegrationInitialized) {
     }
 
     function saveSelection() {
-      clearError();
+      clearError(errorEl);
       const markdownSync = {};
       Array.from(selectedRepos).forEach(function (repo) {
         markdownSync[repo] = markdownSyncRepos.has(repo);
       });
       const payload = { repositories: Array.from(selectedRepos), markdown_sync: markdownSync };
-      
-      fetch(`/github/creatives/${creativeId}/integration`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfToken()
-        },
-        body: JSON.stringify(payload)
-      })
-        .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+
+      sendJson(`/github/creatives/${creativeId}/integration`, 'PATCH', payload)
         .then(function (result) {
           if (!result.ok) {
-            showError(result.body.error || '연동 저장 중 오류가 발생했습니다.');
+            showError(errorEl, result.body.error || '연동 저장 중 오류가 발생했습니다.');
             return;
           }
           selectedRepos = new Set(result.body.selected_repositories || []);
@@ -526,16 +454,13 @@ if (!githubIntegrationInitialized) {
           alertDialog(modal.dataset.successMessage);
         })
         .catch(function () {
-          showError('연동 정보를 저장하지 못했습니다.');
+          showError(errorEl, '연동 정보를 저장하지 못했습니다.');
         });
     }
 
     openBtn.addEventListener('click', function () {
-      creativeId = openBtn.dataset.creativeId;
-      if (!creativeId) {
-        alertDialog(modal.dataset.noCreative);
-        return;
-      }
+      creativeId = requireCreativeId(openBtn, modal);
+      if (!creativeId) return;
       resetWizard();
       showModal();
       fetchStatus();
@@ -547,7 +472,7 @@ if (!githubIntegrationInitialized) {
     });
 
     prevBtn.addEventListener('click', function () {
-      clearError();
+      clearError(errorEl);
       if (currentStep === 'organization') {
         currentStep = 'connect';
       } else if (currentStep === 'repositories') {
@@ -563,7 +488,7 @@ if (!githubIntegrationInitialized) {
     });
 
     nextBtn.addEventListener('click', function () {
-      clearError();
+      clearError(errorEl);
       if (currentStep === 'connect') {
         currentStep = 'organization';
         updateStep();
@@ -613,26 +538,18 @@ if (!githubIntegrationInitialized) {
         alertDialog(modal.dataset.noCreative);
         return;
       }
-      clearError();
+      clearError(errorEl);
       const selectedToDelete = Array.from(selectedReposForDeletion);
       if (!selectedToDelete.length) {
-        showError(deleteSelectWarning);
+        showError(errorEl, deleteSelectWarning);
         return;
       }
       if (!(await confirmDialog(deleteConfirm, { danger: true }))) return;
 
-      fetch(`/github/creatives/${creativeId}/integration`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': csrfToken()
-        },
-        body: JSON.stringify({ repositories: selectedToDelete })
-      })
-        .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+      sendJson(`/github/creatives/${creativeId}/integration`, 'DELETE', { repositories: selectedToDelete })
         .then(function (result) {
           if (!result.ok) {
-            showError(result.body.error || deleteError);
+            showError(errorEl, result.body.error || deleteError);
             return;
           }
 
@@ -654,17 +571,17 @@ if (!githubIntegrationInitialized) {
           }
         })
         .catch(function () {
-          showError(deleteError);
+          showError(errorEl, deleteError);
         });
     });
 
     resyncBtn?.addEventListener('click', async function () {
       if (!creativeId) return;
-      clearError();
+      clearError(errorEl);
       const checkboxes = existingList ? existingList.querySelectorAll('.github-existing-repo-checkbox:checked') : [];
       const selectedToResync = Array.from(checkboxes).map(cb => cb.value);
       if (!selectedToResync.length) {
-        showError(resyncSelectWarning);
+        showError(errorEl, resyncSelectWarning);
         return;
       }
       if (!(await confirmDialog(resyncConfirm))) return;
@@ -674,21 +591,13 @@ if (!githubIntegrationInitialized) {
       let failed = 0;
 
       selectedToResync.forEach(function (repo) {
-        fetch(`/github/creatives/${creativeId}/integration/resync`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken()
-          },
-          body: JSON.stringify({ repository: repo })
-        })
-          .then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+        sendJson(`/github/creatives/${creativeId}/integration/resync`, 'POST', { repository: repo })
           .then(function (result) {
             completed++;
             if (!result.ok) failed++;
             if (completed === selectedToResync.length) {
               if (failed > 0) {
-                showError(resyncError);
+                showError(errorEl, resyncError);
               } else {
                 statusEl.textContent = resyncSuccess;
               }
@@ -699,7 +608,7 @@ if (!githubIntegrationInitialized) {
             completed++;
             failed++;
             if (completed === selectedToResync.length) {
-              showError(resyncError);
+              showError(errorEl, resyncError);
               resyncBtn.disabled = false;
             }
           });

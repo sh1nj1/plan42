@@ -73,21 +73,7 @@ module Collavre
     # Same bot user as GithubPrChannel so all channel-injected comments come
     # from a single "Channel" speaker in the topic timeline.
     def channel_bot_user
-      @channel_bot_user ||=
-        Collavre::User.find_by(email: Collavre::Channel::BOT_EMAIL) ||
-          ensure_channel_bot_user!
-    end
-
-    def ensure_channel_bot_user!
-      email = Collavre::Channel::BOT_EMAIL
-      user = Collavre::User.find_or_initialize_by(email: email)
-      user.name = Collavre::Channel::BOT_NAME
-      user.password = SecureRandom.hex(32) if user.new_record?
-      user.email_verified_at ||= Time.current
-      user.searchable = false if user.respond_to?(:searchable=)
-      user.llm_vendor = nil
-      user.save!
-      user
+      @channel_bot_user ||= Collavre::Channel.bot_user
     end
   end
 end

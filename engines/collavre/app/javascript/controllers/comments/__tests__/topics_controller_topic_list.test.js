@@ -331,11 +331,11 @@ describe('TopicsController#openTopicListPopup', () => {
 
 		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 1, currentTarget: { setPointerCapture: jest.fn() } })
 		controller.cancelTopicListToggle({ pointerId: 1 })
-		expect(controller.topicListTogglePointerDown).toBe(false)
+		expect(controller.topicListToggleGuard.pointerDown).toBe(false)
 
 		controller.prepareTopicListToggle({ isPrimary: true, button: 0, pointerId: 2, currentTarget: { setPointerCapture: jest.fn() } })
 		controller.finishTopicListToggle({ currentTarget: btn, clientX: 25, clientY: 15, pointerId: 2 })
-		expect(controller.topicListTogglePointerDown).toBe(false)
+		expect(controller.topicListToggleGuard.pointerDown).toBe(false)
 	})
 
 	test('clears a completed pointer gesture that does not dispatch click', () => {
@@ -352,7 +352,7 @@ describe('TopicsController#openTopicListPopup', () => {
 		controller.finishTopicListToggle({ currentTarget: btn, clientX: 15, clientY: 15, pointerId: 1 })
 		jest.runOnlyPendingTimers()
 
-		expect(controller.topicListTogglePointerDown).toBe(false)
+		expect(controller.topicListToggleGuard.pointerDown).toBe(false)
 		jest.useRealTimers()
 	})
 
@@ -361,7 +361,7 @@ describe('TopicsController#openTopicListPopup', () => {
 		controller.prepareTopicListToggle({ isPrimary: true, button: 2, pointerId: 2 })
 		controller.cancelTopicListToggle({ pointerId: 3 })
 
-		expect(controller.topicListTogglePointerDown).toBe(false)
+		expect(controller.topicListToggleGuard.pointerDown).toBe(false)
 	})
 
     test('removes the topic-list close listener when disconnecting', () => {

@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "net/http"
+require "timeout"
 require Rails.root.join("lib/perf/fake_llm_server").to_s
 
 module Perf
@@ -17,6 +18,12 @@ module Perf
     def post_completion(body)
       Net::HTTP.post(URI("#{@server.base_url}/chat/completions"), JSON.generate(body),
                      "Content-Type" => "application/json")
+    end
+
+    def wait_for_request_tracking
+      Timeout.timeout(5, Timeout::Error, "Fake LLM server did not finish tracking requests") do
+        sleep 0.01 until @server.requests.all?(&:finished_at)
+      end
     end
 
     test "lists a model for endpoint health probes" do
@@ -39,6 +46,7 @@ module Perf
       assert_equal "stop", chunks.last.dig("choices", 0, "finish_reason")
       assert_equal 1, @server.requests.size
       assert_equal "PERF-x-u2-a1", @server.requests.first.tag
+      wait_for_request_tracking
       assert_operator @server.requests.first.finished_at, :>, @server.requests.first.started_at
     end
 
@@ -52,7 +60,8 @@ module Perf
 
     test "tracks how many requests were in flight at once" do
       threads = Array.new(3) { |i| Thread.new { post_completion(stream: true, messages: [ { content: "PERF-#{i}" } ]) } }
-      threads.each(&:join)
+      threads.each(&:value)
+      wait_for_request_tracking
 
       assert_equal 3, @server.peak_in_flight
       assert_equal 0, @server.in_flight
@@ -60,7 +69,8 @@ module Perf
 
     test "leaves untagged requests out of the in-flight peak" do
       threads = [ "PERF-1", "no tag" ].map { |content| Thread.new { post_completion(stream: true, messages: [ { content: content } ]) } }
-      threads.each(&:join)
+      threads.each(&:value)
+      wait_for_request_tracking
 
       assert_equal 2, @server.requests.size
       assert_equal 1, @server.peak_in_flight

@@ -1075,10 +1075,6 @@ export default class extends Controller {
         return this._topicListToggleGuard
     }
 
-    get topicListTogglePointerDown() {
-        return this.topicListToggleGuard.pointerDown
-    }
-
     prepareTopicListToggle(event) {
         const modal = document.getElementById('topic-list-modal')
         const popup = modal && this.application.getControllerForElementAndIdentifier(modal, 'topic-list')
@@ -1640,26 +1636,6 @@ export default class extends Controller {
     // first. The trailing nonce keeps the Action Cable echo identifier unique.
     newLastTopicSaveClientId() {
         return this.saveOrderState.nextClientId()
-    }
-
-    // A Turbo replacement creates a new controller while an earlier request can
-    // still be running on Rails. Keep the fence identity and counter for this
-    // browser tab so the server can reject that earlier request after the new
-    // controller has saved a later selection.
-    lastTopicSaveSessionId() {
-        return this.saveOrderState.windowSessionId()
-    }
-
-    // sessionStorage survives a reload, but browsers copy it into a duplicated
-    // tab. window.name belongs to one top-level browsing context and also
-    // survives reloads, so it keeps Turbo replacements on one fence while a
-    // copied tab starts a separate ordering stream.
-    lastTopicSaveWindowSessionId() {
-        return this.saveOrderState.currentWindowSessionId()
-    }
-
-    nextLastTopicSaveSequence() {
-        return this.saveOrderState.nextSequence()
     }
 
     // A request that never settles must not hold every later pick behind it.

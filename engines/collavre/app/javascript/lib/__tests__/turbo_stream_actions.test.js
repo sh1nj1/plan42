@@ -210,6 +210,8 @@ test('an older update broadcast cannot replace a queued local row after the edit
   const payload = { action: 'updated', creative: { id: 42, description: 'old server body', inline_editor_payload: { description: 'old server body' } } }
   dispatchCreativeTreeStream(payload)
   expect(applyRowProperties).not.toHaveBeenCalled()
+  // The save's completion reads this to refetch the row the broadcast described.
+  expect(document.querySelector('creative-tree-row').dataset.missedSync).toBe('true')
   delete document.querySelector('.creative-tree').dataset.saveState
   dispatchCreativeTreeStream(payload)
   expect(applyRowProperties).toHaveBeenCalledTimes(1)

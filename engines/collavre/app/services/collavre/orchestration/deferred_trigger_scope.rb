@@ -55,7 +55,7 @@ module Collavre
       end
 
       def review_message_ids
-        Comment.review_messages
+        Comment.own_turn_messages
           .where(creative_id: @context.dig("creative", "id"), topic_id: @context.dig("topic", "id"))
           .select(:id)
       end

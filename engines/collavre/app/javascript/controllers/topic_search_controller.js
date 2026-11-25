@@ -1,3 +1,4 @@
+import { escapeHtmlText } from '../lib/html_escape'
 import CommonPopupController from './common_popup_controller'
 import { fetchNextTopicName, createTopicWithComments } from '../lib/api/topics'
 import { alertDialog } from '../lib/utils/dialog'
@@ -155,10 +156,7 @@ export default class extends CommonPopupController {
 
     renderItem(item) {
         const text = item.label || ''
-        const escaped = text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
+        const escaped = escapeHtmlText(text)
         if (item.isCreate) {
             return `<span class="topic-create-option">${escaped}</span>`
         }

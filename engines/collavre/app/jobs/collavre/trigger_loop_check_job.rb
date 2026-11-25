@@ -31,11 +31,7 @@ module Collavre
       last_agent_comment = find_last_agent_comment(child_creative, topic, task)
       return unless last_agent_comment
 
-      # Infrastructure errors (timeout, connection failure) → retry without consuming iteration
-      if infrastructure_error?(last_agent_comment)
-        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
-        return
-      end
+      return if handle_error_reply(last_agent_comment, child_creative, topic, parent_creative, loop_config, task)
 
       status = evaluate_response(child_creative, parent_creative, last_agent_comment, task, loop_config)
 
@@ -96,6 +92,22 @@ module Collavre
       raise
     end
 
+    # An error reply is not a task result. A prompt the provider rejected as
+    # too large fails the same way on every retry, so the loop pauses;
+    # infrastructure errors (timeout, connection failure) retry without
+    # consuming an iteration. Returns whether the reply was handled here.
+    def handle_error_reply(comment, child_creative, topic, parent_creative, loop_config, task)
+      if prompt_too_large_error?(comment)
+        update_loop_data(child_creative, state: "stuck", infra_retry_count: 0)
+        post_loop_notice(child_creative, topic, I18n.t("collavre.trigger_loop.prompt_too_large"))
+      elsif infrastructure_error?(comment)
+        handle_infra_error(child_creative, topic, parent_creative, loop_config, task)
+      else
+        return false
+      end
+      true
+    end
+
     # Detect infrastructure errors (timeout, connection failure, etc.)
     # These are NOT valid task results — the agent never actually worked.
     MAX_INFRA_RETRIES = 3
@@ -123,6 +135,23 @@ module Collavre
       def infrastructure_error_patterns
         BUILTIN_INFRASTRUCTURE_ERROR_PATTERNS + registered_infrastructure_error_patterns
       end
+    end
+
+    # Provider rejections of an oversized prompt, as AiClient#chat streams
+    # them into the reply ("⚠️ AI Error: ..."). Matched only on that error
+    # line so an agent merely discussing context limits does not stop a loop.
+    PROMPT_TOO_LARGE_PATTERNS = [
+      /input_too_large/i,
+      /context_length_exceeded/i,
+      /maximum context length/i,
+      /prompt is too long/i,
+      /input token count exceeds/i,
+      /exceeds the maximum (?:input )?length/i
+    ].freeze
+
+    def prompt_too_large_error?(comment)
+      error_line = comment.content.to_s[/⚠️ AI Error:.*/]
+      error_line.present? && PROMPT_TOO_LARGE_PATTERNS.any? { |pattern| error_line.match?(pattern) }
     end
 
     def infrastructure_error?(comment)
@@ -241,7 +270,7 @@ module Collavre
         return :continue
       end
 
-      instructions = collect_fallback_instructions(child_creative, parent_creative, verifier)
+      instructions = collect_loop_instructions(child_creative, parent_creative, verifier)
 
       prompt = <<~PROMPT
         ## Task instructions:
@@ -274,31 +303,14 @@ module Collavre
     def pick_fallback_agent(_creative, child_creative, task_agent_id = nil)
       ai_agents = child_creative.all_shared_users(:feedback)
                           .map(&:user)
-                          .select { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
+                          .select { |agent| decision_capable?(agent, child_creative) }
 
       return decision_agent(ai_agents) if ai_agents.any?
 
       # Prefer task write agents before the independently authorized keep task agent.
       task_agent = User.find_by(id: task_agent_id) if child_creative.keep_loop?
       (child_creative.all_shared_users(:write).map(&:user) + [ task_agent ]).compact.uniq(&:id)
-              .find { |agent| (agent.supports?(:judge) || agent.supports?(:chat)) && Creatives::PermissionChecker.current_allowed?(child_creative.id, agent, :feedback) }
-    end
-
-    # Collect instructions from context creatives for LLM evaluation
-    def collect_fallback_instructions(child_creative, parent_creative, verifier)
-      parts = [ child_creative.data&.dig("trigger", "loop", "goal") ].compact
-      contexts = (parent_creative.context_creatives.to_a + child_creative.context_creatives.to_a).uniq(&:id)
-      contexts.each do |ctx|
-        next unless Creatives::PermissionChecker.current_allowed?(ctx.id, verifier, :read)
-
-        desc = ctx.description.to_s.strip
-        parts << desc if desc.present?
-      end
-
-      child_desc = child_creative.description.to_s.strip
-      parts << "Task: #{child_desc}" if child_desc.present?
-
-      parts.join("\n\n---\n\n")
+              .find { |agent| decision_capable?(agent, child_creative) }
     end
   end
 end

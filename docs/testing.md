@@ -14,7 +14,7 @@ bin/rails test test/controllers/some_test.rb
 
 # Engine tests only
 bin/rails test engines/collavre/test/
-bin/rails test engines/collavre_notion/test/
+bin/rails test engines/collavre_github/test/
 
 # System tests
 bin/rails test:system
@@ -31,7 +31,7 @@ bin/rails test:system
 test/                           # Host app tests
 engines/collavre/test/          # Core engine tests
 engines/collavre_openclaw/test/ # OpenClaw tests
-engines/collavre_notion/test/   # Notion tests
+engines/collavre_github/test/   # GitHub tests
 ```
 
 ## Fixtures
@@ -68,15 +68,15 @@ In engine tests, use explicit route helpers:
 ```ruby
 # Good - explicit engine routes
 get main_app.creative_github_integration_path(@creative)
-get notion_engine.creative_notion_integration_path(@creative)
+get github_engine.creative_github_integration_path(@creative)
 
 # Access helpers
 def main_app
   Rails.application.routes.url_helpers
 end
 
-def notion_engine
-  CollavreNotion::Engine.routes.url_helpers
+def github_engine
+  CollavreGithub::Engine.routes.url_helpers
 end
 ```
 
@@ -87,7 +87,7 @@ test "handles external API" do
   mock_response = Minitest::Mock.new
   mock_response.expect :body, { status: "ok" }.to_json
 
-  NotionClient.stub :request, mock_response do
+  CollavreGithub::Client.stub :new, mock_response do
     # Test code
   end
 end

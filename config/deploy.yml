@@ -55,8 +55,6 @@ env:
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
     - GOOGLE_APPLICATION_CREDENTIALS
-    - NOTION_CLIENT_ID
-    - NOTION_CLIENT_SECRET
     - FIREBASE_API_KEY
     - FIREBASE_AUTH_DOMAIN
     - FIREBASE_PROJECT_ID
@@ -80,9 +78,6 @@ env:
     - ORIGIN_SHARED_SECRET
     - PUBLIC_ASSETS_HOST
     - CLOUDFRONT_DISTRIBUTION_ID
-    - LINEAR_CLIENT_ID
-    - LINEAR_CLIENT_SECRET
-    - LINEAR_OAUTH_REDIRECT_URI
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
     # Defaults on for single-server deployments. Targets that share a database

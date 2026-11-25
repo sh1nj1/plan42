@@ -56,6 +56,22 @@ class McpOauthMiddlewareTest < ActionDispatch::IntegrationTest
     Collavre::Current.reset
   end
 
+  test "carries the X-Collavre-Task header into Current.mcp_task_id" do
+    seen = []
+    probe = ->(_env) { seen << Collavre::Current.mcp_task_id; [ 200, {}, [] ] }
+    middleware = McpOauthMiddleware.new(probe)
+
+    [ "42", "" ].each do |task_id|
+      Collavre::Current.reset
+      middleware.call(Rack::MockRequest.env_for("/mcp/messages", "HTTP_AUTHORIZATION" => "Bearer #{@token.token}",
+                                                                  "HTTP_X_COLLAVRE_TASK" => task_id))
+    end
+
+    assert_equal [ "42", nil ], seen
+  ensure
+    Collavre::Current.reset
+  end
+
   private
 
   def create_workspace

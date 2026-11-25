@@ -116,10 +116,6 @@ export function renderMarkdown(html) {
   return sanitize(marked.parse(html))
 }
 
-export function renderMarkdownInline(html) {
-  return sanitize(marked.parseInline(html))
-}
-
 export function renderCommentMarkdown(text) {
   const content = text || ''
   const useBlock = content.includes('\n') || content.includes('```')

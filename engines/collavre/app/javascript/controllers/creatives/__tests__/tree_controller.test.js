@@ -1091,6 +1091,16 @@ describe('CreativesTreeController requestReload', () => {
     return { container, application, controller, load }
   }
 
+  // Trees left connected by earlier suites listen on the same window, so a drop
+  // is delivered to this controller's own listener rather than dispatched.
+  const installWithDropListener = async () => {
+    const addEventListener = jest.spyOn(window, 'addEventListener')
+    const installed = await installConnected()
+    const handleDrop = addEventListener.mock.calls
+      .filter(([type]) => type === 'collavre:creative-drop-complete').pop()[1]
+    return { ...installed, handleDrop }
+  }
+
   beforeEach(() => {
     originalFetch = global.fetch
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ creatives: [] }) })
@@ -1116,9 +1126,9 @@ describe('CreativesTreeController requestReload', () => {
   })
 
   test('reloads with view preservation after a creative drop completes', async () => {
-    const { application, controller, load } = await installConnected()
+    const { application, handleDrop, load } = await installWithDropListener()
 
-    controller._handleCreativeDrop()
+    handleDrop(new CustomEvent('collavre:creative-drop-complete'))
     jest.advanceTimersByTime(300)
 
     expect(load).toHaveBeenCalledWith({ preserveView: true })
@@ -1126,18 +1136,87 @@ describe('CreativesTreeController requestReload', () => {
     application.stop()
   })
 
+  // The row is already where the server put it; refetching would replace every
+  // row in the list to show the same thing.
+  test('does not reload after a drop this tree already rendered in place', async () => {
+    const { application, handleDrop, load } = await installWithDropListener()
+
+    handleDrop({ detail: { creativeIds: ['2'], context: 'target', rendered: true } })
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
+  test.each([
+    ['from another tree or window', { creativeIds: ['2'], context: 'source' }],
+    ['into a branch that is not rendered', { creativeIds: ['2'], context: 'target', rendered: false }],
+  ])('reloads after a drop %s', async (_name, detail) => {
+    const { application, handleDrop, load } = await installWithDropListener()
+
+    handleDrop({ detail })
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledWith({ preserveView: true })
+
+    application.stop()
+  })
+
+  // A settled save is not a reason to refetch: the row already shows it.
+  test('a settled save alone does not reload the tree', async () => {
+    const { application, load } = await installConnected()
+
+    document.dispatchEvent(new CustomEvent('creative-sync:release'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
+  test('a settled save releases the reload it was holding back', async () => {
+    const { application, controller, load } = await installConnected()
+    const tree = document.createElement('div')
+    tree.className = 'creative-tree'
+    tree.dataset.saveState = 'pending'
+    controller.element.appendChild(tree)
+
+    controller.requestReload()
+    jest.advanceTimersByTime(5000)
+    expect(load).not.toHaveBeenCalled()
+
+    delete tree.dataset.saveState
+    document.dispatchEvent(new CustomEvent('creative-sync:release'))
+    jest.advanceTimersByTime(300)
+
+    expect(load).toHaveBeenCalledTimes(1)
+
+    application.stop()
+  })
+
+  test('stops listening for settled saves once disconnected', async () => {
+    const { application, controller, load } = await installConnected()
+    controller._pendingRefetch = true
+
+    controller.disconnect()
+    document.dispatchEvent(new CustomEvent('creative-sync:release'))
+    jest.advanceTimersByTime(5000)
+
+    expect(load).not.toHaveBeenCalled()
+
+    application.stop()
+  })
+
   // The listener has to be removed by the same reference connect() registered,
   // or every reconnect leaves another tree reloading off a window-wide event.
   test('stops listening for drop completions once disconnected', async () => {
-    const { application, controller } = await installConnected()
+    const { application, controller, handleDrop } = await installWithDropListener()
     const removeEventListener = jest.spyOn(window, 'removeEventListener')
 
     controller.disconnect()
 
-    expect(removeEventListener).toHaveBeenCalledWith(
-      'collavre:creative-drop-complete',
-      controller._handleCreativeDrop
-    )
+    expect(removeEventListener).toHaveBeenCalledWith('collavre:creative-drop-complete', handleDrop)
 
     application.stop()
   })

@@ -228,5 +228,216 @@ module Creatives
       assert grandchild_cache.read?
       assert_equal child_share.id, grandchild_cache.source_share_id
     end
+
+    # --- rebuild_for_creative: ancestor shares are scoped to the rebuilt subtree ---
+
+    test "rebuild_for_creative applies every ancestor user's share to a new leaf" do
+      third_user = users(:three)
+      root_share = child_share = nil
+      perform_enqueued_jobs do
+        root_share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+        child_share = CreativeShare.create!(creative: @child, user: third_user, permission: "write")
+      end
+
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, description: "Leaf", progress: 0.0, parent: @grandchild)
+      end
+
+      shared_cache = CreativeSharesCache.find_by(creative: leaf, user: @shared_user)
+      third_cache = CreativeSharesCache.find_by(creative: leaf, user: third_user)
+      assert shared_cache.read?
+      assert_equal root_share.id, shared_cache.source_share_id
+      assert third_cache.write?
+      assert_equal child_share.id, third_cache.source_share_id
+      assert CreativeSharesCache.find_by(creative: leaf, user: @owner, source_share_id: nil).admin?
+    end
+
+    test "rebuild_for_creative uses the closest ancestor share for the same user" do
+      child_share = nil
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+        child_share = CreativeShare.create!(creative: @child, user: @shared_user, permission: "write")
+      end
+
+      Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@grandchild)
+
+      cache = CreativeSharesCache.find_by(creative: @grandchild, user: @shared_user)
+      assert cache.write?
+      assert_equal child_share.id, cache.source_share_id
+      assert_equal 1, CreativeSharesCache.where(creative: @grandchild, user: @shared_user).count
+    end
+
+    test "rebuild_for_creative propagates an ancestor public share into the subtree" do
+      public_share = nil
+      perform_enqueued_jobs do
+        public_share = CreativeShare.create!(creative: @root, user: nil, permission: "read")
+      end
+      CreativeSharesCache.where(creative: [ @child, @grandchild ], user_id: nil).delete_all
+
+      Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@child)
+
+      [ @child, @grandchild ].each do |creative|
+        rows = CreativeSharesCache.where(creative: creative, user_id: nil)
+        assert_equal 1, rows.count
+        assert rows.first.read?
+        assert_equal public_share.id, rows.first.source_share_id
+      end
+    end
+
+    test "rebuild_for_creative stores an ancestor no_access share alongside a public share" do
+      no_access_share = nil
+      perform_enqueued_jobs do
+        CreativeShare.create!(creative: @root, user: nil, permission: "read")
+        no_access_share = CreativeShare.create!(creative: @child, user: @shared_user, permission: "no_access")
+      end
+
+      leaf = nil
+      perform_enqueued_jobs do
+        leaf = Creative.create!(user: @owner, description: "Leaf", progress: 0.0, parent: @grandchild)
+      end
+
+      user_cache = CreativeSharesCache.find_by(creative: leaf, user: @shared_user)
+      assert user_cache.no_access?
+      assert_equal no_access_share.id, user_cache.source_share_id
+      assert CreativeSharesCache.find_by(creative: leaf, user_id: nil).read?
+    end
+
+    test "rebuild_for_creative lets an in-subtree direct share override the ancestor share" do
+      root_share = grandchild_share = nil
+      perform_enqueued_jobs do
+        root_share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+        grandchild_share = CreativeShare.create!(creative: @grandchild, user: @shared_user, permission: "no_access")
+      end
+
+      Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@child)
+
+      child_cache = CreativeSharesCache.find_by(creative: @child, user: @shared_user)
+      grandchild_cache = CreativeSharesCache.find_by(creative: @grandchild, user: @shared_user)
+      assert child_cache.read?
+      assert_equal root_share.id, child_cache.source_share_id
+      assert grandchild_cache.no_access?
+      assert_equal grandchild_share.id, grandchild_cache.source_share_id
+    end
+
+    test "ancestor propagation never writes over a closer direct share region" do
+      third_user = users(:three)
+      root_share = third_share = nil
+      perform_enqueued_jobs do
+        root_share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "write")
+        third_share = CreativeShare.create!(creative: @root, user: third_user, permission: "read")
+        CreativeShare.create!(creative: @grandchild, user: @shared_user, permission: "no_access")
+      end
+      subtree_ids = @child.self_and_descendant_ids
+      CreativeSharesCache.where(creative_id: subtree_ids).where.not(source_share_id: nil).delete_all
+
+      # Only the ancestor step: the direct no_access share is not re-applied yet.
+      Collavre::Creatives::PermissionCacheBuilder.send(:rebuild_from_ancestors_for_subtree, @child, subtree_ids)
+
+      assert_equal root_share.id, CreativeSharesCache.find_by(creative: @child, user: @shared_user).source_share_id
+      assert_not CreativeSharesCache.exists?(creative: @grandchild, user: @shared_user),
+                 "ancestor grant must not be exposed inside a closer no_access region"
+      # A user without a closer share still gets the ancestor share everywhere.
+      [ @child, @grandchild ].each do |creative|
+        assert_equal third_share.id, CreativeSharesCache.find_by(creative: creative, user: third_user).source_share_id
+      end
+    end
+
+    test "rebuild_for_creative rebuilds a moved subtree from the new ancestors only" do
+      third_user = users(:three)
+      other_root = other_share = nil
+      perform_enqueued_jobs do
+        other_root = Creative.create!(user: @owner, description: "Other Root", progress: 0.0)
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+        other_share = CreativeShare.create!(creative: other_root, user: third_user, permission: "write")
+      end
+
+      perform_enqueued_jobs { @child.update!(parent: other_root) }
+
+      [ @child, @grandchild ].each do |creative|
+        assert_not CreativeSharesCache.exists?(creative: creative, user: @shared_user),
+                   "stale share from the old ancestor must be removed"
+        cache = CreativeSharesCache.find_by(creative: creative, user: third_user)
+        assert cache.write?
+        assert_equal other_share.id, cache.source_share_id
+      end
+    end
+
+    test "rebuild_for_creative does not touch cache rows outside the rebuilt subtree" do
+      sibling = nil
+      perform_enqueued_jobs do
+        sibling = Creative.create!(user: @owner, description: "Sibling", progress: 0.0, parent: @root)
+        CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+        CreativeShare.create!(creative: @root, user: nil, permission: "read")
+      end
+      outside_ids = [ @root.id, @child.id, sibling.id ]
+      before = outside_rows_snapshot(outside_ids)
+      # Tamper with an outside row: a rebuild scoped to the subtree must not repair it.
+      # (The old whole-subtree propagation would have rewritten it back to read.)
+      CreativeSharesCache.where(creative: sibling, user: @shared_user)
+                         .update_all(permission: CreativeShare.permissions[:write])
+
+      writes = capture_cache_writes do
+        Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@grandchild)
+      end
+
+      assert CreativeSharesCache.find_by(creative: sibling, user: @shared_user).write?
+      CreativeSharesCache.where(creative: sibling, user: @shared_user)
+                         .update_all(permission: CreativeShare.permissions[:read])
+      assert_equal before, outside_rows_snapshot(outside_ids)
+      assert CreativeSharesCache.find_by(creative: @grandchild, user: @shared_user).read?
+      assert CreativeSharesCache.find_by(creative: @grandchild, user_id: nil).read?
+      # One upsert for the user share, one insert for the public share, one owner upsert:
+      # all of them for the rebuilt leaf only.
+      assert_equal 3, writes.size
+    end
+
+    test "rebuild_for_creative on a root creative without ancestors keeps direct shares" do
+      share = nil
+      perform_enqueued_jobs do
+        share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+      end
+
+      Collavre::Creatives::PermissionCacheBuilder.rebuild_for_creative(@root)
+
+      rows = CreativeSharesCache.where(user: @shared_user)
+      assert_equal [ @root.id, @child.id, @grandchild.id ].sort, rows.pluck(:creative_id).sort
+      assert rows.all? { |row| row.source_share_id == share.id }
+    end
+
+    test "propagate_share upserts large subtrees in batches" do
+      batch_size = Collavre::Creatives::PermissionCacheBuilder::UPSERT_BATCH_SIZE
+      Collavre::Creatives::PermissionCacheBuilder.send(:remove_const, :UPSERT_BATCH_SIZE)
+      Collavre::Creatives::PermissionCacheBuilder.const_set(:UPSERT_BATCH_SIZE, 2)
+      share = CreativeShare.create!(creative: @root, user: @shared_user, permission: "read")
+
+      writes = capture_cache_writes do
+        Collavre::Creatives::PermissionCacheBuilder.propagate_share(share)
+      end
+
+      assert_equal 2, writes.count { |sql| sql.match?(/INSERT INTO "creative_shares_caches"/i) }
+      assert_equal 3, CreativeSharesCache.where(user: @shared_user, source_share_id: share.id).count
+    ensure
+      Collavre::Creatives::PermissionCacheBuilder.send(:remove_const, :UPSERT_BATCH_SIZE)
+      Collavre::Creatives::PermissionCacheBuilder.const_set(:UPSERT_BATCH_SIZE, batch_size)
+    end
+
+    private
+
+    def outside_rows_snapshot(creative_ids)
+      CreativeSharesCache.where(creative_id: creative_ids)
+                         .order(:id)
+                         .pluck(:id, :creative_id, :user_id, :permission, :source_share_id)
+    end
+
+    def capture_cache_writes
+      writes = []
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        sql = payload[:sql]
+        writes << sql if sql.match?(/\A\s*(INSERT|UPDATE)/i) && sql.include?("creative_shares_caches")
+      end
+      ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+      writes
+    end
   end
 end

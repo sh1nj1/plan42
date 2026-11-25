@@ -56,7 +56,7 @@ class CreativeRowHighlightTest < ApplicationSystemTestCase
 
       row.hover
       assert_equal styles.fetch("background"), page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).backgroundColor")
-      assert_equal "5px", page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).borderRadius")
+      assert_equal "0px", page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).borderRadius")
       assert_match(/inset/, page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).boxShadow"))
 
       %w[light-mode dark-mode].each do |theme|
@@ -75,6 +75,7 @@ class CreativeRowHighlightTest < ApplicationSystemTestCase
             })()
           JS
           assert_equal expected, page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).backgroundColor")
+          assert_equal "0px", page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).borderRadius")
           assert_equal styles.fetch("shadow"), page.evaluate_script("getComputedStyle(document.querySelector('#highlight-fixture .creative-row')).boxShadow")
         end
       end

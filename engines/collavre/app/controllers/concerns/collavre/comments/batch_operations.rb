@@ -29,7 +29,7 @@ module Collavre
           end
         end
 
-        Comment.where(id: comments.map(&:id)).destroy_all
+        Comment.destroy_later(@creative, comments)
 
         head :no_content
       end

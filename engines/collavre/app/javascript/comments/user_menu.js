@@ -118,15 +118,7 @@ function appendPrimaryAgentButton(menu, user, labels) {
   menu.appendChild(button)
 }
 
-export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
-  const state = menuState(online, healthStatus, statusText, labels)
-  const root = document.createElement('div')
-  root.className = 'popup-menu-wrapper comment-user-menu'
-  root.dataset.controller = 'popup-menu comment-user-menu'
-  enableAgentModel(root, user)
-  root.dataset.commentUserMenuUserIdValue = user.id
-  root.dataset.commentUserMenuUserNameValue = user.name
-
+function menuTrigger(user, online, labels, draggable) {
   const trigger = document.createElement('button')
   trigger.type = 'button'
   trigger.className = 'popup-menu-toggle comment-user-menu-trigger'
@@ -136,7 +128,27 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', 'false')
   trigger.appendChild(avatarElement(user, 20, `avatar comment-presence-avatar${online ? '' : ' inactive'}`))
-  root.appendChild(trigger)
+  if (draggable) {
+    const handle = document.createElement('span')
+    handle.className = 'ai-agent-draggable'
+    handle.draggable = true
+    handle.dataset.agentId = user.id
+    handle.appendChild(trigger)
+    return handle
+  }
+  return trigger
+}
+
+export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
+  const state = menuState(online, healthStatus, statusText, labels)
+  const root = document.createElement('div')
+  root.className = 'popup-menu-wrapper comment-user-menu'
+  root.dataset.controller = 'popup-menu comment-user-menu'
+  enableAgentModel(root, user)
+  root.dataset.commentUserMenuUserIdValue = user.id
+  root.dataset.commentUserMenuUserNameValue = user.name
+
+  root.appendChild(menuTrigger(user, online, labels, draggable))
 
   const menu = document.createElement('div')
   menu.id = menuId
@@ -144,6 +156,9 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   menu.dataset.popupMenuTarget = 'menu'
   menu.dataset.action = 'click->popup-menu#menuClick'
   menu.setAttribute('role', 'menu')
+  menu.addEventListener('dragstart', (event) => event.preventDefault())
+  // Keep the chat wheel handler from treating the profile as part of the message area.
+  menu.addEventListener('wheel', (event) => event.stopPropagation(), { passive: true })
   menu.appendChild(menuHeader(user, state, labels))
 
   const profile = document.createElement('a')

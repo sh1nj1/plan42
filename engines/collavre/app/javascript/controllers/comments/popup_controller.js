@@ -1,5 +1,6 @@
 import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
+import { clearChatActiveRow, disconnectCreativeProgress, markChatActiveRow, observeCreativeProgress } from './popup_creative_progress'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
@@ -14,6 +15,7 @@ const LONG_PRESS_MS = 500
 export default class extends Controller {
   static targets = [
     'title',
+    'progress',
     'list',
     'form',
     'closeButton',
@@ -166,6 +168,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    disconnectCreativeProgress(this)
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
     if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
@@ -210,10 +213,6 @@ export default class extends Controller {
 
   get presenceController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--presence')
-  }
-
-  get mentionMenuController() {
-    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--mention-menu')
   }
 
   get topicsController() {
@@ -264,7 +263,7 @@ export default class extends Controller {
           this.reloadDockedHighlight(creativeId, highlightId)
         }
         // Workspace navigation replaces the title after chat has already opened.
-        return this._markChatActiveRow(this.element.dataset.creativeId)
+        return markChatActiveRow(this, this.element.dataset.creativeId)
       }
       this.close()
       return
@@ -310,7 +309,8 @@ export default class extends Controller {
     this.element.dataset.canComment = 'false'
     this.element.dataset.creativeSnippet = ''
     setCreativeTitle(this.titleTarget, this.element.dataset.defaultTitle || '', '')
-    this._clearChatActiveRow()
+    observeCreativeProgress(this)
+    clearChatActiveRow()
     this._hideNavDropdown()
 
     if (this.listController) this.listController.creativeId = null
@@ -364,7 +364,7 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
 
-    this._markChatActiveRow(resolvedCreativeId)
+    markChatActiveRow(this, resolvedCreativeId)
 
     this.prepareSize()
 
@@ -407,7 +407,7 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = 'true'
 
-    this._markChatActiveRow(resolvedCreativeId)
+    markChatActiveRow(this, resolvedCreativeId)
 
     this.showPopup()
 
@@ -496,9 +496,6 @@ export default class extends Controller {
     if (this.presenceController) {
       this.presenceController.onPopupOpened({ creativeId })
     }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId })
-    }
     if (this.contextsController) {
       this.contextsController.onPopupOpened({ creativeId })
     }
@@ -521,7 +518,7 @@ export default class extends Controller {
 
     this._exitFullscreenState()
 
-    this._clearChatActiveRow()
+    clearChatActiveRow()
     this._hideNavDropdown()
     this._releaseWakeLock()
 
@@ -545,7 +542,6 @@ export default class extends Controller {
     this.presenceController?.onPopupClosed()
     this.formController?.onPopupClosed()
     this.listController?.onPopupClosed()
-    this.mentionMenuController?.onPopupClosed()
     this.topicsController?.onPopupClosed()
     this.contextsController?.onPopupClosed()
     this.dropTriggerController?.onPopupClosed()
@@ -1002,19 +998,6 @@ export default class extends Controller {
 
   clearPendingOpenFromUrl() {
     clearPendingOpenFromUrl(this)
-  }
-
-  _markChatActiveRow(creativeId) {
-    this._clearChatActiveRow()
-    if (!creativeId) return
-    const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-    if (row) row.classList.add('chat-active')
-  }
-
-  _clearChatActiveRow() {
-    document.querySelectorAll('creative-tree-row.chat-active').forEach(el => {
-      el.classList.remove('chat-active')
-    })
   }
 
   // Walk up from the target element to find the nearest scrollable ancestor

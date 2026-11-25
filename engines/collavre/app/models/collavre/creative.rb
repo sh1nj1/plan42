@@ -78,6 +78,8 @@ module Collavre
     include HistoryTrackable, CreativeHistoryTopic, CreativeReservedTopics, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
+    has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_creative_id,
+                                inverse_of: :quoted_creative, dependent: :nullify
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
     has_many :comment_snapshots, class_name: "Collavre::CommentSnapshot", dependent: :destroy
 

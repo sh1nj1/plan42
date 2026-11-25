@@ -223,6 +223,12 @@
 .ppt-viewer.ppt-controls-visible #slide-controls :is(button, a),
 .ppt-viewer #slide-controls:has(:focus-visible) :is(button, a) { pointer-events: auto; }
 
+/* Fractional iframe dimensions can round a slide past the viewport by a pixel.
+   Inline presentations need no scrolling; a classic scrollbar would shrink the slide. */
+.ppt-viewer:not(:fullscreen):not(.document-viewer) #slide-view {
+  overflow: hidden;
+}
+
 /* Inline slides follow their frame width; fullscreen still fits both axes. */
 .ppt-viewer:not(:fullscreen) #slide-view .ppt-slide {
   width: 100%;

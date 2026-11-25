@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: prod
     # workflow_dispatch lets the operator pick any branch/ref, and checkout
     # takes that ref by default — so a dispatch from an unmerged/untested

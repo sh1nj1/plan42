@@ -835,7 +835,7 @@ module Collavre
       continuation = @child.comments.order(:id).last
       assert_includes continuation.content, I18n.t("collavre.trigger_loop.continue", iteration: 1, max: 3)
       refute_match(/@/, continuation.content)
-      assert_includes TriggerLoopCheckJob.new.send(:collect_fallback_instructions, @child, @child, @ai_bot), "Deliver the feature"
+      assert_includes TriggerLoopCheckJob.new.send(:collect_loop_instructions, @child, @child, @ai_bot), "Deliver the feature"
     end
 
     test "late keep continuation retains the goal without the original command in history" do
@@ -1508,6 +1508,45 @@ module Collavre
       )
 
       # Without explicit [STATUS: DONE], keyword match defaults to continue
+      SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
+        TriggerLoopCheckJob.perform_now(@task.id)
+      end
+
+      @child.reload
+      assert_equal "running", @child.data.dig("trigger", "loop", "state")
+      assert_equal 1, @child.data.dig("trigger", "loop", "current_iteration")
+    end
+
+    test "pauses instead of retrying when the provider rejects the prompt as too large" do
+      [
+        "[RubyLLM::BadRequestError] input_too_large: Input exceeds the maximum length of 1048576 characters.",
+        "[RubyLLM::BadRequestError] The input token count exceeds the maximum number of tokens allowed 1048576."
+      ].each do |error|
+        @child.update!(data: @child.data.deep_merge("trigger" => { "loop" => { "state" => "running" } }))
+        @child.comments.create!(
+          content: "Working on it\n\n⚠️ AI Error: #{error}",
+          topic_id: @topic.id, user: @ai_bot, task: @task,
+          created_at: @task.created_at + 1.second
+        )
+
+        SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Oversized prompt was retried" }) do
+          TriggerLoopCheckJob.perform_now(@task.id)
+        end
+
+        @child.reload
+        assert_equal "stuck", @child.data.dig("trigger", "loop", "state")
+        assert_equal 0, @child.data.dig("trigger", "loop", "current_iteration")
+        assert_equal I18n.t("collavre.trigger_loop.prompt_too_large"), @child.comments.order(:id).last.content
+      end
+    end
+
+    test "a reply that only discusses context limits is not treated as a rejected prompt" do
+      @child.comments.create!(
+        content: "[STATUS: CONTINUE] Fixed the input_too_large handling.",
+        topic_id: @topic.id, user: @ai_bot, task: @task,
+        created_at: @task.created_at + 1.second
+      )
+
       SystemEvents::Dispatcher.stub(:dispatch, ->(*_args) { [ @ai_bot ] }) do
         TriggerLoopCheckJob.perform_now(@task.id)
       end

@@ -95,8 +95,11 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(humanMenu.querySelector('.comment-user-popup-status').classList.contains('is-online')).toBe(true)
         expect(humanMenu.querySelector('a.popup-menu-item').getAttribute('href')).toBe('/users/1')
         expect(humanMenu.querySelector('.comment-user-popup-guide')).toBeNull()
-        expect(agentMenu.classList.contains('ai-agent-draggable')).toBe(true)
-        expect(agentMenu.draggable).toBe(true)
+        expect(agentMenu.draggable).toBe(false)
+        const handle = agentMenu.querySelector('.ai-agent-draggable')
+        expect(handle.draggable).toBe(true)
+        expect(handle.contains(agentMenu.querySelector('.comment-user-menu-trigger'))).toBe(true)
+        expect(handle.contains(agentMenu.querySelector('.comment-user-popup'))).toBe(false)
         expect(agentMenu.querySelector('.comment-user-popup-guide').textContent)
             .toBe('Drag this avatar to a topic.')
     })
@@ -139,6 +142,50 @@ describe('CommentsPresenceController — pinned add/list buttons', () => {
         expect(wrapper.classList.contains('dragging')).toBe(true)
         document.dispatchEvent(new Event('dragend'))
         expect(wrapper.classList.contains('dragging')).toBe(false)
+    })
+
+    test('the agent profile popup never starts a drag, only the avatar does', () => {
+        controller.participantsData = [USERS[1]]
+        controller.renderParticipants([])
+        const wrapper = controller.participantsTarget.querySelector('.ai-agent-draggable')
+        const setData = jest.fn()
+        const dragFrom = (target) => {
+            const event = new Event('dragstart', { bubbles: true, cancelable: true })
+            Object.assign(event, { dataTransfer: { setData } })
+            target.dispatchEvent(event)
+            return event
+        }
+
+        const popup = wrapper.parentElement.querySelector('.comment-user-popup')
+        const modelInput = document.createElement('input')
+        popup.appendChild(modelInput)
+        expect(modelInput.closest('[draggable="true"]')).toBeNull()
+        const popupTargets = [popup, modelInput, popup.querySelector('.comment-user-popup-header img'),
+            popup.querySelector('a.popup-menu-item')]
+        popupTargets.forEach((target) => {
+            expect(dragFrom(target).defaultPrevented).toBe(true)
+        })
+        expect(setData).not.toHaveBeenCalled()
+        expect(wrapper.classList.contains('dragging')).toBe(false)
+
+        expect(dragFrom(wrapper.querySelector('.comment-user-menu-trigger')).defaultPrevented).toBe(false)
+        expect(setData).toHaveBeenCalled()
+        expect(wrapper.classList.contains('dragging')).toBe(true)
+        document.dispatchEvent(new Event('dragend'))
+    })
+
+    test('scrolling the profile leaves wheel handling to the popup', () => {
+        controller.participantsData = [USERS[1]]
+        controller.renderParticipants([])
+        const popup = controller.participantsTarget.querySelector('.comment-user-popup')
+        const parentWheel = jest.fn()
+        controller.participantsTarget.addEventListener('wheel', parentWheel)
+        const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 })
+
+        popup.querySelector('a').dispatchEvent(wheel)
+
+        expect(parentWheel).not.toHaveBeenCalled()
+        expect(wheel.defaultPrevented).toBe(false)
     })
 
     test('tapping an AI participant avatar opens its menu without intercepting menu controls', () => {
