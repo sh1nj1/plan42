@@ -3,6 +3,8 @@
 // (see creatives/document_view_controller.js) so lazily added rows pick it up.
 // The title row sits beside the tree, so it only has the controller's class.
 import { html, nothing } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import "./creative_header_progress";
 
 const DOCUMENT_TREE_SELECTOR = '[data-view-mode="document"]';
 const DOCUMENT_VIEW_SELECTOR = `${DOCUMENT_TREE_SELECTOR}, .creative-document-view`;
@@ -214,4 +216,36 @@ export function handleDocumentBodyClick(row, event) {
 export function handleDocumentTitleClick(row, event) {
   if (!isDocumentView(row)) return;
   handleDocumentBodyClick(row, event);
+}
+
+export function renderDocumentTitle(row) {
+  return html`
+    <div
+      class="creative-tree creative-tree-title"
+      id=${row.domId ?? nothing}
+      data-id=${row.creativeId ?? nothing}
+      data-parent-id=${row.parentId ?? ""}
+      data-dnd-disabled=${titleDndDisabledAttr(row)}
+    >
+      <div class="creative-row" data-creatives--select-mode-target="row">
+        <div class="creative-row-start" style="align-items: center;">
+          ${row._renderActionButton()}
+          <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
+          <h1 class="page-title" style="margin-left: 0; margin-bottom: 0; display:flex; align-items:center; gap:1em;">
+            <div class="creative-title-content" @click=${(event) => handleDocumentTitleClick(row, event)}>
+              ${unsafeHTML(row.descriptionHtml || "")}
+            </div>
+            ${row.originLinkHtml ? unsafeHTML(row.originLinkHtml) : nothing}
+          </h1>
+        </div>
+        <div class="creative-row-end">
+           <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
+             <span class="creative-progress-area">${unsafeHTML(row.progressHtml || "")}</span>
+           </h1>
+        </div>
+      </div>
+      <creative-header-progress class="document-header-progress" .value=${row.progressValue}
+                                label=${row.dataset.progressLabel || ""}></creative-header-progress>
+    </div>
+  `;
 }

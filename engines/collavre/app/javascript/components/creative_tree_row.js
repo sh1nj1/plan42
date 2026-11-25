@@ -8,8 +8,9 @@ import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
 import {
-  isDocumentView, renderDragHandle, rowDraggableAttr, titleDndDisabledAttr, visitRowLink, handleDocumentBodyClick, handleDocumentTitleClick
+  isDocumentView, renderDragHandle, rowDraggableAttr, renderDocumentTitle, visitRowLink, handleDocumentBodyClick
 } from "./creative_tree_row_document_view";
+
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -27,6 +28,7 @@ class CreativeTreeRow extends LitElement {
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
+    progressValue: { type: Number, attribute: "data-progress-value" },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
@@ -266,33 +268,7 @@ class CreativeTreeRow extends LitElement {
   }
 
   _renderTitle() {
-    return html`
-      <div
-        class="creative-tree creative-tree-title"
-        id=${this.domId ?? nothing}
-        data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? ""}
-        data-dnd-disabled=${titleDndDisabledAttr(this)}
-      >
-        <div class="creative-row" data-creatives--select-mode-target="row">
-          <div class="creative-row-start" style="align-items: center;">
-            ${this._renderActionButton()}
-            <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
-            <h1 class="page-title" style="margin-left: 0; margin-bottom: 0; display:flex; align-items:center; gap:1em;">
-              <div class="creative-title-content" @click=${(event) => handleDocumentTitleClick(this, event)}>
-                ${unsafeHTML(this.descriptionHtml || "")}
-              </div>
-              ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
-            </h1>
-          </div>
-          <div class="creative-row-end">
-             <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
-               <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
-             </h1>
-          </div>
-        </div>
-      </div>
-    `;
+    return renderDocumentTitle(this);
   }
 
   _renderTreeLines() {

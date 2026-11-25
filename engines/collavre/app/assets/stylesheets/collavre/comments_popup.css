@@ -2546,3 +2546,52 @@ li:hover .topic-create-option {
 .comments-loading .creative-loading-indicator {
     margin-left: 0;
 }
+
+.comments-popup-header,
+.creative-tree-title {
+    position: relative;
+}
+
+.document-header-progress {
+    display: none;
+}
+
+.creative-document-view .document-header-progress {
+    display: contents;
+}
+
+.creative-header-progress {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 4px;
+}
+
+.creative-header-progress::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(to right,
+        var(--color-active) var(--creative-header-progress),
+        var(--border-color) var(--creative-header-progress));
+}
+
+.creative-header-progress:focus-visible {
+    outline: 1px solid var(--color-active);
+    outline-offset: 1px;
+}
+
+.creative-header-progress:is(:hover, :focus-visible)::after {
+    content: attr(data-progress-tooltip);
+    position: absolute;
+    z-index: 1;
+    inset-inline-end: 0;
+    top: 100%;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--color-text);
+    background: var(--surface-hover);
+    font-size: 0.75rem;
+}
