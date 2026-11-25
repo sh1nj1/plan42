@@ -241,8 +241,7 @@ module Collavre
 
           if role == "user"
             content = MentionParser.strip_self_mention(content, @agent.name)
-            speaker = c.user&.name || "unknown"
-            content = "[#{speaker}]: #{content}"
+            content = "[#{c.user&.name || "unknown"}]: #{content}"
           end
 
           history_chars += content.length
