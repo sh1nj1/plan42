@@ -225,14 +225,18 @@ jobs:
       - name: Build JavaScript assets
         run: npm run build
 
-      - name: Resolve installed ChromeDriver
-        run: |
-          driver_path="$(command -v chromedriver)"
-          test -f "$driver_path" && test -x "$driver_path"
-          echo "CHROMEDRIVER_PATH=$driver_path" >> "$GITHUB_ENV"
+      - name: Set up Chrome and ChromeDriver
+        id: chrome
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+        with:
+          # Chrome 158 rejects the wildcard origin used by Capybara 3.40 during reset.
+          chrome-version: '157.0.8103.78'
+          install-chromedriver: true
 
       - name: Run tests
         env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER_PATH: ${{ steps.chrome.outputs.chromedriver-path }}
           RAILS_ENV: test
           # COVERAGE activates the SimpleCov bootstrap (test/support/coverage.rb),
           # which is a no-op otherwise. Both `rake test` and `rake test:system`
