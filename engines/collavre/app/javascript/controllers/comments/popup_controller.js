@@ -1,6 +1,6 @@
 import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
-import '../../components/creative_header_progress'
+import { clearChatActiveRow, markChatActiveRow, observeCreativeProgress } from './popup_creative_progress'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
@@ -263,7 +263,7 @@ export default class extends Controller {
           this.reloadDockedHighlight(creativeId, highlightId)
         }
         // Workspace navigation replaces the title after chat has already opened.
-        return this._markChatActiveRow(this.element.dataset.creativeId)
+        return markChatActiveRow(this, this.element.dataset.creativeId)
       }
       this.close()
       return
@@ -309,8 +309,8 @@ export default class extends Controller {
     this.element.dataset.canComment = 'false'
     this.element.dataset.creativeSnippet = ''
     setCreativeTitle(this.titleTarget, this.element.dataset.defaultTitle || '', '')
-    this.observeCreativeProgress(null)
-    this._clearChatActiveRow()
+    observeCreativeProgress(this)
+    clearChatActiveRow()
     this._hideNavDropdown()
 
     if (this.listController) this.listController.creativeId = null
@@ -364,7 +364,7 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
 
-    this._markChatActiveRow(resolvedCreativeId)
+    markChatActiveRow(this, resolvedCreativeId)
 
     this.prepareSize()
 
@@ -407,7 +407,7 @@ export default class extends Controller {
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = 'true'
 
-    this._markChatActiveRow(resolvedCreativeId)
+    markChatActiveRow(this, resolvedCreativeId)
 
     this.showPopup()
 
@@ -518,7 +518,7 @@ export default class extends Controller {
 
     this._exitFullscreenState()
 
-    this._clearChatActiveRow()
+    clearChatActiveRow()
     this._hideNavDropdown()
     this._releaseWakeLock()
 
@@ -998,36 +998,6 @@ export default class extends Controller {
 
   clearPendingOpenFromUrl() {
     clearPendingOpenFromUrl(this)
-  }
-
-  _markChatActiveRow(creativeId) {
-    this._clearChatActiveRow()
-    if (!creativeId) return
-    const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-    if (row) row.classList.add('chat-active')
-    this.observeCreativeProgress(row, creativeId)
-  }
-
-  observeCreativeProgress(row, creativeId) {
-    if (!this.hasProgressTarget) return
-    this.progressObserver?.disconnect()
-    if (this.progressCreativeId !== creativeId) this.progressTarget.value = undefined
-    this.progressCreativeId = creativeId
-    if (!row) return
-
-    const sync = () => {
-      const value = row.dataset.progressValue
-      this.progressTarget.value = value === undefined || value === '' ? undefined : Number(value)
-    }
-    sync()
-    this.progressObserver = new MutationObserver(sync)
-    this.progressObserver.observe(row, { attributeFilter: ['data-progress-value'] })
-  }
-
-  _clearChatActiveRow() {
-    document.querySelectorAll('creative-tree-row.chat-active').forEach(el => {
-      el.classList.remove('chat-active')
-    })
   }
 
   // Walk up from the target element to find the nearest scrollable ancestor
