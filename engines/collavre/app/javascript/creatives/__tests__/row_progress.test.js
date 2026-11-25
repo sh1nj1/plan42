@@ -8,7 +8,7 @@ jest.unstable_mockModule('../../lib/api/creatives', () => ({ default: { get } })
 jest.unstable_mockModule('../tree_renderer', () => ({ replaceProgressControl, syncProgressHtmlFromDom }))
 const listIsFiltered = jest.fn()
 jest.unstable_mockModule('../tree_reload_events', () => ({ listIsFiltered }))
-const { applySavedProgress, refreshMovedBranchProgress, refreshProgressAbove } = await import('../row_progress')
+const { refreshMovedBranchProgress, refreshProgressAbove } = await import('../row_progress')
 
 const row = (id) => document.querySelector(`creative-tree-row[creative-id="${id}"]`)
 
@@ -27,33 +27,17 @@ beforeEach(() => {
 
 const shown = (id) => [row(id).dataset.progressValue, row(id).progressHtml, row(id).dataset.progressHtml]
 
-test('a save response paints the saved row and every ancestor on screen', () => {
-  row(2).progressHtml = '<old two>'
+// A row with no control yet takes the server's; one that has it swaps it in,
+// after anything typed into the row since it was drawn is read back.
+test('a refetched row keeps its own controls around the new progress', async () => {
+  row(4).progressHtml = '<old four>'
+  get.mockImplementation((id) => Promise.resolve(id === '1' ? { progress: 0.25 } : { progress: 0.5, progress_html: '<four>' }))
 
-  applySavedProgress(row(3), {
-    progress: 1,
-    progress_html: '<own>',
-    ancestors: [
-      { id: 2, progress: 0.5, progress_html: '<two>' },
-      { id: 1, progress: 0.25 },
-      { id: 99, progress: 0.75, progress_html: '<off screen>' },
-    ],
-  })
+  await refreshMovedBranchProgress('4', null)
 
-  // A row with no control yet takes the server's; one that has it swaps it in.
-  expect(shown(3)).toEqual(['1', '<own>', '<own>'])
-  expect(shown(2)).toEqual(['0.5', '<old two>+<two>', '<old two>+<two>'])
+  expect(shown(4)).toEqual(['0.5', '<old four>+<four>', '<old four>+<four>'])
   expect(shown(1)).toEqual(['0.25', undefined, undefined])
-  expect(syncProgressHtmlFromDom.mock.calls).toEqual([[row(3)], [row(2)]])
-})
-
-test('a response without progress, or a row that is gone, paints nothing', () => {
-  applySavedProgress(row(3), undefined)
-  applySavedProgress(row(3), { ancestors: 'none' })
-  applySavedProgress(null, { progress: 1, progress_html: '<own>' })
-
-  expect(shown(3)).toEqual([undefined, undefined, undefined])
-  expect(syncProgressHtmlFromDom).not.toHaveBeenCalled()
+  expect(syncProgressHtmlFromDom.mock.calls).toEqual([[row(4)]])
 })
 
 test('a move between parents refetches each row above either parent once', async () => {
@@ -90,6 +74,7 @@ test('a move within one parent changes no roll-up and fetches nothing', async ()
 
 test('a refetch that rejects or throws leaves the row as it was', async () => {
   get.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(() => { throw new Error('no transport') })
+  await refreshMovedBranchProgress('2', '2x', jest.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce({}))
 
   await expect(refreshMovedBranchProgress('4', null)).resolves.toEqual([undefined, undefined])
   expect(shown(4)).toEqual([undefined, undefined, undefined])
@@ -112,10 +97,9 @@ test('a created row refetches the rows above its parent, which the editor refetc
 test('a filtered list is left for its own refetch', async () => {
   listIsFiltered.mockReturnValue(true)
 
-  applySavedProgress(row(3), { progress: 1, progress_html: '<own>', ancestors: [{ id: 2, progress: 1 }] })
   await refreshMovedBranchProgress('2', '4')
   await refreshProgressAbove('3')
 
   expect(get).not.toHaveBeenCalled()
-  expect([3, 2].map((id) => shown(id))).toEqual([[undefined, undefined, undefined], [undefined, undefined, undefined]])
+  expect(shown(2)).toEqual([undefined, undefined, undefined])
 })

@@ -2,10 +2,10 @@ import creativesApi from '../lib/api/creatives'
 import { replaceProgressControl, syncProgressHtmlFromDom } from './tree_renderer'
 import { listIsFiltered } from './tree_reload_events'
 
-// Progress the list shows but did not compute: a row's own control after a
-// save, and the roll-up of every row above a change. The actor is left out of
-// the broadcast that repairs these for everyone else, so the response to its
-// own request (or a fetch, where that response is empty) has to.
+// Progress roll-ups the list shows but did not compute. A drop between parents
+// and a new row both change the progress of every row above them, the actor is
+// left out of the broadcast that tells everyone else, and neither endpoint
+// answers with those values, so the rows on screen are refetched one by one.
 //
 // None of it applies to a filtered list. The progress shown there is the
 // filter's own, which only the list endpoint computes, and the list refetches
@@ -16,7 +16,7 @@ function rowFor(id) {
 }
 
 function paint(row, entry) {
-  if (!row || !entry) return
+  if (!entry) return
   if (entry.progress != null) row.dataset.progressValue = String(entry.progress)
   if (!entry.progress_html) return
   // Keep what the user typed into the row's own controls since it was drawn.
@@ -26,14 +26,6 @@ function paint(row, entry) {
     : entry.progress_html
   row.progressHtml = html
   row.dataset.progressHtml = html
-}
-
-// `data` is a save response: the saved creative's progress, and its ancestors'.
-export function applySavedProgress(row, data) {
-  if (listIsFiltered()) return
-  paint(row, data)
-  const ancestors = Array.isArray(data?.ancestors) ? data.ancestors : []
-  ancestors.forEach((ancestor) => paint(rowFor(ancestor.id), ancestor))
 }
 
 function rowsAbove(parentId, rows) {

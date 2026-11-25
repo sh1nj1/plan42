@@ -1,6 +1,6 @@
 import { treeRowElement } from './creative_row_editor_helpers'
 import { creativeSaveSnapshotIsEmpty } from './creative_save_state'
-import { applySavedProgress, refreshProgressAbove } from '../creatives/row_progress'
+import { refreshProgressAbove } from '../creatives/row_progress'
 
 const revisions = new WeakMap()
 const retryAttachmentIds = new WeakMap()
@@ -9,12 +9,15 @@ const refreshes = new WeakMap()
 // Only the latest queued snapshot may acknowledge or rewrite a row.
 // `refreshMissed` refetches the row when an update broadcast was dropped while
 // the save was pending: applying it then would have painted over the draft.
-export function queuedCreativeCompletion(tree, onComplete, refreshMissed) {
+// `progressChanged` says the save wrote progress. The server rolls that up
+// through ancestors, linked placements and, on completion, descendants; the
+// saving user gets no broadcast for any of it, so the list is refetched.
+export function queuedCreativeCompletion(tree, onComplete, refreshMissed, progressChanged = false) {
   const previous = revisions.get(tree) || 0
   const revision = previous + 1
   revisions.set(tree, revision)
   tree.dataset.saveState = 'pending'
-  const complete = (saved) => {
+  const complete = () => {
     if (revisions.get(tree) !== revision) return false
     delete tree.dataset.saveState
     const row = treeRowElement(tree)
@@ -24,13 +27,10 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed) {
       delete row.dataset.missedSync
     }
     onComplete()
-    // The row shows the saved text already. Its progress control, and the
-    // roll-up of the rows above it, come from the response; nothing else
-    // delivers them to the user who saved.
-    applySavedProgress(row, saved)
     if (missedSync) refreshMissed(tree)
-    // Only a reload held back by the pending save is still owed.
-    document.dispatchEvent(new CustomEvent('creative-sync:release'))
+    // Saved text is already on the row, so all that is owed for it is a
+    // reload the pending save held back.
+    document.dispatchEvent(new CustomEvent(progressChanged ? 'creative-sync:refetch' : 'creative-sync:release'))
     return true
   }
   complete.rollback = () => revisions.set(tree, previous)
