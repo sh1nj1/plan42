@@ -184,8 +184,7 @@ async function postCreate(tree, { action, body, snapshot, deletedIds }, fallback
     delete tree.dataset.saveState
     applyCreativeSaveResponse(snapshot, data, { applyCachedMarkdownSource: cacheSavedMarkdownSource(tree) })
     created(data)
-    // Nothing else releases a reload deferred while the row was pending.
-    releaseCreatedRow(tree)
+    releaseCreatedRow(tree, body.get('child_id'))
     return { afterId: String(data.id), beforeId: '' }
   } catch (error) {
     // The row keeps showing the text; flag it and say so, since the editor

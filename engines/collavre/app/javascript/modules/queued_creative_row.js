@@ -43,10 +43,10 @@ export function queuedCreativeCompletion(tree, onComplete, refreshMissed, progre
 }
 
 // A background create refreshes its own row and parent. Repeated branches
-// still need the list to reconcile the new child and affected progress.
-export function releaseCreatedRow(tree) {
+// and an adopted child still need the list to reconcile the hierarchy.
+export function releaseCreatedRow(tree, adoptedChildId) {
   const parentId = tree.dataset.parentId
-  const refetch = branchShownElsewhere(parentId)
+  const refetch = adoptedChildId || branchShownElsewhere(parentId)
   if (!refetch) refreshProgressAbove(parentId)
   document.dispatchEvent(new CustomEvent(refetch ? 'creative-sync:refetch' : 'creative-sync:release'))
 }
