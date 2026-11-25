@@ -1,6 +1,6 @@
 import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
-import { clearChatActiveRow, markChatActiveRow, observeCreativeProgress } from './popup_creative_progress'
+import { clearChatActiveRow, disconnectCreativeProgress, markChatActiveRow, observeCreativeProgress } from './popup_creative_progress'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
@@ -168,7 +168,7 @@ export default class extends Controller {
   }
 
   disconnect() {
-    this.progressObserver?.disconnect()
+    disconnectCreativeProgress(this)
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
     if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
