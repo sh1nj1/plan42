@@ -28,4 +28,36 @@ class RemovedIntegrationsTest < ActiveSupport::TestCase
       end
     end
   end
+  test "retained integration records do not prevent deleting users or creatives" do
+    connection = ActiveRecord::Base.connection
+    %w[notion_accounts linear_accounts notion_page_links notion_block_links linear_project_links linear_issue_links].each do |table|
+      assert connection.table_exists?(table)
+      assert_empty connection.foreign_keys(table).select { |key| %w[users creatives].include?(key.to_table) }
+    end
+
+    user = Collavre.user_class.create!(name: "Retired integrations", email: "retired@example.com", password: TEST_PASSWORD)
+    notion_account = Class.new(ActiveRecord::Base) { self.table_name = "notion_accounts" }
+    linear_account = Class.new(ActiveRecord::Base) { self.table_name = "linear_accounts" }
+    notion = notion_account.create!(user_id: user.id, notion_uid: "retired", token: "unused")
+    linear = linear_account.create!(user_id: user.id, linear_uid: "retired", access_token: "unused")
+    creative = Collavre::Creative.create!(user: user, description: "Retired integration links")
+    page_link = Class.new(ActiveRecord::Base) { self.table_name = "notion_page_links" }
+    block_link = Class.new(ActiveRecord::Base) { self.table_name = "notion_block_links" }
+    project_link = Class.new(ActiveRecord::Base) { self.table_name = "linear_project_links" }
+    issue_link = Class.new(ActiveRecord::Base) { self.table_name = "linear_issue_links" }
+    page = page_link.create!(creative_id: creative.id, notion_account_id: notion.id, page_id: "retired")
+    block_link.create!(creative_id: creative.id, notion_page_link_id: page.id, block_id: "retired")
+    project = project_link.create!(creative_id: creative.id, account_id: linear.id, linear_project_id: "retired", team_id: "retired")
+    issue_link.create!(creative_id: creative.id, project_link_id: project.id, linear_issue_id: "retired")
+
+    creative.destroy!
+    [ page_link, block_link, project_link, issue_link ].each do |model|
+      assert model.exists?(creative_id: creative.id)
+    end
+
+    user.destroy!
+
+    assert notion_account.exists?(user_id: user.id)
+    assert linear_account.exists?(user_id: user.id)
+  end
 end
