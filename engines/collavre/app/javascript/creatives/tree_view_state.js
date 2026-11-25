@@ -66,7 +66,9 @@ async function restoreExpansion(element, expansion, isCurrent) {
 }
 
 function restoreFocus(element, focus) {
-  if (!focus?.creativeId) return
+  // Replacing the focused row leaves focus on the body. A control the user
+  // moved to while the list reloaded keeps its focus.
+  if (!focus?.creativeId || document.activeElement !== document.body) return
   const row = findRow(element, focus.creativeId)
   if (!row) return
 
