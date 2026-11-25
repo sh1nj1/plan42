@@ -19,11 +19,14 @@ export function observeCreativeProgress(popup, row, creativeId) {
   popup.progressObserver?.disconnect()
   if (popup.progressCreativeId !== creativeId) popup.progressTarget.value = undefined
   popup.progressCreativeId = creativeId
+  popup.progressTarget.removeAttribute('data-row-progress')
   if (!row) return
 
   const sync = () => {
     const value = row.dataset.progressValue
-    popup.progressTarget.value = value === undefined || value === '' ? undefined : Number(value)
+    const progress = value === undefined || value === '' ? undefined : Number(value)
+    popup.progressTarget.value = progress
+    popup.progressTarget.toggleAttribute('data-row-progress', Number.isFinite(progress))
   }
   sync()
   popup.progressObserver = new MutationObserver(sync)

@@ -16,5 +16,5 @@ export function syncCommentListProgress(controller, response, { creativeId, supe
 
   const progress = response.headers.get('X-Creative-Progress')
   const bar = element.querySelector('creative-header-progress')
-  if (bar && progress !== null && !Number.isFinite(bar.value)) bar.value = Number(progress)
+  if (bar && progress !== null && !bar.hasAttribute('data-row-progress')) bar.value = Number(progress)
 }
