@@ -7,6 +7,7 @@ module Collavre
   # - A2aDispatcher: agent-to-agent event dispatch
   class AiAgentService
     include AiAgent::WorkspaceAuthentication
+    include AiAgent::TurnScreening
     prepend Quota::AgentExecution
     # Compatibility alias for constants moved to AgentLifecycleManager
     CANCEL_CHECK_INTERVAL = AiAgent::AgentLifecycleManager::CANCEL_CHECK_INTERVAL
@@ -24,12 +25,7 @@ module Collavre
           execute_authorized_conversation
         end
       rescue ApprovalPendingError => e
-        summary = generate_approval_summary(e) unless e.is_a?(ApprovalGatePendingError)
-        AiAgent::ApprovalHandler.for(e).new(
-          task: @task, agent: @agent, context: @context,
-          creative: @creative, reply_comment: @reply_comment
-        ).handle(e, summary: summary)
-        raise
+        handle_approval_pending(e)
       end
     rescue TurnDeadlineError => e
       handle_cancelled(
@@ -50,23 +46,13 @@ module Collavre
 
     private
 
-    def delegate_to_claude_channel
-      log_action("start", { message: "Delegating to Claude Channel via MCP" })
-
-      AiAgent::ClaudeChannelAdapter.new(
-        agent: @agent,
-        context: @context,
-        task: @task
-      ).deliver
-
-      # Drive the chat typing indicator for this async dispatch (and surface a
-      # disconnect notice if no session is live). The dispatch above returns
-      # immediately; ClaudeChannelPresenceJob keeps agent_status alive until the
-      # reply lands or the session is gone — see the job for the full lifecycle.
-      ClaudeChannelPresenceJob.perform_later(@task.id) if @task
-
-      log_action("delegated", { message: "Message delivered to Claude Channel" })
-      nil
+    def handle_approval_pending(error)
+      summary = generate_approval_summary(error) unless error.is_a?(ApprovalGatePendingError)
+      AiAgent::ApprovalHandler.for(error).new(
+        task: @task, agent: @agent, context: @context,
+        creative: @creative, reply_comment: @reply_comment
+      ).handle(error, summary: summary)
+      raise error
     end
 
     def execute_llm_conversation

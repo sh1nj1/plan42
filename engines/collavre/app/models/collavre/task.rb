@@ -8,6 +8,13 @@ module Collavre
     include ApprovalGateCleanup
     include AsyncApproval
 
+    # Pauses decided through an approval-gate comment (approve/deny + reason).
+    APPROVAL_GATE_KINDS = [ "approval_gate", Screening::PENDING_KIND ].freeze
+
+    def self.approval_gate_kind?(pending)
+      APPROVAL_GATE_KINDS.include?(pending&.dig("kind"))
+    end
+
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
     belongs_to :creative, class_name: "Collavre::Creative", optional: true

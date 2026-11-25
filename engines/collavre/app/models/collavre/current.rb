@@ -14,6 +14,7 @@ module Collavre
     attribute :draft_capture_turn
     attribute :change_set
     attribute :creative_history_context
+    attribute :screening
 
     def user
       super || session&.user

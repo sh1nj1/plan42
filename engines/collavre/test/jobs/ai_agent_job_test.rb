@@ -801,7 +801,7 @@ class AiAgentJobTest < ActiveJob::TestCase
     payload_at_deliver = nil
     delivered = false
     fake_adapter = Class.new do
-      define_method(:initialize) { |agent:, context:, task: nil| @agent = agent; @context = context; @task = task }
+      define_method(:initialize) { |agent:, context:, task: nil, content: nil| @agent = agent }
       define_method(:deliver) do
         row = Task.where(agent_id: @agent.id).order(:created_at).last
         status_at_deliver = row&.status
@@ -871,7 +871,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     delivered = false
     fake_adapter = Class.new do
-      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:initialize) { |agent:, context:, task: nil, content: nil| }
       define_method(:deliver) { delivered = true; nil }
     end
 
@@ -914,7 +914,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     delivered = false
     fake_adapter = Class.new do
-      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:initialize) { |agent:, context:, task: nil, content: nil| }
       define_method(:deliver) { delivered = true; nil }
     end
 
@@ -966,7 +966,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     delivered = false
     fake_adapter = Class.new do
-      define_method(:initialize) { |agent:, context:, task: nil| }
+      define_method(:initialize) { |agent:, context:, task: nil, content: nil| }
       define_method(:deliver) { delivered = true; nil }
     end
 

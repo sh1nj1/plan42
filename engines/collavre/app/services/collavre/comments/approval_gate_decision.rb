@@ -39,7 +39,7 @@ module Collavre
         fail_with(:approve_already_executed) if @comment.action_executed_at.present?
         fail_with(:approve_task_not_pending) unless task.pending_approval?
         pending = task.pending_tool_call
-        unless pending&.dig("kind") == "approval_gate" && pending["tool_call_id"] == payload["tool_call_id"] &&
+        unless Task.approval_gate_kind?(pending) && pending["tool_call_id"] == payload["tool_call_id"] &&
             task.agent_id == @comment.user_id && task.creative_id == @comment.creative_id && task.topic_id == @comment.topic_id
           fail_with(:approve_task_superseded)
         end

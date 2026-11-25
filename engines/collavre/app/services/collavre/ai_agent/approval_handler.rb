@@ -6,6 +6,8 @@ module Collavre
     # invokes a tool that requires human approval.
     class ApprovalHandler
       def self.for(error)
+        return ScreeningApprovalHandler if error.is_a?(ScreeningPendingError)
+
         error.is_a?(ApprovalGatePendingError) ? ApprovalGateHandler : self
       end
 

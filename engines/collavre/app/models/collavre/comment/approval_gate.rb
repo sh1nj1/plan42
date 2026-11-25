@@ -87,7 +87,7 @@ module Collavre
       # A decided gate is already resuming; only an unanswered one is stranded.
       def cancel_undecided_gate(task, tool_call_id)
         pending = task.pending_tool_call
-        return false unless task.pending_approval? && pending&.dig("kind") == "approval_gate"
+        return false unless task.pending_approval? && Task.approval_gate_kind?(pending)
         return false if pending["tool_call_id"] != tool_call_id || pending["decision"]
 
         task.update!(status: "cancelled", pending_tool_call: nil)

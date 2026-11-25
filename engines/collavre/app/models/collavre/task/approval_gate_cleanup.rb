@@ -13,7 +13,7 @@ module Collavre
 
       def clear_terminal_approval
         return unless status.in?(%w[done failed cancelled escalated])
-        return unless pending_tool_call&.dig("kind") == "approval_gate" || pending_tool_call&.key?("messages")
+        return unless Task.approval_gate_kind?(pending_tool_call) || pending_tool_call&.key?("messages")
 
         # Keep recovery data until the terminal state is committed atomically.
         self.pending_tool_call = nil

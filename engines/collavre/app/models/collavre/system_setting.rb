@@ -57,6 +57,12 @@ module Collavre
     DEFAULT_DISPLAY_LEVEL = 6
     DEFAULT_COMPLETION_MARK = ""
 
+    # Prompt-injection screening (Collavre::Screening). The probability
+    # thresholds apply to the screener's "injection" answer.
+    DEFAULT_SCREENING_MODEL = "jev-latest"
+    DEFAULT_SCREENING_THRESHOLD = 0.5
+    DEFAULT_SCREENING_BLOCK_THRESHOLD = 0.9
+
     validates :key, presence: true, uniqueness: true
 
     # Clear cache after save
@@ -79,6 +85,7 @@ module Collavre
         creatives_login_required home_page_path home_page_path_authenticated default_light_theme_id default_dark_theme_id
         display_level completion_mark llm_request_timeout_seconds ai_agent_turn_deadline_seconds
         creative_history_retention_count creative_history_retention_days
+        screening_enabled screening_model screening_threshold screening_block_threshold
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -219,6 +226,28 @@ module Collavre
       value = cached_value("ai_agent_turn_deadline_seconds")&.to_i
       value.nil? || value < 60 ? DEFAULT_AI_AGENT_TURN_DEADLINE_SECONDS : value
     end
+
+    def self.screening_enabled?
+      cached_value("screening_enabled") == "true"
+    end
+
+    def self.screening_model
+      cached_value("screening_model").presence || DEFAULT_SCREENING_MODEL
+    end
+
+    def self.screening_threshold
+      probability_setting("screening_threshold", DEFAULT_SCREENING_THRESHOLD)
+    end
+
+    def self.screening_block_threshold
+      [ probability_setting("screening_block_threshold", DEFAULT_SCREENING_BLOCK_THRESHOLD), screening_threshold ].max
+    end
+
+    def self.probability_setting(key, default)
+      value = Float(cached_value(key), exception: false)
+      value && value > 0 && value <= 1 ? value : default
+    end
+    private_class_method :probability_setting
 
     def self.creative_history_retention_count
       value = cached_value("creative_history_retention_count")&.to_i
