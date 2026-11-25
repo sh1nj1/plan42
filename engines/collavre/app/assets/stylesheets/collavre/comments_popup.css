@@ -345,6 +345,7 @@ body.chat-fullscreen {
 .comment-user-popup {
     width: 240px;
     min-width: 240px;
+    overscroll-behavior: contain;
     padding: var(--space-2);
 }
 
@@ -1702,7 +1703,13 @@ body.chat-fullscreen {
 }
 
 .ai-agent-draggable {
+    display: inline-flex;
+    vertical-align: middle;
     cursor: grab;
+}
+
+.ai-agent-draggable .comment-user-menu-trigger {
+    cursor: inherit;
 }
 
 .ai-agent-draggable:active,
@@ -1710,14 +1717,7 @@ body.chat-fullscreen {
     cursor: grabbing;
 }
 
-.ai-agent-draggable .comment-user-popup {
-    /* Only the avatar is a drag handle; the profile popup is not. */
-    cursor: auto;
-}
-
 .ai-agent-draggable.dragging {
-    /* Opacity on :active traps the fixed profile menu in a stacking context
-       during a tap, redirecting the native click to content beneath it. */
     opacity: 0.5;
 }
 
