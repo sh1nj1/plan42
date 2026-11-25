@@ -84,6 +84,23 @@ module Collavre
       assert_equal true, built.dig(:context, :screening_flagged)
     end
 
+    test "a foreign creative quote is screened in an incremental OpenClaw owner turn" do
+      @agent.update_columns(llm_vendor: "openclaw")
+      quoted = Creative.create!(description: "<p>Untrusted quote title and excerpt</p>", user: @sender)
+      @comment.update!(user: @owner, content: "Explain this selection",
+                       quoted_creative: quoted, quoted_text: "excerpt")
+      @task.update!(trigger_event_payload: @task.trigger_event_payload.merge(
+        "comment" => { "id" => @comment.id, "content" => @comment.content }, "workspace_user_id" => @owner.id
+      ))
+      screener = fake_screener(0.6)
+
+      assert_nil run_turn(screener, expect: CancelledError)
+      assert_includes screener.calls.join, "[source: trigger]"
+      assert_includes screener.calls.join, "Untrusted quote title and excerpt"
+      assert_not_includes screener.calls.join, "[source: creative_context]"
+      assert @task.reload.failed?
+    end
+
     test "a permission revoked during rendering prevents screening and delivery" do
       screener = fake_screener(0.1)
       creative = @creative
@@ -140,6 +157,18 @@ module Collavre
       built = run_turn(screener)
       assert_empty screener.calls
       assert_equal true, built.dig(:context, :screening_flagged)
+    end
+
+    test "restoring a flagged snapshot blocks delivery after switching to an ungated vendor" do
+      @task.task_actions.create!(action_type: Screening::ACTION_TYPE, status: "done", payload: { "verdict" => "flagged" })
+      @task.update!(pending_tool_call: { approved: true, result: { ok: true }, tool_call_id: "c1", tool_name: "x",
+                                         messages: [ { role: "user", content: "snapshot" } ] })
+      @agent.update_columns(llm_vendor: "cli_proxy")
+      screener = fake_screener(0.1)
+
+      assert_nil run_turn(screener, expect: CancelledError)
+      assert_empty screener.calls
+      assert @task.reload.failed?
     end
 
     test "a flagged turn is blocked when the owner could not decide its tool calls" do

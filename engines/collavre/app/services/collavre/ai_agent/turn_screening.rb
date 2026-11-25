@@ -54,20 +54,30 @@ module Collavre
         pending = @task.pending_tool_call
         @screening_flagged =
           if ApprovalConversation.restoring_snapshot?(pending)
-            reason_flagged = screen_gate_reason(pending) == "flagged"
-            Screening.flagged?(@task) || reason_flagged
+            restore_screening_flag!(pending)
           else
-            texts = Screening.texts_for(resolved[:messages], owner_id: @agent.created_by_id)
-            screening_guard(resolved[:messages]).call(
-              texts, block_flagged: !server_gated_tools?, unverified_context: unverified_creative_context?(texts)
+            messages = resolved[:messages]
+            texts = Screening.texts_for(messages, owner_id: @agent.created_by_id)
+            screening_guard(messages).call(
+              texts, block_flagged: !server_gated_tools?, unverified_context: unverified_creative_context?(messages)
             ) == "flagged"
           end
       end
 
-      # Rendered context can contain text from several creatives, including
-      # ancestors and descendants, without per-part author information.
-      def unverified_creative_context?(texts)
-        texts.any? { |entry| entry[:source].in?(%w[creative_context context_creative referenced_creative]) }
+      def restore_screening_flag!(pending)
+        reason_flagged = screen_gate_reason(pending) == "flagged"
+        return false unless Screening.flagged?(@task) || reason_flagged
+
+        screening_guard.apply_flag(!server_gated_tools?) == "flagged"
+      end
+
+      # Rendered creative context and document quotes can include other
+      # authors' text. A session filter can drop the context but keep the quote.
+      def unverified_creative_context?(messages)
+        messages.any? do |message|
+          message[:unverified_creative_context] ||
+            message[:kind].in?(%i[creative_context context_creative referenced_creative])
+        end
       end
 
       # An approval_request decision is replayed to the model as its tool

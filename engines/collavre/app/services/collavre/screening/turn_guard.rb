@@ -63,6 +63,10 @@ module Collavre
         end
       end
 
+      def apply_flag(block_flagged)
+        block_flagged ? block!(:blocked_notice) : "flagged"
+      end
+
       private
 
       def outside_scope?
@@ -91,10 +95,6 @@ module Collavre
         block!(:denied_notice) if decision["decision"] == "denied"
 
         decision.merge(pending.slice("content_digest", "residual"))
-      end
-
-      def apply_flag(block_flagged)
-        block_flagged ? block!(:blocked_notice) : "flagged"
       end
 
       def approved!(decision, digest)

@@ -285,7 +285,9 @@ module Collavre
           review_parts << "---\nOriginal message:\n#{quoted_body}\n---" if quoted_body.present?
           payload_text = "#{review_parts.join("\n\n")}\n\n#{payload_text}"
         end
-        payload_text = CreativeQuoteContext.prepend_to(payload_text, @original_comment)
+        quoted_payload = CreativeQuoteContext.prepend_to(payload_text, @original_comment)
+        has_creative_quote = quoted_payload != payload_text
+        payload_text = quoted_payload
 
         sender_name = @context.dig("sender", "name")
         if sender_name
@@ -309,7 +311,9 @@ module Collavre
         merged_blocks.each { |b| b.images.each { |blob| trigger_parts << { image: blob } } }
 
         append_trigger_images(trigger_parts)
-        messages << { role: "user", kind: :trigger, parts: trigger_parts }
+        trigger = { role: "user", kind: :trigger, parts: trigger_parts }
+        trigger[:unverified_creative_context] = true if has_creative_quote
+        messages << trigger
       end
 
       def append_trigger_images(parts)
