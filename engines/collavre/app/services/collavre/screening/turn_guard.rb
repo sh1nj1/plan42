@@ -100,6 +100,7 @@ module Collavre
       def approved!(decision, digest)
         @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
           payload: { "verdict" => "owner_approved", "decided_by" => decision["decided_by"],
+                     "residual" => decision["residual"],
                      "policy_version" => POLICY_VERSION, "content_digest" => digest })
       end
 

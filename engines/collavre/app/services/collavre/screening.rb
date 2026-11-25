@@ -52,7 +52,9 @@ module Collavre
     # Whether this turn was flagged when it was screened. A turn resumed from
     # a tool-approval snapshot keeps its flag without screening again.
     def self.flagged?(task)
-      task.task_actions.where(action_type: ACTION_TYPE).pluck(:payload).any? { |payload| payload["verdict"] == "flagged" }
+      task.task_actions.where(action_type: ACTION_TYPE).pluck(:payload).any? do |payload|
+        payload["verdict"] == "flagged" || (payload["verdict"] == "owner_approved" && payload["residual"] == "flagged")
+      end
     end
 
     def self.digest(texts)
