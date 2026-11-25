@@ -319,8 +319,8 @@ promote-and-reindex pattern.
 ## 7. Integration Engine Pattern
 
 Sections 1–6 cover extending the host UI with a **local engine**. When the engine
-integrates an **external service** (like Notion, GitHub, or Slack), follow the
-pattern of `collavre_openclaw` and `collavre_notion` below.
+integrates an **external service** (like GitHub or Slack), follow the
+pattern of `collavre_openclaw` and `collavre_github` below.
 
 ### 7.1 Engine Structure
 

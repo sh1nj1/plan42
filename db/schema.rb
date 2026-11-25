@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_25_000000) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.bigint "blob_id", null: false
     t.datetime "created_at", null: false
@@ -1386,19 +1386,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_000000) do
   add_foreign_key "invitations", "users", column: "inviter_id"
   add_foreign_key "labels", "creatives"
   add_foreign_key "labels", "users", column: "owner_id"
-  add_foreign_key "linear_accounts", "users"
   add_foreign_key "linear_comment_links", "linear_issue_links", column: "issue_link_id"
-  add_foreign_key "linear_issue_links", "creatives"
   add_foreign_key "linear_issue_links", "linear_project_links", column: "project_link_id"
-  add_foreign_key "linear_project_links", "creatives"
   add_foreign_key "linear_project_links", "linear_accounts", column: "account_id"
   add_foreign_key "llm_models", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "llm_usage_requesters", "llm_usages", on_delete: :cascade
   add_foreign_key "mcp_tools", "creatives"
-  add_foreign_key "notion_accounts", "users"
-  add_foreign_key "notion_block_links", "creatives"
   add_foreign_key "notion_block_links", "notion_page_links"
-  add_foreign_key "notion_page_links", "creatives"
   add_foreign_key "notion_page_links", "notion_accounts"
   add_foreign_key "notion_page_nodes", "notion_page_links"
   add_foreign_key "oauth_access_grants", "oauth_applications", column: "application_id"
