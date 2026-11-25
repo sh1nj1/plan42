@@ -47,7 +47,7 @@ module Collavre
         AiClient.new(
           vendor: @vendor, model: @model, system_prompt: SYSTEM_PROMPT,
           llm_api_key: @api_key, gateway_url: @gateway_url,
-          request_timeout_seconds: TIMEOUT_SECONDS,
+          request_timeout_seconds: -> { TIMEOUT_SECONDS },
           context: { user: @usage_user, usage_source_task: @task, evaluation_session_id: SecureRandom.uuid }
         )
       end

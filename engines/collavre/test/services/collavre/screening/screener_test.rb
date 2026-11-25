@@ -35,7 +35,7 @@ module Collavre
         assert_equal SYSTEM_PROMPT, built[:system_prompt]
         assert_equal @agent, built.dig(:context, :user)
         assert_equal @task, built.dig(:context, :usage_source_task)
-        assert_equal Screener::TIMEOUT_SECONDS, built[:request_timeout_seconds]
+        assert_equal Screener::TIMEOUT_SECONDS, built[:request_timeout_seconds].call
         assert_equal QUESTIONS, result["questions"]
       end
 
