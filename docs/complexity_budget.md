@@ -630,9 +630,9 @@ review found shipped code outside it twice — the engine's `.rake` tasks, then
 `db/` (154 files). A glob and a packaging manifest maintained separately will
 drift.
 
-**`KNOWN_VIOLATIONS`** records the four pre-existing constant references, all in
+**`KNOWN_VIOLATIONS`** records the two pre-existing constant references, all in
 one 2026-01 migration that encrypts OAuth tokens and reaches
-`CollavreGithub::Account` and `CollavreNotion::NotionAccount` behind `defined?`
+`CollavreGithub::Account` behind a `defined?`
 guards so it runs on installs without those engines. A migration that has run in
 production cannot be edited, so they are recorded rather than fixed — but
 recording is not amnesty: a separate test asserts each entry is *still* a real

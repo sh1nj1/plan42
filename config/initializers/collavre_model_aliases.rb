@@ -22,14 +22,9 @@ Rails.application.config.to_prepare do
   set_alias(Object, :AutoThemeGenerator, Collavre::AutoThemeGenerator)
   set_alias(Object, :PptImporter, Collavre::PptImporter)
   set_alias(Object, :RubyLlmInteractionLogger, Collavre::RubyLlmInteractionLogger)
-  set_alias(Object, :NotionClient, CollavreNotion::NotionClient)
-  set_alias(Object, :NotionService, CollavreNotion::NotionService)
-  set_alias(Object, :NotionCreativeExporter, CollavreNotion::NotionCreativeExporter)
 
   # Jobs
   set_alias(Object, :AiAgentJob, Collavre::AiAgentJob)
-  set_alias(Object, :NotionExportJob, CollavreNotion::NotionExportJob)
-  set_alias(Object, :NotionSyncJob, CollavreNotion::NotionSyncJob)
 
   set_alias(Object, :PermissionCacheJob, Collavre::PermissionCacheJob)
   set_alias(Object, :PushNotificationJob, Collavre::PushNotificationJob)
@@ -138,9 +133,6 @@ Rails.application.config.to_prepare do
     set_alias(Object, :GithubAccount, CollavreGithub::Account)
     set_alias(Object, :GithubRepositoryLink, CollavreGithub::RepositoryLink)
   end
-  set_alias(Object, :NotionAccount, CollavreNotion::NotionAccount)
-  set_alias(Object, :NotionPageLink, CollavreNotion::NotionPageLink)
-  set_alias(Object, :NotionBlockLink, CollavreNotion::NotionBlockLink)
   set_alias(Object, :WebauthnCredential, Collavre::WebauthnCredential)
 end
 
