@@ -96,24 +96,59 @@ function menuState(online, healthStatus, statusText, labels) {
   }
 }
 
+function enableAgentModel(root, user) {
+  if (user.ai_user) {
+    root.dataset.controller += ' comment-agent-model'
+    root.dataset.commentAgentModelUrlValue = `${user.profile_url}/agent-model`
+  }
+}
+
+function appendPrimaryAgentButton(menu, user, labels) {
+  if (!user.ai_user) return
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'popup-menu-item'
+  button.setAttribute('role', 'menuitem')
+  button.dataset.commentUserMenuTarget = 'primaryAgent'
+  button.dataset.action = 'click->comment-user-menu#setPrimaryAgent'
+  button.dataset.setText = labels.setPrimaryAgent
+  button.dataset.clearText = labels.clearPrimaryAgent
+  button.textContent = labels.setPrimaryAgent
+  button.disabled = true
+  menu.appendChild(button)
+}
+
+function menuTrigger(user, online, labels, draggable) {
+  const trigger = document.createElement('button')
+  trigger.type = 'button'
+  trigger.className = 'popup-menu-toggle comment-user-menu-trigger'
+  trigger.dataset.popupMenuTarget = 'button'
+  trigger.dataset.action = 'click->comment-user-menu#syncPrimaryAgent click->popup-menu#toggle' + (user.ai_user ? ' click->comment-agent-model#load' : '')
+  trigger.setAttribute('aria-label', labels.open.replace('%{name}', user.name))
+  trigger.setAttribute('aria-haspopup', 'menu')
+  trigger.setAttribute('aria-expanded', 'false')
+  trigger.appendChild(avatarElement(user, 20, `avatar comment-presence-avatar${online ? '' : ' inactive'}`))
+  if (draggable) {
+    const handle = document.createElement('span')
+    handle.className = 'ai-agent-draggable'
+    handle.draggable = true
+    handle.dataset.agentId = user.id
+    handle.appendChild(trigger)
+    return handle
+  }
+  return trigger
+}
+
 export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
   const state = menuState(online, healthStatus, statusText, labels)
   const root = document.createElement('div')
   root.className = 'popup-menu-wrapper comment-user-menu'
   root.dataset.controller = 'popup-menu comment-user-menu'
+  enableAgentModel(root, user)
   root.dataset.commentUserMenuUserIdValue = user.id
   root.dataset.commentUserMenuUserNameValue = user.name
 
-  const trigger = document.createElement('button')
-  trigger.type = 'button'
-  trigger.className = 'popup-menu-toggle comment-user-menu-trigger'
-  trigger.dataset.popupMenuTarget = 'button'
-  trigger.dataset.action = 'click->popup-menu#toggle'
-  trigger.setAttribute('aria-label', labels.open.replace('%{name}', user.name))
-  trigger.setAttribute('aria-haspopup', 'menu')
-  trigger.setAttribute('aria-expanded', 'false')
-  trigger.appendChild(avatarElement(user, 20, `avatar comment-presence-avatar${online ? '' : ' inactive'}`))
-  root.appendChild(trigger)
+  root.appendChild(menuTrigger(user, online, labels, draggable))
 
   const menu = document.createElement('div')
   menu.id = menuId
@@ -121,6 +156,9 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   menu.dataset.popupMenuTarget = 'menu'
   menu.dataset.action = 'click->popup-menu#menuClick'
   menu.setAttribute('role', 'menu')
+  menu.addEventListener('dragstart', (event) => event.preventDefault())
+  // Keep the chat wheel handler from treating the profile as part of the message area.
+  menu.addEventListener('wheel', (event) => event.stopPropagation(), { passive: true })
   menu.appendChild(menuHeader(user, state, labels))
 
   const profile = document.createElement('a')
@@ -138,6 +176,7 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   mention.setAttribute('role', 'menuitem')
   mention.textContent = labels.mention
   menu.appendChild(mention)
+  appendPrimaryAgentButton(menu, user, labels)
 
   if (draggable) {
     const guide = document.createElement('p')
@@ -148,4 +187,19 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
 
   root.appendChild(menu)
   return root
+}
+
+export function userMenuLabels(element) {
+  return {
+    open: element.dataset.userMenuOpenText || 'Open %{name}\'s profile menu',
+    viewProfile: element.dataset.userMenuViewProfileText || 'View profile',
+    mention: element.dataset.userMenuMentionText || 'Mention',
+    setPrimaryAgent: element.dataset.userMenuSetPrimaryAgentText,
+    clearPrimaryAgent: element.dataset.userMenuClearPrimaryAgentText,
+    dragGuide: element.dataset.userMenuAgentDragGuideText || '',
+    online: element.dataset.participantOnlineText || 'Online',
+    offline: element.dataset.participantOfflineText || 'Offline',
+    unknown: element.dataset.participantHealthUnknownText || 'Health status unavailable',
+    check_error: element.dataset.participantHealthCheckErrorText || 'Health check error'
+  }
 }

@@ -36,6 +36,7 @@ class CreativesControllerSlideViewTest < ActionDispatch::IntegrationTest
   test "slide_view renders successfully" do
     get collavre.slide_view_creative_path(@root)
     assert_response :success
+    assert_select 'link[rel="stylesheet"][href*="collavre/attachment_card"]', count: 1
     assert_select "body.creative-description-justified"
   end
 

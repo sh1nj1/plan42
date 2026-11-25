@@ -7,6 +7,10 @@ module Collavre
     belongs_to :comment, class_name: "Collavre::Comment", counter_cache: true
     belongs_to :review_comment, class_name: "Collavre::Comment", optional: true
 
+    def comment_attributes
+      { content: content, agent_run_options: agent_run_options, selected_version_id: id }
+    end
+
     validates :content, presence: true
     validates :version_number, presence: true,
                                uniqueness: { scope: :comment_id },

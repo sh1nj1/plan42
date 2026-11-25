@@ -1,5 +1,3 @@
-require_relative "../../lib/omniauth/strategies/notion"
-
 # Register OAuth keys with the IntegrationSettings registry so the admin UI
 # can surface them and `Collavre::IntegrationSettings::Resolver` can serve
 # values via the DB > ENV > default precedence. Registered eagerly (not in
@@ -10,8 +8,6 @@ if defined?(Collavre::IntegrationSettings::Registry)
   registry.register(:google_client_secret, category: "google_oauth", sensitive: true,  requires_restart: true)
   registry.register(:github_client_id,     category: "github_oauth", sensitive: false, requires_restart: true)
   registry.register(:github_client_secret, category: "github_oauth", sensitive: true,  requires_restart: true)
-  registry.register(:notion_client_id,     category: "notion_oauth", sensitive: false, requires_restart: true)
-  registry.register(:notion_client_secret, category: "notion_oauth", sensitive: true,  requires_restart: true)
 end
 
 resolve_oauth = lambda do |key, credentials_path|
@@ -39,8 +35,6 @@ google_client_id     = resolve_oauth.call(:google_client_id,     %i[google clien
 google_client_secret = resolve_oauth.call(:google_client_secret, %i[google client_secret])
 github_client_id     = resolve_oauth.call(:github_client_id,     %i[github client_id])
 github_client_secret = resolve_oauth.call(:github_client_secret, %i[github client_secret])
-notion_client_id     = resolve_oauth.call(:notion_client_id,     %i[notion client_id])
-notion_client_secret = resolve_oauth.call(:notion_client_secret, %i[notion client_secret])
 
 github_mock_setting = resolve_oauth.call(:github_mock, %i[github mock])
 github_mock_enabled = if github_mock_setting.present?
@@ -76,28 +70,21 @@ Rails.application.config.middleware.use OmniAuth::Builder do
              scope: "repo read:org admin:repo_hook",
              allow_signup: false
   end
-
-  if notion_client_id.present? && notion_client_secret.present?
-    provider :notion,
-             notion_client_id,
-             notion_client_secret
-  end
 end
 
 OmniAuth.config.allowed_request_methods = %i[get post]
 
+# Enable GitHub mock mode in development when no real credentials are configured.
+# Set GITHUB_MOCK=0 to explicitly disable.
 if github_mock_enabled
   OmniAuth.config.test_mode = true
+end
+
+if github_mock_enabled
   OmniAuth.config.mock_auth[:github] = OmniAuth::AuthHash.new(
     provider: "github",
     uid: "12345",
-    info: {
-      nickname: "dev-user",
-      name: "Dev User",
-      image: "https://avatars.githubusercontent.com/u/12345"
-    },
-    credentials: {
-      token: "fake-dev-token"
-    }
+    info: { nickname: "dev-user", name: "Dev User", image: "https://avatars.githubusercontent.com/u/12345" },
+    credentials: { token: "fake-dev-token" }
   )
 end

@@ -11,6 +11,23 @@ class CreativesControllerWorkflowPanelTest < ActionDispatch::IntegrationTest
     sign_in_as users(:one), password: "password"
   end
 
+  test "workflow editor excludes owned searchable and shared judgment-only agents" do
+    judge = User.create!(name: "Judge", email: "judge-editor@example.test", password: "password123",
+                         llm_vendor: "typesafe", llm_model: "jev-latest", searchable: true,
+                         creator: users(:one))
+    CreativeShare.create!(creative: @workflow, user: judge, permission: :feedback)
+    chat = User.create!(name: "Chat", email: "chat-editor@example.test", password: "password123",
+                        llm_vendor: "openai", llm_model: "gpt-4o", searchable: true,
+                        creator: users(:one))
+    rule = create_workflow_rule(parent: @workflow, handler: { "type" => "agent", "agent_ids" => [ judge.id ] })
+    editor = Collavre::Workflow::Editor.new(@workflow, users(:one))
+    ids = editor.as_json[:agents].pluck(:id)
+
+    assert_not_includes ids, judge.id
+    assert_includes ids, chat.id
+    assert_includes editor.rule_json(rule)[:warnings], I18n.t("collavre.workflow.editor.agent_unavailable")
+  end
+
   test "active workflow edit renders localized controls and tree navigation" do
     get edit_creative_path(@workflow)
     assert_response :success
@@ -21,10 +38,12 @@ class CreativesControllerWorkflowPanelTest < ActionDispatch::IntegrationTest
     assert_select "template [name='event']"
     assert_select "template input[type='radio'][value='agent']"
     assert_select "template select[multiple]"
+    assert_select "template input[name=topic-name][placeholder=?]", I18n.t("collavre.topics.main_name")
     assert_select "template details:not([open]) textarea[name='expression']"
     assert_select "a[href='#{creative_path(@workflow)}']", text: I18n.t("collavre.workflow.editor.tree_link")
     users(:one).update!(locale: "ko")
     get edit_creative_path(@workflow), headers: { "Accept-Language" => "ko" }
+    assert_select "template input[name=topic-name][placeholder=?]", I18n.t("collavre.topics.main_name", locale: :ko)
     assert_select "h2", text: I18n.t("collavre.workflow.editor.title", locale: :ko)
   end
 

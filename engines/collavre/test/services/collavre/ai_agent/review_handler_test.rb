@@ -12,6 +12,21 @@ module Collavre
         @topic = Topic.create!(creative: @creative, name: "test", user: @user)
       end
 
+      test "successive reviews keep each version's own run metadata" do
+        comment = @creative.comments.create!(content: "Draft", user: @agent, topic: @topic)
+        review = @creative.comments.create!(content: "Review", user: @user, topic: @topic, quoted_comment: comment)
+        task = Task.create!(name: "Review", status: "running", agent: @agent)
+        handler = ReviewHandler.new(review, @agent)
+        review.stub(:review_message?, true) do
+          handler.handle("First", task: task, agent_run_options: { "reasoning_effort" => "low" })
+          handler.handle("Second", task: task, agent_run_options: { "reasoning_effort" => "high" })
+        end
+        versions = comment.comment_versions.order(:version_number)
+        assert_equal [ "Draft", "First", "Second" ], versions.map(&:content)
+        assert_equal [ nil, { "reasoning_effort" => "low" }, { "reasoning_effort" => "high" } ], versions.map(&:agent_run_options)
+        assert_equal versions.last.agent_run_options, comment.reload.agent_run_options
+      end
+
       test "eligible? returns false when original_comment is nil" do
         refute ReviewHandler.eligible?(nil, @agent)
       end

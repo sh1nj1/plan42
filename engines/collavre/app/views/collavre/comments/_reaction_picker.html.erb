@@ -4,12 +4,5 @@
      data-controller="reaction-picker"
      data-action="click@window->reaction-picker#handleClickOutside"
      style="position: fixed; z-index: 9999;">
-  <% ["👍", "🎉", "❤️", "😂", "😮", "😢", "😡", "✅", "👌", "👀"].each do |emoji| %>
-    <button class="comment-reaction-picker-emoji" 
-            type="button" 
-            data-action="click->reaction-picker#select" 
-            data-emoji="<%= emoji %>">
-      <%= emoji %>
-    </button>
-  <% end %>
+  <%= render "collavre/comments/reaction_buttons", action: "click->reaction-picker#select", selected: nil, filter: false %>
 </div>

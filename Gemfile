@@ -1,7 +1,7 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 8.1.3"
+gem "rails", "~> 8.1.4"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
 # Use sqlite3 as the database for Active Record. Also in :desktop so the bundled
@@ -32,7 +32,8 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
 gem "solid_queue"
-gem "solid_cable"
+# 4.1.0 uses the synchronous broadcaster installed by solid_cable_resilience.rb.
+gem "solid_cable", "~> 4.1.0"
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
@@ -44,7 +45,7 @@ gem "kamal", require: false
 gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 2.1"
+gem "image_processing", "~> 2.2"
 # Rails defaults to the :vips variant processor. image_processing 2.0 makes ruby-vips a soft
 # dependency, so declare it explicitly for avatar and comment image processing.
 # require: false leaves loading to ActiveStorage/image_processing rather than Bundler.
@@ -55,6 +56,8 @@ gem "ruby-vips", "~> 2.0", require: false
 
 # Use AWS S3 for Active Storage
 gem "aws-sdk-s3", require: false
+# Invalidate CloudFront /public-assets/* when a public blob is removed
+gem "aws-sdk-cloudfront", require: false
 
 gem "closure_tree"
 gem "fcm"
@@ -68,7 +71,7 @@ gem "omniauth-rails_csrf_protection"
 gem "omniauth-github"
 gem "httparty"
 gem "octokit"
-gem "ruby_llm"
+gem "ruby_llm", "~> 2.1.0"
 gem "liquid"
 
 # :desktop too — config/boot.rb requires "dotenv" unconditionally, and the
@@ -106,11 +109,8 @@ end
 
 gem "doorkeeper", "~> 5.9"
 
-if File.exist?(File.expand_path("../rails_mcp_engine", __FILE__))
-  gem "rails_mcp_engine", "~> 0.4.2", path: "../rails_mcp_engine"
-else
-  gem "rails_mcp_engine", "~> 0.4.2"
-end
+# Released MCP tool factory with RubyLLM 2.x support.
+gem "rails_mcp_engine", "~> 0.5.0"
 
 # Load all local engines found in ./engines
 # Set USE_COLLAVRE_GEM=true to use installed gem instead of local path

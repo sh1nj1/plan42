@@ -6,12 +6,24 @@ module Collavre
     end
 
     def items
-      built_in_items + mcp_items
+      [ keep_item ] + built_in_items + mcp_items
     end
 
     private
 
     attr_reader :user, :creative
+
+    def keep_item
+      { name: "keep", label: "/keep",
+        description: I18n.t("collavre.comments.keep_command.description"),
+        args: I18n.t("collavre.comments.keep_command.args"),
+        input_schema: [
+          { name: "max", type: "integer", minimum: 1, maximum: 1000, required: false, description: I18n.t("collavre.comments.keep_command.max_hint") },
+          { name: "cooldown", type: "integer", minimum: 0, maximum: 3600, required: false, description: I18n.t("collavre.comments.keep_command.cooldown_hint") },
+          { name: "agent_name", type: "string", format: "keep_agent", required: false, description: I18n.t("collavre.comments.keep_command.agent_hint") },
+          { name: "goal", type: "string", required: false, description: I18n.t("collavre.comments.keep_command.goal_hint") }
+        ] }
+    end
 
     def built_in_items
       [
@@ -58,20 +70,22 @@ module Collavre
     def mcp_items
       Collavre::McpService.available_tools(user).filter_map do |tool|
         tool_name = tool[:name] || tool["name"]
-        next unless tool_name
+        next if tool_name.blank? || tool_name == "keep"
 
         raw_params = tool[:params] || tool["params"]
         schema = normalize_params(raw_params)
         defaults = tool_defaults_for(tool_name)
         apply_defaults_to_schema(schema, defaults) if defaults.present?
 
+        text = ToolDescription.for(tool_name, tool[:description] || tool["description"])
         {
           name: tool_name,
           label: "/#{tool_name}",
-          description: tool[:description] || tool["description"],
+          description: text[:summary],
+          details: text[:details],
           args: format_args(raw_params),
           input_schema: schema
-        }
+        }.compact
       end
     end
 

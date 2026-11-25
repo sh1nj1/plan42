@@ -64,6 +64,15 @@ class CreativesController < ApplicationController
 end
 ```
 
+## Link Removal
+
+`Creative#destroyable_by?` permits the persisted owner of a linked shell
+(`user_id`, not the origin-resolving `user` association) to remove that shell,
+even without origin edit access. It retains the Kollavy access-scope gate and
+the existing admin deletion rule for other cases. This grants no origin
+permissions. The context menu labels linked-shell deletion as "Remove link";
+the origin tree is preserved for either deletion option.
+
 ## Creating Permissions
 
 ```ruby
@@ -302,3 +311,60 @@ declarative write-invalidation dispatcher per model, the skill-tree work can:
   deny-invariant at each call site.
 - Add new invalidating attributes/edges by extending the declarative maps,
   inheriting the "cannot silently skip invalidation" invariant for free.
+
+## Kollavy conversation isolation
+
+Queued and approval-resumed Kollavy turns require current `feedback` permission
+before prompt construction, reply creation, and provider handoff. These checks
+read authoritative shares so a downgrade to `read` cancels the turn even while
+the permission cache still grants commenting access.
+
+Kollavy is shared with every human Inbox, but those grants must never combine
+into one searchable workspace. During a Kollavy turn, `Kollavy::AccessScope`
+intersects ordinary creative permissions with the server-side task's creative
+and its descendants. A missing or mismatched task context allows no creative
+data. This is a restriction, not user impersonation or an additional grant.
+
+The boundary applies to search, direct reads, recursive tree output, topic and
+attachment tools, schedules, and creative mutations. Linked creatives must have
+both their placement and resolved origin inside the tree. The server-owned task
+shell is admitted when a turn starts on a link outside its origin hierarchy;
+its origin chain must still stay within that hierarchy. Other external shells
+and placement ancestors remain excluded. Prompt references
+and configured context creatives follow the same boundary. Parentless creation
+is rejected; users should open another creative's chat to work in that tree.
+Source-code tools remain available independently of creative data.
+
+Rollback-only review draft capture retains the original agent turn for scoped
+authorization while suspending normal turn history. Capture does not widen
+permissions, and its temporary authorization context is restored on failure.
+
+### Approved agent tool execution
+
+Approved invocations recheck the task creative's current read grant before
+dispatch. During execution, `Current.authoritative_permissions` routes each
+`PermissionChecker` check through current shares, including the tool's write
+target and move destination. This context follows nested meta-tool calls and
+is restored on success or failure. Approval never preserves a revoked grant
+or borrows the approver's permissions. Ordinary turns retain cached checks.
+
+### Agent tool execution allowlist
+
+An AI agent's persisted `tools` selection authorizes execution, in addition to
+choosing provider tool schemas. An empty selection grants no tools. Execution
+checks read the current database value without the request query cache so a
+queued call or approval cannot retain a revoked grant.
+
+The guard applies to RubyLLM calls, direct MCP calls, and targets dispatched by
+`meta_tool` (including nested `run`/`call` aliases and approval replay). Selecting
+`meta_tool` grants no implicit permission to its targets. CLI workspace callback
+tokens use the workspace agent's allowlist even when the token belongs to a
+human. Ordinary human MCP access remains governed by existing permissions.
+Creative permissions and tool approval requirements still apply independently.
+This controls Collavre tool execution, not a remote CLI's native shell tools.
+
+MCP `tools/list` and `meta_tool` discovery (`list`, `list_summary`, `search`,
+and `get`) expose only tools in the current agent's persisted allowlist,
+intersected with the existing tool/creative access restrictions. A meta-only
+grant exposes only `meta_tool`; it does not expose its unselected targets.
+Human configuration screens still offer tools the owner can grant.

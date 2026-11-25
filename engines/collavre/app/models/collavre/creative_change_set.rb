@@ -27,6 +27,9 @@ module Collavre
     validates :status, inclusion: { in: STATUSES }
 
     after_rollback :clear_current_reference, on: :create
+    # A draft create is visible through its intended parent only while it is a
+    # draft, so files /public-assets cached from it must go once it leaves draft.
+    after_update :evict_cached_history_files, if: -> { saved_change_to_status?(from: "draft") }
 
     scope :visible_by_default, -> { where.not(origin: "sync") }
     scope :newest_first, -> { reorder(created_at: :desc, id: :desc) }
@@ -53,6 +56,13 @@ module Collavre
     end
 
     private
+
+    def evict_cached_history_files
+      CdnInvalidation.invalidate_blob_ids(
+        ActiveStorage::Attachment.where(record_type: CreativeChange.name, name: "history_files",
+                                        record_id: creative_changes.select(:id)).select(:blob_id)
+      )
+    end
 
     def clear_current_reference
       Current.change_set = nil if Current.change_set.equal?(self)

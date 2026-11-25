@@ -4,6 +4,8 @@ module Collavre
   module Api
     module V1
       class AgentsController < BaseController
+        include Collavre::Api::ClaudeChannelPrompts
+
         # POST /api/v1/agent/register
         # Registers a Claude Code session, separating two identities:
         #   - Agent (agent_name): the user-facing unit. One shared ai_user per
@@ -159,7 +161,7 @@ module Collavre
           result = AiAgent::TaskReplyService.new(
             topic: topic, current_user: current_user, text: params[:text], requested_task_id: params[:task_id],
             agent_resolver: method(:resolve_reply_agent), task_claimer: method(:claim_delegated_task),
-            claim_service: task_claim_service
+            claim_service: task_claim_service, pending_approval_ids: params[:pending_approval_ids]
           ).call
           dispatch_a2a(result.agent, result.comment.reload, task: result.task) if result.comment
           render json: result.body, status: result.status
@@ -174,22 +176,24 @@ module Collavre
         # spawning a new delegated task for the agent's own message.
         def notify
           topic = Topic.find_by(id: params[:topic_id])
-          unless topic
-            render json: { error: "Topic not found" }, status: :not_found
-            return
-          end
+          return render json: { error: "Topic not found" }, status: :not_found unless topic
 
           creative = topic.creative&.effective_origin
-          unless creative
-            render json: { error: "Creative not found" }, status: :not_found
-            return
-          end
+          return render json: { error: "Creative not found" }, status: :not_found unless creative
 
           unless creative.has_permission?(current_user, :feedback)
             render json: { error: "Not authorized" }, status: :forbidden
             return
           end
 
+          # Authorize, persist the prompt, and park its task under the same lock
+          # as resend, so a discarded turn cannot publish a late approval UI.
+          applied = Comments::TopicMutation.call(topic.id, creative.id) { persist_notification(creative, topic) }
+          render json: { error: "Topic not found" }, status: :not_found unless applied
+        end
+        private
+
+        def persist_notification(creative, topic)
           # The poster must be this session's own Claude Channel agent, owned by
           # the token holder — so /notify can't be used to ventriloquize an
           # unrelated agent or post into a topic the caller doesn't drive.
@@ -199,18 +203,7 @@ module Collavre
             return
           end
 
-          comment =
-            if params[:permission_request_id].present?
-              build_permission_comment(creative, topic, agent)
-            else
-              creative.comments.build(
-                content: params[:text].to_s,
-                topic: topic,
-                user: agent,
-                skip_default_user: true,
-                skip_dispatch: true
-              )
-            end
+          comment = build_notify_comment(creative, topic, agent)
 
           if comment.save
             park_pending_permission(topic, agent, params[:task_id], params[:permission_request_id])
@@ -218,122 +211,8 @@ module Collavre
           else
             render json: { errors: comment.errors.full_messages }, status: :unprocessable_entity
           end
-        end
-        private
-
-        # Build a structured tool-permission comment that reuses the native
-        # approval UI (approver gate + approve/deny buttons). The prompt text is
-        # rendered server-side via I18n (localized for the viewer), not formatted
-        # by the plugin. The action payload carries the request_id so the
-        # eventual approve/deny relays the exact decision to the suspended
-        # session. approver is the token holder driving this Claude session — the
-        # only human who should resolve its prompts.
-        def build_permission_comment(creative, topic, agent)
-          tool_name = params[:tool_name].to_s.strip.presence || "tool"
-          args_raw = sanitize_permission_arguments(params[:arguments])
-          description = params[:description].to_s.strip
-
-          action_payload = {
-            "action" => Comment::ClaudeChannelPermission::ACTION_TYPE,
-            "request_id" => params[:permission_request_id].to_s,
-            "tool_name" => tool_name,
-            "description" => description,
-            "arguments" => args_raw
-          }
-
-          # The API base controller authenticates the bearer token but does not
-          # run the host app's locale switching, so I18n.locale is the process
-          # default here. Render the persisted prompt in the token holder's
-          # locale explicitly — they are the approver who will read it.
-          content = I18n.with_locale(current_user&.locale.presence || I18n.default_locale) do
-            I18n.t(
-              "collavre.claude_channel.permission.message",
-              tool_name: format_permission_tool_name(tool_name),
-              description: format_permission_description(description),
-              arguments: format_permission_arguments(args_raw)
-            )
-          end
-
-          creative.comments.build(
-            content: content,
-            topic: topic,
-            user: agent,
-            approver: current_user,
-            action: JSON.pretty_generate(action_payload),
-            skip_default_user: true,
-            skip_dispatch: true
-          )
-        end
-
-        # Coerce the arguments param into a JSON-safe value: a permitted Hash, a
-        # plain string, or nil. ActionController::Parameters must be unwrapped or
-        # JSON.pretty_generate raises on unpermitted parameters.
-        def sanitize_permission_arguments(arguments)
-          return nil if arguments.blank?
-
-          arguments.respond_to?(:to_unsafe_h) ? arguments.to_unsafe_h : arguments
-        end
-
-        # Render the (already sanitized) tool arguments for the prompt body. The
-        # result is interpolated inside a ```json fence and the comment is later
-        # passed through renderCommentMarkdown, so the value must never be able to
-        # close that fence. A string input_preview (the documented shape for many
-        # tools, e.g. a Bash command) is therefore JSON-serialized rather than
-        # emitted raw: that escapes embedded newlines to \n, collapsing it to a
-        # single line so no payload line can begin a ``` delimiter and break out
-        # into live markdown that misleads the approver.
-        def format_permission_arguments(arguments)
-          return I18n.t("collavre.claude_channel.permission.no_arguments") if arguments.blank?
-
-          JSON.pretty_generate(arguments)
-        end
-
-        # Render the optional human-readable permission summary Claude Code sends
-        # alongside the structured fields. Absent for most tools, so it collapses
-        # to an empty string (no stray blockquote); when present it is the only
-        # plain-language description of what the approver is allowing.
-        def format_permission_description(description)
-          return "" if description.blank?
-
-          # The description renders into a "> %{text}" blockquote, so any newline
-          # would drop the remainder onto a fresh line where it could open a
-          # heading or ```fence and escape into live markdown. Flatten line breaks
-          # to whitespace so the whole summary stays inside the one blockquote line
-          # (inline backticks there are harmless — a fence must start a line).
-          flattened = description.gsub(/\s*\R\s*/, " ").strip
-          I18n.t("collavre.claude_channel.permission.description", text: flattened)
-        end
-
-        # Render the tool name for the prompt. Unlike description/arguments it is
-        # interpolated into a "**%{tool_name}**" emphasis span and the comment is
-        # later passed through renderCommentMarkdown, so an unescaped value (e.g. a
-        # third-party MCP tool name) could close the surrounding "**", or — via an
-        # embedded newline — start a fresh-line heading/fence and misrepresent which
-        # tool the approver is authorizing. Flatten line breaks to whitespace and
-        # backslash-escape markdown metacharacters so the name always renders
-        # literally. The raw name is still kept in the action payload.
-        def format_permission_tool_name(tool_name)
-          flattened = tool_name.gsub(/\s*\R\s*/, " ").strip
-          flattened.gsub(/([\\`*_{}\[\]()#+\-.!~>|<])/) { "\\#{$1}" }
-        end
-
-        # When the relayed comment is a native tool-permission prompt (carries a
-        # permission_request_id), park the in-flight dispatch as "awaiting a
-        # decision" by stamping pending_tool_call on its delegated task.
-        # Comment#dispatch_to_orchestration then relays the human's subsequent
-        # allow/deny straight to this suspended session instead of queuing it
-        # behind the delegated topic slot (which would deadlock — the task holds
-        # the slot it is itself waiting to be unblocked on). Cleared when the
-        # task is completed (/reply) or cancelled (unregister/stuck recovery).
-        def park_pending_permission(topic, agent, requested_task_id, request_id)
-          return if request_id.blank? || requested_task_id.blank?
-
-          task = Task.where(topic_id: topic.id, status: "delegated", agent_id: agent.id)
-                     .find_by(id: requested_task_id)
-          task&.update_column(:pending_tool_call, {
-            "request_id" => request_id.to_s,
-            "requested_at" => Time.current.iso8601
-          })
+        rescue InvalidApprovalRequest => e
+          render json: { error: e.message }, status: :unprocessable_entity
         end
 
         # Identify which Claude Channel agent a /notify posts as.
@@ -355,7 +234,7 @@ module Collavre
         # must not silently post as primary_agent.
         def resolve_notify_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.awaiting_reply.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -378,8 +257,8 @@ module Collavre
         # topic.primary_agent gate would 403 the reply and leave the delegated
         # task hanging.
         #
-        # When task_id is provided, look it up scoped to this topic and the
-        # delegated state, then take the agent from the task. The token holder
+        # When task_id is provided, look it up scoped to this topic, then take
+        # the agent from the task. The token holder
         # is still required to own the agent (created_by_id == current_user.id)
         # and the agent must be a Claude Channel agent so this endpoint can't
         # be used to ventriloquize an unrelated AI agent.
@@ -387,17 +266,29 @@ module Collavre
         # When task_id is absent, fall back to topic.primary_agent for
         # back-compat with older plugin builds that don't echo task_id.
         #
-        # If task_id IS supplied but the delegated task lookup fails (late
-        # reply after cancel/timeout, stale id, wrong topic), do NOT fall
-        # through to primary_agent — a present-but-unresolved task_id means
-        # the client believes it is answering a specific dispatch that no
-        # longer exists. Saving the reply against primary_agent would create
-        # an unlinked comment while complete_delegated_task finds nothing,
-        # potentially duplicating a reply after the task was already
-        # completed/cancelled. Return nil so reply renders 403.
+        # If task_id IS supplied but no task with that id exists on this topic
+        # (stale id, wrong topic) — or it belongs to a different/non-Claude
+        # agent — do NOT fall through to primary_agent. A present-but-foreign
+        # task_id means the client believes it is answering a dispatch it does
+        # not actually own; saving against primary_agent would create an
+        # unlinked comment. Return nil → reply renders 403.
+        #
+        # BUT do NOT gate this lookup on the task still awaiting a reply.
+        # Multiple Claude Channel sessions sharing one agent (the default
+        # AGENT_NAME case: two `claude --channels` sessions in the same working
+        # directory) all stream from agent:user:<id>, so a single dispatch fans
+        # out to every session and each calls /reply with the same task_id. The
+        # intended dedup is the atomic claim in claim_delegated_task, which
+        # yields a 409 carrying reason "already_completed" for the loser — a
+        # signal the MCP plugin treats as benign. Filtering on status HERE made
+        # the loser fail one layer too early: the sibling already completed the
+        # task, this lookup returned nil, and reply rendered a misleading 403
+        # "Not authorized" that the plugin surfaced as a hard error. Resolve the
+        # agent for any task on THIS topic owned by the caller's Claude Channel
+        # agent, regardless of status, and let the claim decide actionability.
         def resolve_reply_agent(topic, requested_task_id)
           if requested_task_id.present?
-            task = Task.where(topic_id: topic.id, status: "delegated").find_by(id: requested_task_id)
+            task = Task.where(topic_id: topic.id).find_by(id: requested_task_id)
             agent = task&.agent
             return nil unless agent && agent.claude_channel_agent? && agent.created_by_id == current_user.id
 
@@ -434,7 +325,7 @@ module Collavre
         # this topic are unambiguously the ending session's — its session topic
         # is private to it.
         def cancel_tasks_for_topic(agent, topic)
-          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running]), agent)
+          cancel_pending_tasks(Task.where(topic_id: topic.id, status: %w[queued pending running suspended]), agent)
           cancel_delegated_tasks(Task.where(topic_id: topic.id, status: "delegated"), agent)
         end
 
@@ -455,7 +346,8 @@ module Collavre
           end
         end
 
-        # Cancel pre-delegation tasks for this session's agent:
+        # Cancel pre-delegation and suspended tasks for this session's agent:
+        #   - suspended: explicitly ended turns must never resume on reconnect
         #   - queued: waiting in topic queue, no slot reserved
         #   - pending: between dequeue and AiAgentJob#perform, no slot reserved
         #   - running: AiAgentJob is mid-perform; for Claude Channel agents the
@@ -468,7 +360,7 @@ module Collavre
         # idempotent (Set#delete no-ops on missing key) and we don't know from
         # the DB whether AiAgentJob had already reached tracker.reserve!.
         def cancel_pending_tasks_for_session(agent)
-          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running]), agent)
+          cancel_pending_tasks(Task.where(agent_id: agent.id, status: %w[queued pending running suspended]), agent)
         end
 
         def cancel_pending_tasks(tasks, agent)
@@ -477,7 +369,7 @@ module Collavre
           tracker = Orchestration::ResourceTracker.for(agent)
           drained_topics = {}
           tasks.find_each do |task|
-            previous_status = task.cancel_if_active!(statuses: %w[queued pending running])
+            previous_status = task.cancel_if_active!(statuses: %w[queued pending running suspended])
             next unless previous_status
 
             was_running = previous_status == "running"
@@ -518,15 +410,7 @@ module Collavre
             return
           end
 
-          payload = task.trigger_event_payload || {}
-          user =
-            if payload.key?("workspace_user_id")
-              User.find_by(id: payload["workspace_user_id"])
-            else
-              Comment.find_by(id: payload.dig("comment", "id"))&.user
-            end
-
-          user unless user&.ai_user?
+          AiAgent::TaskWorkspaceUser.resolve(task)
         end
 
         # Provisions the (agent, topic) identities for a Claude Code
@@ -546,7 +430,7 @@ module Collavre
         # test that patches AgentsController#claim_delegated_task to inject a race
         # keeps exercising the same seam.
         def claim_delegated_task(agent, topic, requested_task_id)
-          task_claim_service.claim(agent: agent, topic: topic, requested_task_id: requested_task_id)
+          task_claim_service.claim(agent:, topic:, requested_task_id:, requested_generation: params[:execution_generation])
         end
       end
     end

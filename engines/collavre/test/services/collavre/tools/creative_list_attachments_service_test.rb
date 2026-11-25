@@ -15,14 +15,14 @@ module Collavre
 
       teardown { Current.user = nil }
 
-      test "lists all attachments with public URLs" do
+      test "lists all attachments with authorized URLs" do
         result = CreativeListAttachmentsService.new.call(creative_id: @creative.id)
         assert result[:success]
         assert_equal 2, result[:attachments].length
         filenames = result[:attachments].map { |a| a[:filename] }
         assert_includes filenames, "a.txt"
         assert_includes filenames, "b.txt"
-        assert(result[:attachments].all? { |a| a[:url].include?("/public-assets/blobs/") })
+        assert(result[:attachments].all? { |a| a[:url].start_with?("/rails/active_storage/blobs/proxy/") })
       end
 
       test "rejects when user lacks read permission" do

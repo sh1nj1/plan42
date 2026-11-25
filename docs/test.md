@@ -2,14 +2,15 @@
 
 ## Create Test User
 
-You can create test user without email verification by app console.
+Create a dedicated account using credentials retrieved from the approved secret store. Assign them to the local
+`test_email` and `test_password` variables before running this example.
 
 ```ruby
 User.create!(
-      email: "tester@example.com",
+      email: test_email,
       name: "Test User",
-      password: "Tester42$@",
-      password_confirmation: "Tester42$@",
+      password: test_password,
+      password_confirmation: test_password,
       system_admin: false,
       display_level: 6,
       timezone: "UTC",
@@ -22,10 +23,8 @@ User.create!(
 Test and verify the core functionalities of https://collavre.com
 
 Before you test sign out first if already signed in.
-Use the following login credentials:
-
-Email: tester@example.com
-Password: Tester42$@
+Use a dedicated test account provisioned by an administrator. Retrieve its
+credentials from the approved secret store; never commit them to this repository.
 
 Collavre's features are in the Collavre itself, you can visit the features list here URL: https://collavre.com/creatives?id=1
 - Items has progress percentage (0% to 100%)

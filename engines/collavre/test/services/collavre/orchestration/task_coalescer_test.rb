@@ -46,6 +46,25 @@ module Collavre
       end
 
       [ :older, :all ].each do |scope|
+        [ true, false ].each do |keep_survives|
+          test "#{scope} never folds keep work when keep survivor is #{keep_survives}" do
+            first = create_waiter(comment_id: 10)
+            second = create_waiter(comment_id: 11)
+            survivor, sibling = scope == :older ? [ second, first ] : [ first, second ]
+            marked = keep_survives ? survivor : sibling
+            payload = marked.trigger_event_payload.deep_dup
+            payload["comment"]["keep_loop_generation"] = 7
+            marked.update!(trigger_event_payload: payload)
+
+            assert_empty TaskCoalescer.coalesce!(survivor, scope: scope)
+            assert_equal "queued", sibling.reload.status
+            assert_equal 7, marked.reload.trigger_event_payload.dig("comment", "keep_loop_generation")
+            assert_nil survivor.reload.trigger_event_payload[TaskCoalescer::PAYLOAD_KEY]
+          end
+        end
+      end
+
+      [ :older, :all ].each do |scope|
         %w[done cancelled failed escalated].each do |ending|
           test "#{scope} fold transfers all replay claims until survivor ends #{ending}" do
             keep = create_waiter(comment_id: 10) if scope == :all

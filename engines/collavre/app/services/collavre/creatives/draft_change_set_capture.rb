@@ -7,12 +7,15 @@ module Collavre
                            change_group_token summary].freeze
       CHANGE_KEYS = %w[creative_id previous_parent_id operation before after position conflict].freeze
 
-      def initialize(anchor:, origin:, summary: nil)
+      # task: owner of the draft when the write carries no agent turn — a
+      # delegated MCP agent answering a document-mode review (CreativeQuoteTurn).
+      def initialize(anchor:, origin:, summary: nil, task: nil)
         @anchor = anchor
         @origin = origin.to_s
         @summary = summary
         @actor = Current.user
         @agent_turn = Current.agent_turn
+        @task = task
       end
 
       def call(capture_required: true, &operation)
@@ -41,12 +44,13 @@ module Collavre
         CreativeChangeSet.find_by(task_id: current_task&.id, status: "draft") if current_task
       end
 
-      def current_task = @agent_turn&.dig(:task)
+      def current_task = @agent_turn&.dig(:task) || @task
 
       def capture
         payload = { result: nil, change_set: nil, changes: nil, blobs: [] }
         ApplicationRecord.transaction(requires_new: true) do
-          Current.set(user: @actor, agent_turn: nil, mcp_request: nil, change_set: nil, creative_history_context: nil) do
+          Current.set(user: @actor, agent_turn: nil, draft_capture_turn: @agent_turn,
+                      mcp_request: nil, change_set: nil, creative_history_context: nil) do
             History.track(**history_context) do
               payload[:result] = yield
               serialize_capture(payload) if payload[:result]&.dig(:success)

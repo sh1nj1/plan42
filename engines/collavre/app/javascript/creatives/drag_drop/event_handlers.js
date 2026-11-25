@@ -28,7 +28,8 @@ import * as moveOperations from './operations';
 import { reportPartialMove } from './move_feedback';
 import { expandBranchWithChildren } from '../branch_expansion';
 import { sendTopicMove } from '../../lib/api/drag_drop';
-import { initIndicator, showLinkHover, hideLinkHover } from './indicator';
+import { isDragLocked, startsRowDrag } from '../../components/creative_tree_row_document_view';
+import { showLinkHover, hideLinkHover } from './indicator';
 import { showMissingMembersPopup } from '../topic_move_members_popup';
 import { alertDialog } from '../../lib/utils/dialog';
 import { restoreTreeEmptyState } from '../../modules/creative_tree_empty_state';
@@ -44,7 +45,6 @@ import {
   readDropSignal,
 } from '../../lib/dnd/session';
 
-const coordPrecision = 5;
 export const CREATIVE_TREE_EXPAND_DELAY_MS = 600;
 
 let hoverExpandTimer = null;
@@ -193,10 +193,6 @@ function resolveTargetTree(targetTreeId) {
   const row = asTreeRow(tree);
   if (!row) return null;
   return { tree, row };
-}
-
-function relaxedCoord(value) {
-  return Math.round(value / coordPrecision) * coordPrecision;
 }
 
 function removeDroppedCreative({ creativeId, treeId }) {
@@ -370,7 +366,7 @@ function getCreativeText(id) {
 
 export function handleDragStart(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
-  if (!tree || tree.draggable === false) return;
+  if (!tree || !startsRowDrag(tree, event)) return;
   const row = asTreeRow(tree);
   if (!row) return;
   const windowId = ensureDragWindowId();
@@ -418,7 +414,7 @@ export function handleDragOver(event, intent = null, kind = null) {
     setLastDragOverRow(null);
     clearHoverExpand();
   }
-  if (!tree || tree.draggable === false) return;
+  if (!tree || isDragLocked(tree)) return;
 
   const dragKind = kind || getDragKind(event.dataTransfer);
 
@@ -540,7 +536,7 @@ export function handleDrop(event, intent = null, { partialFailureMessage = '', d
 
   const { draggedState, isExternal, wasRejectedPayload } = getDraggedContext(event, dragData);
 
-  if (!targetTree || targetTree.draggable === false) {
+  if (!targetTree || isDragLocked(targetTree)) {
     resetDrag();
     return;
   }
@@ -673,7 +669,7 @@ export function handleDrop(event, intent = null, { partialFailureMessage = '', d
       creativeIds: result.succeededIds,
     };
     if (mode === 'move' && detail.sourceWindowId) emitDropSignal(detail);
-    dispatchDropCompletion({ ...detail, context: 'target' });
+    dispatchDropCompletion({ ...detail, context: 'target', rendered: Boolean(moveContext?.rendered && result.ok) });
     return result;
   }).catch((error) => {
     // Only an unusable command or a synchronous transport failure lands here;
@@ -700,16 +696,14 @@ function hasKnownCreativeTreeCycle(ids, targetRow, direction) {
 
 export function handleDragLeave(event) {
   const tree = event.target.closest(DRAGGABLE_SELECTOR);
-  if (!tree || tree.draggable === false) return;
+  if (!tree || isDragLocked(tree)) return;
   clearDragHighlight(tree);
   if (getLastDragOverRow() === tree) setLastDragOverRow(null);
   if (hoverExpandTree === tree || hoverExpandingTrees.has(tree)) clearHoverExpand();
   hideLinkHover();
 }
 
-function handleDragEnd() {
-  resetDrag();
-}
+const handleDragEnd = () => resetDrag();
 
 export function addGlobalListeners() {
   document.addEventListener('dragend', handleDragEnd);
@@ -721,15 +715,6 @@ export function removeGlobalListeners() {
   document.removeEventListener('dragend', handleDragEnd);
   window.removeEventListener('storage', handleStorageChange);
   window.removeEventListener(DROP_COMPLETED_EVENT, handleDropCompletionEvent);
-}
-
-export function registerGlobalHandlers() {
-  initIndicator();
-  addGlobalListeners();
-}
-
-export function hasActiveDrag() {
-  return hasDraggedState();
 }
 
 // Keep domain commands and DOM recovery in this adapter. Native and touch
@@ -760,7 +745,7 @@ export function createCreativeTreeDragDrop({ partialFailureMessage = '' } = {}) 
     selector: DRAGGABLE_SELECTOR,
     accepts: ['creative', 'topic'],
     hitTest: ({ el, event, kind, previousHit }) => {
-      if (el.draggable === false) return null;
+      if (isDragLocked(el)) return null;
       if (kind === 'topic') return 'child';
       return getVerticalDropPosition({
         clientY: event.clientY,

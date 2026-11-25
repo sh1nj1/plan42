@@ -12,11 +12,23 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^mcp__(plugin_collavre_)?collavre__reply$",
+        "matcher": "^mcp__(plugin_collavre_)?collavre__(reply|approval_request)$",
         "hooks": [
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/pretooluse-hook.js"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "rate_limit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/stop-failure-hook.js",
+            "timeout": 10
           }
         ]
       }

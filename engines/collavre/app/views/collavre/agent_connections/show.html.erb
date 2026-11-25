@@ -18,6 +18,8 @@
        data-agent-connection-sync-url-value="<%= collavre.agent_connection_provision_sync_path(@agent) %>"
        data-agent-connection-approve-url-value="<%= collavre.agent_connection_provision_approve_path(@agent, type: '__TYPE__', name: '__NAME__') %>"
        data-agent-connection-delete-url-value="<%= collavre.agent_connection_provision_delete_path(@agent, type: '__TYPE__', name: '__NAME__') %>"
+       data-agent-connection-fast-mode-expected-value="<%= @agent.effective_codex_fast_mode? %>"
+       data-agent-connection-fast-mode-pending-value="<%= t('collavre.agent_connections.fast_mode_pending') %>"
        data-agent-connection-loading-value="<%= t('collavre.agent_connections.loading') %>"
        data-agent-connection-login-value="<%= t('collavre.agent_connections.login') %>"
        data-agent-connection-submit-value="<%= t('collavre.agent_connections.submit') %>"

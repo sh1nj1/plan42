@@ -1,0 +1,5 @@
+ko:
+  collavre:
+    quota:
+      suspend_rejected: "이 실행에서는 해당 작업을 일시중지할 수 없습니다."
+      exhausted: "세션 한도 자동 재시도를 중단했습니다. 에이전트 구독 상태를 확인한 뒤 재개해 주세요."

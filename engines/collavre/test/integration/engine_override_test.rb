@@ -6,8 +6,8 @@ require "ostruct"
 require "securerandom"
 
 class EngineOverrideTest < ActionDispatch::IntegrationTest
-  # Disable parallelization for this test class because it mutates global state
-  # (ActionController::Base.view_paths, I18n.load_path) which can affect other tests.
+  # This changes the process-wide executor. `rake test` runs this file in a
+  # separate process because it mutates view paths and I18n global state.
   parallelize(workers: 1)
 
   setup do

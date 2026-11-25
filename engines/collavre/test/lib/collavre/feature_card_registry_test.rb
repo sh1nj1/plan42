@@ -2,6 +2,10 @@ require "test_helper"
 
 module Collavre
   class FeatureCardRegistryTest < ActiveSupport::TestCase
+    setup do
+      Collavre::Kollavy.seed!
+    end
+
     def teardown
       Collavre::FeatureCardRegistry.unregister(:test_card)
     end
@@ -11,6 +15,39 @@ module Collavre
         title_key: "collavre.comments.empty_state.cards.add_user.title",
         description_key: "collavre.comments.empty_state.cards.add_user.description"
       }.merge(extra))
+    end
+
+    test "Kollavy availability follows the system identity without restarting" do
+      agent = Collavre::Kollavy.agent
+      Collavre.user_class.where(id: agent.id).update_all(system_agent: false)
+      creative = creatives(:tshirt)
+      inbox = Creative.inbox_for(users(:one))
+
+      [ [ creative, nil ], [ inbox, inbox.main_topic ] ].each do |item, topic|
+        assert_not_includes FeatureCardRegistry.for(creative: item, topic: topic).map(&:key), :kollavy
+      end
+      assert_not_includes FeatureCardRegistry.with_builtin_guide.map(&:key), :kollavy
+      assert_not FeatureCardRegistry.find(:kollavy).builtin_guide?
+
+      Collavre.user_class.where(id: agent.id).update_all(system_agent: true)
+
+      assert_includes FeatureCardRegistry.for(creative: creative, topic: nil).map(&:key), :kollavy
+      assert_includes FeatureCardRegistry.with_builtin_guide.map(&:key), :kollavy
+    end
+
+    test "registration does not evaluate availability before the database is ready" do
+      card = register(guide: true, available: -> { raise "database unavailable" })
+
+      assert_equal :test_card, card.key
+    end
+
+    test "a conditional card evaluates availability lazily for external guides too" do
+      available = false
+      card = register(available: -> { available }, guide_url: "https://example.com/docs")
+
+      assert_not card.visible_on?(:default)
+      available = true
+      assert card.visible_on?(:default)
     end
 
     test "a card without a guide renders no learn-more link and has no page" do
@@ -75,6 +112,7 @@ module Collavre
 
       keys = Collavre::FeatureCardRegistry.for(creative: inbox, topic: main_topic).map(&:key)
 
+      assert_includes keys, :kollavy
       assert_includes keys, :mention_agent
       assert_not_includes keys, :inbox_notifications
     end
@@ -85,6 +123,7 @@ module Collavre
 
       keys = Collavre::FeatureCardRegistry.for(creative: creative, topic: topic).map(&:key)
 
+      assert_includes keys, :kollavy
       assert_includes keys, :mention_agent
       assert_not_includes keys, :inbox_notifications
     end
@@ -95,6 +134,7 @@ module Collavre
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 
       assert_not_includes keys, :test_card
+      assert_includes keys, :kollavy
       assert_includes keys, :mention_agent, "the core cards should all have built-in guides"
     end
 
@@ -141,7 +181,7 @@ module Collavre
       keys = Collavre::FeatureCardRegistry.with_builtin_guide.map(&:key)
 
       %i[
-        mention_agent slash_command chat_context automation_trigger topic_management add_user
+        kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user
         inbox_notifications inbox_reply inbox_source
       ].each do |key|
         assert_includes keys, key

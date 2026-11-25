@@ -2,18 +2,12 @@ Collavre::Engine.routes.draw do
   # Landing page
   get "landing", to: "landing#show"
 
-  # Public feature guides — the long-form counterpart to the empty-chat feature
-  # cards. Keys come from Collavre::FeatureCardRegistry, which rejects a key this
-  # constraint could not route, so the two cannot drift apart.
-  get "features", to: "features#index", as: :features
-  get "features/:key", to: "features#show", as: :feature, constraints: { key: Collavre::FeatureCard::GUIDE_KEY_FORMAT }
+  draw :public_creatives
 
   # Authentication routes
   resource :session, only: [ :new, :create, :destroy ]
   resources :passwords, param: :token, only: [ :new, :create, :edit, :update ]
-  resources :agent_gateways, path: "settings/agent-gateways", except: :show do
-    post :check, on: :member
-  end
+  draw :account_settings
   get "desktop/setup", to: "desktop_setup#show", as: :desktop_setup
   post "desktop/setup/account", to: "desktop_setup#create_account", as: :desktop_setup_account
   post "desktop/setup/registration-token", to: "desktop_setup#registration_token", as: :desktop_setup_registration_token
@@ -55,7 +49,7 @@ Collavre::Engine.routes.draw do
   # OAuth callback routes (paths match OmniAuth provider names)
   match "/auth/google_oauth2/callback", to: "google_auth#callback", via: [ :get, :post ]
 
-  delete "/attachments/:signed_id", to: "attachments#destroy", as: :attachment
+  draw :attachments
   get "/public-assets/blobs/:signed_id/*filename",
       to: "public_assets#show",
       as: :public_asset,
@@ -86,7 +80,7 @@ Collavre::Engine.routes.draw do
   resources :creatives do
     resources :crons, only: %i[update destroy], param: :key
     draw :creative_history
-    resources :attachments, only: [ :create ], module: :creatives
+    draw :creative_attachments
     resources :creative_shares, only: [ :index, :create, :update, :destroy ]
     resources :invitations, only: [ :update, :destroy ], controller: "creative_invitations"
     resources :topics, only: [ :index, :create, :update, :destroy ] do
@@ -112,13 +106,7 @@ Collavre::Engine.routes.draw do
         delete :remove_image
       end
 
-      resources :reactions, only: [ :create ], module: :comments
-      resource :activity_log, only: [ :show ], module: :comments
-      resources :versions, only: [ :index, :destroy ], module: :comments do
-        member do
-          post :select
-        end
-      end
+      draw :comment_actions
 
       collection do
         get :participants
@@ -159,19 +147,14 @@ Collavre::Engine.routes.draw do
 
   resources :emails, only: [ :index, :show ]
   resource :invite, only: [ :show, :create ]
-  post "/creative_expanded_states/toggle", to: "user_creative_preferences#toggle"
-  match "/creatives/:creative_id/user_creative_preferences/update_last_topic", to: "user_creative_preferences#update_last_topic", via: [ :post, :patch ], as: :update_last_topic
+  draw :creative_preferences
   post "/comment_read_pointers/update", to: "comment_read_pointers#update"
-  post "/notices/:key/dismiss", to: "notices#dismiss", as: :dismiss_notice
-  delete "/notices", to: "notices#restore_all", as: :restore_notices
+  draw :notices
 
   # Agent API (Claude Channel MCP plugin)
   namespace :api do
     namespace :v1 do
-      post "agent/register", to: "agents#register"
-      post "agent/reply", to: "agents#reply"
-      post "agent/notify", to: "agents#notify"
-      delete "agent/:id", to: "agents#destroy"
+      draw :agent_api
     end
   end
 

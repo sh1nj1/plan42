@@ -69,6 +69,28 @@ describe('TopicsController archived topic messages', () => {
     jest.clearAllMocks()
   })
 
+  test.each(['Main', 'System'])('offers deletion instead of restore for archived %s', (name) => {
+    controller.mainTopicId = name === 'Main' ? '3' : '1'
+    controller.systemTopicId = name === 'System' ? '3' : null
+    controller.archivedTopics = [{ id: 3, name }]
+    controller.showingArchived = true
+    render()
+    const chip = controller.listTarget.querySelector('.topic-archived[data-id="3"]')
+    expect(chip.querySelector('.delete-topic-btn')?.dataset.id).toBe('3')
+    expect(chip.querySelector('.unarchive-topic-btn')).toBeNull()
+    controller.canManageTopics = false
+    render()
+    expect(controller.listTarget.querySelector('.topic-archived .delete-topic-btn')).toBeNull()
+  })
+
+  test('keeps ordinary archived restore controls and protects archived History', () => {
+    controller.archivedTopics = [{ id: 3, name: 'Zeta' }, { id: 4, name: 'History', read_only: true }]
+    controller.showingArchived = true
+    render()
+    expect(controller.listTarget.querySelector('[data-id="3"] .unarchive-topic-btn')).not.toBeNull()
+    expect(controller.listTarget.querySelector('[data-id="4"] button')).toBeNull()
+  })
+
   describe('selecting an archived topic', () => {
     test('renders unread counts on active and archived topic chips', () => {
       controller.topics = [{ id: 1, name: 'Main', unread_count: 2 }, { id: 2, name: 'Alpha', unread_count: 0 }]

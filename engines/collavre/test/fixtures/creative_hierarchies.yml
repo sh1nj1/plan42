@@ -1,0 +1,84 @@
+_fixture:
+  model_class: Collavre::CreativeHierarchy
+
+# Closure rows for creatives.yml, including each node at generation zero.
+
+tshirt_to_tshirt:
+  ancestor: tshirt
+  descendant: tshirt
+  generations: 0
+
+root_parent_to_root_parent:
+  ancestor: root_parent
+  descendant: root_parent
+  generations: 0
+
+unconvert_target_to_unconvert_target:
+  ancestor: unconvert_target
+  descendant: unconvert_target
+  generations: 0
+
+root_parent_to_unconvert_target:
+  ancestor: root_parent
+  descendant: unconvert_target
+  generations: 1
+
+unconvert_child_one_to_unconvert_child_one:
+  ancestor: unconvert_child_one
+  descendant: unconvert_child_one
+  generations: 0
+
+unconvert_target_to_unconvert_child_one:
+  ancestor: unconvert_target
+  descendant: unconvert_child_one
+  generations: 1
+
+root_parent_to_unconvert_child_one:
+  ancestor: root_parent
+  descendant: unconvert_child_one
+  generations: 2
+
+unconvert_grandchild_to_unconvert_grandchild:
+  ancestor: unconvert_grandchild
+  descendant: unconvert_grandchild
+  generations: 0
+
+unconvert_child_one_to_unconvert_grandchild:
+  ancestor: unconvert_child_one
+  descendant: unconvert_grandchild
+  generations: 1
+
+unconvert_target_to_unconvert_grandchild:
+  ancestor: unconvert_target
+  descendant: unconvert_grandchild
+  generations: 2
+
+root_parent_to_unconvert_grandchild:
+  ancestor: root_parent
+  descendant: unconvert_grandchild
+  generations: 3
+
+unconvert_child_two_to_unconvert_child_two:
+  ancestor: unconvert_child_two
+  descendant: unconvert_child_two
+  generations: 0
+
+unconvert_target_to_unconvert_child_two:
+  ancestor: unconvert_target
+  descendant: unconvert_child_two
+  generations: 1
+
+root_parent_to_unconvert_child_two:
+  ancestor: root_parent
+  descendant: unconvert_child_two
+  generations: 2
+
+childless_creative_to_childless_creative:
+  ancestor: childless_creative
+  descendant: childless_creative
+  generations: 0
+
+root_parent_to_childless_creative:
+  ancestor: root_parent
+  descendant: childless_creative
+  generations: 1

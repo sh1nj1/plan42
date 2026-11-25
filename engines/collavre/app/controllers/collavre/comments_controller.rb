@@ -1,6 +1,5 @@
 module Collavre
   class CommentsController < ApplicationController
-    LEGACY_TOPIC_WATERMARK_KEY = "_legacy"
     include Collavre::Comments::CommentScoping
     include Collavre::Comments::ApprovalActions
     include Collavre::Comments::Conversion
@@ -8,6 +7,7 @@ module Collavre
 
     before_action :set_creative
     before_action :set_comment, only: [ :destroy, :show, :update, :convert, :approve, :deny, :update_action, :download_images, :remove_image ]
+    before_action :require_adoptable_images, only: [ :create, :update ]
 
     include Collavre::Comments::ApprovalGateActions
     include Collavre::Comments::HistoryTopicGuard
@@ -50,7 +50,7 @@ module Collavre
 
       @comment = @creative.comments.build(comment_attributes)
 
-      validate_topic_id!(@comment.topic_id) or return
+      validate_comment_targets! or return
 
       @comment.user = Current.user
       @comment.images.attach(image_attachments) if image_attachments.present?
@@ -66,8 +66,7 @@ module Collavre
         InboxReplyService.call(@comment)
 
         # Dispatch is handled by Comment#after_create_commit callback
-        @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-        render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: :created
+        render_comment_response(status: :created)
       else
         render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
       end
@@ -79,12 +78,11 @@ module Collavre
       end
 
       if @comment.user == Current.user
-        safe_params = comment_params.except(:quoted_comment_id, :quoted_text)
+        safe_params = comment_params.except(:quoted_comment_id, :quoted_text, :quoted_creative_id, :agent_run_options)
         validate_topic_id!(safe_params[:topic_id]) or return
 
         if update_comment(safe_params)
-          @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
-          render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }
+          render_comment_response
         else
           render json: { errors: @comment.errors.full_messages }, status: :unprocessable_entity
         end
@@ -234,6 +232,15 @@ module Collavre
 
     private
 
+    # A signed blob id is not a capability: a comment may only adopt blobs the
+    # commenter can already read (their own direct uploads included).
+    def require_adoptable_images
+      blobs = Array(params.dig(:comment, :images)).grep(String).filter_map { |id| ActiveStorage::Blob.find_signed(id) }
+      return if BlobAccess.adoptable(blobs).size == blobs.size
+
+      render json: { error: I18n.t("collavre.comments.no_permission") }, status: :forbidden
+    end
+
     def live_claude_agent_ids_for(users)
       agent_ids = users.filter_map { |user| user.id if user.claude_channel_agent? }
       AgentSubscription.live.where(agent_id: agent_ids).distinct.pluck(:agent_id)
@@ -244,8 +251,28 @@ module Collavre
       comment.creative&.github_markdown?
     end
 
+    # A document-mode quote may only point at a creative the sender can read;
+    # otherwise the agent would be handed content the sender never saw.
+    def validate_comment_targets!
+      return false unless validate_topic_id!(@comment.topic_id)
+      return true if @comment.quoted_creative_id.blank? || @comment.quoted_creative&.has_permission?(Current.user, :read)
+
+      render json: { error: I18n.t("collavre.comments.creative_quote.not_readable") }, status: :forbidden
+      false
+    end
+
     def comment_params
-      params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text, :review_type, images: [])
+      permitted = params.require(:comment).permit(:content, :private, :topic_id, :quoted_comment_id, :quoted_text,
+                                                  :quoted_creative_id, :review_type, images: [],
+                                                  agent_run_options: CliProxy::RunOptions::MESSAGE_KEYS)
+      return permitted unless permitted.key?(:agent_run_options)
+
+      permitted.merge(agent_run_options: CliProxy::RunOptions.sanitize_message_options(permitted[:agent_run_options]))
+    end
+
+    def render_comment_response(status: :ok)
+      @comment = Comment.with_attached_images.includes(:comment_reactions, :comment_versions, :selected_version).find(@comment.id)
+      render partial: "collavre/comments/comment", locals: { comment: @comment, current_topic_id: current_topic_context }, status: status
     end
 
     def current_topic_context

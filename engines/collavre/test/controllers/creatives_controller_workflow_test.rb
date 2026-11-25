@@ -20,6 +20,29 @@ class CreativesControllerWorkflowTest < ActionDispatch::IntegrationTest
     ActiveJob::Base.queue_adapter = @original_adapter
   end
 
+  test "overlong execution topics are rejected atomically on create and update in both locales" do
+    original = @rule.attributes.slice("description", "data")
+    %w[en ko].each do |locale|
+      @user.update!(locale: locale)
+      payload = @payload.merge("topic_name" => "한" * 256)
+      assert_no_difference "Creative.count" do
+        post rule_path(@workflow), params: { description: "Too long", workflow_rule: payload }, as: :json
+        assert_response :unprocessable_entity
+      end
+      patch rule_path(@rule), params: { description: "Do not persist", workflow_rule: payload }, as: :json
+      assert_response :unprocessable_entity
+      assert_includes response.body, I18n.t("collavre.workflow.rule.errors.topic_name_too_long", locale: locale, count: 255)
+      assert_equal original, @rule.reload.attributes.slice("description", "data")
+    end
+  end
+
+  test "execution topic accepts the character limit after trimming" do
+    [ "a" * 255, "한" * 255, "  " + "한" * 255 + "  " ].each do |name|
+      post rule_path(@workflow), params: { description: "Boundary", workflow_rule: @payload.merge("topic_name" => name) }, as: :json
+      assert_response :created
+    end
+  end
+
   test "lists active direct rules in tree order with raw payload and parser diagnostics" do
     first = create_workflow_rule(parent: @workflow, sequence: 1, event: "future_event")
     create_workflow_rule(parent: @workflow, archived_at: Time.current)

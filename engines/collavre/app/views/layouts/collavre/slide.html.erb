@@ -3,6 +3,8 @@
   <head>
     <title><%= t('app.name') %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= tag.meta name: "document-loading", content: t("collavre.ppt_viewer.loading") %>
+    <%= tag.meta name: "ppt-preview-url-template", content: collavre.ppt_preview_path("PPT_BLOB_ID") %>
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
@@ -11,6 +13,7 @@
     <%= stylesheet_link_tag "collavre/dark_mode" %>
     <%= stylesheet_link_tag 'collavre/slide_view', media: 'all' %>
     <%= stylesheet_link_tag 'collavre/tables', media: 'all' %>
+    <%= stylesheet_link_tag 'collavre/attachment_card', media: 'all' %>
     <%= javascript_include_tag 'actioncable', defer: true %>
     <%= javascript_include_tag 'slide_view', defer: true %>
     <%= render 'collavre/shared/custom_theme_style' %>

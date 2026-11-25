@@ -6,6 +6,12 @@ module Collavre
 
     private
 
+    def assign_index_creative_permissions
+      creative = Creative.find_by(id: params[:id])
+      @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+      @removable_link = creative if creative&.origin_id.present? && creative.destroyable_by?(Current.user)
+    end
+
     def require_creative_read!
       return if @creative.has_permission?(Current.user, :read) || @creative.user == Current.user
 

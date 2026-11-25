@@ -5,8 +5,12 @@ module Collavre
   # their copy comes entirely from config/locales/features.*.yml keyed off the
   # feature card registry.
   class FeaturesControllerTest < ActionDispatch::IntegrationTest
+    setup do
+      Collavre::Kollavy.seed!
+    end
+
     GUIDE_KEYS = %w[
-      mention_agent slash_command chat_context automation_trigger topic_management add_user
+      kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user
       inbox_notifications inbox_reply inbox_source
     ].freeze
 
@@ -14,6 +18,23 @@ module Collavre
     # every body assertion compares against the escaped form.
     def escaped(key, **options)
       ERB::Util.html_escape(I18n.t(key, **options))
+    end
+
+    test "Kollavy is hidden before provisioning and appears after seeding without restarting" do
+      Collavre::Kollavy.agent.destroy!
+
+      get "/features"
+      assert_response :success
+      assert_select "a[href*='/features/kollavy']", count: 0
+      get "/features/kollavy"
+      assert_response :not_found
+
+      Collavre::Kollavy.seed!
+
+      get "/features"
+      assert_select "a[href*='/features/kollavy']", count: 1
+      get "/features/kollavy"
+      assert_response :success
     end
 
     test "index lists every card that opts into the built-in guide" do
@@ -24,6 +45,28 @@ module Collavre
         assert_includes @response.body, "/features/#{key}",
                         "expected the hub to link the #{key} guide"
         assert_includes @response.body, escaped("collavre.comments.empty_state.cards.#{key}.title")
+      end
+    end
+
+    test "Kollavy guide and discovery copy render in both locales" do
+      %i[en ko].each do |locale|
+        get "/features", params: { locale: locale }
+
+        assert_response :success
+        assert_select "a[href=?]", "/features/kollavy?locale=#{locale}"
+        assert_includes @response.body, escaped("collavre.comments.empty_state.cards.kollavy.description", locale: locale)
+
+        get "/features/kollavy", params: { locale: locale }
+
+        assert_response :success
+        page = I18n.t("collavre.features.pages.kollavy", locale: locale, raise: true)
+        assert_includes @response.body, ERB::Util.html_escape(page[:title])
+        assert_includes @response.body, ERB::Util.html_escape(page[:tagline])
+        page[:sections].each do |section|
+          assert_includes @response.body, ERB::Util.html_escape(section[:heading])
+          assert_includes @response.body, ERB::Util.html_escape(section[:body])
+        end
+        page[:tips].each { |tip| assert_includes @response.body, ERB::Util.html_escape(tip) }
       end
     end
 

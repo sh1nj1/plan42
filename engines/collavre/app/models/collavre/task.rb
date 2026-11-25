@@ -1,15 +1,29 @@
 module Collavre
   class Task < ApplicationRecord
     self.table_name = "tasks"
+    include UsageAttributionTracking
+    include TriggerLoopCompletion
     include ReplayLoopCompletion
     include WorkflowCompletion
     include ApprovalGateCleanup
+    include AsyncApproval
 
     belongs_to :agent, class_name: "Collavre::User"
     has_many :task_actions, class_name: "Collavre::TaskAction", dependent: :destroy
     belongs_to :creative, class_name: "Collavre::Creative", optional: true
     has_one :reply_comment, class_name: "Collavre::Comment", foreign_key: :task_id, dependent: :nullify
 
+    has_many :task_merged_instructions, dependent: :delete_all
+    after_save :sync_merged_instructions, if: :saved_change_to_trigger_event_payload?
+
+    def sync_merged_instructions
+      ids = Array(trigger_event_payload&.fetch("merged_comment_ids", nil)).map(&:to_i).select(&:positive?).uniq
+      task_merged_instructions.where.not(comment_id: ids).delete_all
+      ids.each { |id| task_merged_instructions.find_or_create_by!(comment_id: id) }
+    end
+
+    before_validation :assign_trigger_comment_id
+    before_validation :assign_event_causation_id
     validates :name, presence: true
 
     enum :status, {
@@ -21,11 +35,17 @@ module Collavre
       done: "done",
       failed: "failed",
       cancelled: "cancelled",
-      escalated: "escalated"
+      escalated: "escalated",
+      suspended: "suspended"
     }, default: :pending
+
+    # Why a turn was set aside to be resumed later rather than ended. See
+    # Orchestration::TaskResumer, the only writer of the suspension columns.
+    SUSPEND_REASONS = %w[agent_offline server_restart quota].freeze
 
     after_update_commit :check_trigger_loop_completion, if: :trigger_loop_candidate?
     after_update_commit :broadcast_stop_button_removal, if: :became_terminal?
+    after_update_commit :refresh_suspension_notices, if: :left_suspension?
     after_update_commit :restore_undelivered_dispatches, if: :ended_without_delivering?
 
     scope :running_for_topic, ->(topic_id, creative_id = nil) {
@@ -65,7 +85,19 @@ module Collavre
     # job returned holding the slot while it awaits an MCP /reply or a tool
     # approval, and #cancel still accepts both. Kept here rather than in the
     # client so one list decides it.
-    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued].freeze
+    #
+    # suspended counts too: it is still work the user is waiting on, so Stop and
+    # deleting the trigger comment must be able to end it. It does not occupy a
+    # slot — TaskResumer released that when it suspended the turn.
+    ACTIVE_STATUSES = %w[running delegated pending pending_approval queued suspended].freeze
+
+    # A turn that was waiting on a Claude Channel /reply when it was suspended.
+    # The agent may still answer the dispatch it was sent, and that reply is the
+    # turn's answer — TaskClaimService claims these rows exactly like delegated
+    # ones, so a late reply completes the turn instead of being refused.
+    scope :awaiting_reply, -> {
+      where(status: "delegated").or(where(status: "suspended", suspended_from: "delegated"))
+    }
 
     def active?
       ACTIVE_STATUSES.include?(status)
@@ -87,9 +119,10 @@ module Collavre
     # Check if agent already has an in-flight task triggered by the same comment.
     # Treats "delegated" as in-flight: a Claude Channel task that is waiting on
     # an external MCP reply is still active work — re-dispatching the same
-    # comment would produce duplicate replies.
+    # comment would produce duplicate replies. "suspended" likewise: it will be
+    # resumed to answer the same comment.
     def self.duplicate_running_for_comment?(agent_id, comment_id)
-      where(agent_id: agent_id, status: %w[running delegated], trigger_event_name: "comment_created")
+      where(agent_id: agent_id, status: %w[running delegated suspended], trigger_event_name: "comment_created")
         .find_each do |task|
         return true if task.trigger_event_payload&.dig("comment", "id").to_s == comment_id.to_s
       end
@@ -140,33 +173,22 @@ module Collavre
 
     private
 
-    def trigger_loop_candidate?
-      return false unless saved_change_to_attribute?("status")
-
-      trigger_loop_completion_eligible?
+    def assign_trigger_comment_id
+      self.trigger_comment_id ||= trigger_event_payload&.dig("comment", "id")
     end
 
-    # State-only eligibility check (no save-lifecycle dependency).
-    # Reused by trigger_loop_candidate? for the callback path and by
-    # fire_completion_callbacks_after_external_claim for explicit replay.
-    def trigger_loop_completion_eligible?
-      return false unless status == "done"
-      # Pending and completed replays own completion instead of the login card.
-      return false if loop_completion_delegated_to_replay? || unsuccessful_loop_response?
-      return false unless trigger_event_name == "comment_created"
-      return false unless creative&.parent&.drop_trigger_enabled?
-
-      # Only trigger loop check for tasks in the loop's trigger topic
-      # to avoid cross-topic contamination from unrelated AI conversations
-      loop_config = creative.data&.dig("trigger", "loop")
-      return false unless loop_config && loop_config["state"] == "running"
-
-      trigger_topic_id = loop_config["trigger_topic_id"]
-      trigger_topic_id.nil? || trigger_topic_id == topic_id
+    def assign_event_causation_id
+      self.event_causation_id = trigger_event_payload&.dig("event", "causation_id")
     end
 
     def became_terminal?
       saved_change_to_attribute?("status") && terminal_status?
+    end
+
+    # Terminal transitions refresh the notices in broadcast_stop_button_removal.
+    def left_suspension?
+      saved_change_to_attribute?("status") && attribute_before_last_save("status") == "suspended" &&
+        !terminal_status?
     end
 
     # This turn refused other dispatches on the strength of having read their
@@ -237,6 +259,8 @@ module Collavre
     end
 
     def broadcast_stop_button_removal
+      refresh_suspension_notices
+
       # Login cards already omit Stop and have a queued comment replacement.
       # Replacing them again would discard an in-progress authentication form.
       return if trigger_event_payload&.key?("engine_login")
@@ -251,13 +275,17 @@ module Collavre
       )
     end
 
-    def check_trigger_loop_completion
-      loop_config = creative.data&.dig("trigger", "loop")
-      cooldown = (loop_config&.dig("cooldown_seconds") || 10).to_i
-      if cooldown > 0
-        TriggerLoopCheckJob.set(wait: cooldown.seconds).perform_later(id)
-      else
-        TriggerLoopCheckJob.perform_later(id)
+    # Re-render the "⏸️" notices of this turn so their Stop control goes away
+    # once the turn is resumed or ended.
+    def refresh_suspension_notices
+      Comment.where(creative_id: creative_id, topic_id: topic_id,
+                    waiting_notice_scope: Comment::SuspensionNotice::SCOPE, waiting_notice_task_id: id)
+             .find_each do |notice|
+        notice.broadcast_replace_to(
+          [ notice.creative, :comments ],
+          partial: "collavre/comments/comment",
+          locals: { comment: notice, streaming: false }
+        )
       end
     end
   end

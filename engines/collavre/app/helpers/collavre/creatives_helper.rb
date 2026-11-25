@@ -204,6 +204,15 @@ module Collavre
       @completion_mark = Collavre::SystemSetting.completion_mark
     end
 
+    # Breadcrumb ancestors the viewer may read. Shares propagate downward only,
+    # so a creative shared on its own (e.g. a public /p/ page) can sit under
+    # private ancestors whose text must not be rendered.
+    def readable_breadcrumb_ancestors(creative)
+      ancestors = creative.ancestors.reverse
+      readable = Creatives::PermissionFilter.new(user: Current.user).readable_ids(ancestors.map(&:id)).to_set
+      ancestors.select { |ancestor| readable.include?(ancestor.id) }
+    end
+
     def creative_tree_description(creative, with_progress)
       desc = creative.effective_description(nil, true)
       return desc unless with_progress && creative.respond_to?(:progress) && !creative.progress.nil?

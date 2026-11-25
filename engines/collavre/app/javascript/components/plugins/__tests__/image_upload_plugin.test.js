@@ -1,6 +1,7 @@
 import { jest } from "@jest/globals"
 import React, { act } from "react"
 import { createRoot } from "react-dom/client"
+import { UploadAnchorNode } from "../../../lib/lexical/upload_anchor_node"
 import { createEditor, $createParagraphNode, $createTextNode, DROP_COMMAND } from "lexical"
 
 let editor
@@ -25,7 +26,7 @@ describe("file upload completion", () => {
     container = document.createElement("div")
     document.body.append(container)
     root = createRoot(container)
-    editor = createEditor({ onError: error => { throw error } })
+    editor = createEditor({ nodes: [UploadAnchorNode], onError: error => { throw error } })
     callbacks = []
     states = jest.fn()
     window.ActiveStorage = { DirectUpload: class {
@@ -84,6 +85,7 @@ describe("file upload completion", () => {
     expect(states).toHaveBeenLastCalledWith(true)
     await complete(1 - failed)
     expect(states).toHaveBeenLastCalledWith(false)
+    expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
   })
 
   it("releases busy state when configuration is missing", async () => {
@@ -92,6 +94,7 @@ describe("file upload completion", () => {
     await act(async () => drop())
     expect(callbacks).toHaveLength(0)
     expect(states).toHaveBeenLastCalledWith(false)
+    expect(JSON.stringify(editor.getEditorState().toJSON())).not.toContain("upload-anchor")
   })
 
   it("supports uploads without a state callback", async () => {

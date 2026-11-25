@@ -12,7 +12,23 @@ module Collavre
     module ClaudeChannelPermission
       extend ActiveSupport::Concern
 
+      included do
+        after_update_commit :resume_finished_claude_approval, if: :claude_channel_approval_request?
+      end
+
       ACTION_TYPE = "claude_channel_permission"
+
+      # Discriminates the two prompt shapes sharing this action payload:
+      #
+      # - nil (default): a NATIVE tool-permission prompt relayed by Claude Code
+      #   mid-turn. The question text is rendered server-side from the structured
+      #   tool_name/arguments; there is no free-text reason.
+      # - "approval_request": the agent ITSELF asked for a human decision through
+      #   the plugin's approval_request tool (the Claude Channel counterpart of the
+      #   native approval_request gate). The comment body is the agent's question
+      #   verbatim, and the approver may attach a reason — both are relayed back as
+      #   the blocked tool call's result.
+      KIND_APPROVAL_REQUEST = "approval_request"
 
       # Raised when a decision was already recorded, so a double-click (or a
       # concurrent approve+deny) resolves to exactly one decision.
@@ -68,6 +84,19 @@ module Collavre
         claude_channel_permission_action&.dig("request_id")
       end
 
+      # True when this prompt is an agent-initiated approval request (rather than
+      # a relayed native tool-permission prompt). Only these carry a question and
+      # an optional decision reason.
+      def claude_channel_approval_request?
+        claude_channel_permission_action&.dig("kind") == KIND_APPROVAL_REQUEST
+      end
+
+      # The approver's optional free-text reason, once decided. Relayed to the
+      # blocked agent so a denial can explain itself.
+      def claude_channel_permission_reason
+        claude_channel_permission_action&.dig("reason")
+      end
+
       # The decision, once made, is persisted into the action payload so the
       # rendered comment can distinguish ✅ approved from 🚫 denied.
       def claude_channel_permission_denied?
@@ -78,7 +107,11 @@ module Collavre
       # (which hides the buttons and marks the comment decided) and persist the
       # decision into the action payload. Raises AlreadyDecided if a decision was
       # already recorded.
-      def decide_claude_channel_permission!(behavior, by:)
+      #
+      # reason is the approver's optional free-text note (approval_request prompts
+      # only). It is persisted alongside the decision so the resubscribe replay can
+      # redeliver the *complete* decision, not just allow/deny.
+      def decide_claude_channel_permission!(behavior, by:, reason: nil)
         behavior = behavior.to_s
         raise ArgumentError, "behavior must be allow or deny" unless %w[allow deny].include?(behavior)
 
@@ -90,6 +123,8 @@ module Collavre
           raise ArgumentError, "not a Claude Channel permission comment" unless payload
 
           payload["decision"] = behavior
+          reason = reason.to_s.strip.presence
+          payload["reason"] = reason if reason
           update!(
             action: JSON.pretty_generate(payload),
             action_executed_at: Time.current,
@@ -103,7 +138,11 @@ module Collavre
       # sessions sharing this (shared) agent ignore a request_id they never
       # raised. task_id is intentionally absent: the decision only unblocks the
       # paused tool call; the in-flight delegated task completes later via /reply.
-      def broadcast_claude_channel_permission_decision(behavior)
+      #
+      # reason/decided_by are carried only for approval_request prompts (a native
+      # tool prompt has no reason box and its decision is just allow/deny), so the
+      # payload for relayed tool prompts is unchanged — nil entries are dropped.
+      def broadcast_claude_channel_permission_decision(behavior, reason: nil, decided_by: nil)
         request_id = claude_channel_permission_request_id
         return false if request_id.blank? || user_id.blank?
 
@@ -111,8 +150,11 @@ module Collavre
           type: "permission_decision",
           request_id: request_id,
           behavior: behavior.to_s,
-          agent_id: user_id
-        })
+          agent_id: user_id,
+          reason: reason.to_s.strip.presence,
+          decided_by: decided_by&.id,
+          decided_by_name: decided_by&.display_name
+        }.compact)
         true
       end
 
@@ -127,10 +169,22 @@ module Collavre
         decision = claude_channel_permission_action&.dig("decision")
         return false if decision.blank?
 
-        broadcast_claude_channel_permission_decision(decision)
+        broadcast_claude_channel_permission_decision(
+          decision,
+          reason: claude_channel_permission_reason,
+          decided_by: (action_executed_by if claude_channel_approval_request?)
+        )
       end
 
       private
+
+      def resume_finished_claude_approval
+        payload = claude_channel_permission_action
+        return unless payload["turn_finished"] && payload["decision"]
+        return if payload["resume_task_id"]
+
+        ClaudeApprovalResumeJob.perform_later(id)
+      end
 
       def claude_channel_permission_action
         return nil if action.blank?

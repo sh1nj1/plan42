@@ -63,6 +63,7 @@ module Collavre
             tool_name: error.tool_name,
             tool_call_id: error.tool_call_id,
             arguments: error.tool_arguments,
+            messages: error.messages,
             requested_at: Time.current.iso8601
           }
         )

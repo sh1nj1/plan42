@@ -44,8 +44,6 @@ module ActiveSupport
     setup do
       Rails.cache.clear
       Current.reset
-      # Rebuild the closure tree for Creatives fixture
-      Creative.rebuild! if defined?(Creative)
     end
   end
 end

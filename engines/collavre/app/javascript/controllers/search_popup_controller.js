@@ -112,25 +112,23 @@ export default class extends Controller {
     this._navigate((params) => applyFilterParam(params, 'comment'))
   }
 
+  applyReactionFilter(event) {
+    event.preventDefault()
+    const emoji = event.currentTarget.dataset.emoji
+    this._navigate((params) => {
+      if (params.get('reaction_emoji') === emoji) {
+        params.delete('reaction_emoji')
+      } else {
+        params.set('reaction_emoji', emoji)
+      }
+      params.delete('page')
+    })
+  }
+
   // Apply recurring cron filter
   applyCronFilter(event) {
     event.preventDefault()
     this._navigate((params) => applyFilterParam(params, 'cron'))
-  }
-
-  // Toggle search mode (flat/tree)
-  applySearchMode(event) {
-    event.preventDefault()
-    const mode = event.currentTarget.dataset.mode
-    if (!mode) return
-
-    this._navigate((params) => {
-      if (mode === 'tree') {
-        params.set('search_mode', 'tree')
-      } else {
-        params.delete('search_mode')
-      }
-    })
   }
 
   // Toggle archive visibility via URL parameter

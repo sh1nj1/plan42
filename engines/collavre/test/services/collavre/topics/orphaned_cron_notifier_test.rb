@@ -162,6 +162,71 @@ module Collavre
         assert_equal linked.id, payload.fetch("creative_id")
       end
 
+      test "Main deletion removes implicit tasks only for its creative family" do
+        main = @creative.main_topic
+        linked = Collavre::Creative.create!(origin_id: @creative.id, user: @user)
+        other = Collavre::Creative.create!(description: "Other", user: @user)
+        implicit = create_cron(creative_id: @creative.id, topic_id: nil)
+        linked_cron = create_cron(creative_id: linked.id, topic_id: nil)
+        legacy = create_cron(creative_id: @creative.id, topic_id: nil)
+        legacy.update!(arguments: [ { topic_id: nil, message: "legacy" } ])
+        explicit = create_cron(creative_id: @creative.id, topic_id: main.id)
+        unrelated = create_cron(creative_id: other.id, topic_id: nil)
+        other_topic = create_cron(creative_id: @creative.id, topic_id: @topic.id)
+        static = create_cron(creative_id: @creative.id, topic_id: nil)
+        static.update!(static: true)
+        main.destroy!
+
+        OrphanedCronNotifier.new(
+          topic_id: main.id, topic_name: main.name, creative_id: @creative.id
+        ).call
+
+        [ implicit, linked_cron, legacy, explicit ].each do |task|
+          assert_not SolidQueue::RecurringTask.exists?(task.id)
+          assert @creative.comments.where(user_id: nil).any? { |notice| notice.content.include?(task.key) }
+        end
+        [ unrelated, other_topic, static ].each { |task| assert SolidQueue::RecurringTask.exists?(task.id) }
+      end
+
+      test "Main deletion preserves unrelated dynamic job classes with blank targets" do
+        main = @creative.main_topic
+        task = create_cron(creative_id: @creative.id, topic_id: nil)
+        task.update!(class_name: "Collavre::CommentNotificationJob")
+        main.destroy!
+
+        assert_no_difference -> { Collavre::Comment.count } do
+          OrphanedCronNotifier.new(topic_id: main.id, topic_name: main.name, creative_id: @creative.id).call
+        end
+        assert SolidQueue::RecurringTask.exists?(task.id)
+      end
+
+      test "System deletion preserves implicit Main tasks" do
+        system = @creative.topics.create!(name: "System", user: @user)
+        cron = create_cron(creative_id: @creative.id, topic_id: nil)
+        system.destroy!
+
+        assert_no_difference -> { Collavre::Comment.where(user_id: nil).count } do
+          OrphanedCronNotifier.new(
+            topic_id: system.id, topic_name: system.name, creative_id: @creative.id
+          ).call
+        end
+        assert SolidQueue::RecurringTask.exists?(cron.id)
+      end
+
+      test "Main deletion ignores implicit tasks without a resolvable creative" do
+        main = @creative.main_topic
+        cron = create_cron(creative_id: @creative.id, topic_id: nil)
+        cron.update!(key: "unscoped_#{SecureRandom.hex(4)}", arguments: [ { topic_id: nil } ])
+        main.destroy!
+
+        assert_no_difference -> { Collavre::Comment.where(user_id: nil).count } do
+          OrphanedCronNotifier.new(
+            topic_id: main.id, topic_name: main.name, creative_id: @creative.id
+          ).call
+        end
+        assert SolidQueue::RecurringTask.exists?(cron.id)
+      end
+
       test "ignores crons whose topic_id is nil (main-topic crons)" do
         cron = create_cron(creative_id: @creative.id, topic_id: nil)
         deleted_id = @topic.id

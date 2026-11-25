@@ -1,3 +1,5 @@
+import { markChatActiveRow } from './popup_creative_progress'
+
 // Keep workspace synchronization separate from explicit chat-open intent.
 export function handleCreativeChatClick(popup, detail) {
   const { button, creativeId, highlightId, workspaceSync } = detail
@@ -31,6 +33,7 @@ function updateCurrentChat(popup, { button, creativeId, targetId, highlightId, s
   if (popup.isDocked()) {
     if (shouldExpand) popup.expandDocked({ scrollToBottom: !highlightId })
     if (highlightId) popup.reloadDockedHighlight(targetId, highlightId)
+    markChatActiveRow(popup, targetId)
     return
   }
   if (openRequested) {

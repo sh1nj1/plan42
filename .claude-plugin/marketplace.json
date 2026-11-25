@@ -13,7 +13,7 @@
       "name": "collavre",
       "source": "./tools/collavre-claude-plugin",
       "description": "Connects Claude Code sessions to a Collavre inbox for real-time, two-way communication via channels.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "VReRV"
       },

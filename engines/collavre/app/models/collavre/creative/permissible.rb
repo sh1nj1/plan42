@@ -55,6 +55,7 @@ module Collavre
         # those owned rows back in. (Owner has admin, so this is rank-independent.)
         accessible_ids |= children_scope.where(user_id: user.id).pluck(:id) if user
 
+        accessible_ids = Kollavy::AccessScope.filter(accessible_ids, user)
         children_scope.where(id: accessible_ids).order(:sequence).to_a
       end
 
@@ -77,27 +78,12 @@ module Collavre
         end
       end
 
-      def find_ai_agent(required_permission = :write)
+      def find_ai_agent(required_permission = :write, capability: nil, excluding: nil)
         base_creative = effective_origin(Set.new)
         ancestor_ids = [ base_creative.id ] + base_creative.ancestors.pluck(:id)
-        required_permission_level = CreativeShare.permissions.fetch(required_permission.to_s)
-
-        shares = CreativeShare.where(creative_id: ancestor_ids)
-                              .joins(:user).merge(User.ai_agents)
-                              .includes(:user)
-        shares_for_user_hash = shares.group_by(&:user_id)
-
-        shares_for_user_hash.each_value do |user_shares|
-          closest_share = CreativeShare.closest_parent_share(ancestor_ids, user_shares)
-          next unless closest_share
-
-          closest_permission_level = CreativeShare.permissions.fetch(closest_share.permission.to_s)
-          next if closest_permission_level < required_permission_level
-
-          return closest_share.user
-        end
-
-        nil
+        all_shared_users(required_permission)
+          .select { |share| share.user&.ai_user? && share.user_id != excluding && (!capability || share.user.supports?(capability)) }
+          .min_by { |share| [ ancestor_ids.index(share.creative_id), share.id ] }&.user
       end
 
       private
@@ -156,7 +142,13 @@ module Collavre
       def run_permission_cache_operation(operation, accumulated)
         case operation
         when :rebuild
-          PermissionCacheJob.perform_later(:rebuild_for_creative, creative_id: id)
+          # The cache still holds the pre-move permissions here, so this tells
+          # whether the subtree was public and its CDN copies must be evicted.
+          # An approved replay's authoritative override would read the new
+          # placement instead, so force the cached (pre-move) view.
+          args = { creative_id: id }
+          args[:flush_public_cdn] = true if Current.set(authoritative_permissions: false) { publicly_readable? }
+          PermissionCacheJob.perform_later(:rebuild_for_creative, **args)
         when :rebuild_owner
           old_user_id, new_user_id = accumulated["user_id"]
           PermissionCacheJob.perform_later(:update_owner,

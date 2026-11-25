@@ -1,6 +1,16 @@
 import { sanitizeDescriptionHtml } from '../sanitize_description'
 
 describe('sanitizeDescriptionHtml', () => {
+  test('preserves HTML attachment download metadata after client sanitization', () => {
+    const html = '<a href="/public-assets/blobs/signed/report.html" download="report.html" data-filesize="42">report.html</a>'
+    const container = document.createElement('div')
+    container.innerHTML = sanitizeDescriptionHtml(html)
+    const link = container.querySelector('a')
+    expect(link.getAttribute('href')).toBe('/public-assets/blobs/signed/report.html')
+    expect(link.getAttribute('download')).toBe('report.html')
+    expect(link.dataset.filesize).toBe('42')
+  })
+
   test('keeps a YouTube embed iframe the server generated', () => {
     const html =
       '<p><iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" ' +

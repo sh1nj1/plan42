@@ -18,6 +18,68 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     sign_in_via_ui(@user)
   end
 
+  test "SVG attachments load as images in the preview and enlarged viewer" do
+    content = '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="red"/><script>document.documentElement.setAttribute("data-svg-script", "ran")</script></svg>'
+    blob = ActiveStorage::Blob.create_and_upload!(
+      io: StringIO.new(content), filename: "preview.svg", content_type: "image/svg+xml"
+    )
+    @creative.embed_attachment_blob!(blob)
+
+    visit collavre.creatives_path
+    image = find("#creative-#{@creative.id} img[src*='preview.svg']")
+    assert_image_loaded(image)
+    image.click
+    enlarged = find(".image-lightbox-dialog[open] .image-lightbox-image")
+    assert_image_loaded(enlarged)
+    find(".image-lightbox-zoom-in").click
+    assert_match "scale(1.25)", enlarged[:style]
+    find(".image-lightbox-close").click
+
+    visit Rails.application.routes.url_helpers.rails_storage_proxy_path(blob, only_path: true)
+    assert_selector "svg rect"
+    assert_nil page.evaluate_script('document.documentElement.getAttribute("data-svg-script")')
+  end
+
+  def assert_image_loaded(image)
+    assert image
+    assert page.evaluate_async_script(<<~JS, image)
+      const image = arguments[0], done = arguments[arguments.length - 1];
+      if (image.complete) done(image.naturalWidth > 0);
+      else {
+        image.addEventListener('load', () => done(image.naturalWidth > 0), { once: true });
+        image.addEventListener('error', () => done(false), { once: true });
+      }
+    JS
+  end
+
+  test "dragging an enlarged image pans it and reset restores the fit" do
+    visit collavre.creatives_path
+    find("#creative-#{@creative.id} img[alt='First']").click
+    find(".image-lightbox-zoom-in").click
+    image = find(".image-lightbox-image")
+    page.driver.browser.action.move_to(image.native).click_and_hold.move_by(70, 40).perform
+    assert_match "translate(70px, 40px) scale(1.25)", image[:style]
+    assert_match "grabbing", image[:style]
+    stage = find(".image-lightbox-stage")
+    assert_equal "grabbing", stage.style("cursor")["cursor"]
+    page.driver.browser.action.release.perform
+    assert_match "cursor: grab;", image[:style]
+    assert_equal "", page.evaluate_script("document.querySelector('.image-lightbox-stage').style.cursor")
+    find(".image-lightbox-zoom-reset").click
+    assert_match "translate(0px, 0px) scale(1)", image[:style]
+  end
+
+  test "double clicking toggles zoom back to fit after pointer capture" do
+    visit collavre.creatives_path
+    find("#creative-#{@creative.id} img[alt='First']").click
+    image = find(".image-lightbox-image")
+    image.double_click
+    assert_match "scale(2.5)", image[:style]
+    image.double_click
+    assert_match "translate(0px, 0px) scale(1)", image[:style]
+    assert_equal "", page.evaluate_script("document.querySelector('.image-lightbox-stage').style.cursor")
+  end
+
   test "the gallery navigates images across creative rows in list order" do
     sibling = Creative.create!(user: @user, description: "Another gallery")
     sibling.files.attach(@creative.files.first.blob)

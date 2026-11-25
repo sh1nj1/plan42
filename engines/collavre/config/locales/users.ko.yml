@@ -26,6 +26,11 @@ ko:
         vendor_label: LLM 벤더
         vendor_help: 이 에이전트에 사용할 AI 제공업체를 선택하세요
         model_label: 모델
+        reasoning_effort_label: "기본 Thinking 레벨"
+        reasoning_effort_blank: "로컬 Codex / Claude 설정 사용"
+        reasoning_effort_help: "채팅 Thinking 설정 → 에이전트 기본값 → 로컬 Codex / Claude 설정 순서로 적용됩니다. 비워 두면 채팅 설정이 없을 때 로컬 설정을 따릅니다."
+        codex_fast_mode_label: Codex Fast 모드
+        codex_fast_mode_help: 워크스페이스 매니페스트에 실려 프록시가 sync할 때 적용됩니다. Codex local(gpt-5.4 이상) 전용이며 사용량이 더 듭니다.
         remove_model: 모델 목록에서 삭제
         remove_model_failed: 모델을 목록에서 삭제하지 못했습니다.
         api_key_label: API Key
@@ -55,19 +60,21 @@ ko:
       copy_ai:
         link: 복사
       edit_ai:
+        profile_title: AI 에이전트 프로필
+        read_only_notice: 소유자 또는 시스템 관리자만 이 에이전트를 수정할 수 있습니다.
         title: AI 에이전트 수정
         link: 수정
         not_an_ai: 이 사용자는 AI 에이전트가 아닙니다.
         tools_title: 사용 가능한 도구
         tools_description: 에이전트가 사용할 수 있는 도구 목록입니다.
         meta_skills_title: Collavre 메타 스킬
-        meta_skills_description: 프로비저닝되는 collavre-cli 스킬 하나가 선택된 도구를 메타 스킬로 실행합니다. 현재는 이 선택을 callback token 권한으로 강제하지 않습니다.
+        meta_skills_description: 선택한 도구만 이 에이전트가 실행할 수 있습니다. meta_tool 및 CLI 콜백 호출에도 권한을 검사합니다. meta_tool을 선택해도 내부에서 호출하는 도구의 권한은 별도로 필요합니다.
         gateway_mode: "워크스페이스 모드: %{mode}. 선택한 게이트웨이 설정에서 변경할 수 있습니다."
         no_tools_found: 사용 가능한 도구가 없습니다.
         clear_api_key_label: 저장된 API 키 삭제
         clear_api_key_help: 저장 후 시스템 기본 키 또는 키가 필요 없는 게이트웨이를 사용합니다.
         agent_conf_label: "에이전트 설정 (YAML)"
-        agent_conf_help: "에이전트 동작을 위한 YAML 설정. chat_history: 최대 이전 메시지 수 (기본 50), chat_history_size: 최대 총 문자 수 (기본 100000), context.creative_children_level: 크리에이티브 컨텍스트에 포함할 자식 깊이 (기본 nil → 사용자 설정 따름, 0=자식 없음, 1=직접 자식, 2=손자까지)."
+        agent_conf_help: "에이전트 동작을 위한 YAML 설정. chat_history: 최대 이전 메시지 수 (기본 50), chat_history_size: 최대 총 문자 수 (기본 100000), context.creative_children_level: 크리에이티브 컨텍스트에 포함할 자식 깊이 (기본 nil → 사용자 설정 따름, 0=자식 없음, 1=직접 자식, 2=손자까지), context.referenced_creative_size: 채팅에 링크된 크리에이티브를 본문째 넣을 최대 문자 수 (기본 4000, 초과 시 참조 카드만 전달), context.referenced_creative_total_size: 한 턴에 링크된 크리에이티브 전체 최대 문자 수 (기본 12000), context.creative_context_size: 현재 크리에이티브 하위 트리의 최대 문자 수 (기본 100000, 초과 시 깊은 단계부터 생략), context.context_creatives_total_size: Context Creative 전체 최대 문자 수 (기본 50000), context.max_prompt_chars: 프롬프트 전체 상한 (기본 500000, 초과 시 오래된 히스토리와 기타 컨텍스트부터 제외)."
         chat_title: 에이전트와 대화하기
         chat_placeholder: 에이전트를 테스트하려면 메시지를 입력하세요...
       update_ai:

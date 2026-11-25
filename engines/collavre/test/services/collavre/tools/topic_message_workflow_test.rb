@@ -72,6 +72,26 @@ module Collavre
         end
       end
 
+      test "self-routed workflow preserves the human sender without changing the invocation anchor" do
+        source_rule("agent", agent_ids: [ @caller.id, @worker.id ])
+        carry_parent
+
+        jobs = capture_agent_jobs { post_message }
+
+        assert_equal [ @caller.id, @worker.id ].sort, jobs.map(&:first).sort
+        jobs.each do |agent_id, _event, context|
+          expected_sender = agent_id == @caller.id ? @owner : @caller
+          assert_equal SystemEvents::ContextBuilder.sender_context_for(expected_sender).deep_stringify_keys, context["sender"]
+          execution = Workflow::Execution.find(context.fetch("workflow_execution_id"))
+          anchor = execution.context.fetch("invocation")
+          %w[comment topic creative chat].each { |key| assert_equal anchor[key], context[key] }
+          assert_not_equal @topic.id, context.dig("topic", "id")
+          assert_equal @caller.id, context.dig("comment", "user_id")
+          assert_equal @owner.id, context["workspace_user_id"]
+          assert_equal execution.context["event"], context["event"]
+        end
+      end
+
       test "source-constrained self route without a principal rolls back the comment" do
         source_rule("agent", agent_ids: [ @caller.id ])
         Current.agent_turn = { user: nil, task: nil }

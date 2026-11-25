@@ -1,6 +1,7 @@
 ko:
   collavre:
     claude_channel:
+      approval_resume: "승인 요청 %{request_id}의 결정입니다.\n질문: %{question}\n결정: %{decision}\n결정자: %{decided_by}\n사유: %{reason}\n이 결정에 따라 작업을 이어가세요. 거절은 제안한 작업을 허용하지 않습니다."
       permission:
         message: |
           🔐 **도구 권한 요청**

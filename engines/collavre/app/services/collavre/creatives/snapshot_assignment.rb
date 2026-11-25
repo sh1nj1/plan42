@@ -12,6 +12,7 @@ module Collavre
           creative.content_type_input = "html"
           creative.description = snapshot["description"]
         end
+        creative.origin_id = snapshot["origin_id"] if creative.new_record?
         creative.assign_attributes(
           parent_id: snapshot["parent_id"],
           sequence: snapshot["sequence"],

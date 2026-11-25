@@ -27,6 +27,11 @@ en:
         vendor_label: LLM Vendor
         vendor_help: Select the AI provider for this agent
         model_label: Model
+        reasoning_effort_label: "Default Thinking level"
+        reasoning_effort_blank: "Use local Codex / Claude settings"
+        reasoning_effort_help: "Applied in order: chat Thinking setting, agent default, then local Codex / Claude settings. Leave unset to use local settings when the chat has no override."
+        codex_fast_mode_label: Codex Fast mode
+        codex_fast_mode_help: Published in the workspace manifest and applied when the proxy syncs. Codex local (gpt-5.4 or later) only; uses more quota.
         remove_model: Remove from model list
         remove_model_failed: Could not remove the model from the list.
         api_key_label: API Key
@@ -57,20 +62,22 @@ en:
       copy_ai:
         link: Copy
       edit_ai:
+        profile_title: AI Agent Profile
+        read_only_notice: Only the owner or a system administrator can edit this agent.
         title: Edit AI Agent
         link: Edit
         not_an_ai: This user is not an AI agent.
         tools_title: Available Tools
         tools_description: These tools are available for the agent to use.
         meta_skills_title: Collavre meta-skills
-        meta_skills_description: The single provisioned collavre-cli skill runs the selected tools as meta-skills. These selections are not enforced as callback-token permissions yet.
+        meta_skills_description: Selected tools are the tools this agent may execute. Calls through meta_tool and CLI callbacks also check this permission. Selecting meta_tool does not grant access to its target tools.
         gateway_mode: "Workspace mode: %{mode}. Change it in the selected gateway's settings."
         no_tools_found: No tools found.
         clear_api_key_label: Remove stored API key
         clear_api_key_help: After saving, the agent will use the system default or
           a keyless gateway.
         agent_conf_label: "Agent Configuration (YAML)"
-        agent_conf_help: "YAML configuration for agent behavior. chat_history: max previous messages (default 50), chat_history_size: max total characters (default 100000), context.creative_children_level: depth of children to include in creative context (default nil → follows user setting, 0=no children, 1=direct children, 2=grandchildren)."
+        agent_conf_help: "YAML configuration for agent behavior. chat_history: max previous messages (default 50), chat_history_size: max total characters (default 100000), context.creative_children_level: depth of children to include in creative context (default nil → follows user setting, 0=no children, 1=direct children, 2=grandchildren), context.referenced_creative_size: max characters of a creative linked in chat to inline (default 4000; larger ones are sent as a reference card), context.referenced_creative_total_size: max characters of all linked creatives per turn (default 12000), context.creative_context_size: max characters of the current creative's subtree (default 100000; deeper levels are dropped to fit), context.context_creatives_total_size: max characters of all Context Creatives (default 50000), context.max_prompt_chars: cap on the whole prompt (default 500000; oldest history and other context are shed to fit)."
         chat_title: Chat with Agent
         chat_placeholder: Type a message to test the agent...
       update_ai:

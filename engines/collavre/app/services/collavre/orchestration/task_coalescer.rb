@@ -82,11 +82,11 @@ module Collavre
         # quotes. Enumerating the keys here means the list falls behind the
         # payload the ordinary door builds, silently, one key at a time.
         #
-        # Rebuilt, never merged onto: a key absent for this comment must be
-        # absent afterwards. Carrying the previous anchor's "from_ai" or its
-        # quoted comment forward is the same defect pointing the other way.
+        # Rebuild anchor attributes instead of inheriting "from_ai" or quoted
+        # comments from another turn. Keep identity belongs to the dispatch,
+        # so only a same-anchor rebuild preserves its original admission.
         moved = payload.merge(
-          comment.dispatch_payload.slice(:comment).deep_stringify_keys,
+          KeepDispatchAdmission.reanchor_comment(payload, comment),
           "chat" => SystemEvents::ContextBuilder.reanchor_chat(comment.content)
         )
         if previous_id && previous_id.to_i != comment.id
@@ -202,7 +202,7 @@ module Collavre
 
           # Status is re-checked against the locked rows too: a sibling promoted
           # or cancelled since the id read above is no longer ours to supersede.
-          siblings = reject_review_triggers(
+          siblings = reject_independent_triggers(
             locked.values.select { |t| t.id != keep.id && t.status == "queued" }
           )
           siblings = reject_other_workspace_principals(keep, siblings)
@@ -230,8 +230,7 @@ module Collavre
             # caller's own object: dequeue_next_for_topic hands that same
             # instance to refresh_deferred_context! immediately after this, and
             # it has to see the ids merged here rather than its pre-fold copy.
-            payload = self.class.absorb_into_payload(keep.trigger_event_payload || {}, comment_ids)
-            @keep.update!(trigger_event_payload: payload)
+            persist_absorbed_payload(keep, siblings, comment_ids)
           end
         end
 
@@ -246,8 +245,21 @@ module Collavre
 
       private
 
+      def persist_absorbed_payload(keep, siblings, comment_ids)
+        payload = self.class.absorb_into_payload(keep.trigger_event_payload || {}, comment_ids)
+        @keep.update!(trigger_event_payload: payload, usage_attribution: merged_usage_attribution(keep, siblings))
+      end
+
+      def merged_usage_attribution(keep, siblings)
+        siblings.reduce(keep.usage_attribution) do |result, sibling|
+          LlmUsage::Attribution.merge(result, sibling.usage_attribution)
+        end
+      end
+
+      # A keep dispatch owns one generation and comment, so folding or moving
+      # its anchor would remove the evidence admission and completion require.
       def independent_trigger?(task)
-        task.workflow? || review_trigger?(task)
+        KeepLoop.dispatch?(task.trigger_event_payload) || task.workflow? || task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_trigger?(task)
       end
 
       def foldable_survivor?(task)
@@ -271,8 +283,13 @@ module Collavre
       # `id < keep.id` rather than "every other sibling": two dispatches
       # coalescing concurrently would otherwise cancel each other and leave no
       # survivor. Each run only ever supersedes strictly older rows.
+      #
+      # A resumed turn (resume_count > 0) is never superseded either. It carries
+      # the interrupted attempt's resume context and delivery record, which a
+      # newer waiter would silently drop; being older, it is promoted first and
+      # absorbs the newer waiters itself through the :all scope.
       def superseded_scope
-        rel = Task.where(workflow_execution_id: nil).where(
+        rel = Task.where(workflow_execution_id: nil, resume_count: 0).where(
           agent_id: @keep.agent_id,
           topic_id: @keep.topic_id,
           creative_id: @keep.creative_id,
@@ -293,13 +310,16 @@ module Collavre
       # they keep their own turn, which is the only shape ReviewHandler can run.
       def review_trigger?(task)
         anchor_id = (task.trigger_event_payload || {}).dig("comment", "id")
-        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+        anchor_id.present? && Comment.own_turn_message_ids([ anchor_id ]).any?
       end
 
       # One query for the whole burst rather than review_trigger? per sibling.
-      def reject_review_triggers(siblings)
+      def reject_independent_triggers(siblings)
+        siblings = siblings.reject do |task|
+          KeepLoop.dispatch?(task.trigger_event_payload) || task.trigger_event_name.in?(%w[claude_channel_approval async_approval])
+        end
         anchors = siblings.filter_map { |t| (t.trigger_event_payload || {}).dig("comment", "id") }
-        review_ids = Comment.review_message_ids(anchors).to_set
+        review_ids = Comment.own_turn_message_ids(anchors).to_set
         return siblings if review_ids.empty?
 
         siblings.reject do |task|

@@ -8,16 +8,17 @@ module Collavre
       ].freeze
 
       included do
+        attribute :skip_create_notifications, :boolean, default: false
         before_update :advance_notification_revision, if: :notification_relevant_change?
         after_create_commit :enqueue_create_notifications, if: :notification_eligible_on_create?
       end
 
-      def mentioned_users(notification_content = content)
+      def mentioned_users(notification_content = content, chat_only: true)
         return Collavre.user_class.none unless user
 
         emails = mentioned_emails(notification_content) - [ user.email.downcase ]
         names = mentioned_names(notification_content) - [ user.name.downcase ]
-        mentionable_users = Collavre.user_class.mentionable_for(creative.effective_origin)
+        mentionable_users = Collavre.user_class.mentionable_for(creative.effective_origin, chat_only: chat_only)
 
         scope = Collavre.user_class.none
         scope = scope.or(mentionable_users.where(email: emails)) if emails.any?
@@ -84,7 +85,7 @@ module Collavre
       end
 
       def notification_eligible_on_create?
-        regular_notification_eligible? || approval_notification_eligible?
+        !skip_create_notifications? && (regular_notification_eligible? || approval_notification_eligible?)
       end
 
       def regular_notification_eligible?
@@ -92,7 +93,7 @@ module Collavre
       end
 
       def approval_notification_eligible?
-        approver.present? && approval_action? && !creative&.inbox?
+        approver.present? && approval_action? && !suppress_inbox_notification?
       end
 
       def enqueue_create_notifications
@@ -246,11 +247,11 @@ module Collavre
       def notify_approver(kind)
         return unless approver.present? && approval_action?
         return if approver == user
-        return if creative&.inbox? # Don't notify about inbox comments
+        return if suppress_inbox_notification?
 
         create_inbox_comment(
           approver,
-          approval_gate? ? "collavre.inbox.approval_gate_requested" : "inbox.approval_requested",
+          (approval_gate? || claude_channel_approval_request?) ? "collavre.inbox.approval_gate_requested" : "inbox.approval_requested",
           {
             user: user&.display_name,
             tool_name: parsed_action_tool_name,

@@ -235,6 +235,7 @@ module Collavre
     def reconcile_workspaces_after_gateway_change
       if saved_change_to_base_url? || saved_change_to_tenant_id? || deactivated?
         agent_workspaces.destroy_all
+        release_retired_agents if deactivated?
         return
       end
 
@@ -246,6 +247,16 @@ module Collavre
         next unless active?
 
         AgentWorkspace.resolve!(agent: agent, user: per_user? ? agent.creator : nil)
+      end
+    end
+
+    def release_retired_agents
+      agents.find_each do |agent|
+        agent.with_lock do
+          next if agent.cli_proxy_agent? || agent.agent_gateway_id != id
+
+          agent.update!(agent_gateway: nil)
+        end
       end
     end
 

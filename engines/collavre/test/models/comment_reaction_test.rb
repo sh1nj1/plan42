@@ -12,6 +12,10 @@ class CommentReactionTest < ActiveSupport::TestCase
     assert reaction.valid?
   end
 
+  test "emoji filtering has a covering index for matching comment ids" do
+    assert CommentReaction.connection.index_exists?(:comment_reactions, [ :emoji, :comment_id ])
+  end
+
   test "should require emoji" do
     reaction = CommentReaction.new(comment: @comment, user: @user, emoji: nil)
     assert_not reaction.valid?

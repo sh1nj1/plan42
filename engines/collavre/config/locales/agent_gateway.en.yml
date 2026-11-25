@@ -176,6 +176,7 @@ en:
         per_user: Provider login is yours and is reused by every agent you connect to this gateway — log in once per provider, not once per agent. Skills and workspace config stay separate per agent.
       engines: Agent providers
       loading: Loading…
+      fast_mode_pending: Codex Fast mode on the proxy differs from this agent’s setting. Sync now to apply the current setting.
       refresh: Refresh
       login: Log in
       submit: Submit
@@ -214,7 +215,7 @@ en:
         unsupported: Unsupported
         removed: Removed
       meta_skills: Enabled meta-skills
-      meta_skills_help: The AI agent owner selects these Collavre tools. They are run by the single collavre-cli skill; token-level enforcement will be added later.
+      meta_skills_help: The AI agent owner selects these Collavre tools. The collavre-cli skill runs them, and callback requests are checked against the agent’s current tool permissions before execution.
       rotate_tokens: Rotate callback token
       rotate_confirm: Rotate the Collavre callback token? The registered manifest URL remains unchanged, and the workspace must sync again.
       tokens_rotated: The callback token was rotated.

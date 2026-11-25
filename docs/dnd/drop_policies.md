@@ -45,3 +45,18 @@ commands and DOM recovery belong to their adapters.
   incoming bundle are removed by T1.
 - Creative and selected-comment sources share `lib/dnd/bundle_image.js`; image
   content uses text nodes and the temporary element is removed on the next frame.
+
+## Disk file attachments
+
+- Native disk files use the creative row's existing vertical hit test and
+  indicators. Top/bottom create one sibling containing all dropped files;
+  the center appends them to the target's effective origin. Files retain
+  their selection order. Creative/topic payloads keep their existing behavior.
+- The session-authenticated multipart endpoint keeps CSRF protection and checks
+  destination write access before uploading. Sibling placement requires readable
+  target access and parent write access; root siblings belong to the uploader.
+- Attachment changes and sibling placement commit together. On failure, uploaded
+  unattached blobs are purged. Read-only sources reject center attachments.
+- Success refreshes the creative and workspace trees using their existing state
+  preservation. Failure asks the user to refresh before retrying, since a network
+  failure can leave the server outcome unknown.

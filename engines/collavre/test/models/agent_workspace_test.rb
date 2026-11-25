@@ -2,6 +2,7 @@ require "test_helper"
 require Rails.root.join("engines/collavre/db/migrate/20260809000003_hash_agent_workspace_callback_tokens")
 require Rails.root.join("engines/collavre/db/migrate/20260809000004_encrypt_agent_workspace_manifest_tokens")
 require Rails.root.join("engines/collavre/db/migrate/20260810000000_split_agent_workspace_identity_axes")
+require Rails.root.join("engines/collavre/db/migrate/20260923000000_link_tool_usages_to_agent_workspaces")
 
 class AgentWorkspaceTest < ActiveSupport::TestCase
   setup do
@@ -141,6 +142,76 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_equal access_token, Doorkeeper::AccessToken.by_token(access_token.token)
   end
 
+  test "the callback token is found by its id, whatever its application is named" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    access_token = Doorkeeper::AccessToken.by_token(workspace.callback_token)
+    access_token.application.update!(name: "Renamed")
+
+    assert_equal access_token.id, workspace.callback_access_token_id
+    assert_equal workspace, Collavre::AgentWorkspace.for_callback_access_token(access_token)
+    assert_nil Collavre::AgentWorkspace.for_callback_access_token(nil)
+  end
+
+  test "resolving repairs a callback token id left unset by a pre-migration writer" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    token_id = workspace.callback_access_token_id
+    workspace.update_columns(callback_access_token_id: nil)
+
+    assert_equal workspace, Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_equal token_id, workspace.reload.callback_access_token_id
+
+    Doorkeeper::AccessToken.find(token_id).destroy!
+    workspace.update_columns(callback_access_token_id: nil)
+    Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_nil workspace.reload.callback_access_token_id
+  end
+
+  test "repairing a stale copy keeps the id of a token rotated in the meantime" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    workspace.update_columns(callback_access_token_id: nil)
+    stale = Collavre::AgentWorkspace.find(workspace.id)
+
+    workspace.rotate_tokens!
+    rotated_id = workspace.reload.callback_access_token_id
+
+    stale.repair_callback_access_token_id!
+    assert_equal rotated_id, workspace.reload.callback_access_token_id
+    assert_equal rotated_id, stale.callback_access_token_id
+  end
+
+  test "resolving repairs a callback token id left stale by a pre-migration rotation" do
+    workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    old_id = workspace.callback_access_token_id
+    workspace.rotate_tokens!
+    rotated_id = workspace.reload.callback_access_token_id
+    # The previous release's rotate_tokens! rewrote only callback_token.
+    workspace.update_columns(callback_access_token_id: old_id)
+
+    Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    assert_equal rotated_id, workspace.reload.callback_access_token_id
+    assert_equal workspace, Collavre::AgentWorkspace.for_callback_access_token(Doorkeeper::AccessToken.find(rotated_id))
+  end
+
+  test "migration backfills the callback token id of hashed and legacy plain tokens" do
+    hashed = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
+    hashed_id = hashed.callback_access_token_id
+    hashed.update_columns(callback_access_token_id: nil)
+    migration = LinkToolUsagesToAgentWorkspaces.new
+    migration.verbose = false
+
+    migration.down
+    migration.up
+
+    assert_equal hashed_id, hashed.reload.callback_access_token_id
+    Doorkeeper::AccessToken.find(hashed_id).update_column(:token, hashed.callback_token)
+    hashed.update_columns(callback_access_token_id: nil)
+    migration.down
+    migration.up
+    assert_equal hashed_id, hashed.reload.callback_access_token_id
+    Collavre::AgentWorkspace.reset_column_information
+    Collavre::ToolUsage.reset_column_information
+  end
+
   test "migration hashes and restores legacy workspace callback tokens" do
     workspace = Collavre::AgentWorkspace.resolve!(agent: @agent, user: @owner)
     access_token = Doorkeeper::AccessToken.by_token(workspace.callback_token)
@@ -266,6 +337,7 @@ class AgentWorkspaceTest < ActiveSupport::TestCase
     assert_equal old_manifest, workspace.manifest_token
     assert_not_equal old_callback, workspace.callback_token
     assert Doorkeeper::AccessToken.by_token(old_callback).revoked?
+    assert_equal Doorkeeper::AccessToken.by_token(workspace.callback_token).id, workspace.callback_access_token_id
   end
 
   test "token rotation refuses a workspace after its gateway is deactivated" do

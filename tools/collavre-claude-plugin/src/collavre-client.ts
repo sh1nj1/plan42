@@ -29,6 +29,28 @@ export interface RegisterBody {
   name: string;
 }
 
+// The server's machine-readable marker for the ONE benign reply conflict: the
+// delegated task was already completed, so the dispatch this reply answers has
+// an answer. See TaskClaimService::CONFLICT_ALREADY_COMPLETED.
+const BENIGN_REPLY_CONFLICT_REASON = "already_completed";
+
+/**
+ * Whether a 409 body from /agent/reply is the sibling-session dedup and may be
+ * suppressed. Anything else — a cancelled/failed/recovered task, an id that is
+ * not ours, an unparseable body, or an older server that sends no reason at all
+ * — is NOT: the reply in hand is the only copy of that answer, and suppressing
+ * it drops it with no trace. Unmarked conflicts therefore fall back to being
+ * raised, which is what this client did before dedup existed.
+ */
+export function isBenignReplyDedup(body: string): boolean {
+  try {
+    const parsed = JSON.parse(body) as { reason?: unknown };
+    return parsed?.reason === BENIGN_REPLY_CONFLICT_REASON;
+  } catch {
+    return false;
+  }
+}
+
 export function buildRegisterBody(params: RegisterParams): RegisterBody {
   const body: RegisterBody = {
     agent_name: params.agentName,
@@ -41,6 +63,9 @@ export function buildRegisterBody(params: RegisterParams): RegisterBody {
   }
   return body;
 }
+
+// Only validation/authentication rejections prove no comment was saved.
+export class ApprovalRelayRejectedError extends Error {}
 
 export class CollavreClient {
   private baseUrl: string;
@@ -69,12 +94,27 @@ export class CollavreClient {
     return res.json() as Promise<RegisterResult>;
   }
 
+  async quotaTurnCurrent(turn: { task_id: number; execution_generation: string }): Promise<boolean> {
+    const url = new URL(`${this.baseUrl}/api/v1/agent/tasks/${turn.task_id}/quota_status`);
+    url.searchParams.set("execution_generation", turn.execution_generation);
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.token}` },
+      signal: AbortSignal.timeout(2000),
+    });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new Error(`Quota status failed (${res.status})`);
+    const body = await res.json() as { current?: boolean };
+    if (typeof body.current !== "boolean") throw new Error("Invalid quota status");
+    return body.current;
+  }
+
   async reply(
     topicId: number,
     text: string,
     taskId: number,
+    executionGeneration?: string,
   ): Promise<{ comment_id: number }> {
-    const body: Record<string, unknown> = { topic_id: topicId, text, task_id: taskId };
+    const body: Record<string, unknown> = { topic_id: topicId, text, task_id: taskId, execution_generation: executionGeneration };
 
     const res = await fetch(`${this.baseUrl}/api/v1/agent/reply`, {
       method: "POST",
@@ -141,6 +181,58 @@ export class CollavreClient {
     if (!res.ok) {
       const respBody = await res.text();
       throw new Error(`Notify failed (${res.status}): ${respBody}`);
+    }
+
+    return res.json() as Promise<{ comment_id: number }>;
+  }
+
+  // Raise an agent-initiated approval request in a topic: the server builds a
+  // structured approval comment whose body is `question` verbatim (with the
+  // approver gate and approve/deny buttons) and parks the in-flight delegated
+  // task, exactly as it does for a relayed tool-permission prompt. requestId
+  // rides the same permission_request_id rail, so the human's decision comes
+  // back over the agent stream and unblocks the waiting tool call.
+  //
+  // approverUserId routes the decision to someone other than the token holder;
+  // the server rejects an approver who cannot read the creative.
+  async requestApproval(params: {
+    topicId: number;
+    requestId: string;
+    question: string;
+    taskId?: number;
+    approverUserId?: number;
+    signal?: AbortSignal;
+  }): Promise<{ comment_id: number }> {
+    const body: Record<string, unknown> = {
+      topic_id: params.topicId,
+      text: "",
+      approval_question: params.question,
+      permission_request_id: params.requestId,
+    };
+    if (params.taskId !== undefined && params.taskId !== null) {
+      body.task_id = params.taskId;
+    }
+    if (params.approverUserId !== undefined) {
+      body.approver_user_id = params.approverUserId;
+    }
+
+    const res = await fetch(`${this.baseUrl}/api/v1/agent/notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.token}`,
+      },
+      body: JSON.stringify(body),
+      signal: params.signal,
+    });
+
+    if (!res.ok) {
+      const respBody = await res.text();
+      const message = `Approval request failed (${res.status}): ${respBody}`;
+      if ([400, 401, 403, 404, 422].includes(res.status)) {
+        throw new ApprovalRelayRejectedError(message);
+      }
+      throw new Error(message);
     }
 
     return res.json() as Promise<{ comment_id: number }>;

@@ -17,12 +17,14 @@ module Collavre
 
       response.headers["Cache-Control"] = "no-store"
       render partial: "collavre/creative_change_sets/detail",
-             locals: { creative: @requested_creative, change_set: change_set, diff: diff }
+             locals: { creative: @requested_creative, change_set: change_set, diff: diff,
+                       removal_draft_accessible: accessible_removal_draft? }
     end
 
     def apply
       change_set = CreativeChangeSet.for_creative_scope(@requested_creative).find(params[:id])
       result = valid_mode?(change_set) ? apply_service(change_set).call : invalid_action_result
+      Comments::CreativeQuoteRejectionNotice.call(result.change_set) if result.status == :rejected
 
       render json: payload_for(result), status: response_status(result)
     end
@@ -71,7 +73,15 @@ module Collavre
     def set_creative
       @requested_creative = Creative.find(params[:creative_id])
       readable_ids = Creatives::PermissionFilter.new(user: Current.user).readable_ids([ @requested_creative.id ])
-      head :forbidden unless readable_ids.include?(@requested_creative.id)
+      head :forbidden unless readable_ids.include?(@requested_creative.id) || accessible_removal_draft?
+    end
+
+    def accessible_removal_draft?
+      change_set = CreativeChangeSet.for_creative_scope(@requested_creative).find_by(id: params[:id], status: "draft")
+      return false unless change_set
+
+      Creatives::DraftLinkAuthorization.new(user: Current.user)
+        .visible_removal_ids(change_set.creative_changes).include?(@requested_creative.id)
     end
 
     def payload_for(result)

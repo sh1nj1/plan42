@@ -167,6 +167,8 @@ module Collavre
       end
 
       def markdown_for(snapshot)
+        return I18n.t("collavre.tools.creative_links.link_reference", id: snapshot["origin_id"]) if snapshot["origin_id"]
+
         return snapshot["markdown_source"].to_s if snapshot["content_type"] == "markdown"
 
         MarkdownConverter.html_to_markdown(snapshot["description"].to_s)

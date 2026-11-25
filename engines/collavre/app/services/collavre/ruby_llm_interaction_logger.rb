@@ -3,7 +3,7 @@ module Collavre
 
   class RubyLlmInteractionLogger
     class << self
-      def log(vendor:, model:, messages:, tools: [], response_content: nil, error_message: nil, activity: "llm_query", creative: nil, user: nil, comment: nil, input_tokens: nil, output_tokens: nil)
+      def log(vendor:, model:, messages:, tools: [], activity: "llm_query", creative: nil, user: nil, comment: nil, **details)
         ActivityLog.create!(
           activity: activity,
           creative: creative,
@@ -14,11 +14,11 @@ module Collavre
             model: model.to_s,
             messages: safe_json(messages || []),
             tools: safe_json(tools || []),
-            response_content: response_content,
-            error_message: error_message,
-            input_tokens: input_tokens,
-            output_tokens: output_tokens
-          }
+            response_content: details[:response_content],
+            error_message: details[:error_message],
+            input_tokens: details[:input_tokens],
+            output_tokens: details[:output_tokens]
+          }.merge(details[:run_options] ? details.slice(:run_options) : {})
         )
       rescue StandardError => e
         Rails.logger.error("Failed to persist activity log: #{e.class} #{e.message}")
@@ -27,7 +27,17 @@ module Collavre
       private
 
       def safe_json(value)
-        JSON.parse(value.to_json)
+        JSON.parse(serialize(value).to_json)
+      end
+
+      def serialize(value)
+        case value
+        when RubyLLM::Message then value.to_h
+        when RubyLLM::Tool then { name: value.name, description: value.description, parameters: value.parameters_schema }
+        when Array then value.map { |item| serialize(item) }
+        when Hash then value.transform_values { |item| serialize(item) }
+        else value
+        end
       end
     end
   end

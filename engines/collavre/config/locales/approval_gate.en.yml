@@ -2,6 +2,10 @@ en:
   collavre:
     approval_gate:
       reason: "Reason (optional)"
-      native_required: "Approval requests require a running native Collavre agent turn."
+      native_required: "Approval requests require a running native turn or a valid Codex CLI task_id. A Claude Channel session must use its plugin's approval_request tool instead."
       question_required: "Enter a question for the approver."
+      request_id_required: "An approval request needs a request id to correlate the decision."
       invalid_approver: "Choose a human approver who can access this creative."
+      invalid_task: "Provide a running Codex CLI task belonging to you or your agent."
+      async_pending: "End this turn and wait. Collavre will send the human decision in a new turn; do not perform the proposed action while pending."
+      task_context: "Current Collavre task_id: %{task_id}. To request a human decision, call approval_request through meta_tool with this task_id. If pending, end the turn and wait for the decision message."

@@ -1,8 +1,12 @@
 import { handleCreativeChatClick } from './creative_chat_navigation'
+import { setCreativeTitle } from "collavre/lib/creative_title"
 import { Controller } from '@hotwired/stimulus'
+import { clearChatActiveRow, disconnectCreativeProgress, markChatActiveRow, observeCreativeProgress } from './popup_creative_progress'
 import chatHistory from '../../lib/chat_history'
 import chatDrafts from '../../lib/chat_drafts'
 import PopupFullscreen from './popup_fullscreen'
+import { openingFocusOptions } from './popup_focus'
+import { scheduleOpenFromUrl, clearPendingOpenFromUrl } from './popup_url_open'
 
 const SIZE_STORAGE_KEY = 'commentsPopupSize'
 const CREATIVE_CLICK_EVENT = 'creative-comments-click'
@@ -12,6 +16,7 @@ const LONG_PRESS_MS = 500
 export default class extends Controller {
   static targets = [
     'title',
+    'progress',
     'list',
     'form',
     'closeButton',
@@ -158,11 +163,13 @@ export default class extends Controller {
     } else if (this.isDocked()) {
       this.enterDockedMode()
     } else {
-      this.openFromUrl()
+      // Wait for sibling controllers before opening a server-rendered inbox button.
+      scheduleOpenFromUrl(this)
     }
   }
 
   disconnect() {
+    disconnectCreativeProgress(this)
     this._releaseWakeLock()
     this.clearPendingOpenFromUrl()
     if (this.dockedOpenTimeout) window.clearTimeout(this.dockedOpenTimeout)
@@ -207,10 +214,6 @@ export default class extends Controller {
 
   get presenceController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--presence')
-  }
-
-  get mentionMenuController() {
-    return this.application.getControllerForElementAndIdentifier(this.element, 'comments--mention-menu')
   }
 
   get topicsController() {
@@ -263,8 +266,9 @@ export default class extends Controller {
     this.element.dataset.creativeId = ''
     this.element.dataset.canComment = 'false'
     this.element.dataset.creativeSnippet = ''
-    this.titleTarget.textContent = this.element.dataset.defaultTitle || ''
-    this._clearChatActiveRow()
+    setCreativeTitle(this.titleTarget, this.element.dataset.defaultTitle || '', '')
+    observeCreativeProgress(this)
+    clearChatActiveRow()
     this._hideNavDropdown()
 
     if (this.listController) this.listController.creativeId = null
@@ -312,14 +316,13 @@ export default class extends Controller {
     this.currentButton = button
     const resolvedCreativeId = creativeId || button?.dataset.creativeId
     const canComment = button.dataset.canComment === 'true'
-    const snippet = button.dataset.creativeSnippet || ''
+    const snippet = setCreativeTitle(this.titleTarget, button.dataset.creativeSnippet || '', resolvedCreativeId)
 
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = button?.dataset.autoFocusOnOpen || 'true'
-    this.titleTarget.textContent = snippet
 
-    this._markChatActiveRow(resolvedCreativeId)
+    markChatActiveRow(this, resolvedCreativeId)
 
     this.prepareSize()
 
@@ -355,15 +358,14 @@ export default class extends Controller {
     if (this.hasListTarget) this.listTarget.classList.remove('docked-empty')
     const resolvedCreativeId = this.element.dataset.creativeId
     const canComment = this.element.dataset.canComment === 'true'
-    const snippet = this.element.dataset.creativeSnippet || ''
+    const snippet = setCreativeTitle(this.titleTarget, this.element.dataset.creativeSnippet || '', resolvedCreativeId)
 
     this.currentButton = null
     this.element.dataset.creativeId = resolvedCreativeId || ''
     this.element.dataset.canComment = canComment ? 'true' : 'false'
     this.element.dataset.autoFocusOnOpen = 'true'
-    this.titleTarget.textContent = snippet
 
-    this._markChatActiveRow(resolvedCreativeId)
+    markChatActiveRow(this, resolvedCreativeId)
 
     this.showPopup()
 
@@ -392,6 +394,7 @@ export default class extends Controller {
   }
 
   async notifyChildControllers({ creativeId, canComment, highlightId, openGeneration }) {
+    const focusOptions = openingFocusOptions(this.currentButton)
     this.topicsController?.clearOverrideTopicId()
     // Drop the previous creative's topic selection from the form controller
     // synchronously, BEFORE topics loadTopics() dispatches `comments--topics:change`
@@ -443,18 +446,13 @@ export default class extends Controller {
       suppressedListController.suppressTopicChangeLoad = false
     }
 
-    if (this.formController) {
-      this.formController.onPopupOpened({ creativeId, canComment })
-    }
+    this.formController?.onPopupOpened({ creativeId, canComment, ...focusOptions })
     if (this.listController) {
       const topicId = this.topicsController ? this.topicsController.currentTopicId : undefined
       this.listController.onPopupOpened({ creativeId, highlightId, topicId })
     }
     if (this.presenceController) {
       this.presenceController.onPopupOpened({ creativeId })
-    }
-    if (this.mentionMenuController) {
-      this.mentionMenuController.onPopupOpened({ creativeId })
     }
     if (this.contextsController) {
       this.contextsController.onPopupOpened({ creativeId })
@@ -478,7 +476,7 @@ export default class extends Controller {
 
     this._exitFullscreenState()
 
-    this._clearChatActiveRow()
+    clearChatActiveRow()
     this._hideNavDropdown()
     this._releaseWakeLock()
 
@@ -502,7 +500,6 @@ export default class extends Controller {
     this.presenceController?.onPopupClosed()
     this.formController?.onPopupClosed()
     this.listController?.onPopupClosed()
-    this.mentionMenuController?.onPopupClosed()
     this.topicsController?.onPopupClosed()
     this.contextsController?.onPopupClosed()
     this.dropTriggerController?.onPopupClosed()
@@ -958,27 +955,7 @@ export default class extends Controller {
   }
 
   clearPendingOpenFromUrl() {
-    if (this.openFromUrlObserver) {
-      this.openFromUrlObserver.disconnect()
-      this.openFromUrlObserver = null
-    }
-    if (this.openFromUrlTimeout) {
-      window.clearTimeout(this.openFromUrlTimeout)
-      this.openFromUrlTimeout = null
-    }
-  }
-
-  _markChatActiveRow(creativeId) {
-    this._clearChatActiveRow()
-    if (!creativeId) return
-    const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
-    if (row) row.classList.add('chat-active')
-  }
-
-  _clearChatActiveRow() {
-    document.querySelectorAll('creative-tree-row.chat-active').forEach(el => {
-      el.classList.remove('chat-active')
-    })
+    clearPendingOpenFromUrl(this)
   }
 
   // Walk up from the target element to find the nearest scrollable ancestor

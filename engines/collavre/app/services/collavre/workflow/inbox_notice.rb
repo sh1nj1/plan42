@@ -2,20 +2,33 @@
 
 module Collavre
   module Workflow
-    # A System notice is never a dispatch. Avoid the ordinary source-topic lock
-    # while retaining atomic notice/seal persistence under the chain lock.
+    # System notices never dispatch. A shared key lock protects their destination
+    # from deletion without taking the exclusive source-topic admission slot.
     class InboxNotice
       def self.persist!(inbox:, owner:, key:, content:)
-        topic = inbox.system_topic(fallback_user: owner)
-        inbox.reload
-        topic.reload
-        unless inbox.inbox? && inbox.origin_id.nil? && inbox.user_id == owner.id &&
-            inbox.archived_at.nil? && topic.creative_id == inbox.id && topic.name == Creative::SYSTEM_TOPIC_NAME && !topic.archived?
-          raise ActiveRecord::RecordInvalid, inbox
+        Comment.transaction do
+          topic = locked_system_topic(inbox, owner)
+          inbox.reload
+          unless inbox.inbox? && inbox.origin_id.nil? && inbox.user_id == owner.id &&
+              inbox.archived_at.nil? && topic.creative_id == inbox.id && topic.name == Creative::SYSTEM_TOPIC_NAME && !topic.archived?
+            raise ActiveRecord::RecordInvalid, inbox
+          end
+          existing = Comment.find_by(notification_key: key)
+          existing || insert!(inbox, topic, key, content)
         end
-        existing = Comment.find_by(notification_key: key)
-        return existing if existing
-        insert!(inbox, topic, key, content)
+      end
+
+      def self.locked_system_topic(inbox, owner)
+        attempts = 0
+        begin
+          topic = inbox.system_topic(fallback_user: owner)
+          topic.reload(lock: "FOR KEY SHARE")
+        rescue ActiveRecord::RecordNotFound
+          # DELETE won before the lock; retry against the replacement System.
+          attempts += 1
+          retry if attempts < 3
+          raise
+        end
       end
 
       def self.insert!(inbox, topic, key, content)
@@ -37,7 +50,7 @@ module Collavre
         Rails.logger.warn("[Workflow] inbox_comment_id=#{comment.id} broadcast_error=#{error.class.name}")
       end
 
-      private_class_method :insert!, :broadcast
+      private_class_method :locked_system_topic, :insert!, :broadcast
     end
   end
 end

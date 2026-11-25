@@ -91,17 +91,20 @@ export function syncFilterButtons(url) {
   const hasArchived = params.get('show_archived') === 'true'
   const hasCron = params.get('has_cron') === 'true'
   const hasSearch = Boolean(params.get('search')?.trim())
+  const reaction = params.get('reaction_emoji')
   const active = {
+    [`reaction:${reaction}`]: Boolean(reaction),
     [`progress:${progressState(params)}`]: true,
     comment: params.get('comment') === 'true',
     cron: hasCron,
     archived: hasArchived,
-    'any-filter': hasProgress || hasArchived || hasCron || hasSearch
+    'any-filter': hasProgress || hasArchived || hasCron || hasSearch || Boolean(reaction)
   }
 
   document.querySelectorAll('[data-filter-state]').forEach((element) => {
     const isActive = active[element.dataset.filterState] === true
     element.classList.toggle('active', isActive)
+    if (element.hasAttribute('aria-pressed')) element.setAttribute('aria-pressed', String(isActive))
 
     // Buttons whose label depends on the filter state (archive show/hide)
     // carry both translations so they can be swapped without a round trip.

@@ -33,6 +33,14 @@ module Collavre
       )
     end
 
+    test "cross-post preserves the selected model and thinking level" do
+      options = { "model" => "paperclip/claude_local/opus", "reasoning_effort" => "max" }
+      reply = Comment.create!(creative: @inbox, topic: @system_topic, user: @user,
+                              content: "Reply with options", agent_run_options: options, skip_dispatch: true)
+      cross_posted = InboxReplyService.call(reply)
+      assert_equal options, cross_posted.reload.agent_run_options
+    end
+
     test "cross-posts reply to original creative and topic" do
       reply = Comment.create!(
         creative: @inbox,

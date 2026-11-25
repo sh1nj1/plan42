@@ -3,19 +3,24 @@
 module Collavre
   module Creatives
     class DraftChangeSetApplicator
-      def initialize(change_set:, user:, plan:, skipped_change_ids: [])
+      def initialize(change_set:, user:, plan:, skipped_change_ids: [], recomputed_change_ids: [])
         @change_set = change_set
         @user = user
         @plan = plan
         @skipped_change_ids = skipped_change_ids
+        @recomputed_change_ids = recomputed_change_ids
         @id_map = {}
       end
 
       def call
+        # Replay callbacks capture derived progress against the current tree.
+        @change_set.creative_changes.where(id: @recomputed_change_ids.to_a).destroy_all
         preserve_skipped_changes
         History.track(**history_context) do
           Current.change_set = @change_set
           @plan.each { |creative, snapshot, attribute, change| apply(creative, snapshot, attribute, change) }
+          # Keep a fully reused draft as an applied no-op instead of discarding it.
+          Current.change_set = nil unless @change_set.creative_changes.exists?
         end
         @change_set.update!(status: "applied", applied_at: Time.current)
         CreativeTreeInvalidationJob.perform_later(@change_set.creative_changes.pluck(:creative_id))
@@ -43,8 +48,11 @@ module Collavre
       end
 
       def apply(creative, snapshot, attribute, change)
+        return creative.reload.destroy! if change.operation == "destroy" && creative&.origin_id.present?
+
         remapped = remap_snapshot(snapshot)
         return apply_creation(remapped, change) unless creative
+        remapped["progress"] = creative.reload.progress if @recomputed_change_ids.include?(change.id)
         return creative.update!(remapped.slice(*Array(attribute))) if attribute
 
         SnapshotAssignment.call(creative, remapped)
@@ -53,10 +61,26 @@ module Collavre
 
       def apply_creation(snapshot, virtual_change)
         parent = Creative.find_by(id: snapshot["parent_id"])
+        return if reuse_existing_link(parent, snapshot, virtual_change)
+
         creative = Creative.new(user: parent&.user || @change_set.user || @user, parent: parent)
+        snapshot["sequence"] = (parent.children.lock.pluck(:sequence).compact.max || -1) + 1 if parent && snapshot["origin_id"]
         SnapshotAssignment.call(creative, snapshot)
         creative.save!
         remap_virtual_change!(virtual_change, creative)
+      end
+
+      def reuse_existing_link(parent, snapshot, virtual_change)
+        return false unless snapshot["origin_id"]
+
+        existing = parent&.children&.active&.find_by(origin_id: snapshot["origin_id"])
+        return false unless existing
+
+        virtual_id = virtual_change.creative_id
+        @id_map[virtual_id] = existing.id
+        virtual_change.destroy!
+        remap_pending_references!(virtual_id, existing.id)
+        true
       end
 
       def remap_snapshot(snapshot)

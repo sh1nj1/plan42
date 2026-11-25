@@ -11,21 +11,28 @@ module Collavre
         "Provide a concrete question and optionally a human approver ID (defaults to the triggering comment author). " \
         "The original call receives approved or denied, reason, and decided_by after the person responds. " \
         "Denial is a normal result; reconsider the plan instead of performing the denied action. No automatic expiration. " \
-        "Available through native agent tools or meta_tool run; external MCP sessions are not supported."
+        "For Codex CLI turns, pass task_id from the prompt: returns pending; end the turn and wait for a decision message. " \
+        "Available through native agent tools or meta_tool run; unassociated external MCP sessions are not supported " \
+        "(a Claude Channel session asks through its own plugin's approval_request tool instead)."
       tool_param :question, description: "The concrete question for the human approver. Markdown supported."
       tool_param :approver_user_id, description: "Human approver with access to this creative.", required: false
+
+      tool_param :task_id, description: "Current Codex CLI task ID supplied by Collavre in the prompt.", required: false
 
       def self.requires_approval?
         false
       end
 
-      sig { params(question: String, approver_user_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
-      def call(question:, approver_user_id: nil)
+      sig { params(question: String, approver_user_id: T.nilable(Integer), task_id: T.nilable(Integer)).returns(T::Hash[Symbol, T.untyped]) }
+      def call(question:, approver_user_id: nil, task_id: nil)
+        if Current.agent_turn.nil? && task_id
+          return AsyncApprovalRequest.new.call(task_id: task_id, question: question, approver_user_id: approver_user_id)
+        end
         self.class.approver!(Current.agent_turn&.dig(:task), question, approver_user_id)
         # Valid native calls are intercepted before execution. Other callers
         # have no resumable conversation, even if they carry an agent context.
         { error: I18n.t("collavre.approval_gate.native_required") }
-      rescue ArgumentError => e
+      rescue ArgumentError, PermissionDeniedError => e
         { error: e.message }
       end
 

@@ -297,11 +297,14 @@ module Collavre
           end
         return if to_attach.empty? && to_detach.empty?
 
-        to_attach.each { |blob| files.attach(blob) }
+        attach_adoptable(to_attach)
         to_detach.each { |attachment| detach_and_maybe_purge(attachment) }
       rescue StandardError => e
         Rails.logger.error("Creative##{id}: reconcile_description_attachments failed: #{e.message}")
       end
+
+      # A signed id is not a capability: only adopt blobs the editor can read.
+      def attach_adoptable(blobs) = BlobAccess.adoptable(blobs, owner: user).each { |blob| files.attach(blob) }
 
       # Detach this creative's join, then purge the blob ONLY if nothing else
       # references it — a shared blob (description copied between creatives)

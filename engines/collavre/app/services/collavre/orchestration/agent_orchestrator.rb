@@ -14,12 +14,12 @@ module Collavre
     class AgentOrchestrator
       include WorkflowDispatch
       include JobEnqueue
-      def self.dispatch(event_name, context, **options)
-        new(event_name: event_name, context: context).dispatch(**options)
+      def self.dispatch(event_name, context, records: nil, **options)
+        new(event_name: event_name, context: context, records: records).dispatch(**options)
       end
 
-      def self.dispatch_with_outcome(event_name, context, **options)
-        new(event_name: event_name, context: context).dispatch_with_outcome(**options)
+      def self.dispatch_with_outcome(event_name, context, records: nil, **options)
+        new(event_name: event_name, context: context, records: records).dispatch_with_outcome(**options)
       end
 
       def self.select(event_name, context) = new(event_name: event_name, context: context).select
@@ -28,43 +28,58 @@ module Collavre
 
       def self.dequeue_next_for_topic(topic_id, creative_id = nil)
         task = claim_next_waiter(topic_id, creative_id)
-        if task
-          # Fold the waiters left behind this one into it. dequeue promotes the
-          # oldest *eligible* queued task, so its same-agent siblings are all
-          # newer — they would each be promoted in turn and, because
-          # refresh_deferred_context! points every one of them at the same
-          # latest comment, replay the same answer. Absorb them here instead;
-          # the refresh below then moves the anchor forward and keeps the
-          # absorbed triggers in "merged_comment_ids".
-          coalesce_promoted!(task)
+        promote_claimed!(task, topic_id, creative_id) if task
+      rescue StandardError
+        # Whatever failed after the claim — the refresh, the enqueue — left the
+        # row pending with no job behind it, holding the slot where no recovery
+        # looks. Back in the queue, orphan recovery promotes it again.
+        Task.where(id: task.id, status: "pending").update_all(status: "queued", updated_at: Time.current) if task
+        raise
+      end
 
-          # `task` is the snapshot claim_next_waiter took, and the row can be
-          # cancelled from outside between that claim and here: deleting the
-          # comment it answers cancels a `pending` task through
-          # Comment#cancel_pending_tasks, which holds no lock this path waits
-          # on. TaskCoalescer re-reads the survivor under its own lock and
-          # declines to fold onto a cancelled row — but declining leaves this
-          # object still saying `pending`, and everything below reads it: the
-          # refresh would write a payload onto a dead row and the check at the
-          # bottom would enqueue it, where AiAgentJob reloads and returns
-          # without draining. Re-read once, here, rather than at each of them.
-          unless task.reload.status == "cancelled"
-            WaitingNoticeManager.cleanup_waiting_notices_if_drained!(task)
-            refresh_deferred_context!(task)
-            revalidate_assignment!(task) unless task.status == "cancelled"
-          end
+      def self.promote_claimed!(task, topic_id, creative_id)
+        # Fold the waiters left behind this one into it. dequeue promotes the
+        # oldest *eligible* queued task, so its same-agent siblings are all
+        # newer — they would each be promoted in turn and, because
+        # refresh_deferred_context! points every one of them at the same
+        # latest comment, replay the same answer. Absorb them here instead;
+        # the refresh below then moves the anchor forward and keeps the
+        # absorbed triggers in "merged_comment_ids".
+        coalesce_promoted!(task)
 
-          if task.status == "cancelled"
-            # The anchor was deleted under it, refresh_deferred_context! found
-            # no eligible comment, or revalidate_assignment! found the topic now
-            # assigned to another agent. Either way this waiter is dead — try
-            # the next queued task.
-            dequeue_next_for_topic(topic_id, creative_id)
-          else
-            AiAgentJob.perform_later(task)
+        # `task` is the snapshot claim_next_waiter took, and the row can be
+        # cancelled from outside between that claim and here: deleting the
+        # comment it answers cancels a `pending` task through
+        # Comment#cancel_pending_tasks, which holds no lock this path waits
+        # on. TaskCoalescer re-reads the survivor under its own lock and
+        # declines to fold onto a cancelled row — but declining leaves this
+        # object still saying `pending`, and everything below reads it: the
+        # refresh would write a payload onto a dead row and the check at the
+        # bottom would enqueue it, where AiAgentJob reloads and returns
+        # without draining. Re-read once, here, rather than at each of them.
+        unless task.reload.status == "cancelled"
+          WaitingNoticeManager.cleanup_waiting_notices_if_drained!(task)
+          refresh_deferred_context!(task)
+          revalidate_assignment!(task) unless task.status == "cancelled"
+        end
+
+        if task.status == "cancelled"
+          # The anchor was deleted under it, refresh_deferred_context! found
+          # no eligible comment, or revalidate_assignment! found the topic now
+          # assigned to another agent. Either way this waiter is dead — try
+          # the next queued task.
+          dequeue_next_for_topic(topic_id, creative_id)
+        else
+          job = AiAgentJob.perform_later(task)
+          # A rejected enqueue would leave the row pending with no job behind
+          # it, holding the slot where no recovery looks. Back in the queue,
+          # orphan recovery promotes it again.
+          if job.respond_to?(:successfully_enqueued?) && !job.successfully_enqueued?
+            Task.where(id: task.id, status: "pending").update_all(status: "queued", updated_at: Time.current)
           end
         end
       end
+      private_class_method :promote_claimed!
 
       # Promote the oldest waiter this topic can actually run, moving it
       # queued -> pending (a status that occupies the slot) so the claim is
@@ -95,7 +110,7 @@ module Collavre
           end
           next if candidate.nil?
 
-          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending")
+          updated = Task.where(id: candidate.id, status: "queued").update_all(status: "pending", updated_at: Time.current)
           claimed = candidate.reload if updated > 0
         end
 
@@ -192,7 +207,7 @@ module Collavre
         # the user withdrew — or that was moved out of this turn's scope — while
         # it waited would still be delivered, and still drive an in-place
         # revision of the agent's comment.
-        if review_anchor?(context)
+        if fixed_reply_anchor?(task, context)
           task.update!(status: "cancelled") unless anchor_still_in_turn?(context)
           return
         end
@@ -395,6 +410,12 @@ module Collavre
       # mention — so an anchor cannot be delivered under rules the rest of the
       # payload is filtered by: public_only, no approval surface, and still in
       # this turn's creative/topic.
+      def self.fixed_reply_anchor?(task, context)
+        KeepLoop.dispatch?(context) ||
+          task.trigger_event_name.in?(%w[claude_channel_approval async_approval]) || review_anchor?(context)
+      end
+      private_class_method :fixed_reply_anchor?
+
       def self.anchor_still_in_turn?(context)
         anchor_id = context.dig("comment", "id")
         return false if anchor_id.blank?
@@ -405,7 +426,7 @@ module Collavre
 
       def self.review_anchor?(context)
         anchor_id = context.dig("comment", "id")
-        anchor_id.present? && Comment.review_message_ids([ anchor_id ]).any?
+        anchor_id.present? && Comment.own_turn_message_ids([ anchor_id ]).any?
       end
       private_class_method :review_anchor?
 
@@ -436,10 +457,14 @@ module Collavre
       end
       private_class_method :revalidate_assignment!
 
-      def initialize(event_name:, context:)
+      # `records` carries what the caller has already read (see
+      # DispatchRecords.for_comment); without it this dispatch still reads
+      # each record once, shared by every component that decides it.
+      def initialize(event_name:, context:, records: nil)
         @event_name = event_name
+        @records = records || DispatchRecords.new
         # Build context ONCE here - no more duplicate builds
-        @context = SystemEvents::ContextBuilder.new(context).build
+        @context = SystemEvents::ContextBuilder.new(context).build(records: @records)
         @context["event_name"] = event_name
       end
 
@@ -447,12 +472,12 @@ module Collavre
         prepare_selection.commit!.agents
       end
 
-      def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, **options).call
+      def prepare_selection(**options) = Selection.new(@context, policy_resolver: policy_resolver, records: @records, **options).call
 
 
       private
 
-      def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context)
+      def policy_resolver = @policy_resolver ||= PolicyResolver.new(@context, records: @records)
 
       def scheduler = @scheduler ||= Scheduler.new(@context, policy_resolver: policy_resolver)
 

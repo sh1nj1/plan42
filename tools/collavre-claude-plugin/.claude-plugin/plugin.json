@@ -1,6 +1,6 @@
 {
   "name": "collavre",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Connects Claude Code sessions to Collavre inbox for real-time communication via channels",
   "author": {
     "name": "VReRV"

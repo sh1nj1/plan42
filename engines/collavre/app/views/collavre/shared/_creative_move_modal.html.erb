@@ -14,7 +14,7 @@
       <div class="modal-dialog-body modal-dialog-fields">
         <div class="modal-dialog-field creative-move-picker" data-controller="inline-creative-picker"
              data-creative-move-target="picker"
-             data-action="focusout->inline-creative-picker#closeOnFocusOut"
+             data-action="focusout->inline-creative-picker#closeOnFocusOut keydown->inline-creative-picker#handleEscape"
              data-link-creative-loading-text="<%= t('collavre.creatives.index.link_loading') %>"
              data-link-creative-no-results-text="<%= t('collavre.creatives.index.no_search_results') %>"
              data-link-creative-empty-text="<%= t('collavre.creatives.index.no_sub_creatives') %>"
@@ -25,7 +25,7 @@
                  aria-expanded="false" aria-controls="creative-move-results"
                  placeholder="<%= t('collavre.creatives.index.search_placeholder') %>"
                  data-action="focus->creative-move#chooseDestination click->creative-move#chooseDestination input->creative-move#destinationChanged input->inline-creative-picker#_debouncedSearch keydown->inline-creative-picker#handleInputKeydown">
-          <ul id="creative-move-results" class="link-creative-list creative-move-results" data-inline-creative-picker-target="list" hidden></ul>
+          <ul id="creative-move-results" class="link-creative-list creative-move-results" data-inline-creative-picker-target="list" popover="manual" hidden></ul>
         </div>
         <div class="modal-dialog-field">
           <label class="modal-dialog-label" for="creative-move-direction"><%= t('collavre.dnd.position') %></label>

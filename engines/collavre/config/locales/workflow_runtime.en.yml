@@ -4,6 +4,7 @@ en:
       runtime:
         title: "Action needed"
         action_needed: "A workflow needs your attention. Open the conversation."
+        source_message: "Workflow source message (%{link}):\n%{content}"
         help_title: "Workflow execution and limits"
         completion: "In on mode, an agent rule emits once after all admitted agents finish with a usable public reply. Human hands off to the target creative owner and stops; none ignores the event. Human and none never emit, even when emits is configured. Login cards and review-only updates stop without emitting; after login, send a new message. Off and shadow do not execute workflows. Saving a rule never starts it."
         bounds: "Each topic-scoped chain permits relative depth 8, absolute depth 64, 16 agent tasks and 16 rule executions. A rule runs at most once in a chain. Retries preserve event identity and creation time, with 3 infrastructure attempts. Ordinary mentions and fallback routing use their existing limits. Independent cron runs, new trigger jobs and deliberate restarts may produce separate handoffs."

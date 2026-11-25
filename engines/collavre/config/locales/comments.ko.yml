@@ -11,6 +11,7 @@ ko:
       not_ai_agent: AI 에이전트만 Primary Agent로 설정할 수 있습니다.
       session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.
       agent_no_creative_access: "%{name}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요."
+      agent_chat_not_supported: "%{name}은(는) 채팅을 지원하지 않아 Primary Agent로 지정할 수 없습니다."
       session_agent_not_assignable: "%{name}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다."
       default_name_prefix: "토픽"
       branch_prefix: "분기"
@@ -30,6 +31,7 @@ ko:
         duplicate_name: "'%{name}' 토픽이 대상 크리에이티브에 이미 존재합니다."
         session_topic_locked: 이 토픽은 실행 중인 에이전트 세션에 속해 있어 이동할 수 없습니다.
         primary_agent_released: '@%{agent}은(는) "%{creative}"에 피드백 권한이 없어 Primary Agent 지정이 해제되었습니다. 계속 담당하게 하려면 해당 크리에이티브를 에이전트와 공유한 뒤 다시 지정하세요.'
+        primary_agent_released_chat_not_supported: "@%{agent}은(는) 채팅을 지원하지 않아 Primary Agent 지정이 해제되었습니다."
         primary_agent_released_session_agent: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. "%{creative}"은(는) 그 토픽이 아니어서 Primary Agent 지정이 해제되었습니다.'
         add_members:
           title: 새 위치에 멤버를 추가할까요?
@@ -46,6 +48,24 @@ ko:
       login_first: 먼저 로그인해주세요.
       connected: Github 계정이 연동되었습니다.
     comments:
+      creative_progress: Creative 진행률
+      agent_model:
+        label: "에이전트 모델"
+        help: "이 에이전트의 모든 채팅에 적용되는 기본 모델과 추론 수준을 저장합니다. 채팅창의 임시 선택과는 별개입니다."
+        save: "에이전트 설정 저장"
+        saved: "에이전트 설정을 저장했습니다."
+        error: "에이전트 설정을 저장하지 못했습니다. 다시 시도해 주세요."
+      agent_run_options:
+        button_title: CLI Proxy 에이전트 실행 옵션
+        help: 이 토픽에서 보내는 메시지로 호출되는 CLI Proxy 에이전트에 적용됩니다. 에이전트 설정 자체는 바뀌지 않습니다.
+        effort_label: Thinking 레벨
+        agent_default: 에이전트 기본값
+        priority_help: "채팅 설정 → 에이전트 기본값 → 로컬 Codex·Claude 설정 순으로 적용됩니다. 높은 레벨은 더 깊이 생각하며 시간이 더 걸릴 수 있습니다. 모델이 지원하지 않는 레벨은 건너뜁니다."
+        labels:
+          none: "none — Thinking 끄기(Codex 전용)"
+          minimal: "minimal — Codex 전용"
+          max: "max — Claude 전용"
+        chip_title: "실행 옵션: %{options}"
       close: 닫기
       reaction_invalid: 잘못된 리액션입니다.
       invalid_topic: 토픽이 이 크리에이티브에 속하지 않습니다.
@@ -85,6 +105,7 @@ ko:
       approve_invalid_attributes: 댓글 작업 속성은 객체 형식이어야 합니다.
       approve_no_attributes: 댓글 작업에는 최소 한 개의 허용 속성이 포함되어야 합니다.
       approve_invalid_creative: 댓글 작업이 잘못된 크리에이티브를 대상으로 하고 있습니다.
+      approve_agent_permission_denied: 에이전트가 더 이상 이 대화에 접근할 권한이 없습니다.
       approve_no_write_permission: 이 크리에이티브에 대한 쓰기 권한이 없습니다.
       approve_invalid_progress: 댓글 작업 진행률은 숫자여야 합니다.
       approve_invalid_description: 댓글 작업 설명은 텍스트여야 합니다.
@@ -115,6 +136,20 @@ ko:
       review_send_question: 질문 보내기
       review_type_review: 리뷰
       review_type_question: 질문
+      ask_button: 질의
+      review_button_hint: 선택한 부분을 수정합니다
+      ask_button_hint: 선택한 부분에 대해 질문합니다 (수정하지 않음)
+      creative_quote:
+        single_target: 메시지와 크리에이티브를 동시에 인용할 수 없습니다.
+        not_readable: 읽을 수 없는 크리에이티브는 인용할 수 없습니다.
+        question_read_only: 이번 턴은 문서에 대한 질의라서 크리에이티브를 수정할 수 없습니다. 채팅으로 답변하세요.
+        task_not_active: "%{header} 헤더로 지정한 작업이 이 에이전트의 진행 중인 작업이 아니어서 쓰기를 거부했습니다."
+        task_ambiguous: "이 에이전트에 진행 중인 작업이 여러 개이고 그중 문서 리뷰나 질의가 있어서, 이 쓰기가 어느 작업의 것인지 알 수 없습니다. %{header} 헤더에 작업 ID를 넣어 다시 시도하세요 (collavre CLI: COLLAVRE_TASK_ID=<작업 ID> collavre ...)."
+        chip_prefix: 문서
+        proposed_change: 변경 제안
+        out_of_scope: "선택한 부분 밖의 크리에이티브도 변경됩니다: %{ids}"
+        rejected_notice: "\"%{title}\"에 대한 변경 제안이 거절되었습니다. 바꿀 내용을 알려 주고 다시 요청하세요."
+        reject_reason_placeholder: 거절한 이유를 에이전트에게 알려 주세요...
       navigate_back: 이전 채팅
       navigate_forward: 다음 채팅
       recent_chats: 최근 채팅
@@ -134,6 +169,10 @@ ko:
       add_participant: 사용자 추가
       select_all: 전체
       selection_count: "{count}/{total}개 선택"
+      resend: "다시 보내기"
+      resend_description: "이후 AI 메시지를 삭제하고 이 메시지를 다시 보냅니다. 사용자 메시지는 유지됩니다. 비공개 메시지와 슬래시 명령어는 다시 보낼 수 없습니다."
+      resend_failed: "메시지를 다시 보내지 못했습니다."
+      resend_not_allowed: "이 메시지는 다시 보낼 수 없습니다."
       selection_delete: 삭제
       selection_move: 이동
       selection_topic_move: 토픽 이동
@@ -173,6 +212,8 @@ ko:
         open: "%{name} 프로필 메뉴 열기"
         view_profile: 프로필 보기
         mention: 멘션
+        set_primary_agent: 현재 토픽 우선 응답자로 설정
+        clear_primary_agent: 현재 토픽 우선 응답자 해제
         agent_drag_guide: 이 아바타를 토픽 또는 토픽 추가 버튼으로 드래그하면 해당 에이전트가 Primary AI Agent가 됩니다.
       fullscreen: 전체 화면
       exit_fullscreen: 전체 화면 종료
@@ -197,6 +238,8 @@ ko:
         compress_instructions_hint: "추가 지시사항 (선택사항)"
         form_submit: "확인"
         form_cancel: "취소"
+        more: "더보기"
+        less: "접기"
       calendar_command:
         event_created: '이벤트가 생성되었습니다: [구글 캘린더 이벤트](%{url})'
         event_created_local: '이벤트가 생성되었습니다 (로컬 전용 - 구글 캘린더 연동 시 동기화됩니다)'
@@ -221,6 +264,7 @@ ko:
         already_exists: '토픽 "%{name}"이(가) 이미 존재합니다.'
         session_topic_locked: '토픽 "%{name}"은(는) 실행 중인 에이전트 세션에 속해 있어 Primary Agent를 변경하거나 해제할 수 없습니다.'
         agent_no_creative_access: '@%{agent}은(는) 이 크리에이티브에 피드백 권한이 없어 Primary Agent로 응답할 수 없습니다. 먼저 이 크리에이티브를 해당 에이전트와 공유하세요.'
+        agent_chat_not_supported: "@%{agent}은(는) 채팅을 지원하지 않아 Primary Agent로 지정할 수 없습니다."
         session_agent_not_assignable: '@%{agent}은(는) 실행 중인 에이전트 세션이라 자신의 세션 토픽에서만 응답합니다. 이 토픽의 Primary Agent로 지정할 수 없습니다.'
       versions:
         previous: 이전 버전
@@ -233,6 +277,10 @@ ko:
       read_by: "%{name} 님이 읽음"
       activity_logs_summary: 활동 기록
       activity_logs:
+        names:
+          llm_query: "모델 요청"
+          tool_execution: "도구 실행"
+          other: "에이전트 활동"
         duration: "수행 시간: %{duration}"
         inline_duration: "(%{duration})"
         duration_hint: "마지막 시도의 시작부터 모델 응답 완료까지이며, 위임 에이전트는 답글 저장 완료까지입니다. 큐 대기, 이전 재시도, 후속 작업 전달 시간은 제외합니다."
@@ -270,6 +318,9 @@ ko:
         learn_more: 자세히 보기
         no_search_results: 검색 결과에 해당하는 메시지가 없습니다.
         cards:
+          kollavy:
+            title: "Kollavy AI Agent"
+            description: "Collavre 사용법은 Kollavy에게 물어보세요. 인박스 → Main에서 시작하거나 공유한 Creative에서 @Kollavy:로 멘션하세요."
           mention_agent:
             title: 팀원 · 에이전트 멘션
             description: "@이름: 으로 질문하거나 참여자를 초대해보세요."

@@ -1,4 +1,5 @@
 import * as previousMessageNavigation from './previous_message_navigation'
+import { installSelectionActions } from './resend_action'
 import { approvalRequestOptions } from './approval_request_options'
 import { replaceCommentsPreservingLogins } from "./inline_login_preservation"
 import { createDragDropRegistry } from '../../lib/dnd/registry'
@@ -10,7 +11,9 @@ import { renderMarkdownInContainer } from '../../lib/utils/markdown'
 import creativesApi from '../../lib/api/creatives'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { updateCsrfTokenFromResponse } from '../../lib/api/csrf_fetch'
+import { throwCommentListError, syncCommentListProgress } from './comment_list_response'
 import { alertDialog, confirmDialog } from '../../lib/utils/dialog'
+import { hideCommentsOptimistically } from './optimistic_removal'
 import CommentReadTracker from './comment_read_tracker'
 import PrevMessageNavigator from './prev_message_navigator'
 import { beginCommentsReload, resetPaginationState } from './pagination_state'
@@ -124,10 +127,6 @@ export default class extends Controller {
     this.element.removeEventListener('comments--topics:move-to-topic', this.handleMoveToTopic)
   }
 
-  isColumnReverse() {
-    return false // Force false now
-  }
-
   get popupController() {
     return this.application.getControllerForElementAndIdentifier(this.element, 'comments--popup')
   }
@@ -161,8 +160,7 @@ export default class extends Controller {
     this.deepLinkCommentId = null
 
     this.resetState()
-    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
-    this.presenceController?.clearManualTypingMessage()
+    this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
     this.loadInitialComments()
   }
 
@@ -189,7 +187,7 @@ export default class extends Controller {
 
   resetToLatest() {
     this.resetState()
-    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
     // Optimistically set if we know it
     this.listTarget.dataset.currentTopicId = this.currentTopicId || ""
     this.loadInitialComments()
@@ -326,26 +324,17 @@ export default class extends Controller {
     if (this.currentTopicId) {
       urlParams.set('topic_id', this.currentTopicId)
     }
-    return fetch(`/creatives/${this.creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
-      // Keep the CSRF meta tag in sync with the session cookie.
-      // This is critical after the browser returns from a background/frozen state.
+    const creativeId = this.creativeId
+    return fetch(`/creatives/${creativeId}/comments?${urlParams.toString()}`).then(async (response) => {
+      // Keep the token in sync when the browser resumes from a background or frozen state.
       updateCsrfTokenFromResponse(response)
-
-      if (!response.ok) {
-        let errorMessage = this.element.dataset.noPermissionText || 'No permission'
-        try {
-          const payload = await response.json()
-          errorMessage = payload.error || errorMessage
-        } catch (_error) {
-          // Ignore non-JSON error bodies and keep fallback text.
-        }
-        throw new Error(errorMessage)
-      }
+      if (!response.ok) await throwCommentListError(response, this.element)
 
       const serverTopicId = response.headers.get("X-Topic-Id")
       const renderedTopicIds = response.headers.get("X-Rendered-Topic-Ids")
       const renderedTopicWatermarks = response.headers.get("X-Rendered-Topic-Watermarks")
       const superseded = loadVersion !== undefined && loadVersion !== this._loadCommentsVersion
+      syncCommentListProgress(this, response, { creativeId, superseded, pagination })
       // Only replace this snapshot for a full list load. Pagination requests
       // happen later and may observe a topic-strip archive change without
       // rendering that topic's existing history.
@@ -410,7 +399,7 @@ export default class extends Controller {
     this.flushPendingRead()
     this.resetState()
     this.manualSearchQuery = query
-    this.listTarget.innerHTML = this.element.dataset.loadingText || '<div class="loading-spinner">Loading...</div>'
+    this.listTarget.innerHTML = this.element.dataset.loadingHtml || '<div class="comments-loading" role="status" data-controller="comments--loading"><span class="creative-loading-indicator" aria-hidden="true"><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span><span class="creative-loading-dot">.</span></span></div>'
     this.loadInitialComments()
   }
 
@@ -510,7 +499,9 @@ export default class extends Controller {
     const target = event.target instanceof Element ? event.target : null
     if (!target) return
 
-    if (target.closest('.comment-select-checkbox')) return
+    // Creative history buttons (change set approve/reject/revert, also under a
+    // document-mode review reply) reuse the approve/deny classes but are not ours.
+    if (target.closest('.comment-select-checkbox, [data-controller~="creative-history"]')) return
 
     const topicLink = target.closest('.comment-topic-switch')
     if (topicLink) {
@@ -743,6 +734,8 @@ export default class extends Controller {
       </div>
     `
 
+    installSelectionActions(this, bar)
+
     // Set indeterminate state if partially selected
     const selectAllCheckbox = bar.querySelector('.selection-action-bar-select-all-checkbox')
     if (count > 0 && !allSelected) {
@@ -758,12 +751,7 @@ export default class extends Controller {
       }
     })
 
-    bar.querySelector('.selection-action-delete').addEventListener('click', (e) => { e.stopPropagation(); this.deleteSelectedComments() })
-    bar.querySelector('.selection-action-merge').addEventListener('click', (e) => { e.stopPropagation(); this.mergeSelectedComments() })
-    bar.querySelector('.selection-action-move').addEventListener('click', (e) => this.openMoveModal(e))
-    bar.querySelector('.selection-action-topic').addEventListener('click', (e) => this.openTopicSearchPopup(e))
-    bar.querySelector('.selection-action-branch').addEventListener('click', (e) => { e.stopPropagation(); this.branchSelectedComments() })
-    bar.querySelector('.selection-action-bar-close').addEventListener('click', () => this.clearSelection())
+
 
     const typingRow = this.element.querySelector('#typing-indicator-row') || this.element.querySelector('#typing-indicator')
     if (typingRow) {
@@ -778,7 +766,7 @@ export default class extends Controller {
     const confirmText = this.element.dataset.batchDeleteConfirmText || 'Are you sure you want to delete the selected messages?'
     if (!(await confirmDialog(confirmText, { danger: true }))) return
 
-    const commentIds = Array.from(this.selection)
+    const removal = hideCommentsOptimistically(Array.from(this.selection))
     try {
       const response = await fetch(`/creatives/${this.creativeId}/comments/batch_destroy`, {
         method: 'DELETE',
@@ -786,19 +774,18 @@ export default class extends Controller {
           'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ comment_ids: commentIds }),
+        body: JSON.stringify({ comment_ids: removal.ids }),
       })
       if (response.ok) {
-        commentIds.forEach((id) => {
-          const el = document.getElementById(`comment_${id}`)
-          if (el) el.remove()
-        })
+        removal.commit()
         this.clearSelection()
       } else {
+        removal.restore()
         const data = await response.json().catch(() => ({}))
         alertDialog(data.error || 'Failed to delete comments')
       }
     } catch (error) {
+      removal.restore()
       console.error('Error deleting comments:', error)
       alertDialog('Failed to delete comments')
     }
@@ -927,7 +914,6 @@ export default class extends Controller {
   }
 
   updateDraggableState() {
-    const hasSelection = this.selection.size > 0
     this.listTarget.querySelectorAll('.comment-item').forEach((item) => {
       const checkbox = item.querySelector('.comment-select-checkbox')
       if (checkbox?.checked) {
@@ -1077,23 +1063,6 @@ export default class extends Controller {
   }
 
   // API Methods
-
-  async deleteComment(button) {
-    if (!(await confirmDialog(this.element.dataset.deleteConfirmText, { danger: true }))) return
-    const commentId = button.getAttribute('data-comment-id')
-    fetch(`/creatives/${this.creativeId}/comments/${commentId}`, {
-      method: 'DELETE',
-      headers: { 'X-CSRF-Token': document.querySelector('meta[name=csrf-token]').content },
-    }).then((response) => {
-      if (response.ok) {
-        // If deleted, remove from DOM
-        const el = document.getElementById(`comment_${commentId}`)
-        if (el) el.remove()
-        this.selection.delete(commentId)
-        this.notifySelectionChange()
-      }
-    })
-  }
 
   async convertComment(button) {
     // ... (Existing logic) ...

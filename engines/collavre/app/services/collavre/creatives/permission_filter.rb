@@ -31,7 +31,7 @@ module Creatives
       # Normalize to Integer so the final select (and owned-shell lookup) compare
       # against pluck-derived integer ids rather than string inputs; keeps the
       # canonical batch filter robust to param-sourced ids. Non-numeric ids drop.
-      ids = ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq
+      ids = Kollavy::AccessScope.filter(ids.to_a.filter_map { |id| Integer(id, exception: false) }.uniq, user)
       return [] if ids.empty?
 
       min_rank = rank_for(min_permission)
@@ -61,6 +61,19 @@ module Creatives
 
         effective_by_id[id] == id || visible_shells.include?(id)
       end
+    end
+
+    # True when the user may access every id at `min_permission`. On approval
+    # replay (Current.authoritative_permissions) each id is judged from current
+    # shares instead, so a grant or revocation the cache has not caught up with
+    # yet neither blocks nor permits the action.
+    def all_readable?(ids, min_permission: :read)
+      ids = ids.to_a.uniq
+      if Current.authoritative_permissions
+        return ids.all? { |id| PermissionChecker.current_tree_allowed?(id, user, min_permission) }
+      end
+
+      readable_ids(ids, min_permission: min_permission).size == ids.size
     end
 
     # Returns { input_id => effective_permission_rank } for the ids the user has

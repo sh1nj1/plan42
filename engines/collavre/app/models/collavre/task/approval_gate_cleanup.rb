@@ -6,14 +6,14 @@ module Collavre
       extend ActiveSupport::Concern
 
       included do
-        before_update :clear_terminal_approval_gate
+        before_update :clear_terminal_approval
       end
 
       private
 
-      def clear_terminal_approval_gate
+      def clear_terminal_approval
         return unless status.in?(%w[done failed cancelled escalated])
-        return unless pending_tool_call&.dig("kind") == "approval_gate"
+        return unless pending_tool_call&.dig("kind") == "approval_gate" || pending_tool_call&.key?("messages")
 
         # Keep recovery data until the terminal state is committed atomically.
         self.pending_tool_call = nil

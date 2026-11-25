@@ -1,6 +1,7 @@
 module Collavre
   class UsersController < ApplicationController
     include UsersController::Registration
+    include UsersController::AiProfileAccess
     include UsersController::AiUserManagement
     include UsersController::ContactManagement
     include UsersController::AdminOperations

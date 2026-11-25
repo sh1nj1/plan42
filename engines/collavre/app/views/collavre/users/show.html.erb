@@ -15,34 +15,6 @@
 <div class="tab-panels">
   <section class="tab-panel <%= 'active' if active_tab == 'profile' %>" data-tabs-target="panel" data-tab-name="profile">
 
-    <% if @user.ai_user? %>
-      <div class="ai-user-details">
-        <div class="alert alert-info">
-          <%= t('collavre.users.details_ai_notice') %>
-          <%= link_to t('collavre.users.edit_ai.title'), collavre.edit_ai_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
-        </div>
-        <% if @user.cli_proxy_agent? && @user.gateway_accessible_to?(Current.user) && (@user.agent_gateway.per_user? || @user.created_by_id == Current.user.id || Current.user.system_admin?) %>
-          <div class="alert alert-info">
-            <%= t("collavre.agent_connections.profile_help.#{@user.agent_gateway.workspace_mode}") %>
-            <%= link_to t("collavre.agent_connections.manage"), collavre.agent_connection_user_path(@user), class: "btn btn-sm btn-primary ml-2" %>
-          </div>
-        <% end %>
-
-        <dl class="row">
-          <dt class="col-sm-3"><%= t('collavre.users.name') %></dt>
-          <dd class="col-sm-9"><%= @user.name %></dd>
-
-          <dt class="col-sm-3"><%= t('collavre.users.new_ai.id_label') %></dt>
-          <dd class="col-sm-9"><%= @user.email.split('@').first %></dd>
-
-          <dt class="col-sm-3"><%= t('collavre.users.new_ai.model_label') %></dt>
-          <dd class="col-sm-9"><%= @user.llm_model %></dd>
-
-          <dt class="col-sm-3"><%= t('collavre.users.new_ai.system_prompt_label') %></dt>
-          <dd class="col-sm-9"><pre><%= @user.system_prompt %></pre></dd>
-        </dl>
-      </div>
-    <% else %>
       <div data-controller="avatar-preview">
 
         <div class="avatar-preview-row">
@@ -99,6 +71,7 @@
           <%= f.check_box :notifications_enabled %>
           <%= f.label :notifications_enabled, t('collavre.users.notifications_enabled') %>
         </div>
+        <%= render_extension_slot(:profile_preferences, form: f) %>
         <% creative_workspace_hint = t('collavre.users.creative_workspace.description') %>
         <div class="checkbox-field">
           <%= f.check_box :creative_workspace_enabled, title: creative_workspace_hint %>
@@ -121,6 +94,8 @@
       <% end %>
 
       <div class="profile-actions">
+        <%= link_to t("collavre.llm_usages.title"), collavre.llm_usages_path %>
+        <br>
         <%= link_to t('collavre.users.change_password'), collavre.edit_password_user_path(@user) %>
         <br>
         <%= link_to t('collavre.users.webauthn.manage'), collavre.passkeys_user_path(@user) %>
@@ -133,11 +108,15 @@
           <br>
           <%= link_to t('admin.title'), collavre.admin_settings_path %>
         <% end %>
+        <% if @user == Current.user %>
+          <br>
+          <%= link_to t('collavre.notices.replay.link'), collavre.onboarding_replay_path,
+                      data: { turbo_method: :post } %>
+        <% end %>
       </div>
 
 
       </div>
-    <% end %>
   </section>
 
     <section class="tab-panel <%= 'active' if active_tab == 'contacts' %>" data-tabs-target="panel" data-tab-name="contacts">

@@ -103,3 +103,21 @@
   font-size: 0.85em;
   color: var(--text-muted);
 }
+
+.command-more {
+  margin-top: 0.15em;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.command-details {
+  margin-top: 0.2em;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  white-space: pre-line;
+}

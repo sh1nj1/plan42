@@ -44,6 +44,10 @@ env:
     - SECRET_KEY_BASE
     - DATABASE_URL
     - PORT
+    - COLLAVRE_DEFAULT_LLM_VENDOR
+    - COLLAVRE_DEFAULT_LLM_MODEL
+    - TRANSLATION_LLM_VENDOR
+    - TRANSLATION_LLM_MODEL
     - GEMINI_API_KEY
     - GEMINI_API_BASE
     - GITHUB_CLIENT_ID
@@ -51,8 +55,6 @@ env:
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
     - GOOGLE_APPLICATION_CREDENTIALS
-    - NOTION_CLIENT_ID
-    - NOTION_CLIENT_SECRET
     - FIREBASE_API_KEY
     - FIREBASE_AUTH_DOMAIN
     - FIREBASE_PROJECT_ID
@@ -75,9 +77,7 @@ env:
     - ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
     - ORIGIN_SHARED_SECRET
     - PUBLIC_ASSETS_HOST
-    - LINEAR_CLIENT_ID
-    - LINEAR_CLIENT_SECRET
-    - LINEAR_OAUTH_REDIRECT_URI
+    - CLOUDFRONT_DISTRIBUTION_ID
   clear:
     # Run the Solid Queue Supervisor inside the web server's Puma process to do jobs.
     # Defaults on for single-server deployments. Targets that share a database

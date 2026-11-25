@@ -16,11 +16,12 @@ module Collavre
     # open a Faraday connection and demand an API key. We only exercise the
     # payload-shaping method, so an allocated instance with an injected config is
     # enough — and it keeps the real prepended method-resolution chain intact.
-    def provider_for(openai_api_base)
+    def provider_for(openai_api_base, slug: "openai")
       config = RubyLLM::Configuration.new
       config.openai_api_base = openai_api_base
-      RubyLLM::Providers::OpenAI.allocate.tap do |provider|
+      RubyLLM::Protocols::ChatCompletions.allocate.tap do |provider|
         provider.instance_variable_set(:@config, config)
+        provider.instance_variable_set(:@provider, Struct.new(:slug).new(slug))
       end
     end
 
@@ -81,6 +82,10 @@ module Collavre
                 .send(:format_thinking, MessageDouble.new(:user, nil))
 
       assert_equal({}, payload)
+    end
+    test "native DeepSeek keeps its reasoning content even with a strict OpenAI base configured" do
+      payload = provider_for("https://api.cerebras.ai/v1", slug: "deepseek").send(:format_thinking, assistant_message)
+      assert_equal "chain of thought", payload[:reasoning_content]
     end
   end
 end

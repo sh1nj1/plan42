@@ -670,6 +670,69 @@ module Collavre
             "the delegated task must be parked as awaiting a permission decision"
         end
 
+        test "notify rejects a permission prompt cancelled while acquiring the topic lock" do
+          reg = register_agent("notify-perm-race")
+          topic = Topic.find(reg["topic_id"])
+          task = Task.create!(name: "Discarded turn", status: "delegated",
+                              agent_id: reg["agent_id"], topic_id: topic.id, creative: topic.creative)
+          original_lock = Orchestration::TopicSlot.method(:lock_matches_context?)
+          acquired = false
+          lock = lambda do |topic_id, creative_id|
+            acquired = true
+            task.update!(status: "cancelled")
+            original_lock.call(topic_id, creative_id)
+          end
+
+          Orchestration::TopicSlot.stub :lock_matches_context?, lock do
+            assert_no_difference "Comment.count" do
+              post "/api/v1/agent/notify",
+                params: { topic_id: topic.id, task_id: task.id, permission_request_id: "discarded" },
+                headers: auth_headers, as: :json
+            end
+          end
+          assert acquired
+          assert_response :forbidden
+          assert_nil task.reload.pending_tool_call
+        end
+
+        test "notify rejects a topic whose lock context disappeared" do
+          reg = register_agent("notify-missing-lock")
+          Orchestration::TopicSlot.stub :lock_matches_context?, false do
+            assert_no_difference "Comment.count" do
+              post "/api/v1/agent/notify",
+                params: { topic_id: reg["topic_id"], permission_request_id: "missing" },
+                headers: auth_headers, as: :json
+            end
+          end
+          assert_response :not_found
+        end
+
+        test "notify saves permission and parks task inside the topic mutation" do
+          reg = register_agent("notify-perm-lock")
+          topic = Topic.find(reg["topic_id"])
+          task = Task.create!(name: "Active turn", status: "delegated",
+                              agent_id: reg["agent_id"], topic_id: topic.id, creative: topic.creative)
+          mutation = Comments::TopicMutation.method(:call)
+          observed = false
+          wrapper = lambda do |topic_id, creative_id, &block|
+            assert_equal [ topic.id, topic.creative_id ], [ topic_id, creative_id ]
+            mutation.call(topic_id, creative_id) do
+              block.call
+              prompt = Comment.find_by!(topic_id: topic.id, user_id: task.agent_id)
+              assert_equal "locked", prompt.claude_channel_permission_request_id
+              assert_equal "locked", task.reload.pending_tool_call["request_id"]
+              observed = true
+            end
+          end
+          Comments::TopicMutation.stub :call, wrapper do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic.id, task_id: task.id, permission_request_id: "locked" },
+              headers: auth_headers, as: :json
+          end
+          assert_response :created
+          assert observed
+        end
+
         test "notify with permission_request_id builds a structured approval comment" do
           # The plugin sends only tool_name + arguments; the server renders the
           # (localized) prompt text server-side and attaches the approve/deny
@@ -707,6 +770,148 @@ module Collavre
           assert_includes comment.content, "Bash"
           assert_includes comment.content, "ls -la"
           refute comment.action_executed_at.present?, "a freshly surfaced prompt is undecided"
+        end
+
+        test "notify with approval_question builds an agent-initiated approval request" do
+          # The Claude Channel counterpart of the native approval_request gate:
+          # the agent's own question becomes the comment body verbatim (no
+          # server-rendered template) and rides the permission rail so the
+          # decision reaches the tool call it is blocking.
+          reg = register_agent("notify-approval-test")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "In-flight dispatch", status: "delegated", trigger_event_name: "comment_created",
+            agent: ai_user, topic_id: topic_id, creative_id: creative.id
+          )
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id, task_id: task.id, text: "",
+              permission_request_id: "approval-1", approval_question: "  Deploy **now**?  "
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          comment = Comment.find(JSON.parse(response.body)["comment_id"])
+          assert comment.claude_channel_approval_request?
+          assert_equal "Deploy **now**?", comment.content, "the question is the comment body, verbatim"
+          assert_equal "approval-1", comment.claude_channel_permission_request_id
+          assert_equal @user.id, comment.approver_id, "the token holder decides their session's requests"
+          assert_equal ai_user.id, comment.user_id
+          refute comment.action_executed_at.present?
+          # Parked exactly like a relayed tool prompt: the human's decision must
+          # reach the blocked session instead of queuing behind the topic slot.
+          assert_equal "delegated", task.reload.status
+          assert_equal "approval-1", task.pending_tool_call&.dig("request_id")
+        end
+
+        test "reply commits an unread approval handoff with exact task ownership" do
+          previous_adapter = ActiveJob::Base.queue_adapter
+          reg = register_agent("approval-handoff")
+          topic = Topic.find(reg["topic_id"])
+          agent = User.find(reg["agent_id"])
+          task = Task.create!(name: "Approval turn", status: "delegated", agent: agent,
+                              topic_id: topic.id, creative_id: topic.creative_id)
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, task_id: task.id, permission_request_id: "handoff-1",
+                      approval_question: "Deploy?" }, headers: auth_headers, as: :json
+          assert_response :created
+          approval = Comment.find(response.parsed_body["comment_id"])
+          assert_equal task.id.to_s, JSON.parse(approval.action)["origin_task_id"].to_s
+
+          ActiveJob::Base.queue_adapter = :test
+          # The decision arrives after pending but before the final reply.
+          approval.decide_claude_channel_permission!(:allow, by: @user)
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Waiting for approval",
+                      pending_approval_ids: [ "handoff-1" ] }, headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal "done", task.reload.status
+          assert JSON.parse(approval.reload.action)["turn_finished"]
+          assert_difference("Task.count", 1) { ClaudeApprovalResumeJob.perform_now(approval.id) }
+          continuation = Task.find(JSON.parse(approval.reload.action)["resume_task_id"])
+          assert_equal "pending", continuation.status
+          assert_equal agent.id, continuation.agent_id
+          assert_no_difference("Task.count") { ClaudeApprovalResumeJob.perform_now(approval.id) }
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "an approval request can route the decision to another human who can read the creative" do
+          reg = register_agent("notify-approval-approver-test")
+          topic_id = reg["topic_id"]
+          creative = Topic.find(topic_id).creative.effective_origin
+          approver = users(:two)
+          CreativeShare.create!(creative: creative, user: approver, permission: "read")
+
+          post "/api/v1/agent/notify",
+            params: {
+              topic_id: topic_id, permission_request_id: "approval-2",
+              approval_question: "Ship it?", approver_user_id: approver.id
+            },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal approver.id, Comment.find(JSON.parse(response.body)["comment_id"]).approver_id
+        end
+
+        test "an approval request rejects an approver who cannot see the creative or is an AI" do
+          reg = register_agent("notify-approval-bad-approver-test")
+          topic_id = reg["topic_id"]
+
+          [ users(:two).id, users(:ai_bot).id, 0 ].each do |approver_id|
+            assert_no_difference -> { Comment.count } do
+              post "/api/v1/agent/notify",
+                params: {
+                  topic_id: topic_id, permission_request_id: "approval-3",
+                  approval_question: "Ship it?", approver_user_id: approver_id
+                },
+                headers: auth_headers,
+                as: :json
+            end
+            assert_response :unprocessable_entity
+            assert_equal I18n.t("collavre.approval_gate.invalid_approver"), JSON.parse(response.body)["error"]
+          end
+        end
+
+        test "an approval request rejects an AI token owner as the default approver" do
+          reg = register_agent("notify-ai-default-approver")
+          @user.update!(llm_vendor: "openai")
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: reg["topic_id"], permission_request_id: "ai-default", approval_question: "Ship it?" },
+              headers: auth_headers, as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.invalid_approver"), JSON.parse(response.body)["error"]
+        end
+
+        test "an approval request needs both a question and a request id" do
+          reg = register_agent("notify-approval-invalid-test")
+          topic_id = reg["topic_id"]
+
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic_id, permission_request_id: "approval-4", approval_question: "   " },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.question_required"), JSON.parse(response.body)["error"]
+
+          assert_no_difference -> { Comment.count } do
+            post "/api/v1/agent/notify",
+              params: { topic_id: topic_id, approval_question: "Ship it?" },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert_equal I18n.t("collavre.approval_gate.request_id_required"), JSON.parse(response.body)["error"]
         end
 
         test "notify renders the permission prompt in the token holder's locale" do
@@ -838,6 +1043,27 @@ module Collavre
             "injected markdown must not render as a live heading outside the fence")
           assert_includes comment.content, "echo hi",
             "the preview content itself must still be shown to the approver"
+        end
+
+        test "notify reports validation errors without posting an empty notice" do
+          reg = register_agent("notify-empty-test")
+          assert_no_difference("Comment.count") do
+            post "/api/v1/agent/notify",
+              params: { topic_id: reg["topic_id"], text: " " },
+              headers: auth_headers,
+              as: :json
+          end
+          assert_response :unprocessable_entity
+          assert JSON.parse(response.body)["errors"].present?
+        end
+
+        test "permission formatting handles long whitespace and Unicode line separators" do
+          controller = Collavre::Api::V1::AgentsController.new
+          whitespace = " " * 100_000
+          input = "Bash#{whitespace}end\r\nnext\u2028last"
+          assert_equal "Bash end next last", controller.send(:format_permission_tool_name, input)
+          assert_equal I18n.t("collavre.claude_channel.permission.description", text: "Bash end next last"),
+            controller.send(:format_permission_description, input)
         end
 
         test "notify keeps a multi-line permission description inside its blockquote" do
@@ -1021,18 +1247,20 @@ module Collavre
           assert_equal "done", task.reload.status
 
           # Second reply (same task_id) arrives after the first has completed.
-          # The task is no longer in delegated state — resolve_reply_agent
-          # cannot find it, returns nil, and reply renders 403. Either way,
-          # no duplicate comment is created.
+          # This is the multi-session dedup case: two Claude Channel sessions
+          # sharing one agent both /reply to the same fanned-out dispatch. The
+          # loser must reach the atomic-claim layer and get a clean 409 "already
+          # completed" — NOT a 403. resolve_reply_agent no longer gates on
+          # status: "delegated", so the already-done task still resolves the
+          # agent, and claim_delegated_task returns the 409. (Before the fix the
+          # loser failed at resolve_reply_agent with a misleading 403 that the
+          # MCP plugin surfaced as a hard error.) No duplicate comment either way.
           post "/api/v1/agent/reply",
             params: { topic_id: topic_id, text: "Duplicate reply", task_id: task.id },
             headers: auth_headers,
             as: :json
-          # The post-completion lookup falls through resolve_reply_agent (which
-          # scopes to status: "delegated") → 403. Either way, the second
-          # request must not produce a 2xx.
-          refute_includes 200..299, response.status,
-            "second reply for an already-completed task must not return 2xx"
+          assert_response :conflict,
+            "loser of the shared-agent dispatch race must get 409 (benign dedup), not 403"
 
           # Count only the agent's own reply comments. An agent reply in an inbox
           # creative now also creates a system-authored (user: nil) notification in
@@ -1092,6 +1320,140 @@ module Collavre
           assert_response :conflict
           assert_equal comments_before, creative.comments.count,
             "loser of the atomic claim must not save a comment"
+        end
+
+        test "409 for an already-answered dispatch is marked already_completed" do
+          # The dedup case: a sibling session sharing this agent won the claim and
+          # posted. The reply being refused is a duplicate, so the client is right
+          # to suppress it — and this reason is the only thing that says so.
+          reg = register_agent("conflict-reason-dedup")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Answered dispatch",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Sibling's answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "Duplicate answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :conflict
+          assert_equal "already_completed", JSON.parse(response.body)["reason"]
+        end
+
+        test "409 already_completed still hands off the losing sibling's approvals" do
+          # Codex P2: siblings share the task id, so an approval the LOSING
+          # session raised carries the same origin_task_id. The winner only
+          # handed off its own requests; without this, a later decision on the
+          # loser's request could never resume the agent.
+          previous_adapter = ActiveJob::Base.queue_adapter
+          reg = register_agent("conflict-handoff")
+          topic = Topic.find(reg["topic_id"])
+          agent = User.find(reg["agent_id"])
+          task = Task.create!(name: "Fanned-out turn", status: "delegated", agent: agent,
+                              topic_id: topic.id, creative_id: topic.creative_id)
+          post "/api/v1/agent/notify",
+            params: { topic_id: topic.id, task_id: task.id, permission_request_id: "loser-1",
+                      approval_question: "Deploy?" }, headers: auth_headers, as: :json
+          assert_response :created
+          approval = Comment.find(response.parsed_body["comment_id"])
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Sibling's answer" },
+            headers: auth_headers, as: :json
+          assert_response :created
+          refute JSON.parse(approval.reload.action)["turn_finished"]
+
+          ActiveJob::Base.queue_adapter = :test
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, task_id: task.id, text: "Duplicate answer",
+                      pending_approval_ids: [ "loser-1", "unknown" ] }, headers: auth_headers, as: :json
+          assert_response :conflict
+          assert_equal "already_completed", response.parsed_body["reason"]
+          assert_equal [ "loser-1" ], response.parsed_body["pending_approval_ids"]
+          assert JSON.parse(approval.reload.action)["turn_finished"]
+
+          approval.decide_claude_channel_permission!(:allow, by: @user)
+          assert_difference("Task.count", 1) { ClaudeApprovalResumeJob.perform_now(approval.id) }
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "409 for a cancelled dispatch is NOT marked already_completed" do
+          # Codex P2: an offline-session cancellation or stuck-task recovery flips
+          # the task out of `delegated` while the agent is still composing. The
+          # claim fails exactly as it does for dedup, but NOTHING answered this
+          # dispatch — a client that reads every 409 as dedup drops the only copy
+          # of the reply. The reason is what lets it tell the two apart.
+          reg = register_agent("conflict-reason-cancelled")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          %w[cancelled failed pending].each do |status|
+            task = Collavre::Task.create!(
+              name: "Dispatch that went #{status}",
+              status: status,
+              trigger_event_name: "comment_created",
+              agent: ai_user,
+              topic_id: topic_id,
+              creative_id: creative.id
+            )
+
+            post "/api/v1/agent/reply",
+              params: { topic_id: topic_id, text: "Answer nobody else posted", task_id: task.id },
+              headers: auth_headers,
+              as: :json
+
+            assert_response :conflict, "#{status} task must still be refused"
+            assert_equal "not_delegated", JSON.parse(response.body)["reason"],
+              "a #{status} dispatch was never answered — suppressing this 409 loses the reply"
+          end
+        end
+
+        test "409 for a done task with no linked reply is NOT marked already_completed" do
+          # The status alone is not the proof of an answer: a task can reach
+          # `done` without this path linking a reply to it. Only the linked
+          # reply comment says a sibling actually answered; without it the
+          # refused reply may be the only copy and must surface.
+          reg = register_agent("conflict-reason-claimed-unanswered")
+          topic_id = reg["topic_id"]
+          ai_user = User.find(reg["agent_id"])
+          creative = Topic.find(topic_id).creative.effective_origin
+
+          task = Collavre::Task.create!(
+            name: "Claimed but unanswered",
+            status: "delegated",
+            trigger_event_name: "comment_created",
+            agent: ai_user,
+            topic_id: topic_id,
+            creative_id: creative.id
+          )
+
+          Collavre::Task.where(id: task.id).update_all(status: "done")
+          assert_nil task.reload.reply_comment, "precondition: done, nothing posted"
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic_id, text: "The only copy of this answer", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+
+          assert_response :conflict
+          assert_equal "not_delegated", JSON.parse(response.body)["reason"],
+            "a done task with no reply behind it must not be suppressed as dedup"
         end
 
         test "Claude Channel reply enqueues TriggerLoopCheckJob only AFTER the reply comment is saved" do
@@ -1307,6 +1669,108 @@ module Collavre
             "comment must be attributed to the dispatched Claude Channel agent, not topic.primary_agent"
           assert_equal task.id, comment.task_id
           assert_equal "done", task.reload.status
+        end
+
+        test "a late reply completes a dispatch suspended while its session was offline" do
+          reg = register_agent("late-reply-test")
+          ai_user = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Late reply creative")
+          topic = creative.topics.create!(name: "Late reply topic", user: @user)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+
+          task = Collavre::Task.create!(
+            name: "Suspended dispatch", status: "suspended", suspended_from: "delegated",
+            suspend_reason: "agent_offline", suspended_at: Time.current,
+            trigger_event_name: "comment_created", agent: ai_user, topic_id: topic.id, creative_id: creative.id
+          )
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Answer after reconnecting", task_id: task.id },
+            headers: auth_headers,
+            as: :json
+          assert_response :created
+
+          assert_equal "done", task.reload.status
+          assert_equal task.id, Comment.find(JSON.parse(response.body)["comment_id"]).task_id
+          assert_nil Collavre::Orchestration::TaskResumer.resume!(task),
+                     "a reply that already answered the turn leaves nothing to resume"
+        end
+
+        test "a reply from an earlier execution of a resumed dispatch is refused" do
+          reg = register_agent("stale-generation-test")
+          ai_user = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Generation creative")
+          topic = creative.topics.create!(name: "Generation topic", user: @user)
+          CreativeShare.create!(creative: creative, user: ai_user, permission: "feedback")
+          task = Collavre::Task.create!(
+            name: "Resumed dispatch", status: "delegated", resume_count: 1,
+            trigger_event_name: "comment_created", agent: ai_user, topic_id: topic.id, creative_id: creative.id,
+            trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({})
+          )
+
+          ai_user.update!(quota_retry_count: 2, quota_blocked_until: 1.minute.ago)
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Stale answer", task_id: task.id, execution_generation: "earlier" },
+            headers: auth_headers, as: :json
+          assert_response :conflict
+          assert_equal "delegated", task.reload.status
+          assert_equal 2, ai_user.reload.quota_retry_count
+
+          post "/api/v1/agent/reply",
+            params: { topic_id: topic.id, text: "Current answer", task_id: task.id,
+                      execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
+            headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal "done", task.reload.status
+        end
+
+        test "successful Channel replies reset probes across independent quota incidents" do
+          previous_adapter = ActiveJob::Base.queue_adapter
+          ActiveJob::Base.queue_adapter = :test
+          reg = register_agent("quota-recovery-test")
+          agent = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Quota recovery")
+          topic = creative.topics.create!(name: "Quota", user: @user)
+          CreativeShare.create!(creative: creative, user: agent, permission: "feedback")
+
+          4.times do
+            task = Collavre::Task.create!(name: "Quota probe", status: "delegated", agent: agent,
+              topic_id: topic.id, creative: creative, trigger_event_name: "comment_created",
+              trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp({}))
+            Collavre::Quota::Recovery.suspend!(task, Collavre::Quota::ExceededError.new)
+            assert_equal 1, agent.reload.quota_retry_count
+            refute agent.quota_retry_exhausted?
+            travel_to agent.quota_blocked_until + 1 do
+              task.update!(status: "delegated", resume_count: 1)
+              Collavre::Quota::Recovery.guard!(task)
+              post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Recovered", task_id: task.id,
+                execution_generation: Collavre::Orchestration::ExecutionFence.generation(task) },
+                headers: auth_headers, as: :json
+              assert_response :created
+              assert_equal "done", task.reload.status
+              assert_equal 0, agent.reload.quota_retry_count
+              assert_nil agent.quota_blocked_until
+            end
+          end
+        ensure
+          ActiveJob::Base.queue_adapter = previous_adapter
+        end
+
+        test "late Channel reply preserves a newer quota block" do
+          reg = register_agent("quota-sibling-test")
+          agent = User.find(reg["agent_id"])
+          creative = Creative.create!(user: @user, description: "Quota sibling")
+          topic = creative.topics.create!(name: "Quota", user: @user)
+          CreativeShare.create!(creative: creative, user: agent, permission: "feedback")
+          task = Collavre::Task.create!(name: "Late reply", status: "delegated", agent: agent,
+            topic_id: topic.id, creative: creative, trigger_event_name: "comment_created")
+          deadline = 1.hour.from_now.change(usec: 0)
+          agent.update!(quota_retry_count: 2, quota_blocked_until: deadline)
+          post "/api/v1/agent/reply", params: { topic_id: topic.id, text: "Late answer", task_id: task.id },
+            headers: auth_headers, as: :json
+          assert_response :created
+          assert_equal 2, agent.reload.quota_retry_count
+          assert_equal deadline, agent.quota_blocked_until
         end
 
         test "reply with task_id refuses when task agent is not owned by current_user" do
@@ -1761,6 +2225,60 @@ module Collavre
           assert_includes dequeue_calls, [ work_topic.id, work_creative.id ],
             "work topic queue must be drained on unregister"
           assert Topic.find(inbox_topic_id).archived?
+        end
+
+        test "destroy cancels suspended work across topics and prevents resumption after registration" do
+          reg = register_agent("suspended-teardown")
+          agent = User.find(reg["agent_id"])
+          topic = Topic.find(reg["topic_id"])
+          work_topic = creatives(:tshirt).topics.create!(name: "Suspended work", user: @user)
+          tasks = %w[queued pending running delegated].map do |status|
+            Task.create!(name: "Suspended #{status}", agent: agent,
+              topic_id: status == "delegated" ? work_topic.id : topic.id,
+              creative_id: status == "delegated" ? work_topic.creative_id : topic.creative_id,
+              status: "suspended", suspended_from: status,
+              suspend_reason: "agent_offline", suspended_at: Time.current)
+          end
+
+          delete "/api/v1/agent/#{agent.id}", params: { topic_id: topic.id },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+          tasks.each { |task| assert_equal "cancelled", task.reload.status }
+
+          reopened = register_agent("suspended-teardown")
+          assert_equal topic.id, reopened["topic_id"]
+          assert_not topic.reload.archived?
+          tasks.each do |task|
+            assert_nil Orchestration::TaskResumer.resume!(task.reload)
+            assert_equal "cancelled", task.reload.status
+          end
+        end
+
+        test "destroy cancels only its session's suspended work while a sibling is live" do
+          registrations = %w[sess-a sess-b].map do |session_id|
+            post "/api/v1/agent/register",
+              params: { agent_name: "suspended-shared", session_id: session_id },
+              headers: auth_headers, as: :json
+            assert_response :ok
+            JSON.parse(response.body)
+          end
+          agent = User.find(registrations.first["agent_id"])
+          topics = registrations.map { |reg| Topic.find(reg["topic_id"]) }
+          AgentSubscription.create!(agent: agent, token: "live-sibling", session_id: "sess-b")
+          tasks = topics.map do |topic|
+            Task.create!(name: "Suspended session", agent: agent, topic_id: topic.id,
+              creative_id: topic.creative_id, status: "suspended", suspended_from: "delegated",
+              suspend_reason: "agent_offline", suspended_at: Time.current)
+          end
+
+          delete "/api/v1/agent/#{agent.id}", params: { topic_id: topics.first.id },
+            headers: auth_headers, as: :json
+          assert_response :no_content
+          assert_equal "cancelled", tasks.first.reload.status
+          assert_equal "suspended", tasks.last.reload.status
+          assert topics.first.reload.archived?
+          assert_not topics.last.reload.archived?
+          assert agent.claude_channel_online?
         end
 
         test "destroy cancels queued and pending tasks so dequeue does not activate clientless work" do

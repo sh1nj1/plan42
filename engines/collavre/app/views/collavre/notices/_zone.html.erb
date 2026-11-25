@@ -1,0 +1,20 @@
+<%# Top-of-app notice area. Persistent notices (Notices::Feed) stack behind a
+    single strip; the transient Rails flash shows as a self-dismissing toast and
+    never joins the stack. %>
+<div class="notice-zone"
+     data-controller="notice-bar"
+     data-action="keydown@document->notice-bar#escape"
+     data-notice-bar-feed-url-value="<%= collavre.user_notices_path %>"
+     data-notice-bar-refresh-at-value="<%= Collavre::Notices::RefreshDeadline.for(Current.user)&.iso8601(3) %>"
+     data-notice-bar-url-value="<%= collavre.snooze_user_notice_path("__key__").delete_suffix("/snooze") %>"
+     data-notice-bar-i18n-value="<%= t("collavre.notices.bar").to_json %>">
+  <div class="notice-zone__stack" data-notice-bar-target="stack" data-action="click->notice-bar#stackClick keydown->notice-bar#stackKeydown" role="region" aria-label="<%= t("collavre.notices.bar.region") %>"></div>
+  <div class="notice-zone__toasts" data-notice-bar-target="toasts" aria-live="polite">
+    <% if notice.present? %>
+      <div class="notice-toast" data-notice-bar-target="flash"><span><%= notice %></span></div>
+    <% end %>
+  </div>
+  <% if Current.user %>
+    <%= render "collavre/notices/payload", items: Collavre::Notices::Feed.new(Current.user, routes: collavre).items, completion: nil %>
+  <% end %>
+</div>

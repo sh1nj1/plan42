@@ -19,6 +19,12 @@ collavre list
 
 The `collavre` script lives in `scripts/collavre`. Config is stored at `~/.config/collavre/config.json`.
 
+When you work on a dispatched task (the message carries a `task_id`), set `COLLAVRE_TASK_ID` so every request names its task (`X-Collavre-Task` header). A write for a document-mode review or question is refused when the agent has several active tasks and the task is not named:
+
+```bash
+COLLAVRE_TASK_ID=<task_id> collavre update 123 --desc "Revised"
+```
+
 ## Commands
 
 ### List root creatives
@@ -113,6 +119,10 @@ collavre tool run topic_create --json '{"creative_id": 8849, "name": "Delivery",
 collavre tool run topic_message_create --json '{"topic_id": 12, "content": "Research the API options and report your recommendation."}'
 collavre tool run topic_message_create --json '{"topic_id": 13, "content": "Build the selected approach and verify it."}'
 
+# Inspect current work, or check the comment_id returned by topic_message_create
+collavre tool run topic_tasks --json '{"topic_id": 12}'
+collavre tool run task_status --json '{"comment_id": 991}'
+
 # Put a finished thread away (messages are kept and stay readable by id)
 collavre tool run topic_update --json '{"topic_id": 12, "archived": true}'
 
@@ -127,6 +137,11 @@ collavre tool run topic_branch --json '{"source_topic_id": 12, "comment_ids": "9
 message content. Image-only comments are not blank, and a long attachment list
 uses the same `content_offset` continuation as long prose.
 
+`task_status` includes descendant work. `not_started` means no task exists yet;
+check again later if dispatch is pending. `needs_attention` takes priority over
+`in_progress`, and `cancelled` is separate. `done` means the agent turns ended
+successfully; read the returned reply summaries to verify the requested outcome.
+
 ### Discover & run tools (meta)
 ```bash
 collavre tool list                                # list available tools
@@ -136,6 +151,15 @@ collavre tool info <tool_name>                    # show tool parameters
 collavre tool run <tool_name> --json '{"k":"v"}'  # run with JSON args
 collavre tool run <tool_name> --key value         # run with flag args
 ```
+
+## Create or edit a Ruby MCP tool
+
+Use `meta_tool` to invoke `creative_create_service` or `creative_update_service`
+with a Markdown Ruby code block following the `rails_mcp_engine` DSL. The
+Creative is the source of truth; owner approval enables discovery and execution.
+Read [Ruby tool authoring](references/tool-authoring.md) for the copyable example,
+exact MCP calls, approval states, and edit workflow. Do not use CLI authoring
+commands or bypass owner approval.
 
 ## Key Concepts
 
@@ -163,3 +187,21 @@ collavre tool run <tool_name> --key value         # run with flag args
 - **Description format**: Written as Markdown (GitHub-Flavored: headings, bold/italic, lists, links, tables, code blocks, task lists). A single newline is a line break. Plain text is stored as-is.
 
 For detailed MCP tool parameters, see [references/tool-reference.md](references/tool-reference.md).
+
+### Start a keep loop
+
+```bash
+collavre tool run keep --max 10 --goal "Complete the task" --topic_id 123
+```
+
+The tool schema is `keep(max, agent_name, goal, topic_id)`: `topic_id` is
+the final, required parameter; the others are optional. No `creative_id` is
+needed. Omit `agent_name` to use normal topic routing. Requires write permission.
+
+```json
+{"action":"run","tool_name":"keep","arguments":{"max":10,"goal":"Complete the task","topic_id":123}}
+```
+
+This uses the same bounded loop as `/keep` in chat. Archived and reserved
+topics and a second active loop are rejected. Agents cannot start work in
+the topic they are currently handling.

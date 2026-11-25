@@ -6,7 +6,7 @@ import csrfFetch from "../../lib/api/csrf_fetch"
 // directly by their own controllers (comments--topics, share-modal) via
 // data-action on the rendered buttons.
 export default class extends Controller {
-  static targets = ["grid", "card", "minimalTemplate"]
+  static targets = ["grid", "minimalTemplate"]
 
   initialize() {
     // Dismissals are optimistic: the card disappears immediately and the POST

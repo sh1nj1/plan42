@@ -17,6 +17,28 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     assert Contact.exists?(user: @owner, contact_user: @target_user)
   end
 
+  test "share modal shows the public link of a publicly shared creative" do
+    perform_enqueued_jobs { Collavre::CreativeShare.create!(creative: @creative, user: nil, permission: :read) }
+    sign_in_as(@owner, password: "password")
+
+    get collavre.creative_creative_shares_path(@creative)
+
+    public_id = @creative.reload.public_id
+    assert_response :success
+    assert_select "#share-public-url[value=?]",
+                  collavre.public_creative_url(public_id: public_id, slug: "t-shirt", host: "www.example.com")
+  end
+
+  test "share modal omits the public link for a private creative" do
+    sign_in_as(@owner, password: "password")
+
+    get collavre.creative_creative_shares_path(@creative)
+
+    assert_response :success
+    assert_select "#share-public-url", count: 0
+    assert_nil @creative.reload.public_id
+  end
+
   test "granting destination access keeps a moved topic pointer at its destination" do
     source = Collavre::Creative.create!(user: @owner, description: "Pointer source", sequence: 811)
     topic = source.topics.create!(name: "Moved topic", user: @owner)
@@ -296,5 +318,25 @@ class CreativeSharesControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_equal I18n.t("collavre.creatives.share.shared"), flash[:notice]
+  end
+  test "permission updates preserve JSON responses and HTML notices and validation errors" do
+    sign_in_as(@owner, password: "password")
+    share = Collavre::CreativeShare.create!(creative: @creative, user: @target_user, permission: :read, shared_by: @owner)
+    url = collavre.creative_creative_share_path(@creative, share)
+    patch url, params: { permission: :write }, as: :json
+    assert_response :ok
+    assert_equal({ "permission" => "write" }, response.parsed_body)
+    patch url, params: { permission: nil }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal "write", share.reload.permission
+    assert response.parsed_body.fetch("error").present?
+
+    patch url, params: { permission: :read }
+    assert_redirected_to root_path
+    assert_equal I18n.t("collavre.creatives.share.permission_updated"), flash[:notice]
+    patch url, params: { permission: nil }
+    assert_redirected_to root_path
+    assert flash[:alert].present?
+    assert_equal "read", share.reload.permission
   end
 end

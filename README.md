@@ -89,7 +89,7 @@ To point an agent at it over MCP, see [docs/mcp-configuration.md](docs/mcp-confi
 
 - **Rails 8**, 8 isolated engines — `collavre` is the core, and every `collavre_*` engine depends on it, never the reverse
 - An **MCP server** and an **OpenAI-compatible completion API**
-- **Two-way sync** with GitHub, Linear, Slack, and Notion
+- **Two-way sync** with GitHub and Slack
 - **Real-time chat** on every block (ActionCable), organized into topics
 - **Hierarchical permissions** backed by a materialized permission cache
 - **WebAuthn** and **OAuth** authentication
@@ -111,6 +111,10 @@ bin/dev                                   # dev server on :3000
 ./bin/rubocop -a                         # full lint required before PR
 bin/rake test && bin/rails test:system   # tests required before PR; pre-push tests are temporarily disabled
 ```
+
+`bin/dev` also starts the Solid Queue worker and recurring scheduler. Development
+jobs use the development database, including the minute-by-minute keep recovery
+sweep; run `bin/jobs` separately when starting Rails without `bin/dev`.
 
 System tests require a locally installed, trusted ChromeDriver on `PATH` or at
 `CHROMEDRIVER_PATH`. Install a driver compatible with your Chrome version through

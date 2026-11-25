@@ -26,6 +26,10 @@ module Tools
       stored as written and may use Markdown. An agent cannot post to the topic
       it is currently handling; continue that work in the current turn instead.
 
+      Returns comment_id as a tracking key. Task creation is asynchronous;
+      use task_status(comment_id:) to check execution and read reply summaries.
+      A done task means a turn ended, not that the requested outcome was verified.
+
       Requires feedback permission or better on the topic's creative. Archived
       creatives, archived topics, History topics, and an inbox's reserved System
       topic do not accept messages through this tool.
@@ -61,18 +65,23 @@ module Tools
         reject_closed_topic!(topic)
         reject_unrunnable_self_dispatch!(topic, user, principal)
 
-        comment = topic.comments.create!(
+        comment = topic.comments.build(
           creative: topic.creative,
           content: content,
           user: user,
           private: false,
           skip_dispatch: user.ai_user?
         )
+        prepare_comment!(comment)
+        comment.save!
         selection = prepare_selection(comment, principal, envelope) if user.ai_user?
         reject_selected_self_route!(selection&.agents, user, principal)
 
         comment
       end
+    end
+
+    def prepare_comment!(comment)
     end
 
     def reject_closed_topic!(topic)
@@ -120,7 +129,8 @@ module Tools
       SystemEvents::Dispatcher.dispatch(
         "comment_created", payload, source: "a2a",
         selection: selection, context_for: context_for,
-        scheduling_hooks: scheduling_hooks(user, comment)
+        scheduling_hooks: scheduling_hooks(user, comment),
+        require_enqueue_ack: comment.keep_loop_options.present?
       )
     end
 
@@ -141,6 +151,7 @@ module Tools
       comment.dispatch_payload.merge(workspace_user_id: principal&.id).tap do |payload|
         payload[SystemEvents::Envelope::KEY] = envelope.to_h
         payload[:comment][:from_ai] = comment.user.ai_user?
+        payload[:usage_requester_attribution] = LlmUsage::Attribution.current_requesters
       end
     end
 
@@ -186,6 +197,7 @@ module Tools
     def serialize(comment)
       {
         id: comment.id,
+        comment_id: comment.id,
         topic_id: comment.topic_id,
         creative_id: comment.creative_id,
         content: comment.content,

@@ -1,12 +1,14 @@
 /**
  * @jest-environment jsdom
  */
-import { createUserMenu, healthStateFor, healthStateForUserId } from '../user_menu'
+import { createUserMenu, healthStateFor, healthStateForUserId, userMenuLabels } from '../user_menu'
 
 const LABELS = {
   open: 'Open %{name}\'s profile menu',
   viewProfile: 'View profile',
   mention: 'Mention',
+  setPrimaryAgent: '현재 토픽 우선 응답자로 설정',
+  clearPrimaryAgent: '현재 토픽 우선 응답자 해제',
   dragGuide: 'Drag this avatar to a topic.',
   online: 'Online',
   offline: 'Offline',
@@ -25,6 +27,31 @@ const USER = {
 }
 
 describe('createUserMenu', () => {
+  test('reads localized menu labels from the popup', () => {
+    const element = document.createElement('div')
+    element.dataset.userMenuSetPrimaryAgentText = LABELS.setPrimaryAgent
+    element.dataset.userMenuClearPrimaryAgentText = LABELS.clearPrimaryAgent
+    expect(userMenuLabels(element).clearPrimaryAgent).toBe(LABELS.clearPrimaryAgent)
+    expect(userMenuLabels(element).setPrimaryAgent).toBe(LABELS.setPrimaryAgent)
+    expect(userMenuLabels(element).mention).toBe('Mention')
+  })
+
+  test.each([true, false])('offers assignment only for AI agents (AI: %s)', ai_user => {
+    const menu = createUserMenu({ user: { ...USER, ai_user }, labels: LABELS, menuId: 'agent' })
+    const button = menu.querySelector('[data-comment-user-menu-target="primaryAgent"]')
+    if (!ai_user) {
+      expect(button).toBeNull()
+      return
+    }
+    expect(button.dataset.setText).toBe(LABELS.setPrimaryAgent)
+    expect(button.dataset.clearText).toBe(LABELS.clearPrimaryAgent)
+    expect(button.textContent).toBe(LABELS.setPrimaryAgent)
+    expect(button.disabled).toBe(true)
+    expect(button.dataset.action).toBe('click->comment-user-menu#setPrimaryAgent')
+    expect(menu.querySelector('.comment-user-menu-trigger').dataset.action)
+      .toContain('click->comment-user-menu#syncPrimaryAgent')
+  })
+
   test('maps presence and endpoint health evidence to display states', () => {
     expect(healthStateFor(null, [], LABELS)).toEqual({ online: false, kind: 'offline', label: 'Offline' })
     expect(healthStateFor({ ...USER, ai_user: false }, [], LABELS))

@@ -5,7 +5,8 @@ module Collavre
     included do
       before_action :set_user_for_ai_actions, only: [ :edit_ai, :update_ai ]
       before_action :verify_ai_user, only: [ :edit_ai, :update_ai ]
-      before_action :verify_ai_user_authorization, only: [ :edit_ai, :update_ai ]
+      before_action :verify_ai_profile_access, only: :edit_ai
+      before_action :verify_ai_user_authorization, only: :update_ai
     end
 
     def new_ai
@@ -23,26 +24,7 @@ module Collavre
     end
 
     def create_ai
-      ai_id = params[:ai_id].to_s.strip.downcase
-      email = "#{ai_id}@ai.local"
-      searchable = ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false))
-
-      @user = Collavre::User.new(
-        name: params[:name],
-        email: email,
-        password: SecureRandom.hex(36),
-        system_prompt: params[:system_prompt],
-        llm_vendor: params[:llm_vendor].presence || "google",
-        llm_model: params[:llm_model],
-        llm_api_key: params[:llm_api_key],
-        gateway_url: params[:gateway_url],
-        agent_gateway: selected_agent_gateway,
-        tools: params[:tools] || [],
-        searchable: searchable,
-        email_verified_at: Time.current,
-        created_by_id: Current.user.id,
-        routing_expression: params[:routing_expression]
-      )
+      @user = Collavre::User.new(new_ai_user_attributes)
       @user.agent_conf = params[:agent_conf] if @user.respond_to?(:agent_conf=) && params[:agent_conf].present?
 
       saved = Collavre::User.transaction do
@@ -66,16 +48,24 @@ module Collavre
     end
 
     def edit_ai
+      @return_to = safe_return_to(params[:return_to].presence || request.referer)
+      @read_only = !ai_profile_editable?
       @available_tools = load_available_tools
+      if @read_only
+        @available_tools.select! { |tool| Array(@user.tools).include?(tool[:name]) }
+        return
+      end
+
       @llm_models = Collavre::LlmModel.suggestions
       @agent_gateways = editable_agent_gateways(@user)
       @has_stored_llm_api_key = @user.llm_api_key.present?
-      @return_to = safe_return_to(params[:return_to].presence || request.referer)
     end
 
     def update_ai
-      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf, tools: [])
+      ai_params = params.require(:user).permit(:name, :system_prompt, :llm_vendor, :llm_model, :llm_api_key, :clear_llm_api_key, :gateway_url, :agent_gateway_id, :searchable, :routing_expression, :agent_conf,
+                                                  :reasoning_effort, :codex_fast_mode, tools: [])
       assign_ai_gateway(ai_params)
+      preserve_hidden_tools(ai_params)
       clear_llm_api_key = ActiveModel::Type::Boolean.new.cast(ai_params.delete(:clear_llm_api_key))
       @has_stored_llm_api_key = @user.llm_api_key.present?
       @clear_llm_api_key = clear_llm_api_key
@@ -103,6 +93,32 @@ module Collavre
     end
 
     private
+
+    def new_ai_user_attributes
+      {
+        name: params[:name],
+        email: "#{params[:ai_id].to_s.strip.downcase}@ai.local",
+        password: SecureRandom.hex(36),
+        system_prompt: params[:system_prompt],
+        tools: Array(params[:tools]).compact_blank,
+        searchable: ActiveModel::Type::Boolean.new.cast(params.fetch(:searchable, false)),
+        email_verified_at: Time.current,
+        created_by_id: Current.user.id,
+        routing_expression: params[:routing_expression]
+      }.merge(new_ai_llm_attributes)
+    end
+
+    def new_ai_llm_attributes
+      {
+        llm_vendor: params[:llm_vendor].presence || "google",
+        llm_model: params[:llm_model],
+        llm_api_key: params[:llm_api_key],
+        gateway_url: params[:gateway_url],
+        agent_gateway: selected_agent_gateway,
+        reasoning_effort: params[:reasoning_effort],
+        codex_fast_mode: ActiveModel::Type::Boolean.new.cast(params[:codex_fast_mode]) || false
+      }
+    end
 
     def current_user_contacts_path
       user_path(Current.user, tab: "contacts")
@@ -150,12 +166,31 @@ module Collavre
       )
     end
 
+    # The tool checkboxes only list tools the editor may use. A tool restricted
+    # to the agent itself (e.g. Kollavy's source tools) is invisible to the
+    # admin editing it, so submitting the form would silently drop it; keep the
+    # ones the editor could not have unchecked, and ignore any the editor could
+    # not have checked.
+    def preserve_hidden_tools(ai_params)
+      return unless ai_params.key?(:tools)
+
+      editable = load_available_tools.pluck(:name).to_set
+      return ai_params.delete(:tools) if editable.empty?
+      hidden = Collavre::McpToolRegistry.permission_hidden_names(Array(@user.tools), Current.user)
+      submitted = Array(ai_params[:tools]).compact_blank.select { |name| editable.include?(name) }
+      ai_params[:tools] = submitted | hidden
+    end
+
     def load_available_tools
+      system_names = Collavre::McpToolRegistry.system_names
       Collavre::McpService.available_tools(Current.user).map do |tool|
+        text = Collavre::ToolDescription.for(tool[:name], tool[:description])
         {
           name: tool[:name],
-          description: tool[:description],
-          parameters: tool[:params]
+          description: text[:summary],
+          details: text[:details],
+          parameters: tool[:params],
+          custom: !system_names.include?(tool[:name])
         }
       end
     end
@@ -170,8 +205,10 @@ module Collavre
           gateways.active.find_by(id: ai_params[:agent_gateway_id])
         end
         ai_params[:agent_gateway_id] = gateway&.id
-      elsif effective_vendor != "cli_proxy" && ai_params.key?(:llm_vendor)
-        ai_params[:agent_gateway_id] = nil
+      elsif effective_vendor != "cli_proxy"
+        # Keep the registered manifest reachable so retained workspaces can sync Fast off.
+        # The sync job detaches it after cleanup; ignore the hidden gateway field here.
+        ai_params.delete(:agent_gateway_id)
       end
     end
 
@@ -206,8 +243,7 @@ module Collavre
     end
 
     def verify_ai_user_authorization
-      allowed = Current.user.system_admin? ||
-                (@user.ai_user? && @user.created_by_id == Current.user.id)
+      allowed = ai_profile_editable?
 
       unless allowed
         fallback = user_path(Current.user, tab: "contacts")

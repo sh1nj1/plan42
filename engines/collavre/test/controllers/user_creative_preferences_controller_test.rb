@@ -1,7 +1,9 @@
 require "test_helper"
+require Rails.root.join("test/support/legacy_root_preferences")
 require "ostruct"
 
 class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
+  include LegacyRootPreferences
   include ActionCable::TestHelper
 
   setup do
@@ -9,6 +11,289 @@ class UserCreativePreferencesControllerTest < ActionDispatch::IntegrationTest
     @creative = creatives(:tshirt)
     @user.update!(email_verified_at: Time.current)
     post session_path, params: { email: @user.email, password: "password" }
+  end
+
+  test "missing source and legacy intent use fences while malformed sources are rejected" do
+    params = { node_id: @creative.id, expanded: true, expansion_intent: 900,
+      intent_source: "11111111-1111-4111-8111-111111111111" }
+    post "/creative_expanded_states/toggle", params: params.merge(expansion_save_fence: expansion_fence(nil)), as: :json
+    assert response.parsed_body["success"]
+    fence = expansion_fence(nil)
+    [ "invalid", "a" * 1000, [] ].each do |source|
+      post "/creative_expanded_states/toggle", params: params.merge(expanded: false, intent_source: source,
+        expansion_save_fence: fence), as: :json
+      assert response.parsed_body["stale_expansion_save"]
+    end
+    post "/creative_expanded_states/toggle", params: params.except(:intent_source).merge(expanded: false,
+      expansion_intent: 1, expansion_save_fence: fence), as: :json
+    assert response.parsed_body["success"]
+    assert_nil Collavre::UserCreativePreference.find_by(user: @user, creative_id: nil)
+    post "/creative_expanded_states/toggle", params: params.except(:expansion_intent).merge(
+      expansion_save_fence: expansion_fence(nil)), as: :json
+    assert response.parsed_body["success"]
+  end
+
+  test "a slower device can collapse a branch saved by a faster device" do
+    [ nil, @creative.id ].each do |context|
+      params = { creative_id: context, node_id: @creative.id, expanded: true,
+        expansion_intent: 8_000_000_000_000_000, intent_source: "11111111-1111-4111-8111-111111111111" }
+      post "/creative_expanded_states/toggle", params: params.merge(expansion_save_fence: expansion_fence(context)), as: :json
+      assert response.parsed_body["success"]
+      post "/creative_expanded_states/toggle", params: params.merge(expanded: false, expansion_intent: 100,
+        intent_source: "22222222-2222-4222-8222-222222222222", expansion_save_fence: expansion_fence(context)), as: :json
+      assert response.parsed_body["success"]
+      assert_not Collavre::UserCreativePreference.find_by(user: @user, creative_id: context)&.expanded_status&.key?(@creative.id.to_s)
+    end
+  end
+
+  test "delayed earlier intent with a newer fence cannot resurrect a collapse" do
+    [ nil, @creative.id ].each do |context|
+      intent = { creative_id: context, node_id: @creative.id, expected_user_id: @user.id }
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: false,
+        expansion_save_fence: expansion_fence(context), expansion_intent: 200, intent_source: "11111111-1111-4111-8111-111111111111"), as: :json
+      assert_equal true, response.parsed_body["success"]
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: true,
+        expansion_save_fence: expansion_fence(context), expansion_intent: 100, intent_source: "11111111-1111-4111-8111-111111111111"), as: :json
+      assert_equal true, response.parsed_body["stale_expansion_save"]
+      assert_nil Collavre::UserCreativePreference.find_by(user: @user, creative_id: context)
+    end
+  end
+
+  test "late timed out saves from previous documents cannot overwrite a newer collapse" do
+    [ nil, @creative.id ].each do |context|
+      intent = { creative_id: context, node_id: @creative.id }
+      old_fence = expansion_fence(context)
+      new_fence = expansion_fence(context) # A hard reload or a separate tab.
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: false, expansion_save_fence: new_fence), as: :json
+      assert_response :success
+      assert_equal true, response.parsed_body["success"]
+      assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: context)
+
+      [ old_fence, new_fence, nil ].each do |fence|
+        post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_fence: fence), as: :json
+        assert_response :success
+        assert_equal true, response.parsed_body["stale_expansion_save"]
+        assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: context)
+      end
+
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: true, expansion_save_fence: expansion_fence(context)), as: :json
+      assert_equal true, response.parsed_body["success"]
+      record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: context)
+      assert_equal({ @creative.id.to_s => true }, record.expanded_status)
+      post "/creative_expanded_states/toggle", params: intent.merge(expanded: false, expansion_save_fence: old_fence), as: :json
+      assert_equal true, response.parsed_body["stale_expansion_save"]
+      assert_equal({ @creative.id.to_s => true }, record.reload.expanded_status)
+    end
+  end
+
+  test "a delayed save for another node still applies across browser documents" do
+    first = expansion_fence(nil)
+    second = expansion_fence(nil)
+    post "/creative_expanded_states/toggle", params: { node_id: @creative.id, expanded: false, expansion_save_fence: second }, as: :json
+    post "/creative_expanded_states/toggle", params: { node_id: "another", expanded: true, expansion_save_fence: first }, as: :json
+    assert_equal true, response.parsed_body["success"]
+    record = Collavre::UserCreativePreference.find_by!(user: @user, creative_id: nil)
+    assert_equal({ "another" => true }, record.expanded_status)
+  end
+
+  test "invalid or unissued expansion fences are not applied" do
+    expansion_fence(nil)
+    [ "invalid", 0, -1, 2, "1.5", "9" * 17 ].each do |fence|
+      post "/creative_expanded_states/toggle", params: { node_id: @creative.id, expanded: true,
+        expansion_save_fence: fence }, as: :json
+      assert_response :success
+      assert_equal false, response.parsed_body["success"]
+    end
+  end
+
+  test "fence issuance rejects a previous account without creating a preference" do
+    assert_no_difference "Collavre::UserCreativePreference.count" do
+      post "/creative_expanded_states/fence", params: { expected_user_id: users(:two).id }, as: :json
+      assert_response :forbidden
+    end
+  end
+
+  test "an unused fence never changes expansion state and subsequent issuance advances" do
+    first = expansion_fence(nil)
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
+    assert_operator expansion_fence(nil), :>, first
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
+  end
+
+  test "fenced expand and collapse reclaim preferences in every context" do
+    [ nil, @creative.id ].each do |context|
+      [ true, false ].each do |expanded|
+        post "/creative_expanded_states/toggle", params: { creative_id: context, node_id: @creative.id,
+          expanded: expanded, expansion_save_fence: expansion_fence(context) }, as: :json
+        assert_equal true, response.parsed_body["success"]
+        assert_equal expanded, Collavre::UserCreativePreference.exists?(user: @user, creative_id: context)
+      end
+    end
+    assert_equal 2, @user.reload.expansion_save_sequences.fetch("nodes").size
+  end
+
+  test "the same node has independent watermarks in different contexts" do
+    first = expansion_fence(nil)
+    second = expansion_fence(@creative.id)
+    post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id,
+      expanded: false, expansion_save_fence: second }, as: :json
+    post "/creative_expanded_states/toggle", params: { node_id: @creative.id,
+      expanded: true, expansion_save_fence: first }, as: :json
+    assert_equal true, response.parsed_body["success"]
+    assert Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: @creative.id)
+  end
+
+  test "failed preference saves roll back their watermarks" do
+    fence = expansion_fence(nil)
+    before = @user.reload.expansion_save_sequences
+    original_find = Collavre::UserCreativePreference.method(:find_by!)
+    Collavre::UserCreativePreference.stub(:find_by!, lambda { |**attributes|
+      record = original_find.call(**attributes)
+      record.define_singleton_method(:save!) { raise ActiveRecord::RecordInvalid, self }
+      record
+    }) do
+      post "/creative_expanded_states/toggle", params: { node_id: @creative.id,
+        expanded: true, expansion_save_fence: fence }, as: :json
+      assert_response :unprocessable_entity
+    end
+    assert_equal before, @user.reload.expansion_save_sequences
+    assert_not Collavre::UserCreativePreference.exists?(user: @user, creative_id: nil)
+  end
+
+  def expansion_fence(context)
+    post "/creative_expanded_states/fence", params: { creative_id: context, expected_user_id: @user.id }, as: :json
+    assert_response :success
+    response.parsed_body.fetch("expansion_save_fence")
+  end
+
+  test "toggle rejects a previous account intent after signing into another account" do
+    old_user_id = @user.id
+    delete session_path
+    other = users(:two)
+    other.update!(email_verified_at: Time.current)
+    post session_path, params: { email: other.email, password: "password" }
+
+    assert_no_difference "Collavre::UserCreativePreference.count" do
+      post "/creative_expanded_states/toggle",
+        params: { node_id: @creative.id, expanded: true, expected_user_id: old_user_id }, as: :json
+      assert_response :forbidden
+    end
+
+    post "/creative_expanded_states/toggle",
+      params: { node_id: @creative.id, expanded: true, expected_user_id: other.id }, as: :json
+    assert_response :success
+    assert Collavre::UserCreativePreference.exists?(user_id: other.id, creative_id: nil)
+  end
+
+  test "toggle rejects an explicitly empty expected user" do
+    assert_no_difference "Collavre::UserCreativePreference.count" do
+      post "/creative_expanded_states/toggle",
+        params: { node_id: @creative.id, expanded: true, expected_user_id: "" }, as: :json
+      assert_response :forbidden
+    end
+  end
+
+  test "root toggles reuse one preference and preserve other nodes and contexts" do
+    node_ids = [ @creative.id.to_s, "98765" ]
+    node_ids.each do |node_id|
+      post "/creative_expanded_states/toggle", params: { node_id: node_id, expanded: true }, as: :json
+      assert_response :success
+    end
+    scope = Collavre::UserCreativePreference.where(user_id: @user.id, creative_id: nil)
+    assert_equal 1, scope.count
+    assert_equal node_ids.index_with { true }, scope.first.expanded_status
+
+    post "/creative_expanded_states/toggle", params: { creative_id: @creative.id, node_id: @creative.id, expanded: true }
+    post "/creative_expanded_states/toggle", params: { node_id: node_ids.first, expanded: false }, as: :json
+    assert_equal({ node_ids.last => true }, scope.reload.first.expanded_status)
+    post "/creative_expanded_states/toggle", params: { node_id: node_ids.last, expanded: false }, as: :json
+    assert_empty scope.reload
+    assert Collavre::UserCreativePreference.exists?(user_id: @user.id, creative_id: @creative.id)
+  end
+
+  test "root saves consolidate legacy duplicates before the unique index is installed" do
+    allow_legacy_root_duplicates!
+    preference = Collavre::UserCreativePreference
+    attributes = { user_id: @user.id, creative_id: nil, expanded_status: { "1" => true } }
+    first = preference.create!(attributes)
+    preference.insert_all([ attributes.merge(expanded_status: { "legacy" => true }) ],
+      unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+    other = preference.create!(attributes.merge(user_id: users(:two).id))
+
+    post "/creative_expanded_states/toggle", params: { node_id: "2", expanded: true }, as: :json
+    assert_response :success
+    assert_equal [ first.id ], preference.where(user_id: @user.id, creative_id: nil).pluck(:id)
+    assert_equal({ "1" => true, "legacy" => true, "2" => true }, first.reload.expanded_status)
+    assert_equal({ "1" => true }, other.reload.expanded_status)
+
+    # Reproduce the old composite-targeted writer before index installation.
+    assert_difference "Collavre::UserCreativePreference.count", 1 do
+      preference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+    end
+  end
+
+  test "root consolidation merges every duplicate before applying the current collapse" do
+    allow_legacy_root_duplicates!
+    preference = Collavre::UserCreativePreference
+    first = preference.create!(user: @user, expanded_status: { "current" => true, "first" => true })
+    preference.create!(user: @user, expanded_status: { "current" => true, "second" => true })
+    preference.create!(user: @user, expanded_status: { "third" => true })
+    context = preference.create!(user: @user, creative: @creative, expanded_status: { "context" => true })
+
+    post "/creative_expanded_states/toggle", params: { node_id: "current", expanded: false,
+      expansion_save_fence: expansion_fence(nil) }, as: :json
+
+    assert_response :success
+    assert_equal [ first.id ], preference.where(user: @user, creative_id: nil).pluck(:id)
+    assert_equal({ "first" => true, "second" => true, "third" => true }, first.reload.expanded_status)
+    assert_equal({ "context" => true }, context.reload.expanded_status)
+  end
+
+  test "root consolidation leaves later legacy inserts for the next save" do
+    allow_legacy_root_duplicates!
+    preference = Collavre::UserCreativePreference
+    first = preference.create!(user: @user, expanded_status: { "first" => true })
+    preference.create!(user: @user, expanded_status: { "legacy" => true })
+    inserted = false
+    subscriber = lambda do |*, payload|
+      if !inserted && payload[:sql].start_with?('UPDATE "user_creative_preferences"')
+        inserted = true
+        preference.create!(user: @user, expanded_status: { "late" => true })
+      end
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      post "/creative_expanded_states/toggle", params: { node_id: "new", expanded: true }, as: :json
+      assert_response :success
+    end
+    assert inserted
+    assert_equal 2, preference.where(user: @user, creative_id: nil).count
+    assert_equal({ "first" => true, "legacy" => true, "new" => true }, first.reload.expanded_status)
+
+    post "/creative_expanded_states/toggle", params: { node_id: "new", expanded: false }, as: :json
+    assert_response :success
+    assert_equal [ first.id ], preference.where(user: @user, creative_id: nil).pluck(:id)
+    assert_equal({ "first" => true, "legacy" => true, "late" => true }, first.reload.expanded_status)
+  end
+
+  test "failed toggles roll back root consolidation and duplicate deletion" do
+    allow_legacy_root_duplicates!
+    preference = Collavre::UserCreativePreference
+    first = preference.create!(user: @user, expanded_status: { "first" => true })
+    duplicate = preference.create!(user: @user, expanded_status: { "legacy" => true })
+    original_find = preference.method(:find_by!)
+    preference.stub(:find_by!, lambda { |**attributes|
+      record = original_find.call(**attributes)
+      record.define_singleton_method(:save!) { raise ActiveRecord::RecordInvalid, self }
+      record
+    }) do
+      post "/creative_expanded_states/toggle", params: { node_id: "new", expanded: true }, as: :json
+      assert_response :unprocessable_entity
+    end
+
+    assert_equal({ "first" => true }, first.reload.expanded_status)
+    assert_equal({ "legacy" => true }, duplicate.reload.expanded_status)
   end
 
   test "toggle stores expanded state" do

@@ -1,5 +1,6 @@
 en:
   collavre_github:
+    tool_category: "GitHub"
     integration:
       label: "GitHub"
       description: "Connect repositories and receive webhook events"

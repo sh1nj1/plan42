@@ -6,8 +6,28 @@ module Collavre
       private
 
       def prepare_gate_conversation(contents, tools)
+        start_usage_tracking
         @conversation = build_conversation(tools)
-        add_messages(@conversation, contents) unless restore_approval_gate
+        install_usage_tracking(@conversation)
+        install_cli_tool_events(@conversation)
+        add_messages(@conversation, contents) unless restore_approval_gate || restore_tool_approval(contents)
+      end
+
+      def install_tool_boundary(chat)
+        chat.before_tool_call do |tool_call|
+          # Cancellation ahead of the approval gate: a turn that already
+          # reached a terminal status or its deadline must end, not park
+          # itself as pending approval for a tool it will never run. Force this
+          # boundary through the lifecycle throttle: the first tool call can
+          # arrive during the manager's initial one-second quiet period.
+          @before_tool_call&.call(true)
+          AgentToolPermission.authorize_call!(tool_call.name, tool_call.arguments,
+            agent: context[:task]&.agent || context[:user] || AgentToolPermission.current_agent)
+          check_tool_approval!(tool_call)
+          start_tool_usage(tool_call)
+        end
+        # Registered before build_conversation's boundary refresh, which can raise on deadline.
+        chat.after_tool_result { |result| finish_tool_usage(!ToolUsage.failed_result?(result)) }
       end
 
       def check_approval_gate!(tool_call)
@@ -37,6 +57,24 @@ module Collavre
         return unless args["tool_name"] == "approval_request"
 
         (args["arguments"] || {}).stringify_keys
+      end
+
+      def restore_tool_approval(contents)
+        pending = context&.dig(:task)&.pending_tool_call
+        return false unless pending&.dig("approved") && pending.key?("result")
+
+        if pending["messages"].present?
+          AiAgent::ApprovalConversation.restore(@conversation, pending)
+        else
+          # Approvals paused before snapshots were introduced still resume with
+          # their stored result, never with permission to execute another call.
+          add_messages(@conversation, contents)
+          call = RubyLLM::ToolCall.new(id: pending.fetch("tool_call_id"),
+            name: pending.fetch("tool_name"), arguments: pending.fetch("arguments", {}))
+          @conversation.add_message(role: :assistant, content: nil, tool_calls: { call.id => call })
+          @conversation.add_message(role: :tool, tool_call_id: call.id, content: pending["result"].to_json)
+        end
+        true
       end
 
       def restore_approval_gate

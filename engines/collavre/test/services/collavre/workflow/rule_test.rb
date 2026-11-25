@@ -41,6 +41,19 @@ module Collavre
         assert_empty errors
       end
 
+      test "topic name must be a string when present" do
+        [ nil, 42, [], {} ].each do |name|
+          rule, errors = Rule.parse(creative_with("on" => "comment_created", "handler" => { "type" => "human" }, "topic_name" => name))
+          assert_nil rule
+          assert_equal [ I18n.t("collavre.workflow.rule.errors.invalid_structure") ], errors
+        end
+        [ "", "Main", "Analysis" ].each do |name|
+          rule, errors = Rule.parse(creative_with("on" => "comment_created", "handler" => { "type" => "human" }, "topic_name" => name))
+          assert rule
+          assert_empty errors
+        end
+      end
+
       test "missing event is fatal" do
         rule, errors = Rule.parse(creative_with("handler" => { "type" => "human" }))
 

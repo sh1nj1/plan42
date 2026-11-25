@@ -16,6 +16,11 @@ class McpServiceFilterTest < ActiveSupport::TestCase
     McpTool.create!(creative: Creative.create!(user: @other_user, description: "Other"), name: "other_tool", source_code: "bar", approved_at: Time.current)
   end
 
+  test "pending tools are excluded even for their owner" do
+    McpTool.find_by!(name: "user_tool").update!(approved_at: nil)
+    assert_empty McpService.filter_tools([ @user_tool ], @user)
+  end
+
   test "filters tools correctly for owner" do
     all_tools = [ @system_tool, @user_tool, @other_tool ]
 
@@ -44,6 +49,16 @@ class McpServiceFilterTest < ActiveSupport::TestCase
     assert_includes filtered, @system_tool
     refute_includes filtered, @user_tool
     refute_includes filtered, @other_tool
+  end
+
+  test "agent selection never widens dynamic tool permissions" do
+    agent = users(:ai_bot)
+    agent.update!(tools: [ "system_tool", "user_tool", "other_tool" ])
+    Collavre::Current.set(user: @user, mcp_agent_workspace: Struct.new(:agent).new(agent)) do
+      assert_equal [ @system_tool, @user_tool ], McpService.filter_tools([ @system_tool, @user_tool, @other_tool ], @user)
+      agent.update!(tools: [ "other_tool" ])
+      assert_empty McpService.filter_tools([ @system_tool, @user_tool, @other_tool ], @user)
+    end
   end
 
   test "filters hash tools correctly" do

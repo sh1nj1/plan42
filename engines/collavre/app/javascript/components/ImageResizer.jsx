@@ -47,6 +47,15 @@ export default function ImageResizer({ src, altText, width, height, nodeKey }) {
 
   // Handle backspace/delete to remove selected image
   useEffect(() => {
+    const removeIfSelected = (event) => {
+      if (!isSelected) return false
+      event.preventDefault()
+      editor.update(() => {
+        const node = $getNodeByKey(nodeKey)
+        if (node) node.remove()
+      })
+      return true
+    }
     return mergeRegister(
       editor.registerCommand(
         CLICK_COMMAND,
@@ -65,36 +74,8 @@ export default function ImageResizer({ src, altText, width, height, nodeKey }) {
         },
         COMMAND_PRIORITY_LOW
       ),
-      editor.registerCommand(
-        KEY_BACKSPACE_COMMAND,
-        (event) => {
-          if (isSelected) {
-            event.preventDefault()
-            editor.update(() => {
-              const node = $getNodeByKey(nodeKey)
-              if (node) node.remove()
-            })
-            return true
-          }
-          return false
-        },
-        COMMAND_PRIORITY_LOW
-      ),
-      editor.registerCommand(
-        KEY_DELETE_COMMAND,
-        (event) => {
-          if (isSelected) {
-            event.preventDefault()
-            editor.update(() => {
-              const node = $getNodeByKey(nodeKey)
-              if (node) node.remove()
-            })
-            return true
-          }
-          return false
-        },
-        COMMAND_PRIORITY_LOW
-      )
+      editor.registerCommand(KEY_BACKSPACE_COMMAND, removeIfSelected, COMMAND_PRIORITY_LOW),
+      editor.registerCommand(KEY_DELETE_COMMAND, removeIfSelected, COMMAND_PRIORITY_LOW)
     )
   }, [editor, isSelected, nodeKey, clearSelection])
 

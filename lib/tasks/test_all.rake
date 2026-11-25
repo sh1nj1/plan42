@@ -45,14 +45,22 @@ namespace :test do
         next unless File.directory?(path)
         next if File.basename(path) == "system"
 
-        test_paths << path
+        test_paths.concat(Dir.glob("#{path}/**/*_test.rb"))
       end
     end
 
     if test_paths.any?
-      puts "\n=== Running tests: #{test_paths.join(' ')} ==="
-      # Run all collected paths in a single process
-      system("bin/rails test #{test_paths.join(' ')}") || exit(1)
+      puts "\n=== Running tests: #{test_roots.join(' ')} ==="
+      # `parallelize` changes Minitest's process-wide executor, even when called
+      # on a subclass. Keep the global-state override tests out of the main runner.
+      isolated_paths, parallel_paths = test_paths.partition do |path|
+        path == "engines/collavre/test/integration/engine_override_test.rb"
+      end
+      [ parallel_paths, isolated_paths ].each do |paths|
+        next if paths.empty?
+
+        system("bin/rails", "test", *paths) || exit(1)
+      end
     else
       puts "\n=== No tests found ==="
     end

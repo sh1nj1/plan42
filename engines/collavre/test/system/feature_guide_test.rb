@@ -5,6 +5,10 @@ require_relative "../application_system_test_case"
 # breadcrumb markup is present either way — so visibility is asserted in a real
 # browser instead.
 class FeatureGuideTest < ApplicationSystemTestCase
+  setup do
+    Collavre::Kollavy.seed!
+  end
+
   test "the default help link opens the complete feature guide in the current window" do
     registry = Navigation::Registry.instance
     original_help_item = registry.find(:help)
@@ -24,7 +28,7 @@ class FeatureGuideTest < ApplicationSystemTestCase
 
     assert_current_path collavre.features_path(locale: I18n.locale)
     assert_equal windows_before, page.windows.size, "the help link must not open a new window"
-    assert_selector ".feature-guide-link-card", count: 9
+    assert_selector ".feature-guide-link-card", count: 10
 
     find("a[href^='/features/mention_agent']").click
 
@@ -95,12 +99,12 @@ class FeatureGuideTest < ApplicationSystemTestCase
     assert_current_path app_path
   end
 
-  test "a hub card opens its guide" do
+  test "the Kollavy hub card opens its guide" do
     visit collavre.features_path
 
     assert_text I18n.t("collavre.features.index.card_more")
-    find("a[href^='/features/mention_agent']").click
+    find("a[href^='/features/kollavy']").click
 
-    assert_selector "h1", text: I18n.t("collavre.features.pages.mention_agent.title")
+    assert_selector "h1", text: I18n.t("collavre.features.pages.kollavy.title")
   end
 end

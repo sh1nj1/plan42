@@ -1,5 +1,6 @@
 ko:
   collavre_github:
+    tool_category: "GitHub"
     integration:
       label: "GitHub"
       description: "저장소를 연결하고 웹훅 이벤트를 받습니다"

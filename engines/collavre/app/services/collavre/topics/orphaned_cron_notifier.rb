@@ -10,9 +10,10 @@ module Collavre
     class OrphanedCronNotifier
       include Collavre::Crons::RecurringTaskArguments
 
-      def initialize(topic_id:, topic_name:)
+      def initialize(topic_id:, topic_name:, creative_id: nil)
         @topic_id = topic_id
         @topic_name = topic_name
+        @creative_id = creative_id
       end
 
       def call
@@ -31,16 +32,21 @@ module Collavre
         SolidQueue::RecurringTask.where(static: false).filter_map do |task|
           args = parse_arguments(task)
           target = args["topic_id"]
-          next if target.blank?
-          next unless target.to_i == @topic_id.to_i
+          next unless target.present? ? target.to_i == @topic_id.to_i : implicit_main_task?(task, args)
 
           [ task, args ]
         end
       end
 
+      def implicit_main_task?(task, args)
+        return false unless task.class_name == "Collavre::CronActionJob"
+        return false unless @topic_name == Creative::MAIN_TOPIC_NAME && @creative_id.present?
+
+        recurring_task_creative(task, args)&.effective_origin&.id == @creative_id.to_i
+      end
+
       def notify_for(task, args)
-        creative_id = args["creative_id"] || parse_creative_id_from_key(task.key)
-        creative = Creative.find_by(id: creative_id)
+        creative = recurring_task_creative(task, args)
         return unless creative
 
         # The recurring task stores the original (possibly linked/child) creative

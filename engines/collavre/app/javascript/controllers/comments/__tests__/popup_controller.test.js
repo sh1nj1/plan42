@@ -6,6 +6,7 @@
 import { Application } from '@hotwired/stimulus'
 import { jest } from '@jest/globals'
 import CommentsPopupController from '../popup_controller'
+import { focusWhenAvailable } from '../../../lib/utils/focus'
 import chatDrafts from '../../../lib/chat_drafts'
 
 describe('CommentsPopupController', () => {
@@ -40,8 +41,9 @@ describe('CommentsPopupController', () => {
 
         // Manual controller access for testing internals if needed, 
         // though usually better to test via DOM/events.
-        // Waiting for connection:
-        return new Promise(resolve => setTimeout(resolve, 0)).then(() => {
+        // Wait for connection and the deferred URL-open frame before each test.
+        return new Promise(resolve => setTimeout(resolve, 0))
+          .then(() => new Promise(resolve => requestAnimationFrame(resolve))).then(() => {
             const element = document.getElementById('comments-popup')
             controller = application.getControllerForElementAndIdentifier(element, 'comments--popup')
         })
@@ -67,6 +69,51 @@ describe('CommentsPopupController', () => {
         const close = jest.spyOn(controller, 'close').mockImplementation(() => {})
         controller.handleCreativeClick({ detail: { button: document.createElement('button'), workspaceSync: true } })
         expect(close).toHaveBeenCalledTimes(1)
+    })
+
+    test('rebinds chat progress when the tree replaces its rows', async () => {
+        const progress = document.createElement('creative-header-progress')
+        progress.setAttribute('data-comments--popup-target', 'progress')
+        controller.element.appendChild(progress)
+
+        const tree = document.createElement('div')
+        tree.innerHTML = '<creative-tree-row creative-id="123" data-progress-value="0.2"></creative-tree-row>'
+        container.appendChild(tree)
+        await controller.open(document.getElementById('trigger-btn'))
+        expect(progress.value).toBe(0.2)
+
+        tree.innerHTML = '<creative-tree-row creative-id="123" data-progress-value="0.4"></creative-tree-row>'
+        const row = tree.firstElementChild
+        tree.dispatchEvent(new CustomEvent('creative-tree:updated', { bubbles: true }))
+        expect(progress.value).toBe(0.4)
+        expect(row.classList.contains('chat-active')).toBe(true)
+
+        row.dataset.progressValue = '0.6'
+        await Promise.resolve()
+        expect(progress.value).toBe(0.6)
+
+        tree.replaceChildren()
+        tree.dispatchEvent(new CustomEvent('creative-tree:updated', { bubbles: true }))
+        expect(progress.hasAttribute('data-row-progress')).toBe(false)
+        controller.close()
+    })
+
+    test('onboarding URL opens chat on a mobile viewport', () => {
+        const previousWidth = window.innerWidth
+        const previousUrl = window.location.href
+        const trigger = document.getElementById('trigger-btn')
+        trigger.setAttribute('name', 'show-comments-btn')
+        const open = jest.spyOn(controller, 'open').mockImplementation(() => {})
+        try {
+            window.innerWidth = 390
+            window.history.replaceState({}, '', '/creatives/123?open_comments=true')
+            controller.openFromUrl()
+            expect(open).toHaveBeenCalledWith(trigger, { highlightId: undefined })
+        } finally {
+            window.innerWidth = previousWidth
+            window.history.replaceState({}, '', previousUrl)
+            open.mockRestore()
+        }
     })
 
     test('close in fullscreen exits fullscreen state and cleans up body class', () => {
@@ -393,6 +440,30 @@ describe('CommentsPopupController', () => {
         expect(openFromUrl).not.toHaveBeenCalled()
     })
 
+    test('workspace navigation restores chat highlighting on the replacement title without reopening chat', async () => {
+        const popup = document.getElementById('comments-popup')
+        const trigger = document.getElementById('trigger-btn')
+        popup.dataset.docked = 'true'
+        await controller.open(trigger)
+        const open = jest.spyOn(controller, 'open')
+        const title = document.createElement('creative-tree-row')
+        title.setAttribute('creative-id', '123')
+        title.setAttribute('is-title', '')
+        container.appendChild(title)
+
+        controller.handleCreativeClick({ detail: { button: trigger, creativeId: '123', workspaceSync: true } })
+
+        expect(title.classList.contains('chat-active')).toBe(true)
+        expect(open).not.toHaveBeenCalled()
+
+        const replacement = title.cloneNode(false)
+        replacement.classList.remove('chat-active')
+        title.replaceWith(replacement)
+        controller.handleCreativeClick({ detail: { button: trigger, creativeId: '123', workspaceSync: true } })
+        expect(replacement.classList.contains('chat-active')).toBe(true)
+        expect(open).not.toHaveBeenCalled()
+    })
+
     test('same-creative workspace deep links reload only the highlighted comment window', () => {
         const popup = document.getElementById('comments-popup')
         const triggerBtn = document.getElementById('trigger-btn')
@@ -432,6 +503,31 @@ describe('CommentsPopupController', () => {
             topicId: '7',
         })
     })
+
+	test.each([false, true])('click-open autofocus preserves focus moved during topic loading: %s', async moved => {
+		const opener = document.getElementById('trigger-btn')
+		const textarea = document.createElement('textarea')
+		const other = document.createElement('button')
+		container.append(textarea, other)
+		let finishTopicsLoad
+		Object.defineProperty(controller, 'topicsController', { configurable: true, value: {
+			clearOverrideTopicId: jest.fn(),
+			onPopupOpened: () => new Promise(resolve => { finishTopicsLoad = resolve }),
+		} })
+		Object.defineProperty(controller, 'formController', { configurable: true, value: {
+			onPopupOpened: ({ openingControl }) => focusWhenAvailable(textarea, { openingControl }),
+			onPopupClosed: jest.fn(),
+		} })
+		opener.focus()
+		const pendingOpen = controller.open(opener)
+		if (moved) other.focus()
+		finishTopicsLoad()
+		await pendingOpen
+		await new Promise(resolve => requestAnimationFrame(resolve))
+		expect(document.activeElement).toBe(moved ? other : textarea)
+		delete controller.formController
+		delete controller.topicsController
+	})
 
     test('same-creative deep links clear suppression from a canceled pending open', async () => {
         const popup = document.getElementById('comments-popup')

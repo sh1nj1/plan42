@@ -1,6 +1,7 @@
 <div id="inline-edit-form" class="inline-edit-form-shell" style="display:none;">
   <form id="inline-edit-form-element" method="post"
-        data-save-failed-message="<%= t('collavre.creatives.index.save_failed_alert') %>">
+        data-save-failed-message="<%= t('collavre.creatives.index.save_failed_alert') %>"
+        data-discard-failed-draft-message="<%= t('collavre.creatives.index.discard_failed_draft_confirm') %>">
     <input type="hidden" id="inline-method" name="_method" value="patch" />
     <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>" />
     <input type="hidden" id="inline-creative-description" name="creative[description]" />
@@ -19,6 +20,10 @@
          class="lexical-inline-editor"
          data-direct-upload-url="<%= main_app.rails_direct_uploads_path %>"
          data-blob-url-template="<%= main_app.rails_service_blob_path(':signed_id', ':filename') %>"
+         <% (1..3).each do |level| %>
+         data-heading<%= level %>-label="<%= t('collavre.creatives.inline_editor.heading', level: level) %>"
+         <% end %>
+         data-emoji-label="<%= t('collavre.creatives.inline_editor.insert_emoji') %>"
          data-placeholder="<%= t('collavre.creatives.inline_editor.placeholder') %>"></div>
     <div id="markdown-editor-wrapper" class="markdown-editor-wrapper" style="display:none;">
       <textarea id="markdown-editor-textarea"
@@ -107,6 +112,10 @@
                   id="inline-delete"
                   class="popup-menu-item danger-link"
                   title="<%= t('collavre.creatives.index.delete_only_this') %>"
+                  data-delete-label="<%= t('collavre.creatives.index.delete_only_this') %>"
+                  data-delete-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_only_this') %>"
+                  data-remove-link-label="<%= t('collavre.creatives.index.remove_link') %>"
+                  data-remove-link-confirm="<%= t('collavre.creatives.index.are_you_sure_remove_link') %>"
                   data-confirm="<%= t('collavre.creatives.index.are_you_sure_delete_only_this') %>">
             <%= t('collavre.creatives.index.delete_only_this') %>
           </button>

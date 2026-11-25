@@ -1,6 +1,64 @@
 require "test_helper"
 
 class CreativeLinkedTest < ActiveSupport::TestCase
+  test "link removal checks the shell owner and retains the access scope boundary" do
+    owner = users(:one)
+    viewer = users(:two)
+    original = Creative.create!(user: owner, description: "Original")
+    link = Creative.create!(user: viewer, origin: original)
+
+    assert_equal owner, link.user
+    assert link.destroyable_by?(viewer)
+    assert_not link.destroyable_by?(nil)
+    assert original.destroyable_by?(owner)
+    assert_not original.destroyable_by?(viewer)
+    Collavre::Kollavy::AccessScope.stub :allowed?, false do
+      assert_not link.destroyable_by?(viewer)
+    end
+  end
+
+  test "direct shell destruction preserves links while original destruction still cascades" do
+    original = Creative.create!(user: users(:one), description: "Original")
+    link = Creative.create!(user: users(:two), origin: original)
+    downstream = Creative.create!(user: users(:one), origin: link)
+
+    link.destroy!
+
+    assert_equal original.id, downstream.reload.origin_id
+    assert_equal original, downstream.effective_origin
+    original.destroy!
+    assert_not Creative.exists?(downstream.id)
+  end
+
+  test "original destruction cascades through intact chained links" do
+    original = Creative.create!(user: users(:one), description: "Original")
+    link = Creative.create!(user: users(:two), origin: original)
+    downstream = Creative.create!(user: users(:one), origin: link)
+    tail = Creative.create!(user: users(:two), origin: downstream)
+    original.linked_creatives.load
+    link.linked_creatives.load
+
+    original.destroy!
+
+    [ original, link, downstream, tail ].each do |creative|
+      assert_not Creative.exists?(creative.id)
+    end
+  end
+
+  test "aborted shell destruction rolls back downstream repointing" do
+    original = Creative.create!(user: users(:one), description: "Original")
+    link = Creative.create!(user: users(:two), origin: original)
+    downstream = Creative.create!(user: users(:one), origin: link)
+    link.define_singleton_method(:preserve_downstream_links) do
+      super()
+      throw :abort
+    end
+
+    assert_not link.destroy
+    assert_equal link.id, downstream.reload.origin_id
+    assert Creative.exists?(link.id)
+  end
+
   test "children created under a linked creative are redirected to origin" do
     owner = User.create!(email: "owner@example.com", password: "password", name: "Owner")
     viewer = User.create!(email: "viewer@example.com", password: "password", name: "Viewer")

@@ -17,6 +17,20 @@ en:
       show:
         tips: "Tips"
       pages:
+        kollavy:
+          title: "Kollavy AI Agent"
+          tagline: "Your built-in guide to Collavre."
+          meta_description: "Learn how to ask Kollavy about Collavre features and get help organizing Creatives, topics, and schedules."
+          sections:
+            - heading: "Start a conversation"
+              body: "Open Inbox → Main and ask a question. When Kollavy is the topic’s primary agent, it replies without a mention. If you have changed the primary agent, use @Kollavy: instead. System is the notification topic, so use Main for questions."
+            - heading: "Ask about Collavre"
+              body: "Try “How do I share a Creative?” or “How do I split a conversation into topics?” Kollavy checks the running app’s source code to explain the features and controls available in your version."
+            - heading: "Get help with your work"
+              body: "Kollavy can help create and organize Creatives, manage topics, and set schedules. Open the target Creative’s chat and share it with Kollavy: comment permission to reply, write permission to edit. Each conversation is limited to that Creative and its descendants. Changes wait for your approval."
+          tips:
+            - "Example: @Kollavy: How do I connect another Creative as context?"
+            - "Kollavy is added to Inbox during setup. If its access was removed, share the Creative with it again before asking."
         mention_agent:
           title: "Mention teammates & agents"
           tagline: "Address one participant directly, and only that participant answers."

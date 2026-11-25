@@ -17,8 +17,11 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
   end
 
   def open_inline_editor(creative)
-    find("#creative-#{creative.id}").hover
-    find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    # Saving can replace the row and its hover-revealed button between actions.
+    page.document.synchronize(5) do
+      find("#creative-#{creative.id}").hover
+      find("#creative-#{creative.id} .edit-inline-btn", wait: 5).click
+    end
     assert_selector "#inline-edit-form-element", wait: 5
   end
 
@@ -68,10 +71,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
   def expand_creative(creative)
     wait_for_network_idle(timeout: 10)
-    find("#creative-#{creative.id}").hover
-    # Force visibility for test stability as hover can be flaky
-    execute_script("document.querySelector('#creative-#{creative.id} .creative-toggle-btn').style.visibility = 'visible'")
-    find("#creative-#{creative.id} .creative-toggle-btn", wait: 5).click
+    toggle_selector = "#creative-#{creative.id} .creative-toggle-btn:has(svg)"
+    page.document.synchronize(5) do
+      # A childless row has an empty placeholder, and saving can replace the row.
+      toggle = find(toggle_selector, visible: :all, wait: 0)
+      page.execute_script("arguments[0].style.visibility = 'visible'", toggle)
+      toggle.click
+    end
   end
 
   def attach_inline_image(file_path)
@@ -82,6 +88,85 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     )
     input.attach_file(file_path)
     assert_selector "img", wait: 10
+  end
+
+  test "emoji toolbar inserts at the caret and persists after saving" do
+    open_inline_editor(@root_creative)
+    assert_selector ".lexical-toolbar > .lexical-toolbar-separator[aria-hidden='true'] + .lexical-emoji-picker:last-child"
+    assert page.evaluate_script(<<~JS)
+    (() => {
+      const picker = document.querySelector('.lexical-emoji-picker')
+      const separator = picker.previousElementSibling
+      const gap = parseFloat(getComputedStyle(picker.parentElement).columnGap) || 0
+      const margin = parseFloat(getComputedStyle(separator).marginRight) || 0
+      return Math.abs(picker.getBoundingClientRect().left - separator.getBoundingClientRect().right - gap - margin) < 1
+    })()
+    JS
+    field = inline_editor_field
+    field.click
+    field.send_keys(:end)
+    find(".lexical-emoji-picker > button").click
+    assert_selector ".lexical-emoji-picker__popup[role='dialog']"
+    assert_selector ".lexical-emoji-picker__popup button", count: 56
+    assert page.evaluate_script(<<~JS)
+    (() => {
+      const popup = document.querySelector('.lexical-emoji-picker__popup').getBoundingClientRect()
+      const trigger = document.querySelector('.lexical-emoji-picker').getBoundingClientRect()
+      return Math.abs(popup.left - trigger.left) < 1 && popup.left >= 0
+    })()
+    JS
+    find(".lexical-emoji-picker__popup button", text: "🔖", exact_text: true).click
+    assert_no_selector ".lexical-emoji-picker__popup"
+    assert_text "Root🔖"
+    close_inline_editor
+    assert_selector "#creative-#{@root_creative.id}", text: "Root🔖"
+    open_inline_editor(@root_creative)
+    assert_equal "Root🔖", inline_editor_field.text
+  end
+
+  test "emoji popup stays inside narrow viewports for an indented creative" do
+    child = Creative.create!(description: "Child", user: @user, parent: @root_creative)
+    visit collavre.creative_path(@root_creative)
+    open_inline_editor(child)
+    # Reserve scrollbar space on macOS too, matching the Linux CI viewport.
+    page.execute_script(<<~JS)
+      const style = document.createElement('style')
+      style.textContent = 'html { overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; height: 15px; }'
+      document.head.appendChild(style)
+    JS
+    # Chrome window resizing can clamp narrow widths to 500px; emulate the viewport instead.
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height: 700, deviceScaleFactor: 1, mobile: false)
+    find(".lexical-emoji-picker > button").click
+    [ 375, 320, 768 ].each do |width|
+      page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: width, height: 700, deviceScaleFactor: 1, mobile: false)
+      assert_equal width, page.evaluate_script("window.innerWidth")
+      assert_equal width - 15, page.evaluate_script("document.documentElement.clientWidth")
+      # WebDriver can return before the browser dispatches resize and repositions the popup.
+      assert_selector ".lexical-emoji-picker__popup" do
+        page.evaluate_script(<<~JS)
+          (() => {
+            const popup = document.querySelector('.lexical-emoji-picker__popup')
+            const rect = popup.getBoundingClientRect()
+            return rect.left >= 7 && rect.right <= document.documentElement.clientWidth - 7 &&
+              popup.scrollWidth <= popup.clientWidth
+          })()
+        JS
+      end
+    end
+    find(".lexical-emoji-picker__popup button", text: "🔍", exact_text: true).click
+    assert_text "🔍"
+  ensure
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+  end
+
+  test "escape dismisses emoji popup without closing the editor" do
+    open_inline_editor(@root_creative)
+    inline_editor_field.click
+    find(".lexical-emoji-picker > button").click
+    page.driver.browser.switch_to.active_element.send_keys(:escape)
+    assert_no_selector ".lexical-emoji-picker__popup"
+    assert_selector ".lexical-content-editable"
+    assert_selector ".lexical-emoji-picker > button:focus"
   end
 
   test "shows saved row when starting another addition" do
@@ -97,14 +182,18 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     fill_inline_editor("Second child")
     close_inline_editor
 
-    expand_creative(@root_creative)
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row", count: 2, wait: 5, visible: :all
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
-    assert_selector "#creative-children-#{@root_creative.id} > creative-tree-row:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      saved_descriptions = @root_creative.children.order(:created_at).pluck(:description).map do |description|
+        ActionController::Base.helpers.strip_tags(description)
+      end
+      assert_equal [ "First child", "Second child" ], saved_descriptions
+    end
 
-    @root_creative.reload
-    first_child = @root_creative.children.order(:created_at).first
-    assert_equal "First child", ActionController::Base.helpers.strip_tags(first_child.description)
+    expand_creative(@root_creative)
+    child_rows = "#creative-children-#{@root_creative.id} > creative-tree-row"
+    assert_selector child_rows, count: 2, wait: 5, visible: :all
+    assert_selector "#{child_rows}:nth-of-type(1) > .creative-tree .creative-row", text: "First child", visible: :all
+    assert_selector "#{child_rows}:nth-of-type(2) > .creative-tree .creative-row", text: "Second child", visible: :all
   end
 
   test "supports keyboard shortcuts for add and close" do
@@ -118,7 +207,7 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     fill_inline_editor("Second child")
     inline_editor_field.send_keys(:escape)
-    sleep 0.5
+    assert_no_selector ".lexical-content-editable", wait: 10
 
     expand_creative(@root_creative)
 
@@ -217,6 +306,9 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
     assert_selector ".lexical-content-editable a", text: "second.txt", wait: 10
     close_inline_editor
 
+    assert_no_selector "#creative-#{@root_creative.id}[data-save-state]", visible: :all, wait: 10
+    assert_selector "#creative-#{@root_creative.id} .creative-content a", text: "first.txt"
+    assert_selector "#creative-#{@root_creative.id} .creative-content a", text: "second.txt"
     assert_equal [ "first.txt", "second.txt" ], @root_creative.reload.files.map { |file| file.filename.to_s }.sort
     open_inline_editor(@root_creative)
     assert_selector ".lexical-content-editable a", text: "first.txt"
@@ -234,14 +326,13 @@ class CreativeInlineEditTest < ApplicationSystemTestCase
 
     close_inline_editor
 
-    @root_creative.reload
-    wait_for_network_idle(timeout: 10)
-
     assert_selector "#creative-#{@root_creative.id} .creative-content img",
                     count: 1,
                     wait: 5,
                     visible: :all
-    assert_equal 1, @root_creative.description.scan(/<img/).length
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal 1, @root_creative.reload.description.scan(/<img/).length
+    end
 
     open_inline_editor(@root_creative)
     assert_selector ".lexical-content-editable img", count: 1, wait: 5

@@ -158,7 +158,8 @@ class WorkspaceTreeDrawerTest < ApplicationSystemTestCase
       end
 
       control.click
-      assert_selector "creative-tree-row[dom-id='creative-#{branches.last.id}'][expanded]"
+      # Expansion waits for the lazy children request, which can be slow on CI.
+      assert_selector "creative-tree-row[dom-id='creative-#{branches.last.id}'][expanded]", wait: 10
       assert_no_selector ".creative-workspace-tree-region.is-open"
       assert_toggle_within_viewport
       find(".creative-workspace-tree-toggle").click

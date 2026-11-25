@@ -99,6 +99,137 @@ describe('FormController - draft persistence', () => {
     jest.restoreAllMocks()
   })
 
+  describe('focus ownership', () => {
+    let frames
+    beforeEach(() => {
+      frames = []
+      jest.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback))
+    })
+    const flush = () => frames.splice(0).forEach(callback => callback())
+    const otherInput = () => {
+      const input = document.createElement('input')
+      container.append(input)
+      input.focus()
+      return input
+    }
+
+    test('permission refresh does not request focus even with nothing else focused', () => {
+      const focus = jest.spyOn(controller, 'focusTextarea')
+      controller.setCommentPermission(true)
+      flush()
+      expect(focus).not.toHaveBeenCalled()
+      expect(document.activeElement).not.toBe(controller.textareaTarget)
+    })
+
+    test('opening the popup respects another input', () => {
+      const input = otherInput()
+      controller.onPopupOpened({ creativeId: '77', canComment: true })
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    test('a deferred list focus respects an input selected before the frame', () => {
+      controller.focusTextarea()
+      const input = otherInput()
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    const voiceResult = () => controller.handleRecognitionResult({
+      resultIndex: 0,
+      results: [[{ transcript: 'spoken text' }]],
+    })
+    const focusVoiceButton = () => {
+      controller.voiceButtonTarget.style.display = ''
+      controller.voiceButtonTarget.focus()
+      jest.spyOn(controller, 'setupSpeechRecognition').mockReturnValue(true)
+      jest.spyOn(controller, 'tryStartRecognition').mockImplementation(() => {})
+      controller.startSpeechRecognition()
+    }
+
+    test('voice results focus the composer from the voice button', () => {
+      focusVoiceButton()
+      controller.textareaTarget.value = 'Existing'
+      voiceResult()
+      flush()
+      expect(controller.textareaTarget.value).toBe('Existing spoken text')
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test.each(['button', 'a'])('voice results restore focus when activation leaves a stale %s focused', (tag) => {
+      const stale = document.createElement(tag)
+      if (tag === 'a') stale.href = '#prior'
+      container.append(stale)
+      focusVoiceButton()
+      controller.listening = false
+      stale.focus()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test('voice results preserve an input focused when recognition starts', () => {
+      focusVoiceButton()
+      controller.listening = false
+      const input = otherInput()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(input)
+    })
+
+    test('an already active recognition session retains its initial focus owner', () => {
+      focusVoiceButton()
+      controller.submitTarget.focus()
+      controller.startSpeechRecognition()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve focus moved while recognition is pending', () => {
+      focusVoiceButton()
+      controller.submitTarget.focus()
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve a different button selected before the frame', () => {
+      focusVoiceButton()
+      voiceResult()
+      controller.submitTarget.focus()
+      flush()
+      expect(document.activeElement).toBe(controller.submitTarget)
+    })
+
+    test('voice results preserve an open creative editor', () => {
+      focusVoiceButton()
+      const editor = document.createElement('form')
+      editor.id = 'inline-edit-form'
+      container.append(editor)
+      voiceResult()
+      flush()
+      expect(document.activeElement).toBe(controller.voiceButtonTarget)
+    })
+
+    test('comment editing explicitly focuses the composer', () => {
+      otherInput()
+      controller.startEditing({ id: '1', content: 'edit me' })
+      flush()
+      expect(document.activeElement).toBe(controller.textareaTarget)
+    })
+
+    test('revoked permission cancels queued focus', () => {
+      const focus = jest.spyOn(controller.textareaTarget, 'focus')
+      controller.focusTextarea()
+      controller.setCommentPermission(false)
+      flush()
+      expect(focus).not.toHaveBeenCalled()
+    })
+  })
+
   test('restores a saved draft when the popup opens for that chat', () => {
     chatDrafts.set('77', 'unfinished thought')
     dispatchTopicChange('77')
@@ -2118,14 +2249,6 @@ describe('FormController - draft persistence', () => {
     controller.insertCreativeLinks([])
     expect(controller.textareaTarget.value).toBe('See')
     expect(input).not.toHaveBeenCalled()
-  })
-
-  test('single-link callers preserve the shared insertion behavior', () => {
-    controller.textareaTarget.value = 'See'
-    controller.textareaTarget.setSelectionRange(3, 3)
-    controller.insertCreativeLink({ id: '10', label: 'Task' })
-    expect(controller.textareaTarget.value).toBe('See [Task](/creatives/10) ')
-    expect(document.activeElement).toBe(controller.textareaTarget)
   })
 
 })

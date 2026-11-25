@@ -10,7 +10,7 @@ export function getCreativeLabelFromDom(creativeId) {
 
 function getWorkspaceLabel(creativeId) {
   const link = document.querySelector(`.creative-workspace-tree-row[data-creative-id="${creativeId}"] .creative-workspace-tree-link`)
-  return link ? link.textContent.trim() : null
+  return link ? (link.dataset.originalLabel || link.textContent).trim() : null
 }
 
 

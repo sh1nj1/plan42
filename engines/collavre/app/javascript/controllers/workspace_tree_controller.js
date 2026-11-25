@@ -27,6 +27,7 @@ export default class extends Controller {
     lastVisitedCreativeVisitToken: String,
     lastVisitedCreativeVisitSequence: Number,
     currentPath: Array,
+    initialExpandedIds: Array,
     loadingText: String,
     emptyText: String,
     errorText: String,
@@ -34,9 +35,10 @@ export default class extends Controller {
   }
 
   connect() {
-    this.expandedCreativeIds = new Set()
+    // Saved IDs are ancestor-first; reserve room for the selected path.
+    this.expandedCreativeIds = new Set([...this.currentPathValue, ...this.initialExpandedIdsValue].map(String))
+    this.expandedCreativeIds = new Set([...this.expandedCreativeIds].slice(0, MAX_EXPANDED_BRANCHES))
     this.pendingDropDestinationIds = new Set()
-    this.addExpandedPath(this.currentPathValue)
     this.committedExpandedCreativeIds = new Set(this.expandedCreativeIds)
     this.invalidatedCreativeIds = new Set()
     this.destroyedCreativeIds = new Set()
@@ -225,7 +227,7 @@ export default class extends Controller {
     const link = document.createElement('a')
     link.href = node.url
     link.draggable = false
-    link.textContent = node.label
+    link.textContent = link.dataset.originalLabel = node.label
     link.className = 'creative-workspace-tree-link'
     link.dataset.turboFrame = 'creative-workspace-content'
     link.dataset.turboAction = 'advance'
@@ -383,8 +385,7 @@ export default class extends Controller {
   }
 
   togglePanel() {
-    const open = this.element.classList.toggle('is-open')
-    this.panelToggleTarget.setAttribute('aria-expanded', String(open))
+    this.panelToggleTarget.setAttribute('aria-expanded', String(this.element.classList.toggle('is-open')))
   }
 
   closePanel() {
@@ -715,7 +716,9 @@ export default class extends Controller {
     if (!viewState) return
 
     this.treeTarget.scrollTop = viewState.scrollTop
-    if (!viewState.focusCreativeId || !viewState.focusControl) return
+    // Replacing a focused sidebar node leaves focus on the body. A control
+    // focused while the request was in flight should keep its focus.
+    if (!viewState.focusCreativeId || !viewState.focusControl || document.activeElement !== document.body) return
 
     const item = [...this.treeTarget.querySelectorAll('.creative-workspace-tree-item[data-creative-id]')]
       .find((candidate) => candidate.dataset.creativeId === String(viewState.focusCreativeId))

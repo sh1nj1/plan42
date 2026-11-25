@@ -15,6 +15,21 @@ describe('creatives API workspace invalidation', () => {
     csrfFetch.mockReset()
   })
 
+  test.each([
+    [false, '/creatives/42'],
+    [true, '/creatives/42?delete_with_children=true'],
+  ])('requests a non-navigational JSON delete with children=%s', async (withChildren, url) => {
+    const response = { ok: true, status: 204 }
+    csrfFetch.mockResolvedValue(response)
+
+    await expect(creativesApi.destroy(42, withChildren)).resolves.toBe(response)
+
+    expect(csrfFetch).toHaveBeenCalledWith(url, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    })
+  })
+
   test('invalidates the workspace tree after a successful mutation', async () => {
     const listener = jest.fn()
     document.addEventListener('workspace-tree:invalidate', listener)

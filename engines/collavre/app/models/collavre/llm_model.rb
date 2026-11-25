@@ -4,6 +4,7 @@ module Collavre
     MAX_VENDOR_LENGTH = 255
     MAX_NAME_LENGTH = 255
     DEFAULT_SUGGESTIONS = [
+      [ "google", "gemini-3.5-flash-lite" ],
       [ "cli_proxy", "paperclip/codex_custom/anthropic/claude-sonnet-4.5" ],
       [ "cli_proxy", "paperclip/codex_custom/openai/gpt-5" ]
     ].freeze

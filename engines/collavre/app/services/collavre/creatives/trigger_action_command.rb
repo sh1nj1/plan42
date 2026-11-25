@@ -16,7 +16,7 @@ module Collavre
       end
 
       def initialize(creative:, user:, action:, enabled: nil)
-        @creative = creative
+        @creative = %w[pause resume restart].include?(action) ? creative.trigger_loop_control_target : creative
         @user = user
         @action = action
         @enabled = enabled
@@ -25,6 +25,10 @@ module Collavre
       def call
         return failure(:unprocessable_entity, "collavre.drop_trigger.unknown_action") unless ACTIONS.include?(action)
         return failure(:forbidden, "collavre.creatives.errors.no_permission") unless target.has_permission?(user, :write)
+
+        if %w[resume restart].include?(action) && creative.keep_loop_agent_unavailable?
+          return failure(:unprocessable_entity, "collavre.comments.keep_command.agent_not_authorized")
+        end
 
         @transitioned_loop_data = nil
         outcome = send(action)
@@ -64,52 +68,114 @@ module Collavre
 
       def resume
         transition_loop(RESUMABLE_STATES) { |loop_data| loop_data["state"] = "running" }
-        post_continue_to_agent if @transitioned_loop_data
       end
 
       def restart
         transition_loop(RESTARTABLE_STATES) do |loop_data|
           loop_data.merge!("state" => "running", "current_iteration" => 0, "infra_retry_count" => 0)
         end
-        post_restart_trigger if @transitioned_loop_data
       end
 
       def transition_loop(allowed_states)
-        creative.with_lock do
-          data = (creative.data || {}).deep_dup
-          loop_data = data.dig("trigger", "loop")
-          return unless loop_data && allowed_states.include?(loop_data["state"])
+        snapshot = creative.data&.dig("trigger", "loop")&.deep_dup
+        topic_id = control_topic_id(creative.data&.dig("trigger", "loop"))
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          creative.with_lock do
+            data = (creative.data || {}).deep_dup
+            loop_data = data.dig("trigger", "loop")
+            return unless loop_data && allowed_states.include?(loop_data["state"])
+            next unless control_admitted?(loop_data, snapshot)
 
-          yield loop_data
-          creative.update!(data: data)
-          @transitioned_loop_data = loop_data
+            yield loop_data
+            advance_control!(data, loop_data)
+            creative.update!(data: data)
+            @transitioned_loop_data = loop_data
+            post_continue_to_agent if action == "resume"
+            post_restart_trigger if action == "restart"
+          end
         end
       end
 
-      def post_continue_to_agent
-        parent, topic, agent = trigger_context
-        return log_missing_context("resume", topic) unless parent && topic && agent
+      def advance_control!(data, loop_data)
+        loop_data["generation"] = KeepLoop.next_generation!(data) if loop_data["source"] == "keep"
+        loop_data["control_version"] = loop_data.fetch("control_version", 0) + 1
+      end
 
-        content = "@#{agent.name}: #{I18n.t(
+      def control_admitted?(current, snapshot)
+        return false unless snapshot
+
+        return false unless current.slice("state", "control_version", "source") == snapshot.slice("state", "control_version", "source")
+
+        if snapshot["source"] == "keep" && snapshot["generation"]
+          KeepLoop.admit!(creative, generation: snapshot["generation"], comment_id: snapshot["current_comment_id"])
+        else
+          # Drop and legacy controls retain their pre-generation anchor fence.
+          keys = %w[start_comment_id current_comment_id trigger_topic_id]
+          current.slice(*keys) == snapshot.slice(*keys)
+        end
+      end
+
+      def control_topic_id(loop_data)
+        loop_data&.dig("trigger_topic_id") || creative.topics.find_by(name: "Drop Trigger")&.id
+      end
+
+      def post_continue_to_agent
+        with_transitioned_loop { post_guarded_continue }
+      end
+
+      def with_transitioned_loop
+        topic_id = control_topic_id(@transitioned_loop_data)
+        Comments::TopicMutation.call(topic_id, creative.id) do
+          creative.with_lock do
+            next unless creative.data&.dig("trigger", "loop") == @transitioned_loop_data
+            next unless @transitioned_loop_data["state"] == "running"
+            if creative.keep_loop_agent_unavailable?
+              creative.update!(data: creative.data.deep_merge("trigger" => { "loop" => { "state" => "awaiting_user" } }))
+              next
+            end
+
+            yield
+          end
+        end
+      end
+
+      def post_guarded_continue
+        parent, topic, agent = trigger_context
+        return log_missing_context("resume", topic) unless parent && topic && (agent || @transitioned_loop_data["source"] == "keep")
+
+        content = "#{"@#{agent.name}: " if agent}#{I18n.t(
           'collavre.trigger_loop.continue',
           iteration: @transitioned_loop_data["current_iteration"] || 0,
           max: @transitioned_loop_data["max_iterations"] || 10
         )}"
-        comment = create_trigger_comment(topic, content, skip_dispatch: false)
+        comment = create_trigger_comment(topic, content, skip_dispatch: true)
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+          source: "comment_callback", records: Orchestration::DispatchRecords.for_comment(comment), require_enqueue_ack: creative.keep_loop?)
+        comment.send(:reconcile_loop_dispatch, scheduled)
         Rails.logger.info("[TriggerAction] resume: posted continue comment #{comment.id} for creative #{creative.id}")
       end
 
       def post_restart_trigger
-        parent, topic, agent = trigger_context
-        return log_missing_context("restart", topic) unless parent && topic && agent
+        with_transitioned_loop { post_guarded_restart }
+      end
 
-        content = "@#{agent.name}: #{restart_message(parent)}"
+      def post_guarded_restart
+        parent, topic, agent = trigger_context
+        return log_missing_context("restart", topic) unless parent && topic && (agent || @transitioned_loop_data["source"] == "keep")
+
+        content = "#{"@#{agent.name}: " if agent}#{restart_message(parent)}"
         comment = create_trigger_comment(topic, content, skip_dispatch: true)
-        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload, source: "trigger_restart")
+        scheduled = SystemEvents::Dispatcher.dispatch("comment_created", comment.dispatch_payload,
+          source: "trigger_restart", require_enqueue_ack: creative.keep_loop?)
+        comment.send(:reconcile_loop_dispatch, scheduled)
         Rails.logger.info("[TriggerAction] restart: posted trigger comment #{comment.id}, dispatched to #{scheduled&.size || 0} agents")
       end
 
       def restart_message(parent)
+        if @transitioned_loop_data["source"] == "keep"
+          return [ @transitioned_loop_data["goal"], I18n.t("collavre.trigger_loop.instructions") ].join("\n\n")
+        end
+
         trigger_text = I18n.t(
           "collavre.drop_trigger.child_entered",
           child_description: creative.creative_snippet,
@@ -120,8 +186,14 @@ module Collavre
       end
 
       def trigger_context
-        parent = creative.parent
-        [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write) ]
+        parent = creative.trigger_loop_context
+        loop_data = creative.data&.dig("trigger", "loop") || {}
+        if loop_data["source"] == "keep"
+          agent = creative.trigger_loop_agent
+          [ parent, creative.topics.find_by(id: loop_data["trigger_topic_id"]), agent ]
+        else
+          [ parent, creative.topics.find_by(name: "Drop Trigger"), parent&.find_ai_agent(:write, capability: :chat) ]
+        end
       end
 
       def create_trigger_comment(topic, content, skip_dispatch:)
@@ -130,7 +202,7 @@ module Collavre
           topic_id: topic.id,
           private: false,
           user: user,
-          skip_dispatch: skip_dispatch
+          loop_continuation: true, skip_dispatch: skip_dispatch
         )
       end
 

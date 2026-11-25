@@ -99,6 +99,96 @@ module Collavre
       assert_empty destination.comments.where(content: "Stale scheduled check-in")
     end
 
+    test "an enqueued implicit Main action does not recreate a deleted Main" do
+      @creative.main_topic.destroy!
+      main = @creative.main_topic(fallback_user: @agent)
+      travel 1.second do
+        job = queued_main_action
+        main.destroy!
+
+        assert_no_difference([ "Comment.count", "Topic.count" ]) do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Cancelled cron must not dispatch" }) do
+            job.perform_now
+          end
+        end
+      end
+    end
+
+    test "an enqueued implicit Main action does not post to a replacement Main" do
+      main = @creative.main_topic
+      travel 1.second do
+        job = queued_main_action
+        main.destroy!
+        travel 1.second
+        replacement = @creative.main_topic(fallback_user: @agent)
+        assert_no_difference("Comment.count") do
+          SystemEvents::Dispatcher.stub(:dispatch, ->(*) { flunk "Cancelled cron must not dispatch" }) do
+            job.perform_now
+          end
+        end
+        assert_empty replacement.comments
+      end
+    end
+
+    test "an enqueued implicit Main action posts while its original Main still exists" do
+      @creative.main_topic
+      travel 1.second do
+        job = queued_main_action
+        SystemEvents::Dispatcher.stub(:dispatch, []) do
+          assert_difference(-> { @creative.comments.where(content: "Queued check-in").count }, 1) { job.perform_now }
+        end
+        assert_equal @creative.main_topic.id, @creative.comments.order(:id).last.topic_id
+      end
+    end
+
+    test "a newly enqueued implicit Main action can post after replacement" do
+      @creative.main_topic.destroy!
+      replacement = @creative.main_topic(fallback_user: @agent)
+      travel 1.second do
+        SystemEvents::Dispatcher.stub(:dispatch, []) do
+          assert_difference(-> { @creative.comments.where(content: "Queued check-in").count }, 1) { queued_main_action.perform_now }
+        end
+        assert_equal replacement.id, @creative.comments.order(:id).last.topic_id
+      end
+    end
+
+    test "an implicit Main action for a linked creative cannot target a replacement origin Main" do
+      linked = Creative.create!(description: "Linked cron", user: @user, origin: @creative)
+      main = @creative.main_topic
+      travel 1.second do
+        job = queued_main_action(creative_id: linked.id)
+        main.destroy!
+        travel 1.second
+        @creative.main_topic(fallback_user: @agent)
+
+        assert_no_difference("Comment.count") { job.perform_now }
+      end
+    end
+
+    test "an implicit Main action skips deletion between resolution and insertion" do
+      main = @creative.main_topic
+      travel 1.second do
+        job = queued_main_action
+        original = Comments::TopicMutation.method(:call)
+        Comments::TopicMutation.stub(:call, ->(*args, &block) {
+          main.destroy!
+          original.call(*args, &block)
+        }) do
+          assert_no_difference("Comment.count") { job.perform_now }
+        end
+      end
+    end
+
+    def queued_main_action(creative_id: @creative.id)
+      adapter = ActiveJob::QueueAdapters::TestAdapter.new
+      CronActionJob.stub(:queue_adapter, adapter) do
+        CronActionJob.perform_later(
+          creative_id: creative_id, topic_id: nil, agent_id: @agent.id, message: "Queued check-in"
+        )
+      end
+      ActiveJob::Base.deserialize(adapter.enqueued_jobs.last)
+    end
+
     # `topic_id: nil` describes the cron's *argument*, not the row: the comment
     # goes through Comment#assign_main_topic, which files it under the
     # creative's real Main topic. A payload that repeats the argument therefore

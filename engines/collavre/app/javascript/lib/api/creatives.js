@@ -66,7 +66,7 @@ export function save(action, method, form) {
   return csrfFetch(action, {
     method,
     headers: JSON_HEADERS,
-    body: new FormData(form),
+    body: form instanceof FormData ? form : new FormData(form),
   }).then(invalidateWorkspaceTreeOnSuccess)
 }
 
@@ -86,6 +86,7 @@ export function destroy(id, withChildren = false) {
   const query = withChildren ? '?delete_with_children=true' : ''
   return csrfFetch(`/creatives/${id}${query}`, {
     method: 'DELETE',
+    headers: JSON_HEADERS,
   }).then(invalidateWorkspaceTreeOnSuccess)
 }
 

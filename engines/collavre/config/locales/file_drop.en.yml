@@ -1,0 +1,5 @@
+en:
+  collavre:
+    creatives:
+      file_drop:
+        failed: "Could not attach the files. Refresh to check the result before retrying."

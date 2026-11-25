@@ -65,11 +65,6 @@ export default class extends Controller {
             if (!response.ok) return
 
             const users = await response.json()
-            // format: [{ id, email, display_name, avatar_url }, ...] (assuming API structure)
-            // If the API returns something else, I'll need to adjust.
-            // Based on typical Rails users/search?q=..., it likely returns a list of users.
-            // I'll assume they have email and display_name.
-
             const items = users.map(user => ({
                 value: user.email,
                 label: user.name || user.email, // fallback
@@ -94,12 +89,7 @@ export default class extends Controller {
     }
 
     handleKey(event) {
-        console.log('ShareUserSearchController handleKey', event.key, this.popup?.isOpen(), this.popup?.items?.length)
-        // Delegate key handling to the popup
-        if (this.popup?.handleKey(event)) {
-            // If popup handled it, query is consumed
-            console.log('Popup handled key')
-        }
+        this.popup?.handleKey(event)
     }
 
     renderItem(item) {

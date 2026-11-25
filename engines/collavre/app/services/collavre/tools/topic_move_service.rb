@@ -99,8 +99,7 @@ module Tools
     end
 
     def released_agent_message(agent, reason, target)
-      key = reason == :session_agent_outside_session_topic ?
-        "primary_agent_released_session_agent" : "primary_agent_released"
+      key = Topics::PinRejection.release_locale_key(reason)
       I18n.t("collavre.topics.move.#{key}", agent: agent.display_name, creative: target.creative_snippet)
     end
   end

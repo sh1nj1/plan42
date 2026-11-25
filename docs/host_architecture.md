@@ -46,7 +46,6 @@ collavre/
 ├── engines/
 │   ├── collavre/                 # Core engine (users, creatives, permissions)
 │   ├── collavre_openclaw/        # OpenClaw AI agent integration
-│   ├── collavre_notion/          # Notion export integration
 │   ├── collavre_github/          # GitHub integration (OAuth, webhooks, PR tools)
 │   ├── collavre_slack/           # Slack integration (channel sync, message dispatch)
 │   ├── collavre_completion_api/  # OpenAI-compatible chat completion API
@@ -62,8 +61,6 @@ collavre/
 - **OpenClaw (`engines/collavre_openclaw/`)** — AI agent integration via the
   OpenClaw Gateway, an OpenAI-compatible API adapter, and async callback handling
   with nonce authentication.
-- **Notion (`engines/collavre_notion/`)** — Notion OAuth, creative-tree export to
-  Notion pages, and block-level sync tracking.
 - **GitHub (`engines/collavre_github/`)** — GitHub OAuth, repository link
   management, and webhook provisioning + PR tool services.
 - **Slack (`engines/collavre_slack/`)** — Slack OAuth and channel linking,
@@ -81,9 +78,9 @@ collavre/
 
 Each engine uses `isolate_namespace`:
 ```ruby
-module CollavreNotion
+module CollavreSlack
   class Engine < ::Rails::Engine
-    isolate_namespace CollavreNotion
+    isolate_namespace CollavreSlack
   end
 end
 ```
@@ -95,9 +92,9 @@ Models are namespaced: `Collavre::Creative`, `CollavreOpenclaw::OpenclawAccount`
 Engines inject associations into core models via initializers rather than taking
 a direct dependency:
 ```ruby
-initializer "collavre_notion.user_associations" do
+initializer "collavre_slack.user_associations" do
   Rails.application.config.to_prepare do
-    Collavre.user_class.has_one :notion_account, class_name: "CollavreNotion::NotionAccount"
+    Collavre.user_class.has_one :slack_account, class_name: "CollavreSlack::SlackAccount"
   end
 end
 ```

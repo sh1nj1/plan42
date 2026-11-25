@@ -42,6 +42,147 @@ describe('CommentUserMenuController', () => {
     jest.restoreAllMocks()
   })
 
+  describe('primary agent button', () => {
+    let topics
+    let button
+    const event = () => ({ stopPropagation: jest.fn() })
+
+    beforeEach(() => {
+      button = document.createElement('button')
+      button.dataset.commentUserMenuTarget = 'primaryAgent'
+      button.dataset.setText = 'Set primary agent'
+      button.dataset.clearText = 'Clear primary agent'
+      controller.element.appendChild(button)
+      topics = {
+        canSetPrimaryAgent: true,
+        currentTopicId: '1',
+        topics: [{ id: 1, name: 'Main' }, { id: 2, name: 'Other' }],
+        setTopicPrimaryAgent: jest.fn().mockResolvedValue(undefined),
+      }
+      jest.spyOn(application, 'getControllerForElementAndIdentifier').mockImplementation((_element, identifier) => (
+        identifier === 'comments--topics' ? topics : null
+      ))
+    })
+
+    test('assigns Main through the existing API and keeps the menu click contained', async () => {
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(false)
+      const click = event()
+      await controller.setPrimaryAgent(click)
+      expect(click.stopPropagation).toHaveBeenCalled()
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(1, { id: 9 })
+    })
+
+    test('resolves the selected topic again at click time', async () => {
+      controller.syncPrimaryAgent()
+      topics.currentTopicId = '2'
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(2, { id: 9 })
+    })
+
+    test.each([
+      ['no permission', t => { t.canSetPrimaryAgent = false }],
+      ['all messages', t => { t.currentTopicId = '' }],
+      ['topics still loading', t => { t.topics = undefined }],
+      ['unknown topic', t => { t.currentTopicId = '99' }],
+      ['locked topic', t => { t.topics[0].agent_locked = true }],
+      ['archived topic', t => { t.topics[0].archived = true }],
+      ['read-only topic', t => { t.topics[0].read_only = true }],
+    ])('disables and rejects assignment for %s', async (_name, configure) => {
+      configure(topics)
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(true)
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).not.toHaveBeenCalled()
+    })
+
+    test('clears the assigned agent and switches back to assignment after success', async () => {
+      topics.topics[0].primary_agent = { id: '9' }
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Clear primary agent')
+      topics.setTopicPrimaryAgent.mockImplementation(async () => { topics.topics[0].primary_agent = null })
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(1, null)
+      expect(button.textContent).toBe('Set primary agent')
+    })
+
+    test('rechecks the assignment at click time', async () => {
+      controller.syncPrimaryAgent()
+      topics.topics[0].primary_agent = { id: 9 }
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(1, null)
+    })
+
+    test.each(['agent_locked', 'archived', 'read_only'])('prevents clearing a %s topic', async flag => {
+      topics.topics[0].primary_agent = { id: 9 }
+      topics.topics[0][flag] = true
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(true)
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).not.toHaveBeenCalled()
+    })
+
+    test('rechecks permission before clearing an assigned agent', async () => {
+      topics.topics[0].primary_agent = { id: 9 }
+      controller.syncPrimaryAgent()
+      topics.canSetPrimaryAgent = false
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).not.toHaveBeenCalled()
+    })
+
+    test('keeps the clear action available after a failed release', async () => {
+      topics.topics[0].primary_agent = { id: 9 }
+      await controller.setPrimaryAgent(event())
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Clear primary agent')
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenNthCalledWith(2, 1, null)
+    })
+
+    test('allows replacing another primary agent', async () => {
+      topics.topics[0].primary_agent = { id: 10 }
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledWith(1, { id: 9 })
+    })
+
+    test('does nothing outside the topics popup or on a human menu', async () => {
+      topics = null
+      controller.syncPrimaryAgent()
+      expect(button.disabled).toBe(true)
+      await controller.setPrimaryAgent(event())
+      button.remove()
+      expect(() => controller.syncPrimaryAgent()).not.toThrow()
+      await controller.setPrimaryAgent(event())
+    })
+
+    test('blocks duplicate clicks while saving and refreshes after the response', async () => {
+      let finish
+      topics.setTopicPrimaryAgent.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+      const saving = controller.setPrimaryAgent(event())
+      expect(button.disabled).toBe(true)
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledTimes(1)
+      topics.topics[0].primary_agent = { id: 9 }
+      finish()
+      await saving
+      expect(button.disabled).toBe(false)
+      expect(button.textContent).toBe('Clear primary agent')
+    })
+
+    test('allows retry after the existing API reports a failed request', async () => {
+      await controller.setPrimaryAgent(event())
+      expect(button.disabled).toBe(false)
+      await controller.setPrimaryAgent(event())
+      expect(topics.setTopicPrimaryAgent).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  test('treats presence events without details as an empty presence list', () => {
+    controller.handlePresenceChanged({})
+    expect(controller.statusLabelTarget.textContent).toBe('Offline')
+  })
+
   test('updates the localized status when presence changes', () => {
     popup.dispatchEvent(new CustomEvent('comments--presence:changed', {
       detail: { presentIds: [9] },

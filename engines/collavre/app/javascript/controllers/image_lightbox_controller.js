@@ -1,4 +1,7 @@
+import { loadImageWithPlaceholder } from "../lib/media_loading"
 import { Controller } from "@hotwired/stimulus"
+import csrfFetch from "../lib/api/csrf_fetch"
+import { setupImagePan } from "../lib/image_lightbox_pan"
 import imageLightboxValues from "./image_lightbox_values"
 import { confirmDialog } from "../lib/utils/dialog"
 
@@ -57,6 +60,7 @@ export default class extends Controller {
   // --- Zoom ---
 
   _resetZoom() {
+    this._drag = null
     this._zoom = 1
     this._panX = 0
     this._panY = 0
@@ -79,6 +83,7 @@ export default class extends Controller {
       this._panY += oy * ratio
     }
 
+    if (clamped <= 1) this._drag = null
     this._zoom = clamped
 
     // Reset pan if back to fit
@@ -93,8 +98,9 @@ export default class extends Controller {
   _applyTransform() {
     const imgEl = this._dialog?.querySelector(".image-lightbox-image")
     if (!imgEl) return
+    this._dialog.querySelector(".image-lightbox-stage").style.cursor = this._drag ? "grabbing" : ""
     imgEl.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})`
-    imgEl.style.cursor = this._zoom > 1 ? "grab" : "default"
+    imgEl.style.cursor = this._zoom > 1 ? (this._drag ? "grabbing" : "grab") : "default"
   }
 
   _setupZoom(dialog) {
@@ -103,7 +109,6 @@ export default class extends Controller {
     this._panY = 0
 
     const stage = dialog.querySelector(".image-lightbox-stage")
-    const imgEl = dialog.querySelector(".image-lightbox-image")
 
     // Mouse wheel zoom
     stage.addEventListener("wheel", (e) => {
@@ -113,7 +118,7 @@ export default class extends Controller {
     }, { passive: false })
 
     // Double-click to toggle zoom
-    imgEl.addEventListener("dblclick", (e) => {
+    stage.addEventListener("dblclick", (e) => {
       e.stopPropagation()
       if (this._zoom > 1) {
         this._resetZoom()
@@ -122,33 +127,7 @@ export default class extends Controller {
       }
     })
 
-    // Mouse drag to pan when zoomed
-    let dragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0
-
-    imgEl.addEventListener("mousedown", (e) => {
-      if (this._zoom <= 1) return
-      e.preventDefault()
-      dragging = true
-      dragStartX = e.clientX
-      dragStartY = e.clientY
-      panStartX = this._panX
-      panStartY = this._panY
-      imgEl.style.cursor = "grabbing"
-    })
-
-    window.addEventListener("mousemove", this._onMouseMove = (e) => {
-      if (!dragging) return
-      this._panX = panStartX + (e.clientX - dragStartX)
-      this._panY = panStartY + (e.clientY - dragStartY)
-      this._applyTransform()
-    })
-
-    window.addEventListener("mouseup", this._onMouseUp = () => {
-      if (!dragging) return
-      dragging = false
-      const imgEl2 = this._dialog?.querySelector(".image-lightbox-image")
-      if (imgEl2) imgEl2.style.cursor = this._zoom > 1 ? "grab" : "default"
-    })
+    setupImagePan(this, stage)
 
     // Pinch zoom (touch)
     let lastPinchDist = 0
@@ -179,8 +158,7 @@ export default class extends Controller {
   }
 
   _cleanupZoom() {
-    if (this._onMouseMove) window.removeEventListener("mousemove", this._onMouseMove)
-    if (this._onMouseUp) window.removeEventListener("mouseup", this._onMouseUp)
+    this._drag = null
   }
 
   _createDialog() {
@@ -228,22 +206,8 @@ export default class extends Controller {
     const img = this._images[this._currentIndex]
     const imgEl = this._dialog.querySelector(".image-lightbox-image")
 
-    // Hide image during transition to prevent layout jump
-    imgEl.style.opacity = "0"
-
-    // Reset zoom before changing src
     this._resetZoom()
-
-    imgEl.src = img.fullSrc
-    imgEl.alt = img.alt || ""
-
-    // Show image once loaded (or immediately if cached)
-    const showImg = () => { imgEl.style.opacity = "1" }
-    if (imgEl.complete) {
-      showImg()
-    } else {
-      imgEl.onload = showImg
-    }
+    loadImageWithPlaceholder(imgEl, img)
 
     // Counter
     const counter = this._dialog.querySelector(".image-lightbox-counter")
@@ -318,13 +282,13 @@ export default class extends Controller {
   }
 
   _bindTouchEvents(dialog) {
-    let touchStartX = 0
+    let touchStartX = null
     const stage = dialog.querySelector(".image-lightbox-stage")
     stage.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) touchStartX = e.changedTouches[0].screenX
+      touchStartX = e.touches.length === 1 && this._zoom <= 1 ? e.changedTouches[0].screenX : null
     }, { passive: true })
     stage.addEventListener("touchend", (e) => {
-      if (this._zoom > 1) return
+      if (this._zoom > 1 || touchStartX === null) return
       if (e.changedTouches.length === 1) {
         const diff = e.changedTouches[0].screenX - touchStartX
         if (Math.abs(diff) > 50) {
@@ -339,13 +303,11 @@ export default class extends Controller {
     if (!(await confirmDialog(this.i18nDeleteConfirmValue, { danger: true }))) return
 
     const url = `${this.downloadAllUrlValue.replace("download_images", "remove_image")}?index=${this._currentIndex}`
-    const csrfToken = document.querySelector("meta[name='csrf-token']")?.content
 
     try {
-      const resp = await fetch(url, {
+      const resp = await csrfFetch(url, {
         method: "DELETE",
-        credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrfToken }
+        credentials: "same-origin"
       })
       if (!resp.ok) return
 

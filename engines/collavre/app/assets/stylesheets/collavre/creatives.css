@@ -521,8 +521,10 @@ creative-tree-row.show-edit .creative-row {
 }
 
 
-.creative-row:hover .creative-toggle-btn {
-    visibility: visible;
+@media (hover: hover) and (not (any-pointer: coarse)) {
+    .creative-row:hover .creative-toggle-btn {
+        visibility: visible;
+    }
 }
 
 creative-tree-row:not([expanded]) .creative-toggle-btn {
@@ -547,10 +549,21 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     /* Fixed width for alignment */
 }
 
-.creative-row:hover .edit-inline-btn {
-    color: var(--text-primary);
-    visibility: visible;
-    opacity: 1;
+@media (hover: hover) and (not (any-pointer: coarse)) {
+    .creative-row:hover .edit-inline-btn {
+        color: var(--text-primary);
+        visibility: visible;
+        opacity: 1;
+    }
+}
+
+/* Touch taps must not reveal hidden descendants through emulated hover. */
+@media (hover: none), (any-pointer: coarse) {
+    .creative-toggle-btn,
+    .edit-inline-btn {
+        visibility: visible;
+        opacity: 1;
+    }
 }
 
 @media (max-width: 768px) {
@@ -629,11 +642,10 @@ creative-tree-row:not([expanded]) .creative-toggle-btn {
     background-color: var(--border-drag-over);
 }
 
-creative-tree-row.chat-active .creative-row {
-    border: var(--border-1) solid var(--color-active);
-    border-radius: var(--radius-2);
-    box-shadow: 0 0 6px color-mix(in srgb, var(--color-active) 25%, transparent),
-                0 0 14px color-mix(in srgb, var(--color-active) 12%, transparent);
+creative-tree-row.chat-active .creative-row,
+creative-tree-row.chat-active .creative-row:hover {
+    background-color: color-mix(in srgb, var(--color-active) 6%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-active);
 }
 
 .creative-row:hover,
@@ -641,6 +653,16 @@ creative-tree-row.chat-active .creative-row {
 .creative-row.level-2:hover,
 .creative-row.level-3:hover {
     background-color: var(--surface-hover);
+}
+
+creative-tree-row[is-title]:not(.chat-active) .creative-row,
+creative-tree-row[is-title]:not(.chat-active) .creative-row:hover {
+    background-color: transparent;
+}
+
+creative-tree-row.chat-active .creative-row.selected,
+creative-tree-row.chat-active .creative-row.selected:hover {
+    background-color: var(--border-drag-over);
 }
 
 .creative-progress {
@@ -802,12 +824,14 @@ creative-tree-row.chat-active .creative-row {
     visibility: hidden;
 }
 
-.creative-row:hover .comments-btn.no-comments {
-    visibility: visible;
-    opacity: 1.0;
+@media (hover: hover) and (not (any-pointer: coarse)) {
+    .creative-row:hover .comments-btn.no-comments {
+        visibility: visible;
+        opacity: 1.0;
+    }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none), (any-pointer: coarse) {
     .comments-btn.no-comments {
         visibility: visible;
         opacity: 0.2;
@@ -1876,3 +1900,196 @@ creative-tree-row.is-being-edited .creative-tree {
     position: relative;
 }
 
+
+/* === Document view ===
+   Same rows and data as the tree; only the presentation changes. The body is
+   for reading, selecting and editing, so tree chrome steps back. */
+.creative-actions-row .creative-header-actions .creative-header-outline-btn[aria-pressed="true"] {
+    background: var(--surface-hover);
+    color: var(--color-active, var(--text-primary));
+    border-color: var(--color-active, var(--text-muted));
+}
+
+.creative-document-view .tree-line {
+    display: none;
+}
+
+.creative-document-view .creative-row,
+.creative-document-view .creative-row:hover {
+    background-color: transparent;
+}
+
+.creative-document-view .creative-row {
+    padding: 3px 0;
+}
+
+.creative-document-view .creative-row.level-1 {
+    margin-top: 1.4em;
+}
+
+.creative-document-view .creative-row.level-2 {
+    margin-top: 0.8em;
+}
+
+/* The text takes the whole row: the tree's cap leaves room for the row end,
+   which holds little here (and nothing for a reader who cannot comment). */
+.creative-document-view .creative-row-start,
+.creative-document-view .creative-row-start > :is(h1, h2, h3, .creative-childless, .creative-tree-li) {
+    min-width: 0;
+}
+
+.creative-document-view .creative-content,
+.creative-document-view .creative-title-content {
+    min-width: 0;
+    max-width: none;
+    user-select: text;
+}
+
+.creative-document-view .creative-row:hover .creative-content,
+.creative-document-view .creative-title-content {
+    cursor: text;
+}
+
+.creative-document-view .creative-row-end {
+    opacity: 0.55;
+    transition: opacity 0.15s var(--ease-out-2);
+}
+
+.creative-document-view .creative-row:hover .creative-row-end,
+.creative-document-view .creative-row:focus-within .creative-row-end {
+    opacity: 1;
+}
+
+/* Progress is tree chrome: the document gives that width to the text. Comments
+   and tags stay. */
+.creative-document-view .creative-row-end :is(.progress-toggle-wrap, .creative-progress-complete, .creative-progress-incomplete) {
+    display: none;
+}
+
+/* Bullet levels keep their nesting: the lines for the heading levels stay
+   hidden, deeper ones remain as blank indentation. */
+.creative-document-view .tree-line:nth-child(n + 6) {
+    display: flex;
+    width: 18px;
+    min-width: 18px;
+}
+
+.creative-document-view .tree-line::before {
+    content: none;
+}
+
+/* Clicking the body edits, so the menu's switch that reveals the edit buttons
+   on a small screen has nothing to show. */
+.creative-document-view #toggle-edit-btn,
+.creative-document-view .popup-menu .creative-overflow-divider.mobile-only {
+    display: none !important;
+}
+
+/* Clicking the body edits, so the edit button (hover, or swipe on touch) goes.
+   It stays focusable, as the body is no keyboard target, and shows on keyboard
+   focus only. It takes no room, on the title either: the title starts where the
+   rows below it start, whether or not they have a drag handle. */
+.creative-document-view .creative-tree .edit-inline-btn {
+    position: absolute;
+    visibility: visible;
+    max-width: none;
+    opacity: 0;
+    pointer-events: none;
+    transform: none;
+}
+
+.creative-document-view .creative-tree .edit-inline-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Keep the link in the keyboard focus order on every device. On touch it
+   takes no layout space until focused, preserving the text alignment. */
+.creative-drag-handle {
+    display: inline-flex;
+    position: absolute;
+    pointer-events: none;
+    width: 20px;
+    color: var(--text-muted);
+    cursor: grab;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    user-select: none;
+}
+
+.creative-document-view .creative-drag-handle:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.creative-drag-handle:active {
+    cursor: grabbing;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .creative-document-view .creative-drag-handle {
+        position: static;
+        pointer-events: auto;
+    }
+
+    /* The title has no handle; it leaves the same room so it lines up. */
+    .creative-document-view .creative-tree-title .creative-row-start {
+        padding-left: 20px;
+    }
+
+    .creative-document-view .creative-row:hover .creative-drag-handle {
+        opacity: 1;
+    }
+}
+
+.ppt-attachment-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 0;
+}
+
+/* Lexical decorator wrappers must not constrain presentation previews. */
+.lexical-content-editable span:has(> .ppt-attachment-preview) {
+  display: block;
+  width: 100%;
+}
+
+/* Presentation attachments expand the row rather than using text's reading width. */
+.creative-row-start > :is(div, .page-title):has(.ppt-attachment-preview) {
+  flex: 1;
+  min-width: 0;
+}
+
+.creative-content:has(.ppt-attachment-preview),
+.creative-title-content:has(.ppt-attachment-preview) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.ppt-attachment-preview { position: relative; }
+.document-preview-frame { width: 100%; height: 100%; border: 0; display: block; }
+.ppt-attachment-preview[aria-busy="true"] > iframe { opacity: 0; }
+.media-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.media-loading[hidden] { display: none; }
+.media-loading::after {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-color, #ccc);
+  border-top-color: var(--text-color, #555);
+  border-radius: 50%;
+  animation: media-loading-spin 800ms linear infinite;
+}
+@keyframes media-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .media-loading::after { animation: none; }
+}

@@ -9,6 +9,8 @@ module Collavre
         # Log only the error class so sensitive content never leaks. error_message
         # stays intact for the gated ensure log and streamed yield to the caller.
         Rails.logger.error "AI Client error: #{@log_interactions ? error_message : "[#{e.class.name}]"}"
+        quota_error = Quota::ExceededError.from_response(e) if vendor == "cli_proxy"
+        raise quota_error if quota_error
         raise_cli_proxy_login_error(e)
         log_error_response(e) if @log_interactions
         Rails.logger.error "Partial response length: #{response_content.length} chars" if response_content.present?

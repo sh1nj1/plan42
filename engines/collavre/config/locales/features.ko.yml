@@ -17,6 +17,20 @@ ko:
       show:
         tips: "팁"
       pages:
+        kollavy:
+          title: "Kollavy AI Agent"
+          tagline: "Collavre 사용을 돕는 기본 AI 가이드입니다."
+          meta_description: "Kollavy에게 Collavre 사용법을 질문하고 Creative, 토픽, 일정 관리를 도움받는 방법."
+          sections:
+            - heading: "대화 시작하기"
+              body: "인박스 → Main을 열고 질문하세요. Kollavy가 토픽의 주 담당 에이전트라면 멘션 없이도 답합니다. 주 담당 에이전트를 바꿨다면 @Kollavy:로 멘션하세요. System은 알림 토픽이므로 질문은 Main에서 시작하세요."
+            - heading: "Collavre 사용법 묻기"
+              body: "“Creative는 어떻게 공유하나요?”, “대화를 토픽으로 나누려면 어떻게 하나요?”처럼 물어보세요. Kollavy는 실행 중인 앱의 소스 코드를 확인해 현재 버전의 기능과 화면 조작 방법을 안내합니다."
+            - heading: "작업 도움받기"
+              body: "Kollavy는 Creative 생성과 정리, 토픽 관리, 일정 설정을 도울 수 있습니다. 작업할 Creative의 채팅을 열고 Kollavy에게 공유하세요. 답변에는 댓글 권한, 수정에는 쓰기 권한이 필요합니다. 각 대화에서는 해당 Creative와 하위 항목만 다룰 수 있으며, 변경 작업은 사용자 승인을 기다립니다."
+          tips:
+            - "질문 예시: @Kollavy: 다른 Creative를 컨텍스트로 연결하려면 어떻게 하나요?"
+            - "Kollavy는 초기 설정 시 인박스에 추가됩니다. 접근 권한을 해제했다면 질문하기 전에 다시 공유하세요."
         mention_agent:
           title: "팀원 · 에이전트 멘션"
           tagline: "한 명을 직접 지목하면, 그 한 명만 답합니다."

@@ -21,6 +21,11 @@ module Collavre
         end
       end
 
+      def install_pdf_dependency
+        manager = yarn_host? ? "yarn add --exact" : "npm install --save-exact"
+        run "#{manager} pdfjs-dist@4.8.69", abort_on_failure: true
+      end
+
       def show_post_install
         say ""
         say "Collavre assets installed!", :green
@@ -34,23 +39,50 @@ module Collavre
         say "  @import 'collavre/tables';"
         say "  @import 'collavre/dark_mode';"
         say ""
-        say "Run 'npm run build' to build assets."
+        say "Yarn requires nodeLinker: node-modules; Plug'n'Play is not supported." if yarn_host?
+        command = yarn_host? ? "yarn build" : "npm run build"
+        say "Run '#{command}' to build assets."
         say ""
       end
 
       private
 
+      def yarn_host?
+        File.exist?(File.join(destination_root, "yarn.lock"))
+      end
+
+      def merge_host_node_path(content)
+        host_path = "require('path').join(process.cwd(), 'node_modules')"
+        if content.match?(/(?:\bnodePaths|"nodePaths"|'nodePaths')\s*:/)
+          unless content.include?(host_path)
+            updated = content.sub(/((?:\bnodePaths|"nodePaths"|'nodePaths')\s*:\s*)\[/) { "#{Regexp.last_match(1)}[#{host_path}, " }
+            if updated == content
+              raise Thor::Error, "Cannot update dynamic nodePaths. Add #{host_path} to nodePaths and rerun the generator."
+            end
+            content = updated
+          end
+        else
+          updated = content.sub(/\bbundle:\s*true\s*(?:,|(?=\}))/, "bundle: true,\n    nodePaths: [#{host_path}],")
+          if updated == content
+            raise Thor::Error, "Cannot insert host nodePaths. Add #{host_path} to nodePaths and rerun the generator."
+          end
+          content = updated
+        end
+        content
+      end
+
       def update_existing_build_script(build_script)
         content = File.read(build_script)
 
-        # Check if already installed
-        if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
-          say_status :skip, "Collavre already configured in build script", :yellow
-          return
-        end
+        content = merge_host_node_path(content)
+        File.write(build_script, content)
 
+        configure_gem_entries(build_script, content)
+      end
+
+      def gem_path_function
         # Add gem path detection function after requires
-        gem_path_function = <<~JS
+        <<~JS
 
           // Find Collavre gem path using bundler
           const { execSync } = require('child_process');
@@ -65,9 +97,11 @@ module Collavre
               return null;
           }
         JS
+      end
 
+      def gem_discovery_code
         # Add gem entry point discovery
-        gem_discovery_code = <<~JS
+        <<~JS
 
           // Add Collavre gem entry points
           const collavreGemPath = getCollavreGemPath();
@@ -80,6 +114,14 @@ module Collavre
               });
           }
         JS
+      end
+
+      def configure_gem_entries(build_script, content)
+        # Check if already installed
+        if content.include?("collavre") || content.include?("COLLAVRE_GEM_PATH")
+          say_status :skip, "Collavre already configured in build script", :yellow
+          return
+        end
 
         # Insert function after requires
         if content.include?("const path = require('path');")

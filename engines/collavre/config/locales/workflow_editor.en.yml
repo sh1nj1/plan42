@@ -9,6 +9,8 @@ en:
           not_workflow: "This creative must be an active workflow."
           not_direct_rule: "Only active direct workflow rule children can be edited here."
           title_required: "Enter a title for the rule."
+        topic_name: "Execution topic"
+        invocation_note: "Defaults to Main. Reuses a topic with this name or creates it. The rule creative content is posted as the instruction."
         title: "Workflow rules"
         tree_link: "Edit titles and order in the creative tree"
         scope_note: "A pin applies this workflow to the pinned creative and its subtree. Disabled pins do not apply. Rules run in tree order."

@@ -41,6 +41,25 @@ module Collavre
         assert_equal :created, reply.status
       end
 
+      test "an invalid late reply leaves a suspended turn suspended" do
+        @task.update!(status: "suspended", suspended_from: "delegated", suspend_reason: "agent_offline",
+                      suspended_at: Time.current)
+
+        assert_equal :unprocessable_entity, reply(text: "").status
+        assert_equal "suspended", @task.reload.status
+        assert_equal "delegated", @task.suspended_from
+        assert_not @task.task_actions.exists?(action_type: "completion")
+      end
+
+      test "releasing a failed reply claim keeps a Stop that cancelled the turn" do
+        claimed = @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+        Task.where(id: @task.id).update_all(status: "cancelled")
+
+        @claim_service.release(claimed)
+
+        assert_equal "cancelled", @task.reload.status
+      end
+
       test "completion failure rolls back the claim and reply" do
         TaskAction.stub(:_insert_record, ->(*) { raise ActiveRecord::RecordNotSaved, "completion failed" }) do
           assert_no_difference "Comment.count" do
@@ -59,6 +78,63 @@ module Collavre
           @claim_service.finalize(agent: @user, task: @task, comment: comment)
         end
         assert_not @task.task_actions.exists?(action_type: "completion")
+      end
+
+      test "a reply naming the current execution generation claims the task" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+        generation = Orchestration::ExecutionFence.generation(@task)
+
+        assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id,
+                                                 requested_generation: generation)
+      end
+
+      test "a reply from an earlier execution of a resumed task is refused" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+
+        assert_nil @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id,
+                                        requested_generation: "earlier-attempt")
+        assert_equal "delegated", @task.reload.status
+      end
+
+      test "a reply naming no generation is not fenced" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+
+        assert_equal @task, @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id)
+      end
+
+      test "a refused reply after a sibling answered is reported as dedup" do
+        assert_equal :created, reply.status
+
+        refused = reply(text: "Duplicate")
+
+        assert_equal :conflict, refused.status
+        assert_equal TaskClaimService::CONFLICT_ALREADY_COMPLETED, refused.body[:reason]
+      end
+
+      test "a refused reply for a task nobody answered surfaces" do
+        %w[cancelled failed pending running].each do |status|
+          @task.update_columns(status: status)
+
+          refused = reply
+
+          assert_equal :conflict, refused.status
+          assert_equal TaskClaimService::CONFLICT_NOT_DELEGATED, refused.body[:reason], "#{status} must not be benign"
+        end
+      end
+
+      test "a done task without a linked reply is not reported as dedup" do
+        @task.update_columns(status: "done")
+
+        assert_equal TaskClaimService::CONFLICT_NOT_DELEGATED,
+                     @claim_service.conflict_reason(agent: @user, topic: @topic, requested_task_id: @task.id)
+      end
+
+      test "a reply from a stale generation of an unanswered task surfaces" do
+        @task.update!(trigger_event_payload: Orchestration::ExecutionFence.stamp({}))
+        @claim_service.claim(agent: @user, topic: @topic, requested_task_id: @task.id, requested_generation: "stale")
+
+        assert_equal TaskClaimService::CONFLICT_NOT_DELEGATED,
+                     @claim_service.conflict_reason(agent: @user, topic: @topic, requested_task_id: @task.id)
       end
 
       private

@@ -46,7 +46,7 @@ module Collavre
       def authorize_creative!(creative, level, user: Collavre::Current.user)
         origin = creative&.effective_origin
         raise ArgumentError, "Creative is required" unless origin
-        return if origin.user == user
+        return if origin.user == user && Kollavy::AccessScope.allowed?(origin, user)
         return if user && origin.has_permission?(user, level)
 
         raise Collavre::Tools::PermissionDeniedError,
@@ -56,7 +56,7 @@ module Collavre
       def authorize!(topic, level, user: Collavre::Current.user)
         creative = topic.creative&.effective_origin
         raise ArgumentError, "Topic has no creative" unless creative
-        return if creative.user == user
+        return if creative.user == user && Kollavy::AccessScope.allowed?(creative, user)
         return if user && creative.has_permission?(user, level)
 
         raise Collavre::Tools::PermissionDeniedError,

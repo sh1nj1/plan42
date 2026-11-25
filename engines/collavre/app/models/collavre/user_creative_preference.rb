@@ -6,6 +6,29 @@ module Collavre
     belongs_to :user, class_name: Collavre.configuration.user_class_name
     belongs_to :last_topic, class_name: "Collavre::Topic", optional: true
 
+    def self.root_expanded_ids_for(user)
+      state = expanded_status_for(user_id: user.id)
+      new(user: user, expanded_status: state).expanded_ids_root_first
+    end
+
+    def self.expanded_status_for(user_id:, creative_id: nil)
+      # Legacy writers can recreate duplicate roots after deployment cleanup.
+      # Match consolidation's ID-ordered merge without mutating rows on reads.
+      where(user_id: user_id, creative_id: creative_id).order(:id).pluck(:expanded_status)
+        .each_with_object({}) { |status, merged| merged.merge!(status) }
+    end
+
+    def expanded_ids_root_first
+      ids = (expanded_status || {}).select { |_, expanded| expanded }.keys
+      Creatives::WorkspaceExpansionOrder.new(user: user, expanded_ids: ids).call
+    end
+
+    def set_expanded(node_id, expanded)
+      state = expanded_status || {}
+      expanded ? state[node_id] = true : state.delete(node_id)
+      self.expanded_status = state
+    end
+
     validates :expanded_status, presence: true, unless: -> {
       last_topic_id? || last_topic_all_messages? || last_topic_revision.to_i.positive? ||
         last_topic_save_fence_issued.to_i.positive?

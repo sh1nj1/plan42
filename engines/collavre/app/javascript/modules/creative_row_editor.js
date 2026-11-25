@@ -1,5 +1,12 @@
+import { updateRemovalButtons, destroyedIdsForRemoval, promotesChildrenToRoot as removalPromotesChildren, shouldRefreshRemovalParent } from './creative_removal'
+import { needsCreativeReconciliation, fetchReconciledCreative } from '../lib/api/queue_reconciliation'
+import { queuedCreativePosition, rememberAcknowledgedPosition } from './recovered_creative_position'
+import { recoverFailedCreative, retryFailedCreativeBeforeSave, needsCreativeSaveRetry } from './failed_creative_save'
+import { updateQueuedCreativeRow, revealCreativeRow, queuedCreativeCompletion, queuedCreativeStatus, enqueueCreativeSnapshot, cacheSavedMarkdownSource, rowRefreshGuard } from './queued_creative_row'
 import { copyEditorIcons, initializeEditorForm, nextEditorTree } from './creative_inline_dataset'
 import { CreativeTypeEditor } from './creative_type_editor'
+import { trackCreate, postNewCreative, deferRowAnchor, dropDeferredAnchor, takeDeferredAnchor, takeFailedDraft, createEditTickets, isMarkdownSourceDraft, fillFailedDraftForm, takeRetryDeletedIds, releaseFailedRows, holdRenderForCreates, trackNewRowSave, warnBeforeUnload, purgeOnUnload } from './background_creative_create'
+import { bindPersistedTree } from './persisted_creative_tree'
 import creativesApi from '../lib/api/creatives'
 import apiQueue from '../lib/api/queue_manager'
 import { $getSelection } from 'lexical'
@@ -9,6 +16,7 @@ import { markdownCreativeCommandRange, openCreativeLinkPicker } from './creative
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../creatives/tree_renderer'
 import { isProgressComplete, progressBaselineValueFrom, progressValueChangedFrom } from './creative_progress'
 import { renderMarkdown } from '../lib/utils/markdown'
+import { restoreRowDraggable } from '../components/creative_tree_row_document_view'
 import { CreativeSaveQueue } from './creative_save_queue'
 import { isHtmlEmpty } from './html_content_empty'
 import {
@@ -21,10 +29,7 @@ import { confirmDialog, alertDialog } from '../lib/utils/dialog'
 import { serverErrorMessage } from '../lib/api/api_error'
 import yaml from 'js-yaml'
 import {
-  treeRowElement,
-  hasDatasetValue,
-  readRowLevel,
-  editorPaddingForLevel,
+  treeRowElement, hasDatasetValue, readRowLevel, editorPaddingForLevel,
 } from './creative_row_editor_helpers'
 import {
   creativeTreeElement,
@@ -86,7 +91,7 @@ function teardownEditorSession() {
   activeTemplate = null;
 }
 
-function deleteAttachment(signedId) {
+function deleteAttachment(signedId, { keepalive = false } = {}) {
   if (!signedId) return;
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
   fetch(`/attachments/${signedId}`, {
@@ -94,6 +99,7 @@ function deleteAttachment(signedId) {
     headers: {
       'X-CSRF-Token': csrfToken,
     },
+    keepalive,
   }).catch(err => console.error('Error deleting attachment:', err));
 }
 
@@ -149,6 +155,8 @@ function setupEditorSession() {
       // Match the id exactly — a substring test (e.g. path.includes("23")) also matches
       // "/creatives/123", flagging the wrong row's toolbar as failed.
       const failedCreativeId = (item.path.match(/\/creatives\/(\d+)/) || [])[1];
+      const failedTree = document.getElementById(`creative-${failedCreativeId}`);
+      if (failedTree) failedTree.dataset.saveState = 'error';
       if (form.dataset.creativeId && failedCreativeId === form.dataset.creativeId) {
         console.log('Restoring dirty state for current creative');
         isDirty = true;
@@ -267,10 +275,12 @@ function setupEditorSession() {
     // "no editor" state lets another row or Add reuse the form while the old
     // save still owns its completion and recovery callbacks.
     let closeSaveInProgress = false;
+    const editTickets = createEditTickets();
     let originalContent = '';
     let originalProgress = 0;
     let originalOriginId = '';
     let isDirty = false;
+    let editorRevision = 0;
     let completionCascadePending = false;
     let editingPingInterval = null;
 
@@ -298,6 +308,29 @@ function setupEditorSession() {
 
     // Clean up editing ping on Turbo navigation to prevent interval leak
     globalListeners.add(document, 'turbo:before-cache', () => stopEditingPing());
+    // A render flushes the open row's edits; when that fails and the user keeps
+    // them, the row holds later renders too, as long as they stay unsaved. A
+    // chosen type alone is worth saving, as saveForm() would.
+    let keptUnsavedTree = null;
+    const flushOpenRow = (target, tree = currentTree) => (isDirty || pendingSave) && target.contains(tree) && !creativeSaveSnapshotIsEmpty({ ...captureBufferSnapshot(), creativeType: typeEditor.value }) ? saveForm(tree, parentInput.value).then(isFailedSaveResult, () => true).then((failed) => ((keptUnsavedTree = failed ? tree : null), failed)) : null;
+    const openRow = { flush: flushOpenRow, keptUnsaved: (target) => !!keptUnsavedTree && keptUnsavedTree === currentTree && (isDirty || pendingSave) && target.contains(currentTree), keep: () => !editingPingInterval && currentTree && startEditingPresence(form.dataset.creativeId), release: (target) => purgeOpenDraft(target) };
+    // Closing is a later edit request too: a click still waiting on a pending
+    // create must not reopen the editor after it.
+    const closeByUser = (event) => editTickets.take() && hideCurrent(event);
+    // So is an action confirmed on the open row: the waiting click must not move
+    // the editor while the dialog is up, or the action would hit the wrong row.
+    const confirmForCurrent = (message, options) => editTickets.take() && confirmDialog(message, options);
+    // Discarding the open new row's draft also deletes the uploads removed from
+    // it since it opened: nothing on the server refers to them. A saved row's
+    // removed uploads stay, as its saved content still does.
+    const purgeOpenDraft = (target, remove = deleteAttachment) => !form.dataset.creativeId && target.contains(currentTree) && lexicalEditor.getDeletedAttachments?.().forEach((id) => remove(id));
+    const holdRender = (event) => holdRenderForCreates(event, () => confirmDialog(form.dataset.discardFailedDraftMessage, { danger: true }).then((agreed) => (agreed && purgeOpenDraft(event.target), agreed)), openRow, deleteAttachment);
+    globalListeners.add(document, 'turbo:before-frame-render', holdRender);
+    globalListeners.add(document, 'turbo:before-render', holdRender);
+    globalListeners.add(window, 'beforeunload', (event) => warnBeforeUnload(event, openRow));
+    // The page is gone before these deletes finish, so they must outlive it.
+    const deleteOnUnload = (id) => deleteAttachment(id, { keepalive: true });
+    globalListeners.add(window, 'pagehide', (event) => purgeOnUnload(event, () => purgeOpenDraft(document, deleteOnUnload), deleteOnUnload));
 
     // Registered with the module-level teardown so a workspace frame swap —
     // which rebuilds the session without ever calling hideCurrent()/move() on
@@ -401,9 +434,9 @@ function setupEditorSession() {
     const typeEditor = new CreativeTypeEditor(form, scheduleSave, () => saveQueue.saving);
 
     function applyCreativeData(data, tree) {
-      if (!data) return;
-      const creativeId = data.id;
+      const creativeId = data?.id;
       if (!creativeId) return;
+      data = recoverFailedCreative(apiQueue, data, tree);
       initializeEditorForm(form, methodInput, data);
       typeEditor.load(data);
       const content = data.description_raw_html || data.description || '';
@@ -432,12 +465,12 @@ function setupEditorSession() {
         lexicalEditor.load(content, `creative-${creativeId}-${Date.now()}`);
       }
 
-      pendingSave = false;
+      pendingSave = needsCreativeSaveRetry(apiQueue, creativeId, tree);
       // Dirty detection is HTML-based for the rich surface (compares the editor's
       // HTML projection), and Markdown-source-based for the textarea surface.
       originalContent = useTextarea ? (data.markdown_source || '') : content;
-      isDirty = false;
-      setSaveStatus('');
+      isDirty = pendingSave;
+      setSaveStatus(queuedCreativeStatus(tree));
       const progressNumber = Number(data.progress ?? 0);
       const normalizedProgress = Number.isNaN(progressNumber) ? 0 : progressNumber;
       setProgressState(normalizedProgress);
@@ -469,15 +502,18 @@ function setupEditorSession() {
         lexicalEditor.focus();
       }
       updateActionButtonStates();
-      // Reload metadata if the popup is open
-      if (isMetadataPopupVisible()) {
-        if (data.data !== undefined) {
-          // Use data already fetched from API response — avoids extra request
-          const yamlStr = yaml.dump(data.data || {}, { lineWidth: -1 });
-          metadataEditor.value = yamlStr;
-        } else {
-          loadMetadataForCreative(creativeId);
-        }
+      reloadOpenMetadata(creativeId, data);
+    }
+
+    // Reload metadata if the popup is open, now for the row the editor opened.
+    function reloadOpenMetadata(creativeId, data) {
+      if (!isMetadataPopupVisible()) return;
+      metadataPopup.dataset.creativeId = creativeId || '';
+      if (data.data !== undefined) {
+        // Use data already fetched from API response — avoids extra request
+        metadataEditor.value = yaml.dump(data.data || {}, { lineWidth: -1 });
+      } else {
+        loadMetadataForCreative(creativeId);
       }
     }
 
@@ -502,6 +538,7 @@ function setupEditorSession() {
     }
 
     function persistStructureChange(newParentId, { beforeId = '', afterId = '' } = {}) {
+      dropDeferredAnchor(currentTree);
       parentInput.value = newParentId || '';
       beforeInput.value = beforeId || '';
       afterInput.value = afterId || '';
@@ -583,6 +620,7 @@ function setupEditorSession() {
         const isArchived = targetRow?.hasAttribute('archived');
         archiveBtn.textContent = isArchived ? (archiveBtn.dataset.restoreLabel || 'Restore') : (archiveBtn.dataset.archiveLabel || 'Archive');
       }
+      updateRemovalButtons(deleteBtn, deleteWithChildrenBtn, Boolean(originalOriginId));
       if (deleteBtn) deleteBtn.disabled = !hasCreativeId;
       if (deleteWithChildrenBtn) deleteWithChildrenBtn.disabled = !hasCreativeId;
       if (linkBtn) linkBtn.disabled = !hasCreativeId || linkBtn.style.display === 'none';
@@ -637,6 +675,8 @@ function setupEditorSession() {
       // close still owns it. The initiating switch continues below after its
       // own hideCurrent() resolves; only later, competing clicks are ignored.
       if (closeSaveInProgress) return;
+      const wait = editTickets.waitToEdit(tree);
+      if (wait && await wait) return;
 
       if (currentTree === tree) {
         await hideCurrent();
@@ -659,7 +699,7 @@ function setupEditorSession() {
       updateActionButtonStates();
 
       // Notify sync controller that editing started + periodic ping
-      startEditingPresence(form.dataset.creativeId || currentRowElement?.getAttribute('creative-id'));
+      startEditingPresence(tree.dataset.id || currentRowElement?.getAttribute('creative-id'));
     }
 
     function initializeEventListeners() {
@@ -686,7 +726,7 @@ function setupEditorSession() {
       globalListeners.add(document.body, 'click', createDelegatedClickHandler({
         template,
         startNew,
-        hideCurrent,
+        hideCurrent: () => closeByUser(),
         handleEditButtonClick,
       }));
     }
@@ -701,34 +741,16 @@ function setupEditorSession() {
       if (row) row.style.display = '';
     }
 
-    function insertRow(tree, data) {
-      if (tree.querySelector('.creative-row')) return;
-      const row = document.createElement('div');
-      row.className = 'creative-row';
-      row.style.display = 'none';
-      // TODO: remove DRY, use template or copy existing dom
-      row.innerHTML = `
-  <div class="creative-row-start">
-    <div class="creative-row-actions">
-      <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id="${data.id}">
-        <!-- ok -->
-      </button>
-      <div class="creative-divider" style="width: 6px;"></div>
-    </div>
-    <a class="unstyled-link" href="/creatives/${data.id}">${data.description || ''}</a>
-  </div>
-  <div class="creative-row-end"><span class="creative-progress-incomplete">0%</span></div>`;
-      tree.insertBefore(row, tree.firstChild);
-    }
-
     function refreshRow(tree) {
       if (!tree) return;
       const id = tree.dataset?.id;
       if (!id) return;
+      if (tree.dataset.saveState) return;
       const rowEl = treeRowElement(tree);
+      const current = rowRefreshGuard(tree);
       creativesApi.get(id)
         .then(data => {
-          updateRowFromData(rowEl, data);
+          if (current()) updateRowFromData(rowEl, data);
         });
     }
 
@@ -746,7 +768,14 @@ function setupEditorSession() {
         });
     }
 
-    function saveForm(tree = currentTree, parentId = parentInput.value) {
+    function requestSave(tree = currentTree, parentId = parentInput.value) {
+      if (form.dataset.creativeId && typeEditor.value === undefined && !saveQueue.saving) {
+        return persistQueuedSave(tree);
+      }
+      return saveForm(tree, parentId);
+    }
+
+    function saveForm(tree, parentId) {
       // Reflect the in-flight save immediately, *before* awaiting pending uploads.
       // Direct-save callers (progress checkbox, structure moves) bypass
       // scheduleSave(), so without this an attachment upload still in flight would
@@ -778,7 +807,9 @@ function setupEditorSession() {
           return null;
         }
 
-        const method = methodInput.value === 'patch' ? 'PATCH' : 'POST';
+        // The parent this request is sent with: a reparent while the save waited
+        // on its anchor changed the form, so the pre-wait argument is stale.
+        const method = methodInput.value === 'patch' ? 'PATCH' : 'POST', sentParentId = parentInput.value;
         pendingSave = false;
         if (!form.action) return null;
         // Only reflect this save's outcome while the editor is still bound to the
@@ -809,6 +840,7 @@ function setupEditorSession() {
             try { return text ? JSON.parse(text) : {}; } catch (e) { return {}; }
           }).then(function (data) {
             const applied = applyCreativeSaveResponse(snapshot, data, {
+              applyCachedMarkdownSource: cacheSavedMarkdownSource(tree),
               currentMarkdownSource: markdownMode ? markdownTextarea?.value : undefined,
               applyCurrentMarkdownSource: (source) => {
                 markdownTextarea.value = source;
@@ -830,41 +862,7 @@ function setupEditorSession() {
               form.action = `/creatives/${data.id}`;
               methodInput.value = 'patch';
               form.dataset.creativeId = data.id;
-              if (tree) {
-                tree.id = `creative-${data.id}`;
-                tree.dataset.id = data.id;
-                tree.dataset.parentId = parentId || '';
-                const rowEl = treeRowElement(tree) || currentRowElement;
-                if (rowEl) {
-                  rowEl.setAttribute('creative-id', data.id);
-                  rowEl.creativeId = data.id;
-                  const creativeLink = `/creatives/${data.id}`;
-                  rowEl.setAttribute('link-url', creativeLink);
-                  rowEl.linkUrl = creativeLink;
-                  const levelValue = tree.dataset.level;
-                  if (levelValue) {
-                    rowEl.setAttribute('level', levelValue);
-                    rowEl.level = Number(levelValue);
-                  }
-                  if (parentId) {
-                    rowEl.setAttribute('parent-id', parentId);
-                    rowEl.parentId = parentId;
-                    rowEl.removeAttribute('is-root');
-                    rowEl.isRoot = false;
-                  } else {
-                    rowEl.removeAttribute('parent-id');
-                    rowEl.parentId = null;
-                    rowEl.setAttribute('is-root', '');
-                    rowEl.isRoot = true;
-                  }
-                  rowEl.canWrite = true;
-                  rowEl.setAttribute('can-write', '');
-                  rowEl.requestUpdate?.();
-                }
-                insertRow(tree, data);
-              }
-              const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
-              if (parentTree) refreshRow(parentTree);
+              adoptCreatedTree(tree, data, sentParentId, currentRowElement);
             } else if (method === 'PATCH') {
               refreshRow(tree);
             }
@@ -898,9 +896,53 @@ function setupEditorSession() {
           }
         });
       }
-      return waitForUploads().then(function () {
-        return saveQueue.runExclusive(performSave);
+      return trackNewRowSave(tree, Promise.all([waitForUploads(), retryFailedCreativeBeforeSave(apiQueue, form.dataset.creativeId, () => queueSaveIfDirty(tree), tree)]).then(function () {
+        // Waiting for the previous row's id counts as saving, so an Enter
+        // meanwhile joins this save rather than POSTing the row again.
+        return saveQueue.runExclusive(() => applyDeferredAnchor(tree)?.then(performSave) ?? performSave());
+      }).finally(() => releaseFailedRows(tree)));
+    }
+
+    function adoptCreatedTree(tree, data, parentId, fallbackRow) {
+      bindPersistedTree(tree, data, parentId, fallbackRow);
+      takeRetryDeletedIds(tree).forEach(deleteAttachment);
+      const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
+      if (parentTree) refreshRow(parentTree);
+    }
+
+    function applyDeferredAnchor(tree) {
+      return takeDeferredAnchor(tree)?.then((anchor) => {
+        if (!anchor || form.dataset.creativeId) return;
+        afterInput.value = anchor.afterId;
+        beforeInput.value = anchor.beforeId;
       });
+    }
+
+    // Enter on a new creative: paint its row from the buffer, release the
+    // editor, and POST in the background so the next row opens at once.
+    // Returns the anchor promise the next row is positioned after, or null when
+    // the blocking path must handle it (empty, uploading, typed, or mid-save).
+    function createInBackground(tree, parentId) {
+      if (uploadsPending || saveQueue.saving || typeEditor.value !== undefined) return null;
+      const snapshot = captureBufferSnapshot();
+      if (creativeSaveSnapshotIsEmpty(snapshot)) return null;
+      const body = new FormData(form);
+      if (!snapshot.persistProgress) body.delete('creative[progress]');
+      const request = { action: form.action, body, snapshot, deletedIds: lexicalEditor.getDeletedAttachments?.() || [] };
+      revealCreativeRow(tree, snapshot);
+      tree.dataset.saveState = 'pending';
+      isDirty = false;
+      pendingSave = false;
+      saveQueue.cancelTimer();
+      currentTree = null;
+      currentRowElement = null;
+      template.style.display = 'none';
+      document.dispatchEvent(new CustomEvent('creative-editing:stop', { detail: { creativeId: null } }));
+      return trackCreate(tree, postNewCreative(tree, request, { afterId: afterInput.value, beforeId: beforeInput.value }, {
+        save: creativesApi.save,
+        created: (data) => { adoptCreatedTree(tree, data, parentId, null); restoreRowDraggable(tree); refreshRow(tree); request.deletedIds.forEach(deleteAttachment); },
+        failed: () => form.dataset.saveFailedMessage && alertDialog(form.dataset.saveFailedMessage),
+      }));
     }
 
     // The save request resolves with the raw Response (see creativesApi.save),
@@ -924,7 +966,7 @@ function setupEditorSession() {
     // suppresses preventDefault(). Those callers MUST abort when hideCurrent
     // resolves with SAVE_FAILED — the editor is still bound to the outgoing row
     // holding the unsaved draft, and switching anyway would overwrite it.
-    function hideCurrent(event, { switching = false } = {}) {
+    function hideCurrent(event, { switching = false, waitForServer = false } = {}) {
       if (event?.preventDefault) {
         event.preventDefault();
       }
@@ -957,7 +999,7 @@ function setupEditorSession() {
 
       currentTree = null;
       currentRowElement = null;
-      tree.draggable = true;
+      restoreRowDraggable(tree);
       updateActionButtonStates();
 
       // A failed save leaves the editor hidden and currentTree cleared, so the
@@ -1003,7 +1045,7 @@ function setupEditorSession() {
 
       const finalizeHide = function () {
         template.style.display = 'none';
-        const p = typeEditor.needsFlush(pendingSave, saveQueue.saving) ? typeEditor.flush(() => saveForm(tree, parentId)) : Promise.resolve();
+        const p = flushOnClose(tree, parentId, editCreativeId, waitForServer);
         return p.then((result) => {
           if (isFailedSaveResult(result)) {
             recoverFromFailedSave();
@@ -1011,9 +1053,7 @@ function setupEditorSession() {
           }
           releaseEditingPresence();
           if (wasNew && !form.dataset.creativeId) {
-            // removeTreeElement() restores the placeholder when this leaves the
-            // tree empty — see creative_tree_dom.js.
-            removeTreeElement(tree);
+            discardEmptiedDraft(tree);
           } else if (!tree.querySelector('.creative-row')) {
             const parentTree = parentId ? document.getElementById(`creative-${parentId}`) : null;
             if (parentTree) {
@@ -1034,6 +1074,23 @@ function setupEditorSession() {
 
       const closePromise = uploadsPending ? waitForUploads().then(finalizeHide) : finalizeHide();
       return Promise.resolve(closePromise).finally(() => { closeSaveInProgress = false; });
+    }
+
+    // An emptied new row is discarded: no create will drain the uploads removed
+    // from it, whether by an earlier failed create or since. removeTreeElement()
+    // restores the placeholder when this leaves the tree empty — see
+    // creative_tree_dom.js.
+    const discardEmptiedDraft = (tree) => { [...takeRetryDeletedIds(tree), ...(lexicalEditor.getDeletedAttachments?.() || [])].forEach(deleteAttachment); removeTreeElement(tree); };
+
+    function flushOnClose(tree, parentId, editCreativeId, waitForServer) {
+      if (!typeEditor.needsFlush(pendingSave, saveQueue.saving)) return apiQueue.waitFor(waitForServer ? `creative_${editCreativeId}` : null);
+      // The buffer is what is being saved, so show it now instead of waiting on the server.
+      revealCreativeRow(tree, captureBufferSnapshot());
+      const flushBuffer = () => typeEditor.flush(() => waitForServer ? saveForm(tree, parentId) : requestSave(tree, parentId));
+      if (!saveQueue.saving) return flushBuffer();
+      // An in-flight save swallows the next request without sending it, so let it
+      // settle first and then save the edits made since.
+      return saveQueue.promise.then((result) => isFailedSaveResult(result) || !typeEditor.needsFlush(isDirty || pendingSave, false) ? result : flushBuffer());
     }
 
     // Tears the session down for a row that is already gone from the DOM, so
@@ -1058,10 +1115,18 @@ function setupEditorSession() {
       updateActionButtonStates();
     }
 
+    function applyFetchedCreative(data, tree, revision) {
+      if (currentTree !== tree || editorRevision !== revision) return false;
+      rememberAcknowledgedPosition(tree, data);
+      updateRowFromData(treeRowElement(tree), data);
+      applyCreativeData(data, tree);
+      return true;
+    }
+
     function loadCreative(tree) {
       if (!tree) return;
       const id = tree.dataset?.id;
-      if (!id) return;
+      if (!id) return restoreFailedCreate(tree);
 
       // Try to use cached data from the row first for instant loading
       // BUT only if we have actual content in the dataset
@@ -1071,37 +1136,52 @@ function setupEditorSession() {
       const hasProgress = hasDatasetValue(row, 'progressValue');
 
       const inlineData = inlinePayloadFromTree(tree);
+      const revision = ++editorRevision;
+      // Bind the shared form before exposing it, even while a fresh read is pending.
+      applyCreativeData(inlineData, tree);
 
       // CRITICAL: Require BOTH description AND progress to be present in the dataset
       // If either is missing, inlinePayloadFromTree defaults it (e.g. progress=0),
       // which would overwrite the real value on the server if we saved it.
-      if (inlineData && inlineData.id && hasDescription && hasProgress) {
+      if (inlineData && inlineData.id && hasDescription && hasProgress && !needsCreativeReconciliation(apiQueue, id, row)) {
         console.log('✅ Using cached data for creative', id, '- NO API CALL');
-        applyCreativeData(inlineData, tree);
         return;
       }
 
       // Fallback: if no cached data or incomplete data, fetch from API
       // This happens for lazily loaded children or rows without inline_editor_payload
       console.warn('⚠️ Incomplete or missing cached data for creative', id, '- making API call');
-      creativesApi.get(id)
-        .then(data => {
-          updateRowFromData(treeRowElement(tree), data);
-          applyCreativeData(data, tree);
-        });
+      fetchReconciledCreative(apiQueue, id, row, {
+	fetch: id => creativesApi.get(id),
+	apply: data => applyFetchedCreative(data, tree, revision),
+      });
     }
 
-    function beforeNewOrMove(wasNew, prev, prevParent) {
-      const needsSave = pendingSave || wasNew || saveQueue.saving;
-      const p = needsSave ? saveForm(prev, prevParent) : Promise.resolve();
-      return p.then(() => {
-        if (wasNew && !form.dataset.creativeId) {
-          removeTreeElement(prev);
-        } else {
-          showRow(prev);
-          refreshRow(prev);
-        }
-      });
+    // A row whose background create failed reopens as a new creative holding
+    // the rejected draft, so closing or Enter retries the create.
+    function restoreFailedCreate(tree) {
+      const draft = takeFailedDraft(tree);
+      if (!draft) return;
+      typeEditor.load();
+      resetOriginTracking();
+      if (isMarkdownSourceDraft(draft.snapshot)) activateMarkdownMode(draft.snapshot.markdownSource); else deactivateMarkdownMode();
+      fillFailedDraftForm(form, tree, draft, { methodInput, parentInput, afterInput, beforeInput, childInput, originIdInput, descriptionInput, contentTypeInput, markdownSourceInput, markdownEditorInput });
+      lexicalEditor.load(draft.snapshot.content, `new-${Date.now()}`);
+      setProgressState(draft.snapshot.progress);
+      updateProgressInputAvailability(draft.snapshot.progress);
+      originalProgress = 0;
+      // A new creative always saves on close, so the draft just has to read as unsaved.
+      isDirty = true;
+      pendingSave = true;
+      setSaveStatus('pending');
+      updateActionButtonStates();
+    }
+
+    // Flushes a never-saved row before the editor leaves it. A failed create
+    // resolves false with the draft kept open on the row (see hideCurrent), so
+    // the caller stays put instead of removing the only copy and moving on.
+    function beforeNewOrMove() {
+      return hideCurrent(false, { switching: true }).then((result) => result !== SAVE_FAILED);
     }
 
     /**
@@ -1110,6 +1190,27 @@ function setupEditorSession() {
      * IMPORTANT: Waits for pending uploads to complete before queueing
      * @param {Element} tree - The tree element whose row should be updated (defaults to currentTree)
      */
+    async function persistQueuedSave(tree = currentTree) {
+      try { return await queueSaveIfDirty(tree); } catch (error) {
+        tree.dataset.saveState = 'error';
+        setSaveStatus('error');
+        return { ok: false };
+      }
+    }
+
+    function captureBufferSnapshot(contentType = contentTypeInput?.value) {
+      if (markdownMode) syncMarkdownToForm();
+      return captureQueuedCreativeSaveSnapshot({
+        content: descriptionInput.value,
+        contentType,
+        markdownSource: markdownSourceInput?.value,
+        markdownEditor: markdownEditorInput?.value,
+        progress: readProgressValue(),
+        persistProgress: progressValueChanged(),
+        originId: originIdInput?.value,
+      });
+    }
+
     async function queueSaveIfDirty(tree = currentTree) {
       // Check both isDirty (text changes) and pendingSave (progress/structure changes)
       if (!isDirty && !pendingSave) return;
@@ -1129,20 +1230,9 @@ function setupEditorSession() {
       // Both editor surfaces persist Markdown now. The textarea surface
       // (markdownMode) syncs its value to the hidden fields here; the rich
       // surface already kept them current via onLexicalChange/applyCreativeData.
-      if (markdownMode) syncMarkdownToForm();
-      let snapshot = captureQueuedCreativeSaveSnapshot({
-        content: descriptionInput.value,
-        contentType: contentTypeInput?.value,
-        markdownSource: markdownSourceInput?.value,
-        markdownEditor: markdownEditorInput?.value,
-        progress: readProgressValue(),
-        persistProgress: progressValueChanged(),
-        originId: originIdInput?.value,
-      });
+      let snapshot = captureBufferSnapshot();
       const isMarkdownSave = snapshot.contentType === 'markdown';
-      const currentParentId = tree.dataset.parentId || '';
-      const currentBeforeId = tree.previousElementSibling ? creativeIdFrom(tree.previousElementSibling) : '';
-      const currentAfterId = tree.nextElementSibling ? creativeIdFrom(tree.nextElementSibling) : '';
+      const position = queuedCreativePosition(tree);
       const startCreativeId = creativeId;
       if (creativeSaveSnapshotIsEmpty(snapshot)) {
         pendingSave = false;
@@ -1151,25 +1241,14 @@ function setupEditorSession() {
 
       // CRITICAL: Wait for uploads to complete before queueing
       // But we already captured the values above, so switching editors won't affect us
-      await waitForUploads();
+      if (uploadsPending) await waitForUploads();
 
       // If we are still on the same creative (e.g. move awaited us), refresh the content
       // This ensures we capture the final HTML with signed IDs instead of blob URLs.
       // Markdown saves regenerate description from creative[markdown_source] server-side,
       // so we must re-sync and re-capture the latest textarea value too — otherwise edits
       // made during the upload wait get overwritten by the stale pre-wait source.
-      if (form.dataset.creativeId === startCreativeId) {
-        if (markdownMode) syncMarkdownToForm();
-        snapshot = captureQueuedCreativeSaveSnapshot({
-          content: descriptionInput.value,
-          contentType: snapshot.contentType,
-          markdownSource: markdownSourceInput?.value,
-          markdownEditor: markdownEditorInput?.value,
-          progress: readProgressValue(),
-          persistProgress: progressValueChanged(),
-          originId: originIdInput?.value,
-        });
-      }
+      if (form.dataset.creativeId === startCreativeId) snapshot = captureBufferSnapshot(snapshot.contentType);
 
       // Build request body
       // Note: before_id and after_id must be top-level params, not nested under creative[]
@@ -1189,44 +1268,12 @@ function setupEditorSession() {
         body['creative[progress]'] = snapshot.progress;
       }
 
-      // Always include parent_id, even if empty (for moving to root)
-      body['creative[parent_id]'] = currentParentId;
+      Object.assign(body, position);
+      body['creative[origin_id]'] = snapshot.originId;
       if (historyAnchorInput?.value) body.history_anchor_id = historyAnchorInput.value;
       if (changeGroupTokenInput?.value) body.change_group_token = changeGroupTokenInput.value;
 
-      if (currentBeforeId) {
-        body['before_id'] = currentBeforeId;  // Top-level, not creative[before_id]
-      }
-      if (currentAfterId) {
-        body['after_id'] = currentAfterId;  // Top-level, not creative[after_id]
-      }
-
-      // Update row dataset immediately to keep cached data fresh
-      // IMPORTANT: Use the passed tree parameter, not currentTree, because currentTree
-      // may have already been updated to point to a different creative
-      if (tree) {
-        const row = treeRowElement(tree);
-        if (row) {
-          row.dataset.descriptionHtml = snapshot.content;
-          row.descriptionHtml = snapshot.content;
-          row.dataset.descriptionRawHtml = snapshot.content;
-          if (snapshot.persistProgress) {
-            row.dataset.progressValue = String(snapshot.progress);
-          }
-          row.dataset.contentType = snapshot.contentType;
-          row.dataset.markdownSource = isMarkdownSave ? snapshot.markdownSource : '';
-          // Persist which surface authored this save so a row re-opened from this
-          // cached payload (before any full GET refresh) reopens in the right
-          // editor — without it, rich-authored Markdown falls back to the textarea.
-          row.dataset.markdownEditor = isMarkdownSave ? snapshot.markdownEditor : '';
-          if (currentParentId) {
-            tree.dataset.parentId = currentParentId;
-            row.parentId = currentParentId;
-          }
-          // Trigger Lit component re-render to show updated values
-          row.requestUpdate?.();
-        }
-      }
+      updateQueuedCreativeRow(tree, snapshot);
 
       // Capture deleted attachments to delete AFTER successful save
       // Store as data (not callback) so it can be serialized to localStorage
@@ -1246,13 +1293,21 @@ function setupEditorSession() {
       const onSuccessCreativeId = startCreativeId;
       const onSuccessTree = tree;
       const onSuccessSnapshot = snapshot;
-      apiQueue.enqueue({
+      const cascade = completionCascadePending;
+      completionCascadePending = false;
+      const complete = queuedCreativeCompletion(tree, () => {
+        if (cascade) refreshChildren(tree);
+        if (form.dataset.creativeId === startCreativeId) setSaveStatus(isDirty || pendingSave ? 'pending' : 'saved');
+      }, refreshRow, snapshot.persistProgress);
+      if (form.dataset.creativeId === startCreativeId) setSaveStatus('pending');
+      enqueueCreativeSnapshot(apiQueue, {
         path: `/creatives/${creativeId}`,
         method: 'PATCH',
         body: body,
         dedupeKey: `creative_${creativeId}`,
         deletedAttachmentIds: deletedAttachmentIds,  // Store as data for serialization
         onSuccess: function (data) {
+          if (!complete(data)) return;
           if (!isMarkdownSave) return;
           const canApplyToCurrentEditor = form.dataset.creativeId === onSuccessCreativeId
             && markdownMode
@@ -1263,23 +1318,17 @@ function setupEditorSession() {
               markdownTextarea.value = source;
               syncMarkdownToForm();
             },
-            applyCachedMarkdownSource: (source, savedSource) => {
-              const row = onSuccessTree ? treeRowElement(onSuccessTree) : null;
-              if (row && row.dataset.markdownSource === savedSource) {
-                row.dataset.markdownSource = source;
-                row.requestUpdate?.();
-              }
-            },
+            applyCachedMarkdownSource: cacheSavedMarkdownSource(onSuccessTree),
           });
           if (canApplyToCurrentEditor && applied.currentApplied) {
             originalContent = applied.snapshot.content;
           }
         }
-      });
+      }, complete, tree);
       // console.warn('apiQueue.enqueue disabled for debugging');
 
       const reset = resetCreativeSaveState(snapshot);
-      originalContent = reset.originalContent;
+      originalContent = markdownMode ? snapshot.markdownSource : reset.originalContent;
       if (reset.originalProgress !== undefined) originalProgress = reset.originalProgress;
       isDirty = reset.isDirty;
       pendingSave = reset.pendingSave;
@@ -1289,24 +1338,16 @@ function setupEditorSession() {
     async function move(delta) {
       if (!currentTree) return;
       const target = nextEditorTree(currentTree, delta);
-      if (!target) return;
+      // A row still being created has no id to load the editor from yet.
+      if (await editTickets.waitToEdit(target)) return;
 
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
-      const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly because currentTree will be updated immediately after
-      if (!wasNew) {
-        if (uploadsPending) {
-          // If uploading, we MUST wait for the upload to finish and the save to capture the new URL
-          // otherwise we risk saving the blob URL and losing the attachment
-          await queueSaveIfDirty(prev);
-        } else {
-          queueSaveIfDirty(prev);
-        }
-      }
+      if (wasNew ? !(await beforeNewOrMove()) : isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       // Update UI immediately
       currentTree = target;
@@ -1334,24 +1375,14 @@ function setupEditorSession() {
         }));
       }
 
-      if (wasNew) {
-        // For new creatives, still need to save or cleanup
-        beforeNewOrMove(wasNew, prev, prevParent).then(() => {
-          loadCreative(target);
-          focusAfterMove();
-          // Notify editing started on new creative + start ping
-          startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
-        });
-      } else {
-        // For existing creatives, show the row and refresh if needed
-        if (prev.querySelector('.creative-row')) {
-          showRow(prev);
-        }
-        loadCreative(target);
-        focusAfterMove();
-        // Notify editing started on new creative + start ping
-        startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
+      // A new row was already flushed and shown (or discarded) above.
+      if (!wasNew && prev.querySelector('.creative-row')) {
+        showRow(prev);
       }
+      loadCreative(target);
+      focusAfterMove();
+      // Notify editing started on new creative + start ping
+      startEditingPresence(target.dataset?.id || currentRowElement?.getAttribute('creative-id'));
       updateActionButtonStates();
     }
 
@@ -1359,11 +1390,12 @@ function setupEditorSession() {
       if (!currentTree) return;
 
       // Prevent multiple simultaneous calls to addNew (e.g., from Lexical onChange + keyboard event)
-      if (addNewInProgress) {
-        return;
-      }
+      if (addNewInProgress) return;
       addNewInProgress = true;
       setTimeout(() => { addNewInProgress = false; }, 300);
+      // Claimed before the awaits below so a click still waiting on a pending
+      // create yields to this Enter instead of rebinding the form under it.
+      editTickets.take();
 
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
@@ -1372,13 +1404,7 @@ function setupEditorSession() {
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
-      if (!wasNew) {
-        if (uploadsPending) {
-          await queueSaveIfDirty(prev);
-        } else {
-          queueSaveIfDirty(prev);
-        }
-      }
+      if (!wasNew && isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       // Editing is NOT announced as stopped here. Both branches below end in
       // startNew(), which flushes the previous row through hideCurrent() and
@@ -1389,7 +1415,7 @@ function setupEditorSession() {
       // there was no id to report. addChild() has always relied on hideCurrent()
       // for this.
 
-      const handleAddNew = () => {
+      const handleAddNew = (anchor) => {
         const prevCreativeId = prev.dataset.id;
 
         const childContainer = document.getElementById('creative-children-' + prevCreativeId);
@@ -1408,15 +1434,17 @@ function setupEditorSession() {
           // real root are treated identically, and a real parent id is kept.
           parentId = prev.dataset.parentId || '';
           container = treeContainerElement(prev);
-          afterId = prev.dataset.id;
+          afterId = anchor || prev.dataset.id;
           insertBefore = nodeAfterTreeBlock(prev);
         }
         startNew(parentId, container, insertBefore, beforeId, afterId);
       };
 
       if (wasNew) {
-        // For new creatives, still need to save or cleanup
-        beforeNewOrMove(wasNew, prev, prevParent).then(handleAddNew).finally(() => {
+        // A new creative with content saves in the background; anything else
+        // (empty, uploading, ...) still saves or cleans up before moving on.
+        const anchor = createInBackground(prev, prevParent);
+        (anchor ? Promise.resolve(true) : beforeNewOrMove()).then((moved) => moved && handleAddNew(anchor)).finally(() => {
           addNewInProgress = false;
         });
       } else {
@@ -1431,20 +1459,14 @@ function setupEditorSession() {
 
     async function addChild() {
       if (!currentTree) return;
+      editTickets.take();
       const prev = currentTree;
       if (!(await typeEditor.beforeMove(() => hideCurrent(false, { switching: true })))) return;
       const wasNew = !form.dataset.creativeId;
-      const prevParent = parentInput.value;
 
       // Queue save if dirty (non-blocking unless uploading)
       // CRITICAL: Pass 'prev' tree explicitly
-      if (!wasNew) {
-        if (uploadsPending) {
-          await queueSaveIfDirty(prev);
-        } else {
-          queueSaveIfDirty(prev);
-        }
-      }
+      if (!wasNew && isFailedSaveResult(await persistQueuedSave(prev))) return;
 
       const handleAddChild = () => {
         const parentId = prev.dataset.id;
@@ -1462,7 +1484,7 @@ function setupEditorSession() {
 
       if (wasNew) {
         // For new creatives, still need to save or cleanup
-        beforeNewOrMove(wasNew, prev, prevParent).then(handleAddChild);
+        beforeNewOrMove().then((moved) => moved && handleAddChild());
       } else {
         // For existing creatives, show the row if it exists and proceed
         if (prev.querySelector('.creative-row')) {
@@ -1600,6 +1622,9 @@ function setupEditorSession() {
       if (!currentTree || !form.dataset.creativeId) return;
       const id = form.dataset.creativeId;
       const tree = currentTree;
+      // A link displays its origin's children, but removing it only deletes the shell.
+      const isLink = Boolean(inlinePayloadFromTree(tree)?.origin_id);
+      withChildren = withChildren && !isLink;
       const trees = Array.from(document.querySelectorAll('.creative-tree'));
       const index = trees.indexOf(tree);
       const nextId = trees[index + 1] ? trees[index + 1].dataset.id : null;
@@ -1615,16 +1640,7 @@ function setupEditorSession() {
       }
 
       creativesApi.destroy(id, withChildren).then(() => {
-        const destroyedIds = [String(id)];
-        if (withChildren) {
-          const childrenContainer = document.getElementById("creative-children-" + id);
-          if (childrenContainer) {
-            childrenContainer.querySelectorAll('creative-tree-row').forEach(row => {
-              const cid = row.getAttribute('creative-id');
-              if (cid) destroyedIds.push(cid);
-            });
-          }
-        }
+        const destroyedIds = destroyedIdsForRemoval(id, withChildren);
         document.dispatchEvent(new CustomEvent('creative-destroyed', {
           detail: { creativeIds: destroyedIds }
         }));
@@ -1646,10 +1662,9 @@ function setupEditorSession() {
         // container would say "no children" for every tree the user never opened.
         // The container is still consulted as well, because a child inserted
         // client-side is in the DOM before any flag round-trips.
-        const promotesChildrenToRoot = !withChildren && !parentTree &&
-          (rowFlagHasChildren(treeRowElement(tree)) ||
-            !!childrenTree?.querySelector('creative-tree-row'));
-        if (!withChildren && childrenTree && parentTree) {
+        const promotesChildrenToRoot = removalPromotesChildren({ isLink, withChildren, parentTree,
+          hasChildren: rowFlagHasChildren(treeRowElement(tree)), childrenTree });
+        if (shouldRefreshRemovalParent(isLink, withChildren, childrenTree, parentTree)) {
           refreshChildren(parentTree).then(() => {
             if (parentTree) refreshRow(parentTree);
           });
@@ -1678,15 +1693,19 @@ function setupEditorSession() {
       });
     }
 
+    // The picker is a later edit request too, and the link goes to the row it
+    // was opened on even if the editor has moved on by the time one is picked.
     function linkExistingCreative() {
       if (!currentTree || !form.dataset.creativeId) return;
+      editTickets.take();
+      const tree = currentTree, parentId = form.dataset.creativeId;
 
       const modal = document.getElementById('link-creative-modal')
       const controller = application.getControllerForElementAndIdentifier(modal, 'link-creative')
       if (controller) {
         controller.open(linkBtn?.getBoundingClientRect(), (item) => {
-          creativesApi.linkExisting(form.dataset.creativeId, item.id).then(() => {
-            refreshChildren(currentTree).then(() => refreshRow(currentTree));
+          creativesApi.linkExisting(parentId, item.id).then(() => {
+            refreshChildren(tree).then(() => refreshRow(tree));
           });
         });
       }
@@ -1704,6 +1723,7 @@ function setupEditorSession() {
       // failure. Starting a new row here would replace that buffer and let the
       // stale completion mutate the newer session.
       if (closeSaveInProgress) return;
+      editTickets.take();
       resetOriginTracking();
       const performStart = () => {
         typeEditor.load();
@@ -1780,7 +1800,7 @@ function setupEditorSession() {
           form.dataset.creativeId = '';
           parentInput.value = parentId || '';
           beforeInput.value = beforeId || '';
-          afterInput.value = afterId || '';
+          deferRowAnchor(newTree, afterId, afterInput);
           if (childInput) childInput.value = childId || '';
           resetOriginTracking();
           deactivateMarkdownMode();
@@ -1801,11 +1821,7 @@ function setupEditorSession() {
           }));
         };
 
-        if (rowComponent.updateComplete) {
-          rowComponent.updateComplete.then(finalizeSetup);
-        } else {
-          requestAnimationFrame(finalizeSetup);
-        }
+        if (rowComponent.updateComplete) rowComponent.updateComplete.then(finalizeSetup); else requestAnimationFrame(finalizeSetup);
       };
 
       if (currentTree) {
@@ -1819,6 +1835,7 @@ function setupEditorSession() {
     }
 
     function scheduleSave() {
+      editorRevision += 1;
       // Skip scheduling save for already-destroyed creatives
       const creativeId = form.dataset?.creativeId;
       if (creativeId && destroyedCreativeIds.has(String(creativeId))) return;
@@ -1832,7 +1849,7 @@ function setupEditorSession() {
       // up/down, reorder) schedule a save without setting isDirty, and must not
       // keep showing the previous "saved" label.
       setSaveStatus('pending');
-      saveQueue.schedule(function () { saveForm(); });
+      saveQueue.schedule(function () { requestSave(); });
     }
 
     function onLexicalChange(payload) {
@@ -1862,8 +1879,9 @@ function setupEditorSession() {
         if (markdownPreview) markdownPreview.innerHTML = renderMarkdown(md);
       }, 300);
 
+      // Like the toolbar picker, an opened inline picker is a later edit request.
       const triggerRange = markdownCreativeCommandRange(md, markdownTextarea.selectionStart);
-      if (triggerRange) openCreativeLinkPicker(markdownTextarea, { triggerRange });
+      if (triggerRange && openCreativeLinkPicker(markdownTextarea, { triggerRange })) editTickets.take();
     }
 
     // Intercepts Shift+Enter via capture-phase keydown on Lexical's root element.
@@ -1879,7 +1897,7 @@ function setupEditorSession() {
       if (!editorInstance) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        hideCurrent();
+        closeByUser();
         return;
       }
       if (event.key === 'Enter' && event.altKey) {
@@ -1919,7 +1937,7 @@ function setupEditorSession() {
 
       if ((isArrowUp || isCtrlP) && atStart) {
         event.preventDefault();
-        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+        // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
         move(-1);
         requestAnimationFrame(() => lexicalEditor.focus());
         return;
@@ -1927,7 +1945,7 @@ function setupEditorSession() {
 
       if ((isArrowDown || isCtrlN) && atEnd) {
         event.preventDefault();
-        // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+        // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
         move(1);
         requestAnimationFrame(() => lexicalEditor.focus());
       }
@@ -1935,6 +1953,7 @@ function setupEditorSession() {
 
     if (progressInput) {
       progressInput.addEventListener('change', function () {
+	editorRevision += 1;
         if (progressValue) {
           progressValue.textContent = formatProgressDisplay(readProgressValue());
         }
@@ -1953,20 +1972,18 @@ function setupEditorSession() {
         // when the user navigates away before the debounce timer fires.
         pendingSave = true;
         saveQueue.cancelTimer();
-        saveForm();
+        requestSave();
       });
     }
 
-    if (closeBtn) {
-      closeBtn.addEventListener('click', hideCurrent);
-    }
+    closeBtn?.addEventListener('click', closeByUser);
 
     upBtn.addEventListener('click', function () {
-      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+      // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
       move(-1);
     });
     downBtn.addEventListener('click', function () {
-      // Don't call saveForm() here - move() handles async saving via queueSaveIfDirty
+      // Don't call requestSave() here - move() handles async saving via queueSaveIfDirty
       move(1);
     });
 
@@ -1990,7 +2007,7 @@ function setupEditorSession() {
         const isArchived = row?.hasAttribute('archived');
         const confirmMsg = isArchived ? archiveBtn.dataset.restoreConfirm : archiveBtn.dataset.confirm;
 
-        if (await confirmDialog(confirmMsg)) {
+        if (await confirmForCurrent(confirmMsg)) {
           const releaseTreeReload = holdCreativeTreeReload();
           // Flush the editor BEFORE the archive request goes out, not after it has
           // landed. The row is about to be removed (or the tree re-rendered), so a
@@ -2004,7 +2021,7 @@ function setupEditorSession() {
           // the user asked for something that is now not happening, so they get the
           // alert. recoverFromFailedSave() keeps the draft in the editor on this row,
           // which is what that alert promises — and, because we abort, stays true.
-          const flushed = await hideCurrent(undefined, { switching: true }).catch(err => {
+          const flushed = await hideCurrent(undefined, { switching: true, waitForServer: true }).catch(err => {
             console.error('CreativeRowEditor: Failed to flush the editor before archiving', err);
             return SAVE_FAILED;
           });
@@ -2096,22 +2113,13 @@ function setupEditorSession() {
       });
     }
 
-    if (deleteBtn) {
-      deleteBtn.addEventListener('click', async function () {
-        if (await confirmDialog(deleteBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
-      });
-    }
+    [[deleteBtn, false], [deleteWithChildrenBtn, true], [unlinkBtn, false]].forEach(([button, withChildren]) => button?.addEventListener('click', async function () {
+      if (await confirmForCurrent(button.dataset.confirm, { danger: true })) deleteCurrent(withChildren);
+    }));
 
-    if (deleteWithChildrenBtn) {
-      deleteWithChildrenBtn.addEventListener('click', async function () {
-        if (await confirmDialog(deleteWithChildrenBtn.dataset.confirm, { danger: true })) deleteCurrent(true);
-      });
-    }
-
-    // Expose for testing
+    // Exposed for tests and for the document view (creative_tree_row_document_view.js)
     window.creativeRowEditor = {
       setUploadsPending: (pending) => {
-        uploadsPending = pending;
         if (pending) {
           uploadCompletionPromise = new Promise((resolve) => {
             resolveUploadCompletion = resolve;
@@ -2132,17 +2140,13 @@ function setupEditorSession() {
           handleUploadStateChange(false);
         }
       },
-      isUploadPending: () => uploadsPending
+      isUploadPending: () => uploadsPending,
+      // Closes the editor once its draft is on the server; false when the save failed.
+      flush: () => hideCurrent(undefined, { switching: true, waitForServer: true }).then((result) => result !== SAVE_FAILED)
     };
 
     if (linkBtn) {
       linkBtn.addEventListener('click', linkExistingCreative);
-    }
-
-    if (unlinkBtn) {
-      unlinkBtn.addEventListener('click', async function () {
-        if (await confirmDialog(unlinkBtn.dataset.confirm, { danger: true })) deleteCurrent(false);
-      });
     }
 
     if (unconvertBtn) {
@@ -2150,10 +2154,10 @@ function setupEditorSession() {
         const creativeId = form.dataset.creativeId;
         if (!creativeId) return;
         const confirmText = unconvertBtn.dataset.confirm;
-        if (confirmText && !(await confirmDialog(confirmText))) return;
+        if (confirmText && !(await confirmForCurrent(confirmText))) return;
         const errorMessage = unconvertBtn.dataset.error || 'Failed to unconvert.';
         unconvertBtn.disabled = true;
-        saveForm()
+        saveForm(currentTree, parentInput.value)
           .then(function (saveResponse) {
             if (saveResponse && saveResponse.ok === false) {
               return saveResponse
@@ -2219,6 +2223,10 @@ function setupEditorSession() {
           return;
         }
 
+        // A later edit request: a click waiting on a pending create must not
+        // move the editor, and the popup saves to the row it was opened on.
+        editTickets.take();
+        metadataPopup.dataset.creativeId = creativeId;
         loadMetadataForCreative(creativeId);
         metadataPopup.style.display = 'block';
       });
@@ -2231,7 +2239,7 @@ function setupEditorSession() {
 
       if (metadataSaveBtn) {
         metadataSaveBtn.addEventListener('click', function () {
-          const creativeId = form.dataset.creativeId;
+          const creativeId = metadataPopup.dataset.creativeId;
           if (!creativeId) return;
 
           try {
@@ -2270,7 +2278,7 @@ function setupEditorSession() {
           // stays canonical; we only flip the authoring surface to rich so it
           // reopens in Lexical, and render it to HTML for the editor view.
           const confirmMsg = toggleMarkdownBtn.dataset.confirmToRichtext;
-          if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
+          if (confirmMsg && !(await confirmForCurrent(confirmMsg))) return;
           const md = markdownTextarea?.value || '';
           const html = md ? renderMarkdown(md) : '';
           deactivateMarkdownMode();
@@ -2291,7 +2299,7 @@ function setupEditorSession() {
           const currentHtml = descriptionInput.value || '';
           if (!isHtmlEmpty(currentHtml)) {
             const confirmMsg = toggleMarkdownBtn.dataset.confirmToMarkdown;
-            if (confirmMsg && !(await confirmDialog(confirmMsg))) return;
+            if (confirmMsg && !(await confirmForCurrent(confirmMsg))) return;
           }
           const existingMarkdown = markdownSourceInput ? markdownSourceInput.value : '';
           activateMarkdownMode(existingMarkdown);
@@ -2309,7 +2317,7 @@ function setupEditorSession() {
       markdownTextarea.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') {
           event.preventDefault();
-          hideCurrent();
+          closeByUser();
           return;
         }
         // Shift+Enter → add new sibling (same as Lexical)

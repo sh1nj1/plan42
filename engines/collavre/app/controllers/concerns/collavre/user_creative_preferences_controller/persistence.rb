@@ -8,8 +8,20 @@ module Collavre
 
     private
 
+    # Keep bounded watermarks on the user, independently of disposable
+    # preferences. The same transaction commits both the fence and the toggle.
+    def with_expansion_order
+      user = Current.user.class.find(Current.user.id)
+      user.with_lock do
+        order = Creatives::ExpansionSaveOrder.new(user.expansion_save_sequences)
+        result = yield order
+        user.update_columns(expansion_save_sequences: order.state)
+        result
+      end
+    end
+
     # insert_all uses the unique preference key as the first-insert fence.
-    # A row lock alone cannot serialize two requests that both see no row.
+    # Root inserts also use the partial unique index and the user lock.
     def preference_for(creative_id)
       now = Time.current
       attributes = { creative_id: creative_id, user_id: Current.user.id, expanded_status: {}, created_at: now, updated_at: now }
@@ -18,14 +30,41 @@ module Collavre
     end
 
     def insert_preference(attributes)
+      return if attributes[:creative_id].nil? && UserCreativePreference.exists?(user_id: attributes[:user_id], creative_id: nil)
+
       UserCreativePreference.transaction(requires_new: true) do
-        UserCreativePreference.insert_all([ attributes ], unique_by: :index_user_creative_preferences_on_creative_id_and_user_id)
+        UserCreativePreference.insert_all([ attributes ])
       end
+    rescue ActiveRecord::RecordNotUnique
+      # The savepoint has rolled back, so PostgreSQL can read the winning row.
+      # preference_for reacquires it; a concurrent deletion uses the lock retry.
+      raise unless attributes[:creative_id].nil?
     rescue ActiveRecord::InvalidForeignKey
       # Only the initial insert is covered, after its savepoint has rolled back.
       # Check the actual origin id being written, not the linked request id.
       Creative.find(attributes[:creative_id]) if attributes[:creative_id].present?
       raise
+    end
+
+    def with_preference(creative_id, &block)
+      return with_locked_preference(creative_id, &block) if creative_id.present?
+
+      # Serialize root changes in addition to the database uniqueness constraint.
+      Current.user.class.find(Current.user.id).with_lock do
+        consolidate_root_preferences
+        with_locked_preference(nil, &block)
+      end
+    end
+
+    def consolidate_root_preferences
+      # Legacy writers do not take the user lock. Lock each observed row before
+      # reading its state, and never delete a later insert we have not merged.
+      roots = UserCreativePreference.where(user_id: Current.user.id, creative_id: nil).order(:id).lock.to_a
+      return if roots.size < 2
+
+      state = roots.each_with_object({}) { |record, merged| merged.merge!(record.expanded_status || {}) }
+      roots.first.update_columns(expanded_status: state)
+      UserCreativePreference.where(id: roots.drop(1).map(&:id)).delete_all
     end
 
     # A collapse can remove an empty row after it is found but before with_lock
@@ -36,7 +75,7 @@ module Collavre
     # times: once the row is locked the block owns the transaction, so a
     # RecordNotFound it raises itself must propagate rather than replay the
     # block, and a row that keeps vanishing must surface instead of spinning.
-    def with_preference(creative_id)
+    def with_locked_preference(creative_id)
       attempts = 0
       locked = false
 

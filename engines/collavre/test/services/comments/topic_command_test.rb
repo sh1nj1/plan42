@@ -21,6 +21,28 @@ module Collavre
         @topic = Topic.create!(creative: @creative, user: @user, name: "Test Topic")
       end
 
+      test "rejects judgment-only primary agents with a localized explanation" do
+        @ai_agent.update!(llm_vendor: "typesafe", llm_model: "jev-latest")
+        comment = create_comment('/topic "Judge" @TestAgent:')
+        result = TopicCommand.new(comment: comment, user: @user).call
+
+        assert_equal I18n.t("collavre.comments.topic_command.agent_chat_not_supported", agent: @ai_agent.display_name), result
+        assert_not Topic.exists?(creative: @creative, name: "Judge")
+      end
+
+      test "explicit judgment-only selector preserves an existing primary pin" do
+        @topic.set_primary_agent!(@ai_agent)
+        judge = users(:two)
+        judge.update!(name: "JudgeSelector", llm_vendor: "typesafe", searchable: true)
+        [ "@JudgeSelector:", "@#{judge.email}" ].each do |selector|
+          comment = create_comment("/topic \"Test Topic\" #{selector}")
+          result = TopicCommand.new(comment: comment, user: @user).call
+          assert_equal I18n.t("collavre.comments.topic_command.agent_chat_not_supported", agent: judge.display_name), result
+          assert_equal @ai_agent.id, @topic.reload.primary_agent_id
+          assert_not_includes comment.mentioned_users, judge
+        end
+      end
+
       test "creates topic with quoted name" do
         comment = create_comment('/topic "My New Topic"')
 
@@ -56,11 +78,27 @@ module Collavre
           assert_equal "created", data[:action]
           assert data[:topic][:primary_agent].present?, "Expected primary_agent in broadcast"
           assert_equal @ai_agent.id, data[:topic][:primary_agent][:id]
+          assert_equal true, data[:topic][:primary_agent][:default_avatar]
+          assert_equal "T", data[:topic][:primary_agent][:initial]
         }) do
           TopicCommand.new(comment: comment, user: @user).call
         end
 
         assert broadcast_called
+      end
+
+      test "broadcasts default avatar metadata when assigning an existing topic" do
+        comment = create_comment('/topic "Test Topic" @TestAgent: ')
+        broadcast = nil
+
+        TopicsChannel.stub(:broadcast_to, ->(_creative, data) { broadcast = data }) do
+          TopicCommand.new(comment: comment, user: @user).call
+        end
+
+        assert_equal "updated", broadcast[:action]
+        assert_equal @ai_agent.id, broadcast[:topic][:primary_agent][:id]
+        assert_equal true, broadcast[:topic][:primary_agent][:default_avatar]
+        assert_equal "T", broadcast[:topic][:primary_agent][:initial]
       end
 
       test "does not broadcast when topic already exists" do

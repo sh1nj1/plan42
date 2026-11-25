@@ -309,3 +309,14 @@ test('terminal emits warnings follow handler changes and applied JSON', async ()
   current.applyRaw()
   expect(warning()).toContain(labels.non_emitting)
 })
+
+
+test.each([undefined, '', 'Analysis', 42])('renders and saves execution topic %j without losing other rule fields', async topicName => {
+  const raw = { ...payload, topic_name: topicName }
+  await mount(data([rule(raw)]))
+  expect(form().querySelector('[name="topic-name"]').value).toBe(typeof topicName === 'string' ? topicName : '')
+  change('topic-name', 'Daily analysis')
+  csrfFetch.mockResolvedValueOnce({ ok: true, json: async () => rule({ ...raw, topic_name: 'Daily analysis' }) })
+  submit(); await tick()
+  expect(JSON.parse(csrfFetch.mock.calls.at(-1)[1].body).workflow_rule).toEqual({ ...raw, topic_name: 'Daily analysis' })
+})

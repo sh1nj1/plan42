@@ -9,11 +9,19 @@ import {
 import { z } from "zod";
 import { basename } from "path";
 import { CollavreClient } from "./collavre-client.js";
-import { CableSubscriber, type AgentEvent } from "./cable-subscriber.js";
+import { CableSubscriber } from "./cable-subscriber.js";
 import { loadConfig } from "./config.js";
 import { resolveSessionId, defaultSessionStateDir } from "./session.js";
-import { shouldHandleDispatch } from "./dispatch-filter.js";
-import { PermissionCoordinator, type Behavior } from "./permission.js";
+import { makeEventHandler, type ActiveContext } from "./dispatch-handler.js";
+import { QuotaState, quotaDirectory } from "./quota-state.js";
+const quotaState = new QuotaState(quotaDirectory(process.cwd()));
+
+import { PermissionCoordinator } from "./permission.js";
+import { ApprovalWaiter, newApprovalRequestId, resolveApprovalWaitMs } from "./approval.js";
+import { replyWithApprovalHandoff } from "./approval-reply.js";
+import type { CollavreConfig } from "./config.js";
+import { runApprovalRequest } from "./approval-tool.js";
+import { randomUUID } from "crypto";
 
 // Native Claude Channel permission relay (CC v2.1.168+). When the
 // `claude/channel/permission` capability is declared, Claude Code relays each
@@ -22,7 +30,6 @@ import { PermissionCoordinator, type Behavior } from "./permission.js";
 // decision; the payload carries no topic, so we map it to the active dispatch.
 const PERMISSION_REQUEST_METHOD =
   "notifications/claude/channel/permission_request";
-const PERMISSION_DECISION_METHOD = "notifications/claude/channel/permission";
 
 const PermissionRequestNotificationSchema = z.object({
   method: z.literal(PERMISSION_REQUEST_METHOD),
@@ -45,9 +52,12 @@ function buildServer(
   client: CollavreClient,
   active: ActiveContext,
   coordinator: PermissionCoordinator,
+  approvalWaiter: ApprovalWaiter,
+  approvalWaitMs: number,
+  config: CollavreConfig,
 ): Server {
   const server = new Server(
-    { name: "collavre", version: "0.1.0" },
+    { name: "collavre", version: "0.1.1" },
     {
       capabilities: {
         experimental: {
@@ -60,11 +70,13 @@ function buildServer(
         tools: {},
       },
       instructions: [
-        'Messages from Collavre arrive as <channel source="collavre" topic_id="..." author="..." comment_id="..." task_id="...">.',
-        "Reply using the reply tool, passing topic_id AND task_id from the tag",
+        'Messages from Collavre arrive as <channel source="collavre" topic_id="..." author="..." comment_id="..." task_id="..." execution_generation="...">.',
+        "Reply using the reply tool, passing topic_id, task_id, AND execution_generation from the tag",
         "(task_id correlates the reply with the exact dispatched task when",
         "multiple delegated tasks can be in flight on the same topic).",
         'Never reply to your own messages (author starts with "claude-").',
+        "Before doing something the human should sign off on (irreversible, out of scope, or ambiguous),",
+        "ask with the approval_request tool: it posts your question with Approve/Deny buttons and waits for their decision.",
       ].join("\n"),
     },
   );
@@ -85,19 +97,69 @@ function buildServer(
               type: "string",
               description: "The message text to send",
             },
+            execution_generation: { type: "string", description: "Echo execution_generation from the dispatch tag without changing it." },
             task_id: {
               type: "number",
               description:
                 "Task ID echoed from the dispatch notification meta. Required: when topic concurrency > 1 multiple delegated tasks can coexist, and replies must correlate to the exact dispatched task — omitting this would let the server fall back to the oldest delegated task and complete the wrong one.",
             },
           },
-          required: ["topic_id", "text", "task_id"],
+          required: ["topic_id", "text", "task_id", "execution_generation"],
+        },
+      },
+      {
+        name: "approval_request",
+        description:
+          "Ask the human in Collavre to approve or deny something before you act, and wait for their answer. " +
+          "The question is posted into the current topic with Approve / Deny buttons and this call blocks until " +
+          "someone decides, returning approved or denied plus their optional reason and who decided. " +
+          "Denial is a normal result: do not perform the denied action, reconsider the plan instead. " +
+          "There is no deadline on the human — if the wait window elapses the call returns pending with a " +
+          "request_id; call it again with that request_id to keep waiting, or end your turn saying you are blocked. " +
+          "If you confirm the gate was deleted, pass request_id and abandon=true to release local tracking. " +
+          "Abandoning does not grant approval or change a server gate.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            question: {
+              type: "string",
+              description:
+                "The concrete decision you need from the human. Markdown supported. Omit when resuming or abandoning via request_id.",
+            },
+            approver_user_id: {
+              type: "number",
+              description:
+                "Optional: route the decision to this Collavre user instead of the person running this session. Must be a human who can read the creative.",
+            },
+            abandon: {
+              type: "boolean",
+              description:
+                "Release only this session's local wait for request_id after confirming its gate was deleted. Does not approve, deny, or delete a server gate.",
+            },
+            request_id: {
+              type: "string",
+              description:
+                "Optional: keep waiting on an approval request you already raised (returned in a pending result). Omit to raise a new request.",
+            },
+          },
         },
       },
     ],
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    if (req.params.name === "approval_request") {
+      return await runApprovalRequest(req.params.arguments, {
+        relay: params => client.requestApproval(params),
+        waiter: approvalWaiter,
+        coordinator,
+        active,
+        waitMs: approvalWaitMs,
+        newRequestId: () => newApprovalRequestId(randomUUID),
+        log: message => process.stderr.write(`${message}\n`),
+      });
+    }
+
     if (req.params.name !== "reply") {
       return errorResult(`Unknown tool: ${req.params.name}`);
     }
@@ -125,20 +187,29 @@ function buildServer(
       return errorResult("task_id must be a number");
     }
 
-    const result = await client.reply(topicId, text, taskId);
+    if (typeof record.execution_generation !== "string" || !record.execution_generation) {
+      return errorResult("execution_generation is required — echo it from the dispatch notification meta");
+    }
+    const result = await replyWithApprovalHandoff(config, topicId, text, taskId, record.execution_generation, approvalWaiter, coordinator, active).catch(async error => {
+      await quotaState.prune(turn => client.quotaTurnCurrent(turn));
+      throw error;
+    });
+    quotaState.remove(taskId, record.execution_generation);
 
-    // The dispatched turn is concluding (Claude has replied). Reset the active
-    // context to the registration inbox default so a subsequent locally-
-    // initiated turn's permission prompt surfaces in the inbox rather than
-    // leaking into this just-finished work topic.
-    active.topicId = active.defaultTopicId;
-    active.taskId = null;
-
-    // Drop any permission requests still pending from this finished turn. They
-    // were answered via the local TUI dialog (Claude Code sends no per-request
-    // resolution signal), so a later click on the now-stale Collavre approval
-    // comment must not be claimed and forwarded to a turn that is already over.
-    coordinator.clear();
+    // Benign dedup: another session sharing this agent already claimed and
+    // answered this dispatch (server returned 409 already_completed). Nothing
+    // was posted by us, and that is correct — report it as a non-error so the
+    // model doesn't treat a normal multi-session race as a failed reply.
+    if (!result.handled) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Already answered by another session sharing this agent — nothing to send.",
+          },
+        ],
+      };
+    }
 
     return {
       content: [
@@ -148,146 +219,6 @@ function buildServer(
   });
 
   return server;
-}
-
-// Tracks the most recently forwarded dispatch so an incoming permission_request
-// (which carries no topic or task) can be surfaced into the right topic AND
-// authorized as the dispatched agent. A Claude Code session processes one turn
-// at a time, so the last forwarded dispatch is the turn whose tool is now
-// awaiting permission.
-//
-// taskId is the dispatch's delegated task: the server authorizes /notify
-// against it so prompts raised on a *work* topic (where this session is not the
-// topic's primary_agent, having been matched via routing_expression) still
-// surface — topic.primary_agent alone would 403 there.
-//
-// defaultTopicId is the registration inbox topic. After a turn ends (the reply
-// tool is called) topicId/taskId reset to this default so a subsequent locally-
-// initiated turn's prompt surfaces in the inbox instead of leaking into the
-// just-finished work topic (and so a normal reply there is not consumed as a
-// permission decision).
-interface ActiveContext {
-  topicId: number | null;
-  taskId: number | null;
-  defaultTopicId: number | null;
-  // This session's own session topic (from register). Fixed for the process
-  // lifetime: used to ignore dispatches routed to a sibling session's mapped
-  // topic over the shared per-agent stream.
-  sessionTopicId: number | null;
-}
-
-async function sendPermissionDecision(
-  server: Server,
-  requestId: string,
-  behavior: Behavior,
-): Promise<void> {
-  await server.notification({
-    method: PERMISSION_DECISION_METHOD,
-    params: { request_id: requestId, behavior },
-  });
-}
-
-function makeEventHandler(
-  server: Server,
-  client: CollavreClient,
-  coordinator: PermissionCoordinator,
-  active: ActiveContext,
-  debug: boolean,
-) {
-  return async (event: AgentEvent): Promise<void> => {
-    // A structured permission decision (approve/deny button click relayed by the
-    // server). It carries an explicit request_id + behavior — no text parsing.
-    // The broadcast reaches every session sharing this agent; only the session
-    // that surfaced this request_id claims it and forwards it to Claude Code.
-    if (event.type === "permission_decision") {
-      const { request_id, behavior } = event;
-      if (!request_id || (behavior !== "allow" && behavior !== "deny")) return;
-      if (!coordinator.claim(request_id)) {
-        if (debug) {
-          process.stderr.write(
-            `[collavre] Ignoring permission_decision for unknown/foreign request_id=${request_id}\n`,
-          );
-        }
-        return;
-      }
-      process.stderr.write(
-        `[collavre] Permission decision: ${behavior} (request_id=${request_id})\n`,
-      );
-      try {
-        await sendPermissionDecision(server, request_id, behavior);
-      } catch (err) {
-        process.stderr.write(
-          `[collavre] Failed to send permission decision: ${err instanceof Error ? err.stack : err}\n`,
-        );
-      }
-      return;
-    }
-
-    if (event.type !== "dispatch" || !event.comment) {
-      if (debug) {
-        process.stderr.write(
-          `[collavre] Ignoring non-dispatch event: ${JSON.stringify(event).slice(0, 200)}\n`,
-        );
-      }
-      return;
-    }
-
-    const topicId = event.comment.topic_id;
-
-    // Ignore dispatches that belong to a sibling session's mapped topic. A
-    // shared agent fans out to many session topics, and every session on this
-    // agent's stream hears them all — only the owning session answers its own
-    // session topic. Work/project topics (session_topic=false) pass through;
-    // the server's atomic task claim dedups if two sessions both take one.
-    if (
-      !shouldHandleDispatch({
-        sessionTopic: event.session_topic,
-        dispatchTopicId: topicId,
-        mySessionTopicId: active.sessionTopicId,
-      })
-    ) {
-      if (debug) {
-        process.stderr.write(
-          `[collavre] Ignoring dispatch for sibling session topic #${topicId} (mine=#${active.sessionTopicId})\n`,
-        );
-      }
-      return;
-    }
-
-    process.stderr.write(
-      `[collavre] Dispatch: comment #${event.comment.id} by ${event.comment.author_name} (id=${event.comment.author_id}) task_id=${event.task_id ?? "none"}\n`,
-    );
-
-    // Record the active turn's topic AND delegated task so a permission_request
-    // relayed during it can be surfaced into this topic and authorized as the
-    // dispatched agent (work topics where this session is not primary_agent).
-    active.topicId = topicId;
-    active.taskId = event.task_id ?? null;
-
-    try {
-      const meta: Record<string, string> = {
-        topic_id: String(event.comment.topic_id),
-        comment_id: String(event.comment.id),
-        author: event.comment.author_name,
-        author_id: String(event.comment.author_id),
-      };
-      if (event.task_id != null) {
-        meta.task_id = String(event.task_id);
-      }
-      await server.notification({
-        method: "notifications/claude/channel" as const,
-        params: {
-          content: event.comment.content,
-          meta,
-        },
-      });
-      process.stderr.write(`[collavre] Notification sent OK\n`);
-    } catch (err) {
-      process.stderr.write(
-        `[collavre] Failed to forward message: ${err instanceof Error ? err.stack : err}\n`,
-      );
-    }
-  };
 }
 
 async function main(): Promise<void> {
@@ -309,13 +240,15 @@ async function main(): Promise<void> {
   );
 
   const coordinator = new PermissionCoordinator();
+  const approvalWaiter = new ApprovalWaiter();
+  const approvalWaitMs = resolveApprovalWaitMs(process.env);
   const active: ActiveContext = {
     topicId: null,
     taskId: null,
     defaultTopicId: null,
     sessionTopicId: null,
   };
-  const server = buildServer(client, active, coordinator);
+  const server = buildServer(client, active, coordinator, approvalWaiter, approvalWaitMs, config);
 
   // Surface relayed tool-permission prompts into the active topic so the user
   // can approve/deny from Collavre. Registered before connect so the handler
@@ -370,7 +303,7 @@ async function main(): Promise<void> {
   const cable = new CableSubscriber(
     config.url,
     config.token,
-    makeEventHandler(server, client, coordinator, active, debug),
+    makeEventHandler(server, client, coordinator, approvalWaiter, active, debug, quotaState),
     debug,
   );
 
@@ -416,6 +349,7 @@ async function main(): Promise<void> {
   cable.subscribeToAgent(reg.agent_id, sessionId);
 
   const cleanup = async () => {
+    quotaState.clear();
     cable.disconnect();
     await client.unregister(reg.agent_id, reg.topic_id, sessionId);
     process.exit(0);

@@ -28,6 +28,7 @@ module Collavre
           yield topic if block_given?
           MoveBlocker.new(topic).call
           clear_source_last_topic_preferences
+          Comment.invalidate_public_images_of(topic.comments)
           topic.comments.update_all(creative_id: target_creative.id)
           topic.comment_snapshots.update_all(creative_id: target_creative.id)
           ReadPointerRelocator.new(topic: topic, target_creative: target_creative).call

@@ -35,7 +35,7 @@
   </details>
 <% end %>
 
-<% if change_set.status == "draft" && creative.has_permission?(Current.user, :write) %>
+<% if change_set.status == "draft" && (creative.has_permission?(Current.user, :write) || removal_draft_accessible) %>
   <button type="button"
           class="approve-comment-btn"
           data-action="creative-history#revert"

@@ -238,7 +238,7 @@ class AiAgentJobTest < ActiveJob::TestCase
   test "cancels during streaming when task status changes to cancelled" do
     task = Task.create!(
       name: "Response to test_event",
-      status: "running",
+      status: "pending",
       trigger_event_name: "test_event",
       trigger_event_payload: @context,
       agent: @agent
@@ -314,6 +314,30 @@ class AiAgentJobTest < ActiveJob::TestCase
                  "nothing read that comment; it has no turn unless this one gives it back"
   end
 
+  test "quota error losing to cancellation restores a pre-handoff dropped dispatch" do
+    topic, swallowed, task = stopped_turn_fixture
+    client = Class.new do
+      define_method(:chat) do |*, **|
+        Collavre::Task.find(task.id).update!(status: "cancelled")
+        raise Collavre::Quota::ExceededError
+      end
+      define_method(:last_handoff_failed?) { true }
+      define_method(:handed_off?) { false }
+    end.new
+
+    with_test_queue do
+      AiClient.stub :new, client do
+        AiAgentJob.perform_now(task)
+      end
+      restored = enqueued_jobs.select { |job| job[:job] == Collavre::AiAgentJob }
+      assert_equal [ swallowed.id ], restored.map { |job| job[:args][2].dig("comment", "id") }
+      assert_equal "cancelled", task.reload.status
+      assert_equal 0, @agent.reload.quota_retry_count
+      assert_nil @agent.quota_blocked_until
+      assert_empty enqueued_jobs.select { |job| job[:job] == Collavre::ResumeSuspendedTasksJob }
+    end
+  end
+
   # StuckDetector can fail the row while this job is still inside #chat. The
   # status callback must wait, but the live worker must not leave the dispatch
   # waiting for the periodic sweep once it does come out and can answer whether
@@ -370,6 +394,8 @@ class AiAgentJobTest < ActiveJob::TestCase
     )
     assert Collavre::Orchestration::DeliveryRecord.claim_drop!(task, swallowed.id),
            "premise: a dispatch was dropped against this turn"
+    # The job starts only a turn still waiting to start (TaskAdmission.start!).
+    task.update_column(:status, "pending")
     [ topic, swallowed, task.reload ]
   end
 
@@ -614,6 +640,50 @@ class AiAgentJobTest < ActiveJob::TestCase
       "Expected active_jobs to be 0 after error"
   end
 
+  test "a turn suspended inside the service is left suspended, not failed" do
+    captured_task = nil
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      Collavre::Orchestration::TaskResumer.suspend!(captured_task, reason: :quota)
+      raise Collavre::TaskSuspendedError
+    end
+
+    Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service } do
+      assert_nothing_raised { AiAgentJob.perform_now(@agent.id, "test_event", @context) }
+    end
+
+    assert_equal "suspended", captured_task.reload.status
+    assert_equal "quota", captured_task.suspend_reason
+    assert_equal 0, Collavre::Orchestration::ResourceTracker.for(@agent).active_jobs
+  end
+
+  test "an interrupted attempt that returns after its turn was resumed leaves the new attempt alone" do
+    tracker = Collavre::Orchestration::ResourceTracker.for(@agent)
+    captured_task = nil
+    new_generation = nil
+    fake_service = Object.new
+    fake_service.define_singleton_method(:call) do
+      # Suspended, resumed and started again by another worker while this
+      # attempt's provider call was still out.
+      Collavre::Orchestration::TaskResumer.suspend!(captured_task, reason: :server_restart)
+      Collavre::Orchestration::TaskResumer.resume!(captured_task)
+      captured_task.reload.update!(status: "pending") unless captured_task.status == "pending"
+      Collavre::Workflow::TaskAdmission.start!(captured_task, execution_job_id: "resumed-job")
+      tracker.reserve!(captured_task.id)
+      new_generation = Collavre::Orchestration::ExecutionFence.generation(captured_task.reload)
+      "late answer"
+    end
+
+    Collavre::AiAgentService.stub :new, ->(task) { captured_task = task; fake_service } do
+      assert_nothing_raised { AiAgentJob.perform_now(@agent.id, "test_event", @context) }
+    end
+
+    captured_task.reload
+    assert_equal "running", captured_task.status, "the old attempt must not finish the new one"
+    assert_equal new_generation, Collavre::Orchestration::ExecutionFence.generation(captured_task)
+    assert_equal 1, tracker.active_jobs, "the new attempt keeps its reservation"
+  end
+
   test "does not release resources on approval pending" do
     # Stub AiAgentService to raise ApprovalPendingError directly
     fake_service = Minitest::Mock.new
@@ -695,7 +765,7 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     task = Task.create!(
       name: "Claude topicless task",
-      status: "running",
+      status: "pending",
       agent: claude_agent,
       creative_id: @creative.id,
       trigger_event_payload: topicless_context
@@ -728,11 +798,14 @@ class AiAgentJobTest < ActiveJob::TestCase
     }
 
     status_at_deliver = nil
+    payload_at_deliver = nil
     delivered = false
     fake_adapter = Class.new do
       define_method(:initialize) { |agent:, context:, task: nil| @agent = agent; @context = context; @task = task }
       define_method(:deliver) do
-        status_at_deliver = Task.where(agent_id: @agent.id).order(:created_at).last&.status
+        row = Task.where(agent_id: @agent.id).order(:created_at).last
+        status_at_deliver = row&.status
+        payload_at_deliver = row&.trigger_event_payload
         delivered = true
         nil
       end
@@ -747,6 +820,11 @@ class AiAgentJobTest < ActiveJob::TestCase
     assert delivered, "Expected ClaudeChannelAdapter#deliver to be invoked"
     assert_equal "delegated", status_at_deliver,
       "Task must be in 'delegated' state before the MCP dispatch so a fast reply can find it"
+
+    fence = Collavre::Orchestration::ExecutionFence
+    assert_equal({ "generation" => payload_at_deliver[fence::GENERATION_KEY], "state" => "pending" },
+                 payload_at_deliver[fence::HANDOFF_KEY],
+                 "the handoff marker must be written with the delegated status, before the broadcast")
 
     task = Task.where(agent_id: claude_agent.id).last
     assert_equal "delegated", task.status
@@ -770,9 +848,11 @@ class AiAgentJobTest < ActiveJob::TestCase
     )
 
     topic = Topic.create!(creative: @creative, name: "cc-cancel-race", user: @owner)
+    # Online, so the job gets past the offline guard to the reserve! race.
+    Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: "cc-cancel-race")
     task = Collavre::Task.create!(
       name: "Pre-existing running task",
-      status: "running",
+      status: "pending",
       trigger_event_name: "comment_created",
       agent: claude_agent,
       topic_id: topic.id,
@@ -896,8 +976,147 @@ class AiAgentJobTest < ActiveJob::TestCase
 
     refute delivered,
       "ClaudeChannelAdapter#deliver must not run when the resumed task's session is offline"
-    assert_equal "cancelled", queued.reload.status,
-      "the offline-resumed task must be cancelled so it does not leak slots / queue space"
+    assert_equal "suspended", queued.reload.status,
+      "the offline-resumed task is set aside for the reconnect, not left holding the slot"
+    assert_equal "agent_offline", queued.suspend_reason
+  end
+
+  test "a session topic's resumed task is suspended while only a sibling session is live" do
+    claude_agent = User.create!(
+      email: "cc-session-offline-agent@agent.collavre.local", name: "Claude Session Agent",
+      password: SecureRandom.hex(32), llm_vendor: "anthropic", llm_model: "claude-code",
+      created_by_id: @owner.id, searchable: false
+    )
+    topic = Topic.create!(creative: @creative, name: "cc-session", user: @owner,
+                          primary_agent_id: claude_agent.id, session_id: "sess-own")
+    Collavre::AgentSubscription.create!(agent_id: claude_agent.id, token: "sibling", session_id: "sess-other")
+    task = Task.create!(
+      name: "Session turn", status: "pending", agent: claude_agent, topic_id: topic.id, creative_id: @creative.id,
+      trigger_event_payload: { "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id },
+                               "comment" => { "id" => @comment.id } }
+    )
+
+    AiAgentJob.perform_now(task)
+
+    assert_equal "suspended", task.reload.status
+  end
+
+  test "an approval-paused task whose session went offline is still cancelled" do
+    claude_agent = User.create!(
+      email: "cc-approval-offline-agent@agent.collavre.local", name: "Claude Approval Agent",
+      password: SecureRandom.hex(32), llm_vendor: "anthropic", llm_model: "claude-code",
+      created_by_id: @owner.id, searchable: false
+    )
+    topic = Topic.create!(creative: @creative, name: "cc-approval-offline", user: @owner)
+    task = Task.create!(
+      name: "Approval turn", status: "pending_approval", agent: claude_agent, topic_id: topic.id,
+      creative_id: @creative.id,
+      trigger_event_payload: { "creative" => { "id" => @creative.id }, "topic" => { "id" => topic.id },
+                               "comment" => { "id" => @comment.id } }
+    )
+
+    AiAgentJob.perform_now(task)
+
+    assert_equal "cancelled", task.reload.status
+  end
+
+  test "a superseded channel worker cannot delegate the replacement attempt" do
+    fence = Collavre::Orchestration::ExecutionFence
+    task = Task.create!(name: "Channel turn", agent: @agent, status: "running",
+                        trigger_event_payload: fence.stamp({}, job_id: "old-job"))
+    generation = fence.generation(task)
+    stale_task = Task.find(task.id)
+    task.update!(trigger_event_payload: fence.stamp({}, job_id: "replacement-job"))
+    replacement_payload = task.trigger_event_payload.deep_dup
+
+    assert_not AiAgentJob.new.send(:delegate_to_channel!, stale_task, generation)
+    assert_equal "running", task.reload.status
+    assert_equal replacement_payload, task.trigger_event_payload
+    assert AiAgentJob.new.send(:delegate_to_channel!, task, fence.generation(task))
+    assert_equal "delegated", task.reload.status
+  end
+
+  test "a new dispatch records its job and a fresh execution generation" do
+    job = AiAgentJob.new(@agent.id, "test_event", @context)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+
+    payload = Task.last.trigger_event_payload
+    assert_equal job.job_id, payload[Collavre::Orchestration::ExecutionFence::JOB_KEY]
+    assert_not_nil payload[Collavre::Orchestration::ExecutionFence::GENERATION_KEY]
+  end
+
+  test "a retried dispatch job restarts the row its dead run left instead of creating another" do
+    job = AiAgentJob.new(@agent.id, "test_event", @context)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+    task = Task.last
+    # The worker died mid-call: the row is still running under this job.
+    task.update!(status: "running")
+    first_generation = Collavre::Orchestration::ExecutionFence.generation(task)
+    Collavre::Orchestration::TaskResumer.reclaim_for_retry!(job.job_id)
+
+    assert_no_difference -> { Task.count } do
+      AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+        job.perform_now
+      end
+    end
+
+    task.reload
+    assert_equal "done", task.status
+    assert_equal job.job_id, task.trigger_event_payload[Collavre::Orchestration::ExecutionFence::JOB_KEY]
+    assert_not_equal first_generation, Collavre::Orchestration::ExecutionFence.generation(task)
+  end
+
+  test "a retried task job restarts its reclaimed row" do
+    task = Task.create!(
+      name: "Turn", status: "pending", trigger_event_name: "comment_created", agent: @agent,
+      creative_id: @creative.id, trigger_event_payload: @context
+    )
+    job = AiAgentJob.new(task)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+    task.update!(status: "running")
+    Collavre::Orchestration::TaskResumer.reclaim_for_retry!(job.job_id)
+
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+
+    assert_equal "done", task.reload.status
+  end
+
+  test "a job whose execution recovery retired does nothing" do
+    job = AiAgentJob.new(@agent.id, "test_event", @context)
+    retirement = Collavre::RetiredTaskExecution.create!(execution_job_id: job.job_id)
+    assert_no_difference -> { Task.count } do
+      job.perform_now
+    end
+
+    retirement.destroy!
+    assert_difference -> { Task.count }, 1 do
+      AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+        job.perform_now
+      end
+    end
+  end
+
+  test "a resumed task is started under the job that runs it" do
+    task = Task.create!(
+      name: "Resumed", status: "pending", trigger_event_name: "comment_created", agent: @agent,
+      creative_id: @creative.id, resume_count: 1, trigger_event_payload: @context
+    )
+    job = AiAgentJob.new(task)
+    AiAgentService.stub :new, ->(_task) { Struct.new(:call).new(nil) } do
+      job.perform_now
+    end
+
+    payload = task.reload.trigger_event_payload
+    assert_equal job.job_id, payload[Collavre::Orchestration::ExecutionFence::JOB_KEY]
+    assert_not_nil payload[Collavre::Orchestration::ExecutionFence::GENERATION_KEY]
   end
 
   test "turn deadline settles the task as failed" do

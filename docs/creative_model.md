@@ -59,7 +59,33 @@ See [permissions.md](permissions.md) for the full permission architecture.
 ```ruby
 creative.description              # Plain markdown text
 creative.comments                 # Has-many comments (images attached to comments)
+creative.files                    # Active Storage has_many_attached files
 ```
+
+Attached `.pptx`, `.md`, `.html`, and `.pdf` files appear at their attachment
+link position in a shared inline iframe viewer, in both the editor and Creative
+page, including immediately after upload. Stored descriptions retain download
+links. A loading placeholder uses the same component as the image lightbox;
+fullscreen and download controls are shared across document formats.
+
+Markdown is rendered with CommonMarker, and Markdown/HTML documents are placed
+in an iframe with an empty sandbox (no scripts or parent-document access).
+Text documents are limited to 10 MiB. PDF.js renders one page at a time with
+previous/next page and zoom controls; its module and worker are loaded only for
+PDF previews. The historical `ppt_previews` endpoint serves all four formats.
+PPT slides retain their slide navigation, aspect ratio, hover/touch controls,
+keyboard navigation, and native fullscreen behavior. Slide hyperlinks open in a
+new tab instead of replacing the preview.
+`Collavre::PptRenderer` renders slide HTML without creating creatives;
+`Collavre::PptImporter` reuses it when persisting imported slides.
+`Collavre::PptPreview` caches rendered HTML for seven days by blob key and locale.
+The preview endpoint checks read permission on the attachment-owning effective
+origin on every saved attachment request. Before an upload is attached, only its
+uploader can preview it. Responses return `Cache-Control: private, no-store`;
+cached rendering never bypasses authorization.
+Preview images are embedded in the rendered HTML rather than uploaded as new blobs.
+Each image occurrence consumes the cumulative rendered-byte budget before Base64
+expansion; encoded data URIs are reused for repeated archive entries.
 
 ## Tree Operations
 
@@ -82,3 +108,21 @@ Creative.active                   # Not archived (archived_at IS NULL)
 Creative.archived                 # Archived (archived_at IS NOT NULL)
 Creative.inboxes                  # Inbox creatives (data->kind = 'inbox')
 ```
+
+## Linking Creatives through MCP
+
+Discover the following tools with `meta_tool`:
+
+- `creative_link_service(parent_id:, creative_ids:)` links source IDs beneath a
+  destination. Sources require read access; the destination requires write access.
+  Source and destination links resolve to their effective origins. New shells are
+  appended in input order. Existing links to the same origin retain their positions.
+- `creative_unlink_service(linked_creative_ids:)` removes only linked shells using
+  the same removal permissions and callbacks as the UI. Ordinary Creative IDs are
+  rejected; origins, their children and other links remain intact.
+
+Both tools accept nonempty arrays of unique positive integer IDs and apply each
+list atomically. A failure rolls back the entire list. Inherited AI review policy
+captures a History draft instead of changing the live tree. Approval checks current
+permissions and link-cycle constraints again. Linked-shell hard deletions remain
+non-revertible after approval, matching the existing UI removal behavior.

@@ -1,3 +1,4 @@
+import { hasPendingCreativeSaves, applyPendingCreativeSyncData } from '../../modules/pending_creative_sync'
 import { Controller } from '@hotwired/stimulus'
 import { renderCreativeTree, appendCreativeNodes, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 import { parseEmojis } from '../../utils/emoji_parser'
@@ -6,6 +7,7 @@ import {
   restoreTreeEmptyState,
   PAGINATION_PENDING_ATTRIBUTE,
 } from '../../modules/creative_tree_empty_state'
+import { listenForTreeReloads } from '../../creatives/tree_reload_events'
 import {
   captureCreativeTreeViewState,
   restoreCreativeTreeViewState,
@@ -60,10 +62,10 @@ export default class extends Controller {
     this.element.addEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.addEventListener('creative-editing:start', this._handleEditStart)
     document.addEventListener('creative-editing:stop', this._handleEditStop)
-    this._handleSyncRefetch = () => this.requestReload()
-    document.addEventListener('creative-sync:refetch', this._handleSyncRefetch)
-    this._handleCreativeDrop = () => this.requestReload()
-    window.addEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
+    this._stopReloadEvents = listenForTreeReloads({
+      reload: () => this.requestReload(),
+      release: () => this._drainPendingReload(),
+    })
     this._setupArchiveToggle()
   }
 
@@ -81,8 +83,7 @@ export default class extends Controller {
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
     document.removeEventListener('creative-editing:start', this._handleEditStart)
     document.removeEventListener('creative-editing:stop', this._handleEditStop)
-    document.removeEventListener('creative-sync:refetch', this._handleSyncRefetch)
-    window.removeEventListener('collavre:creative-drop-complete', this._handleCreativeDrop)
+    this._stopReloadEvents()
     this._teardownPagination()
     if (this._debouncedLoadTimer) clearTimeout(this._debouncedLoadTimer)
     if (this._archiveToggleHandler) {
@@ -138,22 +139,7 @@ export default class extends Controller {
   }
 
   _applyPendingSyncData() {
-    // After editor closes, apply any sync data that was deferred
-    const pendingRows = this.element.querySelectorAll('creative-tree-row[data-pending-sync-data]')
-    if (pendingRows.length === 0) return
-
-    // Dynamic import to avoid circular dependency
-    import('../../creatives/tree_renderer').then(({ applyRowProperties }) => {
-      pendingRows.forEach(row => {
-        try {
-          const data = JSON.parse(row.dataset.pendingSyncData)
-          applyRowProperties(row, data)
-        } catch (e) {
-          console.warn('[TreeController] Failed to apply pending sync data', e)
-        }
-        delete row.dataset.pendingSyncData
-      })
-    })
+    applyPendingCreativeSyncData(this.element)
   }
 
   debouncedLoad({ preserveView = false } = {}) {
@@ -167,7 +153,7 @@ export default class extends Controller {
       // replaces the whole container, which would take that row, the editor
       // attached inside it and the unsaved draft out of the document. Re-pend
       // instead of dropping it: the reload is still owed, just not yet safe.
-      if (this._editing || this._reloadHoldCount > 0) {
+      if (this._editing || this._reloadHoldCount > 0 || hasPendingCreativeSaves(this.element)) {
         this._pendingRefetch = true
         return
       }
@@ -189,7 +175,7 @@ export default class extends Controller {
   // Call load() directly only for reloads the user just asked for and is waiting
   // on (filter change, archive toggle), where re-rendering is the point.
   requestReload() {
-    if (this._editing || this._reloadHoldCount > 0) {
+    if (this._editing || this._reloadHoldCount > 0 || hasPendingCreativeSaves(this.element)) {
       this._pendingRefetch = true
       return
     }
@@ -208,8 +194,10 @@ export default class extends Controller {
     this._drainPendingReload()
   }
 
+  // Runs a reload that was deferred, and only that: `creative-sync:release`
+  // announces that a save settled, which is not by itself a reason to refetch.
   _drainPendingReload() {
-    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0) return
+    if (!this._pendingRefetch || this._editing || this._reloadHoldCount > 0 || hasPendingCreativeSaves(this.element)) return
     this._pendingRefetch = false
     this.debouncedLoad({ preserveView: true })
   }

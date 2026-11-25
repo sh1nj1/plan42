@@ -28,6 +28,8 @@ The main application engine containing:
 - `Collavre::SessionsController` - Login/logout
 - `Collavre::UsersController` - User management
 - `Collavre::CreativesController` - CRUD + tree operations
+- `Collavre::Creatives::PptPreviewsController` - Shared editor and Creative `.pptx`, `.md`, `.html`, and `.pdf` attachment previews using the slide layout; saved files require read permission on an attachment-owning origin, and unattached uploads require uploader access.
+- `Collavre::SeoController` - `/sitemap.xml` and dynamic `/robots.txt`; sitemap lists active, unlinked root creatives with an explicit public read grant and anonymous read access. Responses advertise a one-hour public cache lifetime; more than 10,000 entries produce a sitemap index with `?page=` links. When `creatives_login_required` is enabled, the sitemap is empty and robots disallows all crawling.
 - `Collavre::CommentsController` - Comment management
 - `Collavre::TasksController` - Task management
 - `Collavre::TopicsController` - Topic management
@@ -38,6 +40,8 @@ The main application engine containing:
 - `Collavre::Creatives::TreeBuilder` - Builds creative tree structure
 - `Collavre::MarkdownConverter` - Convert markdown content
 - `Collavre::MarkdownImporter` - Import from markdown
+- `Collavre::PptRenderer` - Render PowerPoint slides to HTML without creating creatives; shared by attachment previews and `PptImporter`.
+- `Collavre::PptPreview` - Cache rendered attachment slides by blob key and locale for seven days.
 - `Collavre::Creatives::FilterPipeline` - Filtering creatives
 - `Collavre::AiAgentService` - AI agent coordination
 - `Collavre::McpService` - MCP tool management
@@ -65,31 +69,6 @@ AI agent integration via OpenClaw Gateway.
 
 ---
 
-## Notion Engine (`engines/collavre_notion/`)
-
-Export creative trees to Notion.
-
-### Models
-- `CollavreNotion::NotionAccount` - OAuth tokens
-- `CollavreNotion::NotionPageLink` - Creative ↔ Notion page mapping
-- `CollavreNotion::NotionBlockLink` - Block-level sync tracking
-
-### Key Classes
-- `CollavreNotion::NotionClient` - Notion API wrapper
-- `CollavreNotion::NotionCreativeExporter` - Tree export logic
-- `CollavreNotion::NotionService` - High-level operations
-
-### Routes
-```
-/notion/creative/:id/notion_integration  # Integration UI
-/auth/notion/callback                    # OAuth callback
-```
-
-### Jobs
-- `NotionExportJob` - Async export
-- `NotionSyncJob` - Sync updates
-
----
 
 ## GitHub Engine (`engines/collavre_github/`)
 

@@ -19,6 +19,7 @@ module Collavre
       collavre/creatives
       collavre/workflow_editor
       collavre/actiontext
+      collavre/attachment_card
       collavre/activity_logs
       collavre/user_menu
       collavre/org_chart
@@ -35,6 +36,7 @@ module Collavre
       collavre/search_popup
       collavre/agent_connections
       collavre/agent_gateways
+      collavre/notice_bar
     ].freeze
 
     COLLAVRE_PRINT_STYLESHEETS = %w[

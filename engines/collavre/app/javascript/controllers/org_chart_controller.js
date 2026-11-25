@@ -1,3 +1,4 @@
+import { updatePermission } from "../lib/permission_update"
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
@@ -18,29 +19,7 @@ export default class extends Controller {
   }
 
   updatePermission(event) {
-    const select = event.target
-    const url = select.dataset.updateUrl
-    const permission = select.value
-    const originalClass = select.className
-
-    // Update visual class immediately
-    select.className = select.className.replace(/org-chart-permission-\w+/g, "")
-    select.classList.add("org-chart-permission-select", `org-chart-permission-${permission}`)
-
-    fetch(url, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "X-CSRF-Token": document.querySelector("meta[name='csrf-token']")?.content,
-        "Accept": "application/json"
-      },
-      body: JSON.stringify({ permission })
-    }).then(response => {
-      if (!response.ok) throw new Error("Failed")
-    }).catch(() => {
-      select.className = originalClass
-      location.reload()
-    })
+    return updatePermission(event.target, { onFailure: () => location.reload() })
   }
 
 }

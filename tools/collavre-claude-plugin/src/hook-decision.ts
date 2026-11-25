@@ -6,7 +6,7 @@
 //
 // `reply` is the agent's outbound speech — posting a comment to the topic. In a
 // real-time channel, prompting on every answer defeats the channel's purpose.
-// This PreToolUse decision auto-approves ONLY `reply`, so no user settings are
+// This PreToolUse decision auto-approves ONLY `reply` and `approval_request`, so no user settings are
 // needed for the channel to talk. Side-effecting tools (Bash/Write/Edit/…) are
 // deliberately left untouched: they keep flowing through the normal permission
 // path, which on the channel surfaces as the structured approval comment.
@@ -25,6 +25,10 @@ export function isReplyTool(toolName: string | undefined | null): boolean {
   return typeof toolName === "string" && REPLY_TOOL_NAME_PATTERN.test(toolName);
 }
 
+export function isApprovalRequestTool(toolName: string | undefined | null): boolean {
+  return typeof toolName === "string" && /^mcp__(?:plugin_collavre_)?collavre__approval_request$/.test(toolName);
+}
+
 export interface PreToolUseInput {
   tool_name?: string;
 }
@@ -37,10 +41,10 @@ export interface PreToolUseAllow {
   };
 }
 
-// Returns an allow decision for the channel reply tool, or null for everything
+// Returns an allow decision for the channel reply or approval-request tool, or null for everything
 // else (null = emit nothing, let the normal permission flow proceed).
 export function decidePreToolUse(input: PreToolUseInput | null | undefined): PreToolUseAllow | null {
-  if (!isReplyTool(input?.tool_name)) {
+  if (!isReplyTool(input?.tool_name) && !isApprovalRequestTool(input?.tool_name)) {
     return null;
   }
   return {
@@ -48,7 +52,7 @@ export function decidePreToolUse(input: PreToolUseInput | null | undefined): Pre
       hookEventName: "PreToolUse",
       permissionDecision: "allow",
       permissionDecisionReason:
-        "Collavre channel reply is outbound chat (posting a comment to the topic), auto-approved. Side-effecting tools remain gated and surface as a structured approval comment.",
+        "Collavre reply and approval_request post chat or request a human decision; auto-approved. Side-effecting tools remain gated and surface as a structured approval comment.",
     },
   };
 }

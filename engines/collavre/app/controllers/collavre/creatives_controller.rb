@@ -9,6 +9,8 @@ module Collavre
     include Collavre::Concerns::TreeManageable
     include Collavre::Concerns::Shareable
     include Collavre::CreativePermissionGuard
+    include Collavre::CreativeDestroyable
+    include Collavre::PublicCreativeRedirectable, Collavre::PublicCreativePage
     include Collavre::WorkflowEditable
 
     # Authorization for these read actions is not open-to-public: each action
@@ -20,8 +22,8 @@ module Collavre
     # via enforce_creatives_login_policy below. A broader per-Creative role model
     # (beyond the read/feedback/write/admin share levels) is a product decision
     # tracked separately and intentionally deferred.
-    allow_unauthenticated_access only: %i[ index children export_markdown show slide_view ]
-    before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view ]
+    allow_unauthenticated_access only: %i[ index children export_markdown show slide_view public_page ]
+    before_action :enforce_creatives_login_policy, only: %i[ index children export_markdown show slide_view public_page ]
     before_action :set_creative, only: %i[ show edit update destroy slide_view request_permission unconvert contexts update_contexts workflow create_workflow_rule update_workflow_rule update_metadata archive unarchive trigger_action remember_last_visited ]
     before_action :require_creative_write!, only: %i[archive unarchive]
     include Collavre::CreativeTypeEditable
@@ -34,8 +36,7 @@ module Collavre
           # HTML only needs parent_creative for nav/title - skip expensive filtered queries
           # Must check permission to avoid leaking metadata (og:title, etc.) to unauthorized users
           if params[:id].present?
-            creative = Creative.find_by(id: params[:id])
-            @parent_creative = creative if creative&.has_permission?(Current.user, :read)
+            assign_index_creative_permissions
             if Current.user
               @last_visited_creative_client_id = last_visited_creative_client_id
               @last_visited_creative_visit_sequence = last_visited_creative_visit_sequence
@@ -69,7 +70,7 @@ module Collavre
           end
 
           @expanded_state_map = if user_id_for_state
-            UserCreativePreference.where(user_id: user_id_for_state, creative_id: params[:id]).first&.expanded_status || {}
+            UserCreativePreference.expanded_status_for(user_id: user_id_for_state, creative_id: params[:id])
           else
             {}
           end
@@ -132,8 +133,7 @@ module Collavre
       end
 
       respond_to do |format|
-        redirect_options = { id: @creative.id }
-        redirect_options[:comment_id] = params[:comment_id] if params[:comment_id].present?
+        redirect_options = params.permit(:comment_id, :open_comments, :topic_id, :view).to_h.compact_blank.merge(id: @creative.id)
         format.html { redirect_to creatives_path(redirect_options) }
         format.json do
           # Use HTTP caching with ETag - must vary by user since response includes user-specific data
@@ -164,7 +164,7 @@ module Collavre
             prompt_updated
           ].compact.max
 
-          trigger_loop_data = @creative.data&.dig("trigger", "loop")
+          trigger_loop_data = @creative.trigger_loop_status
           parent_trigger_enabled = @creative.parent&.drop_trigger_enabled? || false
           can_edit = @creative.has_permission?(Current.user, :write)
 
@@ -313,14 +313,6 @@ module Collavre
           format.json do
             base.reload
             response_data = creative_update_payload(base)
-            # Expose the post-rewrite markdown source so the client can sync its
-            # textarea after the server replaces inline data: URIs with blob paths.
-            # Gated on write permission so a read-only share recipient moving a
-            # linked creative (parent_id-only PATCH bypasses the origin_changes
-            # write check) cannot read the origin's raw Markdown source.
-            if @creative.has_permission?(Current.user, :write)
-              response_data[:markdown_source] = base.data&.dig("markdown_source")
-            end
             # Build ancestor chain for progress updates (closure_tree: 1 SELECT via hierarchy table)
             ancestor_records = base.ancestors.order(:id)
             if ancestor_records.any?
@@ -347,29 +339,22 @@ module Collavre
       end
 
       creative = @creative.effective_origin(Set.new)
-      own_ids = creative.context_ids - [ creative.id ]
-      inherited_ids = (creative.effective_context_ids - own_ids - [ creative.id ]).uniq
-      own_creatives = Creative.where(id: own_ids).index_by(&:id)
-      inherited_creatives = Creative.where(id: inherited_ids).index_by(&:id)
-
+      own_ids = creative.context_ids
+      ordered_ids = creative.ordered_context_ids
+      locked_ids = creative.inherited_ordered_context_ids
+      creatives_by_id = Creative.where(id: ordered_ids).index_by(&:id)
       disabled_ids = creative.effective_disabled_context_ids
 
-      own = own_ids.filter_map do |cid|
-        c = own_creatives[cid]
+      contexts = ordered_ids.filter_map do |cid|
+        c = creatives_by_id[cid]
         next unless c
 
-        { id: c.id, description: c.creative_snippet, inherited: false, disabled: disabled_ids.include?(cid) }
-      end
-
-      inherited = inherited_ids.filter_map do |cid|
-        c = inherited_creatives[cid]
-        next unless c
-
-        { id: c.id, description: c.creative_snippet, inherited: true, disabled: disabled_ids.include?(cid) }
+        { id: c.id, description: c.creative_snippet, inherited: !own_ids.include?(cid),
+          order_locked: locked_ids.include?(cid), disabled: disabled_ids.include?(cid) }
       end
 
       render json: {
-        contexts: inherited + own,
+        contexts: contexts,
         can_manage: creative.has_permission?(Current.user, :admin),
         disabled_self_context: creative.data&.dig("disabled_self_context") == true
       }
@@ -382,24 +367,8 @@ module Collavre
         return
       end
 
-      current_data = (creative.data || {}).dup
-      current_data["context_ids"] = Array(params[:context_ids]).map(&:to_i) if params.key?(:context_ids)
-      if params.key?(:disabled_context_ids)
-        requested_disabled = Array(params[:disabled_context_ids]).map(&:to_i)
-        parent_disabled = creative.parent&.effective_disabled_context_ids || []
-        inherited_only = parent_disabled - creative.disabled_context_ids
-        current_data["disabled_context_ids"] = requested_disabled - inherited_only
-        current_data.delete("disabled_context_ids") if current_data["disabled_context_ids"].empty?
-      end
-      if params.key?(:disabled_self_context)
-        if ActiveModel::Type::Boolean.new.cast(params[:disabled_self_context])
-          current_data["disabled_self_context"] = true
-        else
-          current_data.delete("disabled_self_context")
-        end
-      end
-
-      if creative.update(data: current_data)
+      settings = params.slice(:context_ids, :context_order, :disabled_context_ids, :disabled_self_context).to_unsafe_h
+      if creative.update_context_settings(settings)
         head :ok
       else
         render json: { errors: creative.errors.full_messages }, status: :unprocessable_entity
@@ -491,17 +460,6 @@ module Collavre
       render json: { sequence: issue_last_visited_creative_sequence }
     end
 
-    def destroy
-      parent = @creative.parent
-      unless @creative.has_permission?(Current.user, :admin)
-        redirect_to @creative, alert: t("collavre.creatives.errors.no_permission") and return
-      end
-      Creatives::DestroyService.new(
-        creative: @creative,
-        user: Current.user,
-        delete_with_children: params[:delete_with_children].present?
-      ).call
-    end
 
     private
       def remember_last_visited_creative(creative, client_id:, sequence:, received_at:)
@@ -578,10 +536,6 @@ module Collavre
         nil
       end
 
-      def turbo_prefetch_request?
-        request.headers["X-Sec-Purpose"] == "prefetch"
-      end
-
       def build_tree(collection, params:, expanded_state_map:, level:, select_mode: false, allowed_creative_ids: nil, progress_map: nil)
         ::Creatives::TreeBuilder.new(
           user: Current.user,
@@ -613,7 +567,7 @@ module Collavre
       # query layer while preserving every filter the index endpoint supports.
       def index_query_params
         params.permit(
-          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron,
+          :id, :simple, :search, :search_mode, :comment, :has_comments, :has_cron, :reaction_emoji,
           :min_progress, :max_progress, :due_before, :due_after, :has_due_date,
           :assignee_id, :unassigned, :show_archived, :page, :per_page,
           tags: []

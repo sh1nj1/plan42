@@ -1,0 +1,5 @@
+en:
+  collavre:
+    quota:
+      suspend_rejected: "This task cannot be suspended by this execution."
+      exhausted: "Automatic quota retries stopped. Check the agent subscription before resuming."

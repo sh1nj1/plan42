@@ -1,0 +1,465 @@
+/* Notice bar — one strip at the top of the app with stacked notices peeking
+   behind it, a detail sheet the strip morphs into, and transient flash toasts.
+   Motion lives in notice_bar_controller.js (Web Animations API). */
+
+.notice-zone {
+    --notice-strip-h: 44px;
+
+    position: relative;
+    z-index: 900;
+    flex: none;
+}
+
+.notice-kind-mission {
+    --notice-c1: var(--notice-mission-start);
+    --notice-c2: var(--notice-mission-end);
+}
+.notice-kind-feature {
+    --notice-c1: var(--notice-feature-start);
+    --notice-c2: var(--notice-feature-end);
+}
+.notice-kind-announcement {
+    --notice-c1: var(--notice-announcement-start);
+    --notice-c2: var(--notice-announcement-end);
+}
+.notice-kind-urgent {
+    --notice-c1: var(--notice-urgent-start);
+    --notice-c2: var(--notice-urgent-end);
+}
+
+.notice-zone__stack {
+    position: relative;
+    perspective: 900px;
+}
+
+.notice-strip {
+    position: relative;
+    z-index: 3;
+    isolation: isolate;
+    height: var(--notice-strip-h);
+    display: flex;
+    align-items: center;
+    gap: calc(var(--space-4) / 2);
+    padding: 0 calc(var(--space-1) * 1.5) 0 calc(var(--space-6) / 2);
+    color: var(--notice-on-accent);
+    cursor: pointer;
+    overflow: hidden;
+    user-select: none;
+    background: linear-gradient(90deg, var(--notice-c1), var(--notice-c2));
+    transform-origin: 50% 50%;
+    outline: none;
+}
+
+.notice-strip:focus-visible { box-shadow: inset 0 0 0 var(--border-2) var(--notice-on-accent); }
+.notice-strip:hover .notice-strip__title {
+    text-decoration: underline;
+    text-underline-offset: calc(var(--space-1) * 0.75);
+}
+
+.notice-strip__icon {
+    font-size: var(--text-lg);
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    flex: none;
+}
+
+.notice-strip__tag {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-7);
+    padding: var(--border-2) var(--space-2);
+    border-radius: var(--radius-round);
+    background: var(--notice-overlay);
+    white-space: nowrap;
+    flex: none;
+}
+
+.notice-strip__title {
+    font-weight: var(--weight-6);
+    font-size: var(--text-body-sm);
+    white-space: nowrap;
+    flex: none;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.notice-strip__summary {
+    font-size: var(--text-sm);
+    opacity: 0.88;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
+}
+
+.notice-strip__more {
+    font-size: var(--text-0);
+    opacity: 0.9;
+    white-space: nowrap;
+    flex: none;
+}
+
+.notice-strip__count {
+    font-size: var(--text-caption);
+    font-weight: var(--weight-8);
+    background: var(--notice-on-accent);
+    color: var(--notice-c2);
+    border-radius: var(--radius-round);
+    padding: var(--border-2) calc(var(--space-2) - var(--border-1));
+    flex: none;
+}
+
+.notice-strip__close {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--notice-on-accent);
+    width: 32px;
+    height: 32px;
+    border-radius: var(--notice-radius);
+    font-size: var(--text-3);
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.9;
+    flex: none;
+}
+
+.notice-strip__close:hover { background: var(--notice-overlay-hover); }
+
+.notice-strip__sweep {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--notice-success-start), var(--notice-success-end));
+    transform: scaleX(0);
+    transform-origin: left;
+    z-index: -1;
+}
+
+.notice-strip__check path {
+    stroke-dasharray: 22;
+    stroke-dashoffset: 22;
+}
+
+.notice-peek {
+    position: absolute;
+    top: 0;
+    height: var(--notice-strip-h);
+    border-radius: 0 0 var(--notice-radius) var(--notice-radius);
+    background: linear-gradient(90deg, var(--notice-c1), var(--notice-c2));
+    filter: brightness(0.8) saturate(0.8);
+}
+
+.notice-peek--1 {
+    left: 10px;
+    right: 10px;
+    z-index: 2;
+    transform: translateY(5px);
+}
+.notice-peek--2 {
+    left: 22px;
+    right: 22px;
+    z-index: 1;
+    transform: translateY(10px);
+    filter: brightness(0.65) saturate(0.6);
+}
+
+/* Transient flash */
+.notice-zone__toasts {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+}
+
+.notice-toast {
+    pointer-events: auto;
+    margin-top: calc(var(--space-4) / 2);
+    max-width: calc(100vw - 32px);
+    background: var(--notice-toast-bg);
+    color: var(--notice-toast-text);
+    border-radius: var(--radius-round);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    display: flex;
+    gap: calc(var(--space-5) / 2);
+    align-items: center;
+    box-shadow: var(--notice-toast-shadow);
+    position: relative;
+    overflow: hidden;
+}
+
+.notice-toast__timer {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 100%;
+    background: var(--color-success);
+    transform-origin: left;
+}
+
+.notice-toast__action {
+    background: none;
+    border: 0;
+    color: var(--notice-toast-action);
+    font-weight: var(--weight-7);
+    cursor: pointer;
+    padding: 0;
+    font-size: var(--text-sm);
+}
+
+/* Detail sheet — the strip morphs into it */
+.notice-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    background: var(--notice-backdrop-bg);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.notice-backdrop.is-open { pointer-events: auto; }
+
+.notice-sheet {
+    position: fixed;
+    z-index: 1301;
+    background: var(--surface-bg);
+    color: var(--text-primary);
+    overflow: hidden auto;
+    box-shadow: var(--notice-sheet-shadow);
+}
+
+.notice-sheet[hidden] { display: none; }
+
+.notice-sheet__ghost {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: linear-gradient(90deg, var(--notice-c1), var(--notice-c2));
+    pointer-events: none;
+}
+
+.notice-sheet__ghost .notice-strip {
+    background: none;
+    cursor: default;
+}
+
+.notice-sheet__hero {
+    height: var(--notice-hero-height);
+    background: linear-gradient(120deg, var(--notice-c1), var(--notice-c2));
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: calc(var(--space-5) / 2);
+    padding: calc(var(--space-5) * 0.75) calc(var(--space-5) - var(--border-2));
+    color: var(--notice-on-accent);
+}
+
+.notice-sheet__icon {
+    font-size: var(--notice-hero-icon-size);
+    line-height: 1;
+    filter: drop-shadow(var(--notice-icon-shadow));
+}
+
+.notice-sheet__tag {
+    font-size: var(--text-0);
+    font-weight: var(--weight-7);
+    padding: calc(var(--space-1) * 0.75) calc(var(--space-4) / 2);
+    border-radius: var(--radius-round);
+    background: var(--notice-overlay);
+    margin-bottom: calc(var(--space-1) * 1.5);
+}
+
+.notice-sheet__close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    appearance: none;
+    border: 0;
+    background: var(--notice-overlay-hover);
+    color: var(--notice-on-accent);
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-round);
+    font-size: var(--text-lg);
+    cursor: pointer;
+}
+
+.notice-sheet__content { padding: var(--space-4) calc(var(--space-5) - var(--border-2)) calc(var(--space-5) - var(--border-2)); }
+.notice-sheet__content h2 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-3);
+}
+.notice-sheet__content p {
+    margin: 0 0 calc(var(--space-6) / 2);
+    color: var(--text-muted);
+    font-size: var(--text-body-sm);
+    line-height: var(--leading-3);
+}
+
+.notice-sheet__steps {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 var(--space-3);
+    display: grid;
+    gap: calc(var(--space-1) * 1.5);
+}
+
+.notice-sheet__steps li {
+    display: flex;
+    gap: calc(var(--space-4) / 2);
+    align-items: center;
+    font-size: var(--text-body-sm);
+    padding: var(--space-2) calc(var(--space-4) / 2);
+    border-radius: var(--notice-radius);
+    background: var(--surface-section);
+    color: var(--text-muted);
+}
+
+.notice-sheet__steps li.is-current {
+    color: var(--text-primary);
+    font-weight: var(--weight-6);
+    box-shadow: inset 0 0 0 var(--border-1) var(--notice-accent-soft);
+}
+
+.notice-sheet__steps li.is-done { color: var(--color-success); }
+
+.notice-sheet__step-no {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-round);
+    display: grid;
+    place-items: center;
+    background: var(--border-color);
+    font-size: var(--text-0);
+    font-weight: var(--weight-7);
+    flex: none;
+}
+
+.notice-sheet__steps li.is-current .notice-sheet__step-no {
+    background: var(--notice-accent);
+    color: var(--notice-on-accent);
+}
+.notice-sheet__steps li.is-done .notice-sheet__step-no {
+    background: var(--notice-success-end);
+    color: var(--notice-on-accent);
+}
+
+.notice-sheet__actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+.notice-sheet__hint {
+    font-size: var(--text-0);
+    color: var(--text-muted);
+    margin-right: auto;
+}
+
+.notice-sheet__button {
+    appearance: none;
+    border: var(--border-1) solid var(--border-color);
+    background: var(--surface-bg);
+    color: var(--text-primary);
+    border-radius: var(--notice-radius);
+    padding: calc(var(--space-1) * 1.5) calc(var(--space-5) / 2);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-6);
+    cursor: pointer;
+}
+
+.notice-sheet__button--primary {
+    background: linear-gradient(90deg, var(--notice-c1), var(--notice-c2));
+    color: var(--notice-on-accent);
+    border: 0;
+}
+
+/* Onboarding spotlight on the element a mission points at */
+.notice-spot {
+    position: relative;
+    z-index: 4;
+    animation: notice-spot-pulse var(--notice-pulse-duration) var(--ease-out-3) infinite;
+}
+
+/* Keep the mission ring when the chat composer receives autofocus. */
+.notice-spot,
+textarea.notice-spot:focus,
+textarea.notice-spot:focus-visible {
+    outline: var(--border-2) solid var(--notice-accent);
+    outline-offset: calc(var(--space-1) * 0.75);
+}
+
+textarea.notice-spot,
+textarea.notice-spot:focus,
+textarea.notice-spot:focus-visible {
+    border-color: var(--notice-accent);
+    box-shadow: none;
+}
+
+.notice-spot-tip {
+    position: fixed;
+    z-index: 1250;
+    background: var(--notice-tip-bg);
+    color: var(--notice-on-accent);
+    font-size: var(--text-0);
+    padding: calc(var(--space-1) * 1.5) calc(var(--space-4) / 2);
+    border-radius: var(--notice-radius);
+    white-space: nowrap;
+    pointer-events: none;
+    animation: notice-tip-in var(--notice-tip-duration) var(--notice-ease-spring);
+}
+
+@keyframes notice-spot-pulse {
+    0% { box-shadow: 0 0 0 0 var(--notice-accent-pulse); }
+    100% { box-shadow: 0 0 0 calc(var(--space-5) / 2) var(--notice-accent-clear); }
+}
+
+@keyframes notice-tip-in {
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.9);
+    }
+}
+
+.notice-confetti {
+    position: fixed;
+    z-index: 1400;
+    width: 8px;
+    height: 12px;
+    border-radius: var(--radius-1);
+    pointer-events: none;
+}
+
+@media (max-width: 640px) {
+    .notice-sheet__actions {
+        display: grid;
+        grid-template-columns: auto auto;
+    }
+    .notice-sheet__hint { grid-column: 1 / -1; }
+
+    .notice-strip__summary,
+    .notice-strip__more { display: none; }
+    .notice-strip__title {
+        flex: 1;
+        max-width: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .notice-spot,
+    .notice-spot-tip { animation: none; }
+}
+
+@media print {
+    .notice-zone { display: none; }
+}

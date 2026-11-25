@@ -7,9 +7,9 @@ module Collavre
       @agent = User.create!(email: "agent-enum@example.com", password: TEST_PASSWORD, name: "Agent")
     end
 
-    test "status is a string-backed enum covering all nine values" do
+    test "status is a string-backed enum covering all ten values" do
       assert_equal(
-        %w[pending queued running delegated pending_approval done failed cancelled escalated].sort,
+        %w[pending queued running delegated pending_approval done failed cancelled escalated suspended].sort,
         Collavre::Task.statuses.keys.sort
       )
       # string-backed: key maps to identical string

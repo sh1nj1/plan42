@@ -20,7 +20,7 @@
      data-creative-snippet="<%= popup_creative.creative_snippet %>"
      data-can-comment="<%= popup_creative.has_permission?(Current.user, :feedback) %>"
      <% end %>
-     data-loading-text="<%= t('app.loading') %>"
+     data-loading-html="<%= render('collavre/comments/loading').to_str %>"
      data-delete-confirm-text="<%= t("collavre.comments.delete_confirm") %>"
      data-update-comment-text="<%= t('collavre.comments.update_comment') %>"
      data-convert-confirm-text="<%= t('collavre.comments.convert_confirm') %>"
@@ -38,6 +38,9 @@
      data-move-error-text="<%= t('collavre.comments.move_error') %>"
      data-selection-select-all-text="<%= t('collavre.comments.select_all') %>"
      data-selection-count-text="<%= t('collavre.comments.selection_count') %>"
+     data-resend-label="<%= t('collavre.comments.resend') %>"
+     data-resend-description="<%= t('collavre.comments.resend_description') %>"
+     data-resend-failed="<%= t('collavre.comments.resend_failed') %>"
      data-selection-delete-text="<%= t('collavre.comments.selection_delete') %>"
      data-selection-move-text="<%= t('collavre.comments.selection_move') %>"
      data-selection-topic-move-text="<%= t('collavre.comments.selection_topic_move') %>"
@@ -61,6 +64,8 @@
      data-participant-health-check-error-text="<%= t('collavre.comments.participant_health_check_error') %>"
      data-user-menu-open-text="<%= t('collavre.comments.user_menu.open', name: '%{name}') %>"
      data-user-menu-view-profile-text="<%= t('collavre.comments.user_menu.view_profile') %>"
+     data-user-menu-clear-primary-agent-text="<%= t('collavre.comments.user_menu.clear_primary_agent') %>"
+     data-user-menu-set-primary-agent-text="<%= t('collavre.comments.user_menu.set_primary_agent') %>"
      data-user-menu-mention-text="<%= t('collavre.comments.user_menu.mention') %>"
      data-user-menu-agent-drag-guide-text="<%= t('collavre.comments.user_menu.agent_drag_guide') %>"
      data-context-search-placeholder-text="<%= t('collavre.contexts.search_placeholder') %>"
@@ -69,6 +74,10 @@
      data-context-disabled-text="<%= t('collavre.contexts.disabled') %>"
      data-no-permission-text="<%= t('collavre.creatives.errors.no_permission') %>"
      data-review-button-text="<%= t('collavre.comments.review_button') %>"
+     data-ask-button-text="<%= t('collavre.comments.ask_button') %>"
+     data-review-button-hint="<%= t('collavre.comments.review_button_hint') %>"
+     data-ask-button-hint="<%= t('collavre.comments.ask_button_hint') %>"
+     data-creative-quote-prefix="<%= t('collavre.comments.creative_quote.chip_prefix') %>"
      data-chat-input-hint="<%= t('collavre.comments.chat_input_hint') %>"
      data-review-feedback-placeholder="<%= t('collavre.comments.review_feedback_placeholder') %>"
      data-review-summary-placeholder="<%= t('collavre.comments.review_summary_placeholder') %>"
@@ -104,7 +113,7 @@
       </button>
       <div class="chat-nav-dropdown" data-comments--popup-target="navDropdown" style="display:none;"></div>
     </div>
-    <h3 id="comments-popup-title" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
+    <h3 id="comments-popup-title" data-translation-label data-translation-length="24" data-creative-id="<%= fullscreen && creative.present? ? creative.id : nil %>" data-original-label="<%= fullscreen && creative.present? ? creative.creative_snippet : nil %>" data-comments--popup-target="title"><%= fullscreen && creative.present? ? creative.creative_snippet : t('collavre.comments.comments') %></h3>
     <span data-integration-badges class="integration-badges"></span>
     <div class="comments-popup-actions">
       <%# Trigger: unified zap button for both container and task %>
@@ -141,6 +150,8 @@
         </span>
       </button>
     </div>
+    <creative-header-progress data-comments--popup-target="progress"
+                              label="<%= t('collavre.comments.creative_progress') %>"></creative-header-progress>
   </div>
   <div class="comment-contexts-bar" data-comments--contexts-target="bar" style="display:none;">
     <div id="comment-contexts" data-comments--contexts-target="list" class="comment-contexts-list"
@@ -193,7 +204,7 @@
   </div>
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
-  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= t('app.loading') %></div>
+  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= render 'collavre/comments/loading' %></div>
   <div id="typing-indicator-row">
     <button type="button" id="scroll-prev-msg-btn" class="scroll-prev-msg-btn" data-action="click->comments--list#scrollToPreviousMessage" title="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>" aria-label="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>">&#8963;</button>
     <div id="typing-scroll-viewport" data-comments--presence-target="scrollRow">
@@ -201,7 +212,7 @@
       <div id="typing-indicator" data-comments--presence-target="typingIndicator" data-comments--popup-target="typingIndicator" data-stop-agent-text="<%= t('collavre.comments.stop_agent') %>"></div>
     </div>
   </div>
-  <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" style="display:none;">
+  <form id="new-comment-form" data-comments--popup-target="form" data-comments--form-target="form" data-controller="comments--run-options" data-action="reset->comments--run-options#afterReset" style="display:none;">
     <input type="hidden" name="comment[quoted_comment_id]" data-comments--form-target="quotedCommentId" value="" />
     <input type="hidden" name="comment[quoted_text]" data-comments--form-target="quotedText" value="" />
     <div class="comment-quote-indicator" data-comments--form-target="quoteIndicator" style="display:none;">
@@ -217,9 +228,18 @@
     <button class="creative-action-btn" id="attach-image-btn" data-comments--form-target="imageButton" type="button"><%= t('collavre.comments.image_button') %></button>
     <button class="creative-action-btn" id="voice-comments-btn" data-comments--form-target="voiceButton" type="button" data-voice-state="idle"><%= t('collavre.comments.voice_button') %></button>
     <button class="creative-action-btn" id="search-comments-btn" data-comments--form-target="searchButton" type="button"><%= t('collavre.comments.search_button') %></button>
+    <button class="creative-action-btn agent-run-options-toggle" type="button"
+            data-comments--run-options-target="toggle"
+            data-action="click->comments--run-options#toggle keydown->comments--run-options#keydown mousedown->comments--run-options#keepOpen touchstart->comments--run-options#keepOpen"
+            aria-expanded="false" aria-controls="agent-run-options-panel"
+            title="<%= t('collavre.comments.agent_run_options.button_title') %>"
+            aria-label="<%= t('collavre.comments.agent_run_options.button_title') %>">
+      <%= render "collavre/comments/thinking_icon" %>
+    </button>
     <button class="creative-action-btn" id="cancel-edit-btn" data-comments--form-target="cancel" type="button" style="display:none;"><%= t('app.cancel') %></button>
     <button class="creative-action-btn" type="submit" data-comments--form-target="submit"><%= svg_tag 'send.svg', class: 'send-icon' %></button>
     </div>
+    <%= render "collavre/comments/agent_run_options" %>
     <div class="comment-attachment-list" data-comments--form-target="attachmentList" aria-live="polite"></div>
     </div>
   </form>

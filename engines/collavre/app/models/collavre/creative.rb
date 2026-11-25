@@ -66,15 +66,20 @@ module Collavre
     after_save :fire_drop_trigger_on_move, if: :saved_change_to_parent_id?
     after_create_commit :fire_drop_trigger_on_create, if: :parent_id?
     after_create :create_main_topic
+    before_create :capture_creation_event_actor
 
     include TypeSelectable
     include Linkable
     include Permissible
+    include Publishable
     include Describable
     include RealtimeBroadcastable
-    include HistoryTrackable, CreativeHistoryTopic, AiWritePolicy
+    include Contextual
+    include HistoryTrackable, CreativeHistoryTopic, CreativeReservedTopics, AiWritePolicy, CreationEvents
 
     has_many :comments, class_name: "Collavre::Comment", dependent: :destroy
+    has_many :quoting_comments, class_name: "Collavre::Comment", foreign_key: :quoted_creative_id,
+                                inverse_of: :quoted_creative, dependent: :nullify
     has_many :comment_read_pointers, class_name: "Collavre::CommentReadPointer", dependent: :delete_all
     has_many :comment_snapshots, class_name: "Collavre::CommentSnapshot", dependent: :destroy
 
@@ -127,20 +132,6 @@ module Collavre
     # from the neutral read-only behavior above).
     def github_markdown?
       source_type == "github_markdown"
-    end
-
-    # Find or create the "System" topic for this inbox creative.
-    # Re-creates it if the user deletes it.
-    def system_topic(fallback_user: user)
-      topics.find_or_create_by!(name: SYSTEM_TOPIC_NAME) do |topic|
-        topic.user = fallback_user
-      end
-    end
-
-    def main_topic(fallback_user: user)
-      topics.find_or_create_by!(name: MAIN_TOPIC_NAME) do |topic|
-        topic.user = fallback_user
-      end
     end
 
     def content_topic(fallback_user: user)
@@ -223,46 +214,10 @@ module Collavre
     after_commit :enqueue_mcp_tools_sync, if: :mcp_tools_sync_pending?
 
     # --- Drop Trigger ---
+    include TriggerLoop
+
     def drop_trigger_enabled?
       data&.dig("trigger", "on_child_enter") == true
-    end
-
-    # --- Context IDs ---
-    # Returns the directly-configured context creative IDs for this creative.
-    def context_ids
-      data.is_a?(Hash) ? Array(data["context_ids"]) : []
-    end
-
-    # Returns the directly-configured disabled context IDs for this creative.
-    def disabled_context_ids
-      data.is_a?(Hash) ? Array(data["disabled_context_ids"]) : []
-    end
-
-    # Returns the effective context IDs: own + inherited from ancestors (deduplicated).
-    def effective_context_ids(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      own = context_ids
-      parent_ctx = parent&.effective_context_ids(visited_ids) || []
-      (own + parent_ctx).uniq
-    end
-
-    # Returns the effective disabled context IDs: own + inherited from ancestors (deduplicated).
-    def effective_disabled_context_ids(visited_ids = Set.new)
-      return [] if visited_ids.include?(id)
-
-      visited_ids.add(id)
-      own = disabled_context_ids
-      parent_disabled = parent&.effective_disabled_context_ids(visited_ids) || []
-      (own + parent_disabled).uniq
-    end
-
-    # Returns context creatives (excludes self to avoid duplication).
-    def context_creatives
-      ids = effective_context_ids
-      ids -= [ id ]
-      Creative.where(id: ids)
     end
 
     # Compatibility helper: ancestry gem exposes `subtree_ids`, while
@@ -306,6 +261,15 @@ module Collavre
     end
 
     private
+
+    # Capture before commit: an enclosing transaction can outlive History.track.
+    # An explicit nil actor denotes system work, not the inherited tree owner.
+    attr_reader :creation_event_actor
+
+    def capture_creation_event_actor
+      context = Current.creative_history_context
+      @creation_event_actor = context ? context[:actor] : (Current.user || user)
+    end
 
     def assign_default_user
       return if user.present?

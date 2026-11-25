@@ -971,3 +971,26 @@
   right: -5px;
   cursor: nwse-resize;
 }
+
+.lexical-emoji-picker {
+  position: relative;
+}
+
+.lexical-emoji-picker__popup {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 20;
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 16px));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface-section);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-3);
+}

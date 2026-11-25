@@ -19,6 +19,30 @@ describe('WorkspaceTreeController', () => {
     expect(controller.treeTarget.querySelectorAll('.creative-workspace-tree-link')).toHaveLength(2)
   })
 
+  test('initial saved branches are combined with the selected path', async () => {
+    controller.disconnect()
+    controller.initialExpandedIdsValue = [8, 9]
+    controller.connect()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect([...controller.expandedCreativeIds]).toEqual(expect.arrayContaining(['8', '9', '1', '2', '3']))
+    const urls = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(urls.some((url) => url.includes('expand%5B%5D=8') && url.includes('expand%5B%5D=1'))).toBe(true)
+  })
+
+  test.each([[[]], [[1, 2, 3]]])('caps initial saved branches without evicting their root (path %j)', async (path) => {
+    controller.disconnect()
+    document.getElementById('creative-workspace-content')?.remove()
+    controller.currentPathValue = path
+    controller.initialExpandedIdsValue = Array.from({ length: 101 }, (_, index) => index + 1)
+    fetchMock.mockClear()
+    controller.connect()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const requested = new URL(fetchMock.mock.calls[0][0], window.location.origin).searchParams.getAll('expand[]')
+    expect(requested).toEqual(Array.from({ length: 100 }, (_, index) => String(index + 1)))
+    expect(controller.expandedCreativeIds.has('1')).toBe(true)
+    expect(controller.treeTarget.querySelector('[data-creative-id="2"]')).not.toBeNull()
+  })
+
   beforeEach(async () => {
     window.localStorage.clear()
     fetchMock = jest.fn().mockImplementation((url) => Promise.resolve(
@@ -723,6 +747,25 @@ describe('WorkspaceTreeController', () => {
 
     leafLink = document.querySelector('[data-creative-id="2"] a')
     expect(document.activeElement).toBe(leafLink)
+  })
+
+  test.each(['textarea', 'input', 'editor'])('preserves a %s focused while the sidebar refreshes', async (tag) => {
+    document.querySelector('.creative-workspace-tree-link').focus()
+    let finishRefresh
+    fetchMock.mockReturnValueOnce(new Promise(resolve => { finishRefresh = resolve }))
+    const refreshing = controller.load({ showLoading: false, syncChat: false, preserveView: true })
+
+    const input = document.createElement(tag === 'editor' ? 'div' : tag)
+    if (tag === 'editor') {
+      input.contentEditable = 'true'
+      input.tabIndex = 0
+    }
+    document.getElementById('creative-workspace-content').append(input)
+    input.focus()
+    finishRefresh({ ok: true, json: async () => ({ creatives: [{ id: 1, label: 'Root', url: '/creatives?id=1' }] }) })
+    await refreshing
+
+    expect(document.activeElement).toBe(input)
   })
 
   test('keeps the rendered branch state when a lazy reload fails', async () => {

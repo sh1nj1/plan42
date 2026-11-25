@@ -24,6 +24,7 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
     assert_current_path collavre.edit_creative_path(@workflow)
     click_button label(:add_rule)
     fill_in label(:rule_title), with: "Review comments"
+    fill_in label(:topic_name), with: "Daily analysis"
     choose label("handlers.agent")
     select @agent.name, from: label(:agents)
     assert_text label(:agent_cannot_respond_here)
@@ -43,6 +44,7 @@ class WorkflowRuleEditorTest < ApplicationSystemTestCase
     assert_selector ".workflow-rule h3", text: "Review comments"
     assert_checked_field label("handlers.agent")
     assert_select label(:agents), selected: [ @agent.name ]
+    assert_field label(:topic_name), with: "Daily analysis"
     assert_checked_field label("source_labels.cron")
     assert_select label(:author), selected: label(:yes)
     assert_button "review ×"

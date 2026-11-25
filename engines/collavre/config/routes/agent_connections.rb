@@ -19,3 +19,6 @@ scope "comments/:comment_id/agent-login", as: :inline_agent_login do
   delete "sessions/:session_id", to: "inline_agent_logins#cancel"
   post "resume", to: "inline_agent_logins#resume", as: :resume
 end
+
+get "users/:user_id/agent-model", to: "agent_models#show", as: :user_agent_model
+patch "users/:user_id/agent-model", to: "agent_models#update"

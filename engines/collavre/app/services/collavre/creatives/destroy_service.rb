@@ -29,8 +29,10 @@ module Collavre
       end
 
       def destroy_descendants_recursively(creative)
-        deletable_children = creative.children_with_permission(@user, :admin)
-        deletable_children.each do |child|
+        # A linked shell resolves children through its origin; never cascade into the origin's tree.
+        return if creative.origin_id.present?
+
+        creative.children_with_permission(@user, :admin).each do |child|
           destroy_descendants_recursively(child)
           CreativeShare.where(creative: child).destroy_all
           child.destroy

@@ -1,6 +1,8 @@
 module Collavre
   class AiClient
-    include ErrorHandling, ApprovalGate
+    include ErrorHandling
+    include Decision, ProviderContext
+    include AiUsageTracking, AiApprovalSummary, ApprovalGate, CliToolEvents
     SYSTEM_INSTRUCTIONS = <<~PROMPT.freeze
       You are a senior expert teammate. Respond:
       - Be concise and focus on the essentials (avoid unnecessary verbosity).
@@ -48,6 +50,7 @@ module Collavre
     BASE_VENDOR_OPTIONS = [
       [ "Google (Gemini)", "google" ],
       [ "OpenAI", "openai" ],
+      [ "TypesafeAI", "typesafe" ],
       [ "Anthropic", "anthropic" ],
       [ "CLI Proxy", "cli_proxy" ]
     ].freeze
@@ -64,6 +67,24 @@ module Collavre
         return if registered_vendor_options.any? { |_l, v| v == value }
 
         registered_vendor_options << [ label, value ]
+      end
+
+      def register_vendor_capabilities(vendor, capabilities:)
+        vendor_capabilities[vendor.to_s.strip.downcase] = capabilities.map(&:to_sym).freeze
+      end
+
+      def vendor_capabilities
+        @vendor_capabilities ||= { "openai" => %i[chat judge], "typesafe" => %i[judge] }
+      end
+
+      def supports?(vendor, capability, model: nil)
+        vendor = vendor.to_s.strip.downcase
+        capability = capability.to_sym
+        return false unless vendor_capabilities.fetch(vendor, %i[chat]).include?(capability)
+        return false if capability == :judge && !VENDOR_TO_PROVIDER.key?(vendor)
+        return true unless vendor == "openai" && capability == :judge && !model.nil?
+
+        RubyLLM::Providers::OpenAI::Capabilities.augment([], model_id: model).include?("judgment")
       end
 
       def vendor_options
@@ -138,7 +159,10 @@ module Collavre
         # product's tools write creatives and post comments. A turn classified
         # as a failed handoff has everything it swallowed dispatched again, and
         # the restored turn runs those tools a second time.
+        # Marked before observe_chunk: a listener there may raise CancelledError,
+        # and the chunk that reached it is already proof of handoff.
         @handed_off = true
+        observe_chunk(chunk)
         delta = extract_chunk_content(chunk).to_s
         # Deliberately NOT `blank?`. A delta of exactly "\n\n" — the paragraph
         # break, which providers routinely emit as a token of its own — is
@@ -160,14 +184,8 @@ module Collavre
           @handed_off = true
         end
 
-        # Extract token usage directly from response object (RubyLLM style)
-        if response.respond_to?(:input_tokens)
-          input_tokens = response.input_tokens
-        end
-
-        if response.respond_to?(:output_tokens)
-          output_tokens = response.output_tokens
-        end
+        input_tokens = response.tokens&.input
+        output_tokens = response.tokens&.output
       end
 
       response_content.presence
@@ -190,40 +208,7 @@ module Collavre
       yield "\n\n⚠️ AI Error: #{error_message}" if block_given?
       nil
     ensure
-      @last_input_tokens = input_tokens || 0
-      @last_output_tokens = output_tokens || 0
-      if @log_interactions
-        log_interaction(
-          messages: @conversation&.messages&.to_a || Array(contents),
-          tools: @conversation&.tools&.to_a || [],
-          response_content: response_content.presence,
-          error_message: error_message,
-          input_tokens: input_tokens,
-          output_tokens: output_tokens
-        )
-      end
-    end
-
-    # Ask a follow-up question using the existing conversation context.
-    # Used to generate approval summaries with full conversation history.
-    # Returns the response content string, or nil on failure.
-    def ask(prompt)
-      return nil unless @conversation
-
-      refresh_turn_boundary!(@conversation)
-      # Disable tool calls for summary generation to avoid recursive approval
-      @conversation.with_tools(replace: true)
-      response = @conversation.ask(prompt)
-      refresh_turn_boundary!(@conversation)
-      response&.content&.strip.presence
-    rescue CancelledError
-      raise
-    rescue StandardError => e
-      # A provider timeout at the turn boundary must become the deadline that
-      # caused it, not a missing summary followed by pending_approval.
-      refresh_turn_boundary!(@conversation)
-      Rails.logger.warn("AiClient#ask failed: #{e.class} #{e.message}")
-      nil
+      finalize_chat_usage(response, contents, response_content, error_message, input_tokens, output_tokens)
     end
 
     private
@@ -232,6 +217,7 @@ module Collavre
 
     VENDOR_TO_PROVIDER = {
       "openai" => :openai,
+      "typesafe" => :typesafe,
       "cli_proxy" => :openai,
       "anthropic" => :anthropic,
       "google" => :gemini,
@@ -239,80 +225,10 @@ module Collavre
     }.freeze
 
     def build_conversation(tools = [])
-      normalized_vendor = @vendor.to_s.downcase
-
-      context_block = case normalized_vendor
-      when "openai", "cli_proxy"
-        if normalized_vendor == "cli_proxy"
-          agent = context[:user]
-          gateway = agent&.agent_gateway
-          raise ArgumentError, "CLI Proxy agent has no active gateway" unless gateway&.active?
-
-          if context.key?(:workspace_user)
-            workspace_user = context[:workspace_user]
-          else
-            comment_user = context[:comment]&.user
-            workspace_user = comment_user unless comment_user&.ai_user?
-            workspace_user ||= agent.creator
-          end
-          if gateway.per_user? && workspace_user.nil?
-            raise ArgumentError, "CLI Proxy per-user workspace requires a verified human principal"
-          end
-          workspace_user = nil if gateway.shared?
-          workspace = Collavre::AgentWorkspace.resolve!(agent: agent, user: workspace_user)
-          gateway = workspace.agent_gateway
-          @cli_proxy_identity = { gateway: gateway, workspace: workspace }
-          api_key = gateway.completion_key
-          base_url = gateway.completion_base_url
-        else
-          api_key = OpenaiEndpoint.api_key(base_url: @gateway_url, api_key: @llm_api_key)
-          base_url = @gateway_url.presence
-        end
-        # A custom OpenAI-compatible gateway (local Ollama / LM Studio, etc.) needs
-        # no real OpenAI key, but RubyLLM raises ConfigurationError before sending
-        # if openai_api_key is blank. Supply a placeholder so keyless local gateways
-        # work; hosted OpenAI (no gateway) still requires a real key.
-        api_key = "local-gateway" if api_key.blank? && base_url
-        proc do |config|
-          config.openai_api_key = api_key
-          config.openai_api_base = base_url if base_url
-          if normalized_vendor == "cli_proxy" && !gateway.owner.system_admin? && !gateway.desktop_loopback?
-            config.faraday_adapter = Collavre::CliProxy::SafeNetHttpAdapter
-          end
-        end
-      when "anthropic"
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:anthropic_api_key)
-        proc { |config| config.anthropic_api_key = api_key }
-      else
-        api_key = @llm_api_key.presence || IntegrationSettings.fetch(:gemini_api_key)
-        proc { |config| config.gemini_api_key = api_key }
-      end
-
-      provider = VENDOR_TO_PROVIDER[normalized_vendor]
-      chat_opts = { model: model }
-      chat_opts[:provider] = provider if provider
-      chat_opts[:assume_model_exists] = true if provider
-
-      # RubyLLM::Context duplicates the global config. Set the timeout on that
-      # per-client copy so concurrent agent threads cannot overwrite one
-      # another's deadline cap.
-      @ruby_llm_context = RubyLLM.context do |config|
-        context_block.call(config)
-        config.request_timeout = effective_request_timeout_seconds
-      end
-
-      @ruby_llm_context.chat(**chat_opts).tap do |chat|
+      build_llm_context.chat(**conversation_options(@vendor)).tap do |chat|
         chat.with_instructions(system_prompt) if system_prompt.present?
         apply_request_headers!(chat)
-        chat.on_tool_call do |tool_call|
-          # Cancellation ahead of the approval gate: a turn that already
-          # reached a terminal status or its deadline must end, not park
-          # itself as pending approval for a tool it will never run. Force this
-          # boundary through the lifecycle throttle: the first tool call can
-          # arrive during the manager's initial one-second quiet period.
-          @before_tool_call&.call(true)
-          check_tool_approval!(tool_call)
-        end
+        install_tool_boundary(chat)
         if @request_timeout_seconds || @cli_proxy_identity
           chat.after_tool_result do |_result|
             # A tool can consume much of the turn. Recheck the deadline and
@@ -324,9 +240,18 @@ module Collavre
         if tools.any?
           # Resolve tool names to classes using the gem's helper
           tool_classes = ::Tools::MetaToolService.ruby_llm_tools(tools)
-          chat.with_tools(*tool_classes, replace: true)
+          chat.with_tools(*tool_classes)
         end
       end
+    end
+
+    def conversation_options(normalized_vendor)
+      provider = VENDOR_TO_PROVIDER[normalized_vendor]
+      options = { model: model }
+      options[:provider] = provider if provider
+      options[:protocol] = :chat_completions if provider == :openai
+      options[:assume_model_exists] = true if provider
+      options
     end
 
     def refresh_turn_boundary!(conversation)
@@ -378,28 +303,14 @@ module Collavre
       tool_name = tool_call.name
       task = context&.dig(:task)
 
-      # Check if this tool requires approval (dynamic McpTool or system tool)
-      mcp_tool = McpTool.find_by(name: tool_name)
-      system_tool_class = ToolMeta.registry.find { |klass| klass.tool_metadata[:name] == tool_name }
-      requires = mcp_tool&.requires_approval? ||
-                 (system_tool_class.respond_to?(:requires_approval?) && system_tool_class.requires_approval?)
-      return unless requires
-
-      # Check if we already have approval for this specific call (resume scenario)
-      if task&.pending_tool_call.present?
-        pending = task.pending_tool_call
-        if pending["tool_name"] == tool_name && pending["approved"]
-          # Already approved, clear the pending state and proceed
-          task.update!(pending_tool_call: nil)
-          return
-        end
-      end
+      return unless ToolApprovalPolicy.required_for_call?(tool_call, agent: task&.agent)
 
       # Requires approval - raise error to halt execution
       raise ApprovalPendingError.new(
         "Tool '#{tool_name}' requires approval before execution",
         tool_call: tool_call,
-        task: task
+        task: task,
+        messages: AiAgent::ApprovalConversation.dump(@conversation&.messages || [])
       )
     end
 
@@ -415,14 +326,9 @@ module Collavre
 
         next if text.blank? && image_sources.empty?
 
-        if image_sources.any?
-          content = RubyLLM::Content.new(text.presence, image_sources)
-          conversation.add_message(role:, content: content)
-        else
-          next if text.blank?
-
-          conversation.add_message(role:, content: text)
-        end
+        attributes = { role: role, content: text.presence }
+        attributes[:attachments] = image_sources if image_sources.any?
+        conversation.add_message(**attributes)
       end
     end
 
@@ -447,7 +353,7 @@ module Collavre
 
     def extract_message_text(message)
       parts = message[:parts] || message["parts"]
-      return message[:text] || message["text"] if parts.nil?
+      return message[:text] || message["text"] || message[:content] || message["content"] if parts.nil?
 
       Array(parts).map { |part| part[:text] || part["text"] }.compact.join("\n")
     end
@@ -460,22 +366,6 @@ module Collavre
       else
         chunk.to_s
       end
-    end
-
-    def log_interaction(messages:, tools:, response_content:, error_message: nil, input_tokens: nil, output_tokens: nil)
-      RubyLlmInteractionLogger.log(
-        vendor: @vendor,
-        model: @model,
-        messages: messages,
-        tools: tools,
-        response_content: response_content,
-        error_message: error_message,
-        creative: context&.dig(:creative),
-        user: context&.dig(:user),
-        comment: context&.dig(:comment),
-        input_tokens: input_tokens,
-        output_tokens: output_tokens
-      )
     end
   end
 end

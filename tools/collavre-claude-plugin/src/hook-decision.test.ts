@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decidePreToolUse, isReplyTool, REPLY_TOOL_NAME } from "./hook-decision.ts";
@@ -46,3 +47,18 @@ test("stays silent when tool_name is missing or input is malformed", () => {
   // @ts-expect-error — exercising defensive handling of bad input
   assert.equal(decidePreToolUse(null), null);
 });
+
+const hookConfig = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+const matcher = new RegExp(hookConfig.hooks.PreToolUse[0].matcher);
+for (const name of ["mcp__collavre__approval_request", "mcp__plugin_collavre_collavre__approval_request"]) {
+  test(`approval request reaches the allow hook: ${name}`, () => {
+    assert.ok(matcher.test(name));
+    assert.equal(decidePreToolUse({ tool_name: name })?.hookSpecificOutput.permissionDecision, "allow");
+  });
+}
+for (const name of ["mcp__other__approval_request", "mcp__collavre__approval_request_extra", "xmcp__collavre__approval_request"]) {
+  test(`does not auto-approve lookalike: ${name}`, () => {
+    assert.equal(matcher.test(name), false);
+    assert.equal(decidePreToolUse({ tool_name: name }), null);
+  });
+}

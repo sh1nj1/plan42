@@ -85,6 +85,7 @@
 
 /* Stage — takes remaining space, centers image */
 .image-lightbox-stage {
+  touch-action: none;
   flex: 1;
   display: flex;
   align-items: center;

@@ -34,8 +34,14 @@ module Collavre
     end
 
     after_create_commit :ensure_history_topic
+    # dependent: :delete_all skips the attachment invalidation callback.
+    before_destroy :evict_cached_history_files, prepend: true
 
     private
+
+    def evict_cached_history_files
+      history_file_attachments.includes(:blob).each { |attachment| CdnInvalidation.invalidate_blob(attachment.blob) }
+    end
 
     def ensure_history_topic
       return if change_set.origin == "sync"

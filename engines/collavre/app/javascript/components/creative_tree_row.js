@@ -7,6 +7,10 @@ import { addCreativeTableDownloadButtons } from "../lib/utils/table_download";
 import { sanitizeDescriptionHtml } from "../lib/utils/sanitize_description";
 import csrfFetch from "../lib/api/csrf_fetch";
 import { replaceProgressControl, syncProgressHtmlFromDom } from "../creatives/tree_renderer";
+import {
+  isDocumentView, renderDragHandle, rowDraggableAttr, renderDocumentTitle, visitRowLink, handleDocumentBodyClick
+} from "./creative_tree_row_document_view";
+
 
 const BULLET_STARTING_LEVEL = 3;
 
@@ -24,6 +28,7 @@ class CreativeTreeRow extends LitElement {
     linkUrl: { attribute: "link-url" },
     descriptionHtml: { state: true, noAccessor: true },
     progressHtml: { state: true },
+    progressValue: { type: Number, attribute: "data-progress-value" },
     editIconHtml: { state: true },
     editOffIconHtml: { state: true },
     originLinkHtml: { state: true },
@@ -237,9 +242,6 @@ class CreativeTreeRow extends LitElement {
       return this._renderTitle();
     }
 
-    const dragEnabled = !this.selectMode || this.canWrite;
-    const draggableAttr = dragEnabled ? "true" : nothing;
-
     return html`
       <div
         class="creative-tree"
@@ -247,12 +249,13 @@ class CreativeTreeRow extends LitElement {
         data-id=${this.creativeId ?? nothing}
         data-parent-id=${this.parentId ?? ""}
         data-level=${this.level ?? nothing}
-        draggable=${draggableAttr}
+        draggable=${rowDraggableAttr(this)}
       >
         <div class="creative-row level-${this.level}" data-creatives--select-mode-target="row">
           <div class="creative-row-start">
             ${this._renderCheckbox()}
             ${this._renderActionButton()}
+            ${renderDragHandle(this)}
             ${this._renderTreeLines()}
             ${this._renderToggle()}
             ${this._renderContent()}
@@ -265,32 +268,7 @@ class CreativeTreeRow extends LitElement {
   }
 
   _renderTitle() {
-    return html`
-      <div
-        class="creative-tree creative-tree-title"
-        id=${this.domId ?? nothing}
-        data-id=${this.creativeId ?? nothing}
-        data-parent-id=${this.parentId ?? ""}
-      >
-        <div class="creative-row" style="background-color: transparent;" data-creatives--select-mode-target="row">
-          <div class="creative-row-start" style="align-items: center;">
-            ${this._renderActionButton()}
-            <div class="creative-toggle-btn" style="visibility: hidden; margin-top: 0;"></div>
-            <h1 class="page-title" style="margin-left: 0; margin-bottom: 0; display:flex; align-items:center; gap:1em;">
-              <div class="creative-title-content">
-                ${unsafeHTML(this.descriptionHtml || "")}
-              </div>
-              ${this.originLinkHtml ? unsafeHTML(this.originLinkHtml) : nothing}
-            </h1>
-          </div>
-          <div class="creative-row-end">
-             <h1 class="page-title" style="margin: 0; display:flex; align-items:center;">
-               <span class="creative-progress-area">${unsafeHTML(this.progressHtml || "")}</span>
-             </h1>
-          </div>
-        </div>
-      </div>
-    `;
+    return renderDocumentTitle(this);
   }
 
   _renderTreeLines() {
@@ -319,21 +297,16 @@ class CreativeTreeRow extends LitElement {
   }
 
   _renderActionButton() {
-    if (this.canWrite) {
-      return html`
-        <button type="button" class="creative-action-btn edit-inline-btn" data-creative-id=${this.creativeId}>
-          ${unsafeHTML(this.editIconHtml || "")}
-        </button>
-      `;
-    }
+    const label = this.canWrite ? this.closest("[data-edit-label]")?.dataset.editLabel : null;
     return html`
       <button
         type="button"
         class="creative-action-btn edit-inline-btn"
         data-creative-id=${this.creativeId}
-        style="visibility: hidden"
+        aria-label=${label || nothing}
+        style=${this.canWrite ? nothing : "visibility: hidden"}
       >
-        ${unsafeHTML(this.editOffIconHtml || "")}
+        ${unsafeHTML((this.canWrite ? this.editIconHtml : this.editOffIconHtml) || "")}
       </button>
     `;
   }
@@ -510,26 +483,25 @@ class CreativeTreeRow extends LitElement {
     }
     event.preventDefault();
     event.stopPropagation();
-    this.dispatchEvent(new CustomEvent("creative-toggle-click", {
-      detail: {
-        creativeId: this.creativeId ?? this.getAttribute("creative-id"),
-        component: this,
-        button: event.currentTarget,
-        treeElement: this.querySelector(".creative-tree")
-      },
-      bubbles: true,
-      composed: true
-    }));
+    this._dispatchRowClick("creative-toggle-click", event.currentTarget);
   }
 
   _handleEditClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    this.dispatchEvent(new CustomEvent("creative-edit-click", {
+    this.dispatchEditClick(event.currentTarget);
+  }
+
+  dispatchEditClick(button) {
+    this._dispatchRowClick("creative-edit-click", button);
+  }
+
+  _dispatchRowClick(name, button) {
+    this.dispatchEvent(new CustomEvent(name, {
       detail: {
         creativeId: this.creativeId ?? this.getAttribute("creative-id"),
         component: this,
-        button: event.currentTarget,
+        button,
         treeElement: this.querySelector(".creative-tree")
       },
       bubbles: true,
@@ -540,16 +512,7 @@ class CreativeTreeRow extends LitElement {
   _handleCommentsClick(event) {
     event.preventDefault();
     event.stopPropagation();
-    this.dispatchEvent(new CustomEvent("creative-comments-click", {
-      detail: {
-        creativeId: this.creativeId ?? this.getAttribute("creative-id"),
-        component: this,
-        button: event.currentTarget,
-        treeElement: this.querySelector(".creative-tree")
-      },
-      bubbles: true,
-      composed: true
-    }));
+    this._dispatchRowClick("creative-comments-click", event.currentTarget);
   }
 
   async _handleProgressToggle(event) {
@@ -671,18 +634,9 @@ class CreativeTreeRow extends LitElement {
       return;
     }
 
-    // If not interactive, navigate to the linkUrl
-    if (this.linkUrl && this.linkUrl !== "#") {
-      if (window.Turbo) {
-        const workspaceFrame = this.closest("turbo-frame#creative-workspace-content");
-        const options = workspaceFrame
-          ? { action: "advance", frame: workspaceFrame.id }
-          : undefined;
-        window.Turbo.visit(this.linkUrl, options);
-      } else {
-        window.location.href = this.linkUrl;
-      }
-    }
+    // If not interactive: edit in document view, otherwise navigate to the linkUrl
+    if (isDocumentView(this)) handleDocumentBodyClick(this, event);
+    else visitRowLink(this);
   }
 }
 

@@ -5,6 +5,19 @@ class AutoThemeGeneratorConversionTest < ActiveSupport::TestCase
     @generator = AutoThemeGenerator.new
   end
 
+  test "default client uses the updated Gemini model" do
+    requester = users(:one)
+    client = Object.new
+    Collavre::AiClient.stub :new, ->(**options) {
+      assert_equal "google", options[:vendor]
+      assert_equal "gemini-3.5-flash-lite", options[:model]
+      assert_equal requester, options[:context][:requester]
+      client
+    } do
+      assert_equal client, @generator.send(:default_client, requester)
+    end
+  end
+
   test "converts oklch to hex correctly" do
     # White
     # oklch(100% 0 0) -> #ffffff

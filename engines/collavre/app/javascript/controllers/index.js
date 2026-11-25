@@ -1,3 +1,4 @@
+import DocumentPreviewController from "./document_preview_controller"
 import InlineCreativePickerController from './inline_creative_picker_controller'
 import CreativeMoveController from "./creative_move_controller"
 
@@ -10,13 +11,18 @@ import CreativesImportController from "./creatives/import_controller"
 import CreativesSelectModeController from "./creatives/select_mode_controller"
 import CreativesDragDropController from "./creatives/drag_drop_controller"
 import CreativesExpansionController from "./creatives/expansion_controller"
+import CreativesDocumentViewController from "./creatives/document_view_controller"
+import CreativesDocumentSelectionController from "./creatives/document_selection_controller"
 import CreativesRowEditorController from "./creatives/row_editor_controller"
 import CreativesTreeController from "./creatives/tree_controller"
 import CreativesSyncController from "./creatives/sync_controller"
 import CreativesWorkflowRuleController from "./creatives/workflow_rule_controller"
 import CreativesWriteAccessRequestController from "./creatives/write_access_request_controller"
+import CommentsLoadingController from "./comments/loading_controller"
 import CommentsListController from "./comments/list_controller"
 import CommentsFormController from "./comments/form_controller"
+import CommentsCreativeQuoteReviewController from "./comments/creative_quote_review_controller"
+import CommentsRunOptionsController from "./comments/run_options_controller"
 import CommentsPresenceController from "./comments/presence_controller"
 import CommentsMentionMenuController from "./comments/mention_menu_controller"
 import CommentsTopicsController from "./comments/topics_controller"
@@ -27,12 +33,14 @@ import CommentsPlaceholderController from "./comments/placeholder_controller"
 import CommentsPopupController from "./comments/popup_controller"
 import ClickTargetController from "./click_target_controller"
 import TabsController from "./tabs_controller"
+import ToolCategoryController from "./tool_category_controller"
 import LinkCreativeController from "./link_creative_controller"
 import TopicSearchController from "./topic_search_controller"
 import TopicListController from "./topic_list_controller"
 import EntityListController from "./entity_list_controller"
 import CommonPopupController from "./common_popup_controller"
 import CommentController from "./comment_controller"
+import CommentAgentModelController from "./comment_agent_model_controller"
 import CommentUserMenuController from "./comment_user_menu_controller"
 import ReactionPickerController from "./reaction_picker_controller"
 import ShareInviteController from "./share_invite_controller"
@@ -46,6 +54,7 @@ import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
 import LandingVideoController from "./landing_video_controller"
 import InboxBadgeController from "./inbox_badge_controller"
+import NoticeBarController from "./notice_bar_controller"
 import LastVisitedCreativeController from "./last_visited_creative_controller"
 import WorkspaceTreeController from "./workspace_tree_controller"
 import GatewayCheckController from "./gateway_check_controller"
@@ -68,11 +77,15 @@ export {
   CreativesSelectModeController,
   CreativesDragDropController,
   CreativesExpansionController,
+  CreativesDocumentViewController,
+  CreativesDocumentSelectionController,
   CreativesRowEditorController,
   CreativesTreeController,
   CreativesSyncController,
+  CommentsLoadingController,
   CommentsListController,
   CommentsFormController,
+  CommentsCreativeQuoteReviewController,
   CommentsPresenceController,
   CommentsMentionMenuController,
   CommentsTopicsController,
@@ -80,6 +93,7 @@ export {
   CommentsPopupController,
   ClickTargetController,
   TabsController,
+  ToolCategoryController,
   LinkCreativeController,
   TopicSearchController,
   TopicListController,
@@ -99,6 +113,7 @@ export {
   CommentBadgeController,
   LandingVideoController,
   InboxBadgeController,
+  NoticeBarController,
   LastVisitedCreativeController,
   WorkspaceTreeController,
   GatewayCheckController,
@@ -116,16 +131,33 @@ function registerImageLightboxControllers(application) {
   application.register("creative-image-lightbox", CreativeImageLightboxController)
 }
 
+// Always-present app chrome: the top notice bar and the inbox badge.
+function registerAppChromeControllers(application) {
+  application.register("notice-bar", NoticeBarController)
+  application.register("inbox-badge", InboxBadgeController)
+}
+
 function registerCreativeControllers(application) {
+  application.register("document-preview", DocumentPreviewController)
   application.register("creatives--import", CreativesImportController)
   application.register("creatives--select-mode", CreativesSelectModeController)
   application.register("creatives--drag-drop", CreativesDragDropController)
   application.register("creatives--expansion", CreativesExpansionController)
+  application.register("creatives--document-view", CreativesDocumentViewController)
+  application.register("creatives--document-selection", CreativesDocumentSelectionController)
   application.register("creatives--row-editor", CreativesRowEditorController)
   application.register("creatives--tree", CreativesTreeController)
   application.register("creatives--sync", CreativesSyncController)
   application.register("creatives--write-access-request", CreativesWriteAccessRequestController)
   application.register("creatives--workflow-rule", CreativesWorkflowRuleController)
+}
+
+// Agent new/edit forms and gateway settings.
+function registerAgentSettingsControllers(application) {
+  application.register("gateway-check", GatewayCheckController)
+  application.register("agent-connection", AgentConnectionController)
+  application.register("agent-vendor", AgentVendorController)
+  application.register("tool-category", ToolCategoryController)
 }
 
 // Registration function for use with a Stimulus application
@@ -135,8 +167,11 @@ export function registerControllers(application) {
   application.register("popup-menu", PopupMenuController)
   application.register("progress-filter", ProgressFilterController)
   registerCreativeControllers(application)
+  application.register("comments--loading", CommentsLoadingController)
   application.register("comments--list", CommentsListController)
   application.register("comments--form", CommentsFormController)
+  application.register("comments--creative-quote-review", CommentsCreativeQuoteReviewController)
+  application.register("comments--run-options", CommentsRunOptionsController)
   application.register("comments--presence", CommentsPresenceController)
   application.register("comments--mention-menu", CommentsMentionMenuController)
   application.register("comments--topics", CommentsTopicsController)
@@ -154,6 +189,7 @@ export function registerControllers(application) {
   application.register("entity-list", EntityListController)
   application.register("common-popup", CommonPopupController)
   application.register("comment", CommentController)
+  application.register("comment-agent-model", CommentAgentModelController)
   application.register("comment-user-menu", CommentUserMenuController)
   application.register("reaction-picker", ReactionPickerController)
   application.register("share-invite", ShareInviteController)
@@ -165,12 +201,10 @@ export function registerControllers(application) {
   application.register("search-popup", SearchPopupController)
   application.register("comment-badge", CommentBadgeController)
   application.register("landing-video", LandingVideoController)
-  application.register("inbox-badge", InboxBadgeController)
+  registerAppChromeControllers(application)
   application.register("last-visited-creative", LastVisitedCreativeController)
   application.register("workspace-tree", WorkspaceTreeController)
-  application.register("gateway-check", GatewayCheckController)
-  application.register("agent-connection", AgentConnectionController)
-  application.register("agent-vendor", AgentVendorController)
+  registerAgentSettingsControllers(application)
   application.register("desktop-proxy-setup", DesktopProxySetupController)
   application.register("creative-history-detail", CreativeHistoryDetailController)
   application.register("creative-history", CreativeHistoryController)

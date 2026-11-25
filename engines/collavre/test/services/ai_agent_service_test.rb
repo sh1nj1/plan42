@@ -25,20 +25,52 @@ class AiAgentServiceTest < ActiveSupport::TestCase
     )
   end
 
-  test "gate resumption does not mark new topic history as delivered" do
-    @task.update!(pending_tool_call: { kind: "approval_gate", decision: { decision: "approved" } })
-    @creative.comments.create!(user: @user, content: "New message while awaiting approval", topic_id: @task.topic_id)
+  test "quota suspension preserves partial output and unwinds without completing the task" do
+    @task.update!(trigger_event_payload: Collavre::Orchestration::ExecutionFence.stamp(@task.trigger_event_payload))
+    previous = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :test
     client = Object.new
-    def client.chat(*)
-      yield "Continuing approved work"
+    client.define_singleton_method(:handed_off?) { true }
+    client.define_singleton_method(:chat) do |*args, **kwargs, &block|
+      block.call("Partial answer")
+      raise Collavre::Quota::ExceededError.new(reset_at: 1.hour.from_now)
     end
-    def client.handed_off? = true
-    def client.last_handoff_failed? = false
+    AiClient.stub(:new, client) do
+      assert_raises(Collavre::TaskSuspendedError) { AiAgentService.new(@task).call }
+    end
+    assert_equal "suspended", @task.reload.status
+    assert_equal "Partial answer", @task.trigger_event_payload.dig("resume_context", "partial_reply")
+    assert @task.trigger_event_payload["execution_generation"].present?
+    assert @agent.reload.quota_blocked_until.future?
+    assert_nil @task.reply_comment
+  ensure
+    ActiveJob::Base.queue_adapter = previous
+  end
 
-    Collavre::Orchestration::DeliveryRecord.stub(:record!, ->(*) { flunk "Unseen history must not be recorded" }) do
+  [
+    { kind: "approval_gate", decision: { decision: "approved" } },
+    { approved: true, result: { success: true }, messages: [ { role: "user", content: "Old snapshot" } ] },
+    { approved: true, result: { success: true } }
+  ].each_with_index do |pending, index|
+    test "approval resumption #{index} records only history included in the provider payload" do
+      @task.update!(pending_tool_call: pending)
+      arrived = @creative.comments.create!(user: @user, content: "New message while awaiting approval", topic_id: @task.topic_id)
+      client = Object.new
+      def client.chat(*)
+        yield "Continuing approved work"
+      end
+      def client.handed_off? = true
+      def client.last_handoff_failed? = false
+
       AiClient.stub(:new, client) { AiAgentService.new(@task).call }
+      assert_equal "Continuing approved work", @task.reload.reply_comment.content
+      delivered = Collavre::Orchestration::DeliveryRecord.ids_in(@task.trigger_event_payload)
+      if index == 2
+        assert_includes delivered, arrived.id, "Legacy approvals without snapshots include rebuilt history"
+      else
+        refute_includes delivered, arrived.id, "Snapshot resumes must leave new comments eligible for dispatch"
+      end
     end
-    assert_equal "Continuing approved work", @task.reload.reply_comment.content
   end
 
   test "engine login failure creates an inline card without dispatching another agent" do

@@ -15,6 +15,9 @@ thin agent entry point that indexes into this directory.
 - [permissions.md](permissions.md) — the permission system and the converged
   `CreativeSharesCache` / `PermissionFilter` architecture.
 
+- [features/keep-command.md](features/keep-command.md) — start bounded agent
+  loops with `/keep` or the external `keep` tool, optional goals and agent selection,
+  and shared trigger controls.
 - [workflow_rule_editor.md](workflow_rule_editor.md) — edit workflow rules,
   understand pin scope, and roll out routing through matching policies.
 
@@ -35,8 +38,10 @@ thin agent entry point that indexes into this directory.
 
 ## Integrations
 
+- [decision_adapter.md](decision_adapter.md) — native judgments, chat fallback,
+  agent capabilities, and trigger-loop verification.
+
 - [github_integration.md](github_integration.md)
-- [notion_integration.md](notion_integration.md)
 - [google-auth.md](google-auth.md)
 - [mcp-configuration.md](mcp-configuration.md)
 - [approval-gates.md](approval-gates.md) — human decisions that pause and resume native agent turns.
@@ -46,6 +51,8 @@ thin agent entry point that indexes into this directory.
 
 ## Operations & Infrastructure
 
+- [task_restart_recovery.md](task_restart_recovery.md) — offline reconnect
+  grace, worker ownership checks, and interrupted task recovery.
 - [deploy_to_lightsail.md](deploy_to_lightsail.md) — single-instance AWS
   Lightsail runbook (host launch script, PostgreSQL, Kamal, backups).
 - [deploy_to_ec2.md](deploy_to_ec2.md)

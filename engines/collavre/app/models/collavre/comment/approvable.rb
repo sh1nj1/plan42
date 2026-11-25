@@ -4,6 +4,18 @@ module Collavre
       extend ActiveSupport::Concern
       include ApprovalGate
 
+      included do
+        # SQL inverse of Comment#approval_action? (action.present?). Approval-surface
+        # messages must never reach an AI agent — not only at the dispatch seams but
+        # also as chat-history/trigger context, including Inbox copies quoting them.
+        scope :without_approval_action, -> {
+          where(action: [ nil, "" ]).where(
+            "quoted_comment_id IS NULL OR quoted_comment_id NOT IN (?)",
+            Comment.unscoped.where.not(action: [ nil, "" ]).select(:id)
+          )
+        }
+      end
+
       # A message that renders an approval button (pending) or an
       # approved/denied status label (decided) in the chat list — i.e. it
       # carries an `action` JSON payload. Both the `has_pending_action`

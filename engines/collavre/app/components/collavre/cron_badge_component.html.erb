@@ -14,7 +14,12 @@
           data-popup-menu-target="button"
           data-cron-badge-target="badge"
           data-action="click->popup-menu#toggle">
-    <span aria-hidden="true">⏰</span>
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
     <span data-cron-badge-target="count"><%= tasks.size %></span>
   </button>
   <span id="<%= menu_id %>"

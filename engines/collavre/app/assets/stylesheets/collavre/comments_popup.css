@@ -284,7 +284,8 @@ body.chat-fullscreen {
 }
 
 #new-comment-form textarea {
-    width: 96%;
+    box-sizing: border-box;
+    width: 100%;
     resize: none;
     font-size: var(--text-1);
     overflow-y: auto;
@@ -342,8 +343,16 @@ body.chat-fullscreen {
 }
 
 .comment-user-popup {
+    width: 240px;
     min-width: 240px;
+    overscroll-behavior: contain;
     padding: var(--space-2);
+}
+
+.comment-user-popup .popup-menu-item {
+    box-sizing: border-box;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .comment-user-popup-header {
@@ -361,7 +370,7 @@ body.chat-fullscreen {
 
 .comment-user-popup-email {
     overflow: hidden;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
     text-overflow: ellipsis;
 }
@@ -370,7 +379,7 @@ body.chat-fullscreen {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
 }
 
@@ -378,7 +387,7 @@ body.chat-fullscreen {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--color-text-muted);
+    background: var(--text-muted);
 }
 
 .comment-user-popup-status.is-online .comment-user-popup-status-dot {
@@ -397,7 +406,7 @@ body.chat-fullscreen {
     margin: var(--space-2) var(--space-2) var(--space-1);
     padding-top: var(--space-2);
     border-top: 1px solid var(--color-border);
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     font-size: var(--text-0);
     line-height: 1.4;
 }
@@ -607,6 +616,61 @@ body.chat-fullscreen {
     cursor: pointer;
     border-radius: var(--radius-2);
     white-space: nowrap;
+}
+
+/* Review / Ask side by side, in chat and in document mode */
+.quote-selection-popup ul {
+    display: flex;
+    gap: 0.2em;
+}
+
+/* Document-mode quotes */
+.review-quote-chip-source {
+    margin-right: 0.4em;
+    color: var(--color-muted);
+    font-size: 0.9em;
+}
+
+.comment-creative-quote-source {
+    display: inline-block;
+    margin-top: 0.3em;
+    font-size: 0.8em;
+    color: var(--color-muted);
+    text-decoration: none;
+}
+
+.comment-creative-quote-source:hover {
+    color: var(--color-text);
+    text-decoration: underline;
+}
+
+.creative-quote-review {
+    margin-top: 0.5em;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-2);
+    padding: 0.4em 0.6em;
+}
+
+.creative-quote-review > details > summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.creative-quote-review .creative-history-state {
+    margin-left: 0.4em;
+    font-weight: normal;
+    color: var(--color-muted);
+}
+
+.creative-quote-review-warning {
+    margin: 0.4em 0;
+    font-size: 0.8em;
+}
+
+.creative-quote-highlight {
+    background: color-mix(in srgb, var(--color-active) 15%, transparent);
+    transition: background 0.3s ease;
 }
 
 .comment-reactions {
@@ -904,6 +968,11 @@ body.chat-fullscreen {
     color: var(--color-badge-bg);
 }
 
+.comment-status-label.agent-run-options-label {
+    background-color: color-mix(in srgb, var(--color-muted) 15%, transparent);
+    color: var(--color-muted);
+}
+
 .comment-status-label.approved-label {
     background-color: color-mix(in srgb, var(--color-complete) 20%, transparent);
     color: var(--color-complete);
@@ -976,6 +1045,25 @@ body.chat-fullscreen {
     color: var(--color-chat-btn-text);
 }
 
+.comment-approval-reason {
+    width: 100%;
+    margin-top: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.comment-approval-reason label {
+    display: block;
+    margin-bottom: var(--space-1);
+}
+
+.comment-approval-reason textarea {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    resize: vertical;
+}
+
 .comment-owner-only,
 .comment-delete-hidden,
 .comment-approve-hidden {
@@ -1022,6 +1110,27 @@ body.chat-fullscreen {
     transform: translateY(4px);
     transition: opacity 0.2s ease, transform 0.2s ease;
     pointer-events: none;
+}
+
+.agent-run-options-toggle .thinking-battery-segment {
+    opacity: clamp(0.18, calc(var(--thinking-level, 0) - var(--segment) + 1), 1);
+}
+
+.agent-run-options-toggle.active .thinking-icon {
+    color: var(--color-complete);
+}
+
+.agent-run-options-panel {
+    overflow-y: auto;
+    width: 300px;
+    max-width: calc(100vw - 16px);
+}
+
+.agent-run-options-help {
+    margin: 0;
+    padding: 0.5em 0.75em;
+    font-size: 0.85em;
+    color: var(--color-muted);
 }
 
 .comment-attachment-list {
@@ -1470,7 +1579,7 @@ body.chat-fullscreen {
 .navigate-context-btn {
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     padding: 0 0.15em;
@@ -1485,7 +1594,7 @@ body.chat-fullscreen {
 .delete-context-btn {
     background: none;
     border: none;
-    color: var(--color-text-muted);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.9em;
     padding: 0 0.15em;
@@ -1594,7 +1703,13 @@ body.chat-fullscreen {
 }
 
 .ai-agent-draggable {
+    display: inline-flex;
+    vertical-align: middle;
     cursor: grab;
+}
+
+.ai-agent-draggable .comment-user-menu-trigger {
+    cursor: inherit;
 }
 
 .ai-agent-draggable:active,
@@ -1603,8 +1718,6 @@ body.chat-fullscreen {
 }
 
 .ai-agent-draggable.dragging {
-    /* Opacity on :active traps the fixed profile menu in a stacking context
-       during a tap, redirecting the native click to content beneath it. */
     opacity: 0.5;
 }
 
@@ -2380,4 +2493,105 @@ li:hover .topic-create-option {
     color: var(--text-muted);
     cursor: pointer;
     font-size: 1.2rem;
+}
+
+.comment-agent-model-editor {
+    padding: var(--space-2);
+    border-top: 1px solid var(--color-border);
+}
+
+.comment-agent-model-editor label,
+.comment-agent-model-editor input[type="text"],
+.comment-agent-model-editor select {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.comment-agent-model-editor p {
+    overflow-wrap: anywhere;
+    margin: var(--space-1) 0;
+    color: var(--text-muted);
+    font-size: var(--text-0);
+}
+
+/* Content extension controls share the existing action strip without adding a row. */
+.comment-content-action-controls {
+    position: absolute;
+    bottom: 0.2em;
+    left: 0.5em;
+    right: 0.2em;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+
+.comment-content-action-controls button {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.comments-loading {
+    padding: 16px;
+    min-height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8em;
+}
+
+.comments-loading .creative-loading-indicator {
+    margin-left: 0;
+}
+
+.comments-popup-header,
+.creative-tree-title {
+    position: relative;
+}
+
+.document-header-progress {
+    display: none;
+}
+
+.creative-document-view .document-header-progress {
+    display: contents;
+}
+
+.creative-header-progress {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 4px;
+}
+
+.creative-header-progress::before {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 2px;
+    background: linear-gradient(to right,
+        var(--color-active) var(--creative-header-progress),
+        var(--border-color) var(--creative-header-progress));
+}
+
+.creative-header-progress:focus-visible {
+    outline: 1px solid var(--color-active);
+    outline-offset: 1px;
+}
+
+.creative-header-progress:is(:hover, :focus-visible)::after {
+    content: attr(data-progress-tooltip);
+    position: absolute;
+    z-index: 1;
+    inset-inline-end: 0;
+    top: 100%;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--color-text);
+    background: var(--surface-hover);
+    font-size: 0.75rem;
 }

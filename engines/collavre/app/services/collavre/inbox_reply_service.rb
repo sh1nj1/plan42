@@ -62,6 +62,7 @@ module Collavre
         creative: original.creative,
         topic: original.topic,
         content: @comment.content,
+        agent_run_options: @comment.agent_run_options,
         user: @comment.user,
         quoted_comment: original,
         # quoted_comment is set only for linkage to the message being answered.

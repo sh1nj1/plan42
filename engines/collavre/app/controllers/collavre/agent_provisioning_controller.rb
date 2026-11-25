@@ -11,30 +11,9 @@ module Collavre
     def manifest
       response.headers["Cache-Control"] = "private, no-store"
       workspace = find_workspace!
-      skill = Collavre::AgentProvisioning::Archive.collavre_skill
       config = Collavre::AgentProvisioning::Archive.workspace_config(workspace, base_url: request.base_url)
 
-      render json: {
-        schema: "agent-provisioning/v1",
-        items: [
-          {
-            type: "skill",
-            name: SKILL_NAME,
-            url: absolute_url(agent_provision_skill_path(sha256: digest(skill))),
-            sha256: digest(skill)
-          },
-          {
-            type: "config",
-            name: CONFIG_NAME,
-            url: absolute_url(agent_provision_config_path(
-              agent_id: workspace.agent_id,
-              token: workspace.manifest_token,
-              sha256: digest(config)
-            )),
-            sha256: digest(config)
-          }
-        ]
-      }
+      render json: { schema: "agent-provisioning/v1", **runtime(workspace.agent), items: manifest_items(workspace, config) }
     end
 
     def skill
@@ -56,6 +35,36 @@ module Collavre
 
     def find_workspace!
       Collavre::AgentWorkspace.find_by_manifest_token!(agent_id: params[:agent_id], token: params[:token])
+    end
+
+    def manifest_items(workspace, config)
+      skill = Collavre::AgentProvisioning::Archive.collavre_skill
+      [
+        {
+          type: "skill",
+          name: SKILL_NAME,
+          url: absolute_url(agent_provision_skill_path(sha256: digest(skill))),
+          sha256: digest(skill)
+        },
+        {
+          type: "config",
+          name: CONFIG_NAME,
+          url: absolute_url(agent_provision_config_path(
+            agent_id: workspace.agent_id,
+            token: workspace.manifest_token,
+            sha256: digest(config)
+          )),
+          sha256: digest(config)
+        }
+      ]
+    end
+
+    # Published only when on. The proxy reads an omitted runtime as Fast off,
+    # and a proxy that predates runtime settings never sees the key.
+    def runtime(agent)
+      return {} unless agent.effective_codex_fast_mode?
+
+      { runtime: { codex: { fast_mode: true } } }
     end
 
     def digest(bytes)

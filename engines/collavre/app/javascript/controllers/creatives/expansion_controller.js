@@ -1,11 +1,15 @@
 import { Controller } from '@hotwired/stimulus'
-import csrfFetch from '../../lib/api/csrf_fetch'
+import { reserveExpansionIntent } from '../../lib/api/expansion_intent'
+import { queueExpansionSave } from '../../lib/api/expansion_save_queue'
 import { renderCreativeTree, dispatchCreativeTreeUpdated } from '../../creatives/tree_renderer'
 
 export default class extends Controller {
   static targets = ['expand']
 
   connect() {
+    this.rowIntents = new WeakMap()
+    this.userId = document.body.dataset.currentUserId
+    this.saveQueue = Promise.resolve()
     this.allExpanded = false
     this.currentCreativeId = null
     this.handleToggleEvent = this.handleToggleEvent.bind(this)
@@ -16,6 +20,7 @@ export default class extends Controller {
   }
 
   disconnect() {
+    this.rowIntents = new WeakMap()
     this.element.removeEventListener('creative-toggle-click', this.handleToggleEvent)
     this.element.removeEventListener('creative-tree:updated', this.handleTreeUpdated)
   }
@@ -26,9 +31,9 @@ export default class extends Controller {
     const rows = this.element.querySelectorAll('creative-tree-row')
     rows.forEach((row) => {
       if (this.allExpanded) {
-        this.expandRow(row, { persist: false })
+        this.expandRow(row)
       } else {
-        this.collapseRow(row, { persist: false })
+        this.collapseRow(row, { persist: Boolean(row.hasChildren || row.expanded) })
       }
     })
     this.updateExpandButton()
@@ -96,9 +101,12 @@ export default class extends Controller {
   }
 
   expandRow(row, { persist = true } = {}) {
+    const intent = { order: persist ? reserveExpansionIntent(this.userId) : null }
+    this.rowIntents.set(row, intent)
     const creativeId = this.rowCreativeId(row)
     const childrenDiv = this.childrenContainerFor(row)
-    this.ensureLoaded(row, childrenDiv).then((hasChildren) => {
+    return this.ensureLoaded(row, childrenDiv).then((hasChildren) => {
+      if (this.rowIntents.get(row) !== intent) return
       if (!hasChildren || !childrenDiv) {
         row.hasChildren = false
         this.collapseRow(row, { persist: false })
@@ -107,11 +115,12 @@ export default class extends Controller {
       childrenDiv.style.display = ''
       childrenDiv.dataset.expanded = 'true'
       row.expanded = true
-      if (persist) this.saveExpansionState(creativeId, true)
+      if (persist) this.saveExpansionState(creativeId, true, intent.order)
     })
   }
 
   collapseRow(row, { persist = true } = {}) {
+    this.rowIntents.delete(row)
     const creativeId = this.rowCreativeId(row)
     const childrenDiv = this.childrenContainerFor(row)
     if (childrenDiv) {
@@ -191,7 +200,7 @@ export default class extends Controller {
       (childrenDiv && childrenDiv.dataset.expanded === 'true')
 
     if (shouldExpand && row.hasChildren) {
-      this.expandRow(row, { persist: false })
+      this.expandRow(row, { persist: this.allExpanded })
     } else {
       this.collapseRow(row, { persist: false })
     }
@@ -207,24 +216,17 @@ export default class extends Controller {
     return row.creativeId || row.getAttribute('creative-id')
   }
 
-  saveExpansionState(creativeId, expanded) {
+  saveExpansionState(creativeId, expanded, intent) {
     if (!creativeId) return
     if (this.currentCreativeId === null || this.currentCreativeId === undefined) {
       this.currentCreativeId = this.computeCurrentCreativeId()
     }
     const contextId = this.currentCreativeId ?? null
 
-    csrfFetch('/creative_expanded_states/toggle', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        creative_id: contextId,
-        node_id: creativeId,
-        expanded,
-      }),
-    }).catch(() => {})
+    this.saveQueue = queueExpansionSave(this.userId, {
+      creative_id: contextId,
+      node_id: creativeId,
+      expanded,
+    }, intent)
   }
 }

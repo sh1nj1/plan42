@@ -69,6 +69,7 @@ module Tools
       elsif query.present?
         search_creatives(query)
       else
+        return Kollavy::AccessScope.roots if Kollavy::AccessScope.restricted?
         Creative.where(user: Current.user).roots.order(:sequence).to_a
       end
     end
@@ -84,7 +85,7 @@ module Tools
                          .where("description LIKE ?", pattern)
                          .pluck(:id)
 
-      comment_ids = Comment.where(creative_id: accessible_ids)
+      comment_ids = Comment.visible_to(Current.user).where(creative_id: accessible_ids)
                            .where("content LIKE ?", pattern)
                            .pluck(:creative_id)
 
@@ -102,7 +103,7 @@ module Tools
                      .where(user_id: Current.user.id)
                      .where.not(permission: :no_access)
                      .pluck(:creative_id)
-      own_ids | shared_ids
+      Kollavy::AccessScope.filter(own_ids | shared_ids)
     end
 
     def apply_filters(creatives, tags:, progress_min:, progress_max:, updated_since:)
@@ -160,7 +161,22 @@ module Tools
     def serialize_creative(creative, depth:, current_depth:, include_comments: false)
       children = creative.linked_children
 
-      result = {
+      result = creative_attributes(creative, children)
+      result[:recent_comments] = recent_comments(creative) if include_comments
+
+      if current_depth < depth
+        result[:children] = children.map do |child|
+          serialize_creative(child, depth: depth, current_depth: current_depth + 1, include_comments: include_comments)
+        end
+      else
+        result[:children] = []
+      end
+
+      result
+    end
+
+    def creative_attributes(creative, children)
+      {
         id: creative.id,
         description: Creatives::TreeFormatter.plain_description(creative),
         progress: creative.progress.to_f.round(2),
@@ -173,26 +189,16 @@ module Tools
         created_at: creative.created_at&.iso8601,
         updated_at: creative.updated_at&.iso8601
       }
+    end
 
-      if include_comments
-        result[:recent_comments] = creative.comments.order(created_at: :desc).limit(3).map do |comment|
-          {
-            content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
-            user: comment.user&.display_name || comment.user&.name,
-            created_at: comment.created_at&.iso8601
-          }
-        end
+    def recent_comments(creative)
+      creative.comments.visible_to(Current.user).without_approval_action.order(created_at: :desc).limit(3).map do |comment|
+        {
+          content: Collavre::HtmlText.plain(comment.content).strip.truncate(200),
+          user: comment.user&.display_name || comment.user&.name,
+          created_at: comment.created_at&.iso8601
+        }
       end
-
-      if current_depth < depth
-        result[:children] = children.map do |child|
-          serialize_creative(child, depth: depth, current_depth: current_depth + 1, include_comments: include_comments)
-        end
-      else
-        result[:children] = []
-      end
-
-      result
     end
   end
 end

@@ -31,8 +31,14 @@ module Collavre
       # agent comment, and leave the loop stuck in "running". #finalize replays
       # both callbacks after the comment is persisted via
       # Task#fire_completion_callbacks_after_external_claim.
-      def claim(agent:, topic:, requested_task_id:)
-        scope = Task.where(agent_id: agent.id, topic_id: topic.id, status: "delegated")
+      #
+      # requested_generation (the dispatch's execution_generation, echoed back)
+      # must still be the task's current one: a reply from an attempt that was
+      # suspended and since resumed must not complete the resumed attempt.
+      def claim(agent:, topic:, requested_task_id:, requested_generation: nil)
+        # A dispatch suspended while it waited (its session went offline) is
+        # still answered by its reply when that finally lands.
+        scope = Task.awaiting_reply.where(agent_id: agent.id, topic_id: topic.id)
         candidate =
           if requested_task_id.present?
             scope.find_by(id: requested_task_id)
@@ -44,12 +50,53 @@ module Collavre
         claimed = nil
         Task.transaction do
           locked = Task.lock.find_by(id: candidate.id)
-          next unless locked && locked.status == "delegated"
+          next unless locked && Task.awaiting_reply.exists?(id: locked.id)
+          next unless Orchestration::ExecutionFence.current?(locked, requested_generation)
 
+          claimed_from[locked.id] = locked.status
           Task.where(id: locked.id).update_all(status: "running", pending_tool_call: nil, updated_at: Time.current)
           claimed = locked.reload
         end
         claimed
+      end
+
+      # Undo a claim whose reply could not be saved: the task goes back to what
+      # it was claimed from — delegated, or suspended while it waits to resume.
+      # Only while the claim still holds it: a Stop that cancelled the claimed
+      # row in the meantime wins.
+      def release(task)
+        task.with_lock do
+          task.update!(status: claimed_from.fetch(task.id, "delegated")) if task.status == "running"
+        end
+      end
+
+      # Why #claim refused, so the caller can tell the one benign conflict from
+      # the ones that lose a real reply.
+      #
+      # ALREADY_COMPLETED is the sibling-session dedup this claim exists for:
+      # the dispatch WAS answered (by another session sharing this agent), so
+      # the reply being refused is a duplicate of one that already landed.
+      # Dropping it is correct. TaskReplyService claims, links and finalizes
+      # under the topic lock in one transaction, so a refused claim never
+      # observes a sibling's half-finished reply — `done` with the linked
+      # comment is the whole proof, with nothing to wait for.
+      #
+      # NOT_DELEGATED is everything else: a task moved out of the awaiting
+      # states without a reply — cancelled, failed, recovered by the stuck-task
+      # sweeper, or resumed under a newer execution generation while this turn
+      # was still composing. Nothing answered that dispatch, so the text the
+      # caller is holding is the only copy and the conflict has to surface.
+      CONFLICT_ALREADY_COMPLETED = "already_completed"
+      CONFLICT_NOT_DELEGATED = "not_delegated"
+
+      def conflict_reason(agent:, topic:, requested_task_id:)
+        answered_task(agent: agent, topic: topic, requested_task_id: requested_task_id) ? CONFLICT_ALREADY_COMPLETED : CONFLICT_NOT_DELEGATED
+      end
+
+      # The refused task when a sibling's reply already concluded it, else nil.
+      def answered_task(agent:, topic:, requested_task_id:)
+        task = Task.find_by(id: requested_task_id, agent_id: agent.id, topic_id: topic.id)
+        task if task&.status == "done" && Comment.exists?(task_id: task.id)
       end
 
       def link_reply(task:, comment:)
@@ -76,6 +123,10 @@ module Collavre
       end
 
       private
+
+      def claimed_from
+        @claimed_from ||= {}
+      end
 
       def run_completion_effects(agent, task, comment)
         Orchestration::ResourceTracker.for(agent).release!(task.id)

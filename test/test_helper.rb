@@ -53,8 +53,6 @@ module ActiveSupport
     setup do
       Rails.cache.clear
       Current.reset
-      # Rebuild the closure tree for Creatives fixture
-      Creative.rebuild! if defined?(Creative)
     end
 
     # The navigation registry is a process-wide singleton seeded once by the

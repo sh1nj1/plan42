@@ -7,6 +7,7 @@ module Collavre
   # - A2aDispatcher: agent-to-agent event dispatch
   class AiAgentService
     include AiAgent::WorkspaceAuthentication
+    prepend Quota::AgentExecution
     # Compatibility alias for constants moved to AgentLifecycleManager
     CANCEL_CHECK_INTERVAL = AiAgent::AgentLifecycleManager::CANCEL_CHECK_INTERVAL
 
@@ -20,11 +21,7 @@ module Collavre
     def call
       begin
         Creatives::AgentTurnHistory.call(@agent, workspace_user, @task) do
-          if @agent.claude_channel_agent?
-            delegate_to_claude_channel
-          else
-            execute_llm_conversation
-          end
+          execute_authorized_conversation
         end
       rescue ApprovalPendingError => e
         summary = generate_approval_summary(e) unless e.is_a?(ApprovalGatePendingError)
@@ -90,7 +87,8 @@ module Collavre
       # still on its way for it should be dropped rather than queued behind this
       # turn. Recorded off `resolved` — after the session filter — because a
       # session-backed agent is sent only its :trigger and swallows nothing.
-      Orchestration::DeliveryRecord.record!(@task, resolved) unless @task.pending_tool_call&.dig("kind") == "approval_gate"
+      # Approval snapshots omit newly rebuilt history; those comments still need dispatch.
+      Orchestration::DeliveryRecord.record!(@task, resolved) unless AiAgent::ApprovalConversation.restoring_snapshot?(@task.pending_tool_call)
 
       @reply_comment = create_reply_comment_if_needed
 
@@ -148,7 +146,7 @@ module Collavre
       AiAgent::MessageBuilder.new(
         agent: @agent,
         context: @context,
-        original_comment: @original_comment
+        original_comment: @original_comment, task: @task
       ).build
     end
 
@@ -191,21 +189,15 @@ module Collavre
     end
 
     def create_reply_comment_if_needed
-      return nil unless @original_comment
-
-      @original_comment.creative.comments.create!(
-        content: Comment::STREAMING_PLACEHOLDER_CONTENT,
-        user: @agent,
-        topic_id: @original_comment.topic_id,
-        task: @task,
-        skip_dispatch: true  # A2A routing handled by A2aDispatcher after finalization
-      )
+      check_kollavy_authorization!
+      AiAgent::ReplyPlaceholder.call(original_comment: @original_comment, agent: @agent, task: @task)
     end
 
     def build_ai_client(system_prompt)
+      run_options = resolve_run_options
       AiClient.new(
         vendor: @agent.llm_vendor,
-        model: @agent.llm_model,
+        model: run_options&.model || @agent.llm_model,
         system_prompt: system_prompt,
         llm_api_key: @agent.llm_api_key,
         gateway_url: @agent.gateway_url,
@@ -214,7 +206,8 @@ module Collavre
           user: @agent,
           task: @task,
           comment: @reply_comment || @original_comment,
-          workspace_user: workspace_user
+          workspace_user: workspace_user,
+          reasoning_effort: run_options&.reasoning_effort
         },
         request_timeout_seconds: @lifecycle_manager.method(:remaining_deadline_seconds),
         # The streaming block below checks cancellation only when a text delta
@@ -224,12 +217,26 @@ module Collavre
       )
     end
 
+    # Only a human's message chooses how a CLI Proxy turn runs. An agent
+    # reply carries the options *it* ran with, which are not a request to the
+    # next agent in an A2A chain.
+    def resolve_run_options
+      return nil unless @agent.llm_vendor.to_s.strip.downcase == "cli_proxy"
+
+      requester = @original_comment&.user
+      message_options = @original_comment&.agent_run_options unless requester.nil? || requester.ai_user?
+      options = CliProxy::RunOptions.resolve(agent: @agent, message_options: message_options)
+      @reply_comment&.update_column(:agent_run_options, options.to_h.presence)
+      options
+    end
+
     def stream_response(client, messages_data)
       # Prompt/session preparation can take long enough for Stop or
       # StuckDetector to end the task before the provider request begins.
       # Bypass the new manager's initial polling throttle at this handoff
       # boundary so a terminal turn cannot start remote tool side effects.
       @lifecycle_manager.check_cancelled!(force: true)
+      check_kollavy_authorization!
       check_replay_authorization!
       response = client.chat(messages_data, tools: @agent.tools || []) do |delta|
         @lifecycle_manager.check_cancelled!
@@ -269,6 +276,8 @@ module Collavre
     end
 
     def handle_cancelled(action_type: "cancelled", message: "Task cancelled by user")
+      return unless @lifecycle_manager
+
       @lifecycle_manager.handle_cancelled(
         reply_comment: @reply_comment,
         response_content: @streamer.content,

@@ -4,7 +4,7 @@ module Collavre
   module Creatives
     module History
       MERGE_IDLE_WINDOW = 5.minutes
-      SNAPSHOT_KEYS = %w[markdown_source content_type editor description parent_id sequence progress archived_at].freeze
+      SNAPSHOT_KEYS = %w[markdown_source content_type editor description parent_id sequence progress archived_at origin_id].freeze
       OPERATION_PRIORITY = {
         "update" => 0,
         "reorder" => 1,
@@ -117,10 +117,13 @@ module Collavre
         end.uniq(&:id)
         retained_ids = change.history_file_attachments.pluck(:blob_id)
         stale_attachments = change.history_file_attachments.where.not(blob_id: blobs.map(&:id))
-        stale_blob_ids = stale_attachments.pluck(:blob_id)
+        CdnInvalidation.invalidate_blob_ids(stale_blob_ids = stale_attachments.pluck(:blob_id))
         stale_attachments.delete_all
         schedule_blob_purge_rechecks(stale_blob_ids)
-        blobs.reject { |blob| retained_ids.include?(blob.id) }.each do |blob|
+        # Retained files are readable through the change, so a snapshot cannot
+        # pull in a blob its author cannot already read.
+        fresh = blobs.reject { |blob| retained_ids.include?(blob.id) }
+        BlobAccess.adoptable(fresh, owner: change.change_set&.user || change.creative&.user).each do |blob|
           change.history_file_attachments.create!(name: "history_files", blob: blob)
         end
       end
@@ -152,17 +155,17 @@ module Collavre
       def snapshot(creative, persisted: false)
         source = persisted ? creative.class.unscoped.find(creative.id) : creative
         data = source.data
-        content_type = data.is_a?(Hash) ? data["content_type"] : nil
         snapshot = {
           "markdown_source" => data.is_a?(Hash) ? data["markdown_source"] : nil,
-          "content_type" => content_type,
+          "content_type" => data.is_a?(Hash) ? data["content_type"] : nil,
           "editor" => data.is_a?(Hash) ? data["editor"] : nil,
           "parent_id" => source.parent_id,
           "sequence" => source.sequence,
           "progress" => source.progress,
           "archived_at" => source.archived_at&.iso8601(6)
         }
-        snapshot["description"] = source.description unless content_type == "markdown"
+        snapshot["description"] = source.description unless snapshot["content_type"] == "markdown"
+        snapshot["origin_id"] = source.origin_id if source.origin_id.present?
         snapshot.slice(*SNAPSHOT_KEYS)
       end
 

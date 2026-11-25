@@ -30,6 +30,7 @@ module Collavre
     # @option config [String] :description_key i18n key for the card description
     # @option config [Array<Symbol>] :surfaces Empty-state surfaces where the card appears
     #   (defaults to [:default])
+    # @option config [Proc] :available Optional runtime predicate for card and guide availability
     # @option config [Hash] :action Optional { type:, label_key: } describing a call-to-action button
     # @option config [Boolean] :guide Opt in to the engine-provided public guide page at
     #   collavre.feature_path(key). Only set this once the page's copy exists under
@@ -119,6 +120,7 @@ module Collavre
       @title_key = config[:title_key]
       @description_key = config[:description_key]
       @action = config[:action]
+      @available = config[:available]
       @guide = config.fetch(:guide, false)
       @guide_url = config[:guide_url]
       @surfaces = Array(config.fetch(:surfaces, :default)).map(&:to_sym).uniq.freeze
@@ -134,7 +136,7 @@ module Collavre
     # A card carrying its own :guide_url is documented elsewhere, so the engine
     # neither renders nor routes a page for it.
     def builtin_guide?
-      @guide && !guide_url?
+      @guide && !guide_url? && available?
     end
 
     # True when the empty-state card should render a "learn more" link at all.
@@ -143,7 +145,11 @@ module Collavre
     end
 
     def visible_on?(surface)
-      @surfaces.include?(surface.to_sym)
+      @surfaces.include?(surface.to_sym) && available?
+    end
+
+    def available?
+      !@available || @available.call
     end
 
     private

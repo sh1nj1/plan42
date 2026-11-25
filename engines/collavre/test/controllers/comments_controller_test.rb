@@ -3,6 +3,7 @@ require "json"
 
 class CommentsControllerTest < ActionDispatch::IntegrationTest
   setup do
+    Collavre::Kollavy.seed!
     @user = users(:one)
     @creative = creatives(:tshirt)
     @user.update!(email_verified_at: Time.current)
@@ -490,6 +491,23 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
       user: agent,
       approver: @user,
       action: JSON.pretty_generate(payload),
+      skip_default_user: true,
+      skip_dispatch: true
+    )
+  end
+
+  def approval_request_comment(request_id: "approval-1", question: "Deploy to production?", topic: nil)
+    @creative.comments.create!(
+      content: question,
+      topic: topic,
+      user: claude_channel_agent,
+      approver: @user,
+      action: JSON.pretty_generate({
+        "action" => Collavre::Comment::ClaudeChannelPermission::ACTION_TYPE,
+        "kind" => Collavre::Comment::ClaudeChannelPermission::KIND_APPROVAL_REQUEST,
+        "request_id" => request_id,
+        "question" => question
+      }),
       skip_default_user: true,
       skip_dispatch: true
     )
@@ -1366,9 +1384,12 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # Create a tool owned by another user
     other_user = users(:two)
     other_creative = Creative.create!(user: other_user, description: "Other user's creative")
-    McpTool.create!(creative: other_creative, name: "private_test_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: other_creative, name: "private_test_tool", source_code: "class Foo; end", approved_at: Time.current)
 
-    get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    mock_tools = [ { name: "private_test_tool", description: "Private tool" } ]
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(mock_tools, user) }) do
+      get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    end
 
     assert_response :success
     json = JSON.parse(response.body)
@@ -1383,7 +1404,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     # Create a tool owned by the current user
     my_creative = Creative.create!(user: @user, description: "My creative")
-    McpTool.create!(creative: my_creative, name: "my_test_tool", source_code: "class Foo; end")
+    McpTool.create!(creative: my_creative, name: "my_test_tool", source_code: "class Foo; end", approved_at: Time.current)
 
     # Stub available_tools to return a tool list that includes the user's tool
     mock_tools = [
@@ -1401,6 +1422,22 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     # Should include the user's own tool
     my_tool = json.find { |cmd| cmd["name"] == "my_test_tool" }
     assert_not_nil my_tool, "User's own tool should be present"
+  end
+
+  test "commands excludes unapproved dynamic tools even when user has write permission" do
+    skip "RailsMcpEngine not available" unless defined?(RailsMcpEngine)
+
+    my_creative = Creative.create!(user: @user, description: "My creative")
+    McpTool.create!(creative: my_creative, name: "unapproved_test_tool", source_code: "class Foo; end")
+    mock_tools = [ { name: "unapproved_test_tool", description: "Unapproved tool" } ]
+
+    Collavre::McpService.stub(:available_tools, ->(user) { Collavre::McpService.filter_tools(mock_tools, user) }) do
+      get commands_creative_comments_path(@creative), headers: { "Accept" => "application/json" }
+    end
+
+    assert_response :success
+    unapproved_tool = response.parsed_body.find { |cmd| cmd["name"] == "unapproved_test_tool" }
+    assert_nil unapproved_tool, "Unapproved tool should not be present even for its owner"
   end
 
   test "commands requires read permission on creative" do
@@ -1545,13 +1582,26 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "0", response.headers["Expires"]
   end
 
+  test "empty chat and Inbox Main hide Kollavy until it is provisioned" do
+    Collavre::Kollavy.agent.destroy!
+    inbox = Creative.inbox_for(@user)
+
+    [ [ @creative, nil ], [ inbox, inbox.main_topic.id ] ].each do |creative, topic_id|
+      get creative_comments_path(creative), params: { topic_id: topic_id }
+
+      assert_response :success
+      assert_not_includes @response.body, %(data-key="kollavy")
+      assert_includes @response.body, %(data-key="mention_agent")
+    end
+  end
+
   test "index shows feature discovery cards when there are no comments" do
     get creative_comments_path(@creative)
 
     assert_response :success
     assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.title")
-    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+    %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(data-key="#{key}")
     end
     assert_not_includes @response.body, %(data-key="inbox_notifications")
@@ -1595,6 +1645,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes @response.body, %(data-key="mention_agent")
+    assert_includes @response.body, %(data-key="kollavy")
+    assert_select "a.feature-card-guide-link[href=?]", "/features/kollavy?locale=#{I18n.locale}"
     assert_not_includes @response.body, %(data-key="inbox_notifications")
   end
 
@@ -1620,6 +1672,30 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "/compress", inbox.comments.order(:id).last.content
   end
 
+  test "create saves plain comments without building the MCP command list" do
+    ::Comments::McpCommandBuilder.stub(:new, ->(**) { flunk("Plain comments must not build MCP commands") }) do
+      assert_difference -> { @creative.comments.count }, 1 do
+        post creative_comments_path(@creative), params: { comment: { content: "Just a regular comment" } }
+      end
+    end
+
+    assert_response :created
+    comment = @creative.comments.order(:id).last
+    assert_equal "Just a regular comment", comment.content
+    assert_not comment.skip_dispatch
+  end
+
+  test "create still runs slash commands with leading whitespace" do
+    assert_difference -> { Topic.where(creative: @creative, name: "Slash Topic").count }, 1 do
+      post creative_comments_path(@creative), params: { comment: { content: %(  /topic "Slash Topic") } }
+    end
+
+    assert_response :created
+    comment = @creative.comments.order(:id).last
+    assert_includes comment.content, %(/topic "Slash Topic")
+    assert_includes comment.content, I18n.t("collavre.comments.topic_command.created", name: "Slash Topic")
+  end
+
   # Phase 1 shipped the cards with the guide link suppressed because no page
   # existed to link to. Now that /features/:key is routed, every card carries it.
   test "index links each feature card to its public guide page" do
@@ -1627,7 +1703,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.learn_more")
-    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+    %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(href="/features/#{key}?locale=en"),
                       "expected the #{key} card to link its guide in the active locale"
     end
@@ -1637,7 +1713,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     get creative_comments_path(@creative), env: { "SCRIPT_NAME" => "/collavre" }
 
     assert_response :success
-    %w[mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
+    %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user].each do |key|
       assert_includes @response.body, %(href="/collavre/features/#{key}?locale=en"),
                       "expected the #{key} card guide to retain the mount prefix"
     end
@@ -1654,7 +1730,7 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "index shows the minimal empty state once every card is dismissed" do
-    @user.update!(dismissed_notices: %w[mention_agent slash_command chat_context automation_trigger topic_management add_user])
+    @user.update!(dismissed_notices: %w[kollavy mention_agent slash_command chat_context automation_trigger topic_management add_user])
 
     get creative_comments_path(@creative)
 
@@ -1718,6 +1794,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, I18n.t("collavre.comments.empty_state.title")
     assert_includes @response.body, %(data-key="mention_agent")
+    assert_includes @response.body, %(data-key="kollavy")
+    assert_select "a.feature-card-guide-link[href=?]", "/features/kollavy?locale=#{I18n.locale}"
   end
 
   test "index still shows feature cards for an empty topic when the creative has no comments at all" do
@@ -1728,6 +1806,8 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes @response.body, 'id="no-comments"'
     assert_includes @response.body, %(data-key="mention_agent")
+    assert_includes @response.body, %(data-key="kollavy")
+    assert_select "a.feature-card-guide-link[href=?]", "/features/kollavy?locale=#{I18n.locale}"
   end
 
   # A comment from another participant arrives as a Turbo Stream append into
@@ -1760,5 +1840,44 @@ class CommentsControllerTest < ActionDispatch::IntegrationTest
 
   def participant_json(user)
     JSON.parse(response.body).fetch("users").find { |entry| entry["id"] == user.id }
+  end
+
+  test "deciding an agent-initiated approval request relays the reason and the decider" do
+    comment = approval_request_comment(request_id: "approval-deny")
+
+    payload = capture_broadcasts("agent:user:#{comment.user_id}") do
+      post deny_creative_comment_path(@creative, comment), params: { reason: "  too risky  " }
+    end.first
+
+    assert_response :success
+    assert_equal "deny", payload["behavior"]
+    assert_equal "too risky", payload["reason"]
+    assert_equal @user.id, payload["decided_by"]
+    assert_equal @user.display_name, payload["decided_by_name"]
+    # the decided comment shows the reason in place of the reason box
+    assert_includes @response.body, "too risky"
+    assert_equal "too risky", comment.reload.claude_channel_permission_reason
+  end
+
+  test "an undecided approval request renders the reason box for the approver" do
+    topic = @creative.topics.create!(name: "Approval topic", user: @user)
+    approval_request_comment(request_id: "approval-pending", topic: topic)
+
+    get creative_comments_path(@creative), params: { topic_id: topic.id }
+
+    assert_response :success
+    assert_select "[data-approval-reason]", count: 1
+  end
+
+  test "a reason posted against a relayed tool prompt is ignored" do
+    comment = claude_channel_permission_comment(request_id: "req-no-reason")
+
+    payload = capture_broadcasts("agent:user:#{comment.user_id}") do
+      post approve_creative_comment_path(@creative, comment), params: { reason: "ignored" }
+    end.first
+
+    assert_response :success
+    assert_equal %w[type request_id behavior agent_id].sort, payload.keys.sort
+    assert_nil comment.reload.claude_channel_permission_reason
   end
 end

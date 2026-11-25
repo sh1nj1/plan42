@@ -45,8 +45,7 @@ module CollavreOpenclaw
           request_timeout_seconds: @request_timeout_seconds
         )
 
-        response_content = nil
-        error_message = nil
+        response_content, error_message = prepare_adapter_usage
 
         begin
           response_content = adapter.chat(messages_data, &block)
@@ -65,6 +64,7 @@ module CollavreOpenclaw
           # Honor no-log mode. Base Collavre::AiClient#chat gates logging behind
           # @log_interactions; this prepended adapter path bypasses super, so it
           # must gate logging too.
+          finish_usage_tracking
           if @log_interactions
             log_interaction(
               messages: messages_data[:messages],
@@ -90,6 +90,11 @@ module CollavreOpenclaw
 
     # Wrap plain Array input (from standalone callers like CompressJob)
     # into the Hash format expected by the adapter.
+    def prepare_adapter_usage
+      start_usage_tracking(measurement: "run")
+      [ nil, nil ]
+    end
+
     def normalize_messages_input(input)
       return input if input.is_a?(Hash)
 

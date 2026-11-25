@@ -1,0 +1,71 @@
+require "test_helper"
+
+class UserTranslationPreferenceTest < ActionDispatch::IntegrationTest
+  setup do
+    @user = users(:one)
+    sign_in_as @user, password: "password"
+  end
+
+  test "profile preference persists across sessions and remains separate per user" do
+    patch user_path(@user), params: { user: { auto_translation_enabled: "0" } }
+    assert_response :redirect
+    refute @user.reload.auto_translation_enabled?
+    assert users(:two).auto_translation_enabled?
+    sign_out
+    sign_in_as @user, password: "password"
+    get user_path(@user)
+    assert_select 'input[type=checkbox][name="user[auto_translation_enabled]"]:not([checked])', count: 1
+    patch user_path(@user), params: { user: { auto_translation_enabled: "1" } }
+    assert @user.reload.auto_translation_enabled?
+  end
+
+  test "another user cannot change the preference and anonymous update requires authentication" do
+    sign_out
+    sign_in_as users(:two), password: "password"
+    patch user_path(users(:three)), params: { user: { auto_translation_enabled: "0" } }
+    assert_response :forbidden
+    assert users(:three).reload.auto_translation_enabled?
+    sign_out
+    patch user_path(@user), params: { user: { auto_translation_enabled: "0" } }
+    assert_response :redirect
+    assert @user.reload.auto_translation_enabled?
+  end
+
+  test "profile checkbox uses English and Korean labels" do
+    { "en" => "Automatically translate content", "ko" => "콘텐츠 자동 번역" }.each do |locale, label|
+      @user.update!(locale: locale)
+      get user_path(@user)
+      assert_select 'form .checkbox-field[data-controller="translation-preference"]', count: 1
+      assert_select 'label[for=user_auto_translation_enabled]', text: label
+      assert_select 'input[type=checkbox][name="user[auto_translation_enabled]"][checked]', count: 1
+    end
+  end
+
+  test "new and existing users default to automatic translation" do
+    assert Collavre::User.new.auto_translation_enabled?
+    assert users(:two).reload.auto_translation_enabled?
+    assert_equal true, Collavre::User.column_defaults["auto_translation_enabled"]
+  end
+  test "core profile ignores unregistered settings and renders without engine UI" do
+    Collavre::ProfilePreferences.stub(:attributes, []) do
+      patch user_path(@user), params: { user: { auto_translation_enabled: "0", name: "Core profile" } }
+      assert_response :redirect
+      assert @user.reload.auto_translation_enabled?
+      assert_equal "Core profile", @user.name
+    end
+    partial = "collavre_translation/preferences/settings"
+    Collavre::ViewExtensions.unregister(:profile_preferences, partial: partial)
+    get user_path(@user)
+    assert_response :success
+    assert_select '[data-controller="translation-preference"]', count: 0
+    assert_select '[name="user[auto_translation_enabled]"]', count: 0
+  ensure
+    Collavre::ViewExtensions.register(:profile_preferences, partial: partial)
+  end
+
+  test "preference migration belongs exclusively to the translation engine" do
+    migration = "20261001001000_add_auto_translation_enabled_to_users.rb"
+    assert CollavreTranslation::Engine.root.join("db/migrate", migration).exist?
+    refute Collavre::Engine.root.join("db/migrate", migration).exist?
+  end
+end
