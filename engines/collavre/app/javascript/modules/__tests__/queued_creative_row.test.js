@@ -3,8 +3,9 @@ import { jest } from '@jest/globals'
 const applyRowProperties = jest.fn()
 jest.unstable_mockModule('../../creatives/tree_renderer', () => ({ applyRowProperties }))
 const refreshProgressAbove = jest.fn()
+const branchShownElsewhere = jest.fn(() => false)
 const shownElsewhere = jest.fn(() => false)
-jest.unstable_mockModule('../../creatives/row_progress', () => ({ refreshProgressAbove, shownElsewhere }))
+jest.unstable_mockModule('../../creatives/row_progress', () => ({ branchShownElsewhere, refreshProgressAbove, shownElsewhere }))
 const { applyPendingCreativeSyncData } = await import('../pending_creative_sync')
 const { queuedCreativeCompletion, updateQueuedCreativeRow, queuedCreativeStatus, revealCreativeRow, releaseCreatedRow } = await import('../queued_creative_row')
 const { waitForQueuedRequests, mergeQueueCallbacks } = await import('../../lib/api/queue_completion')
@@ -117,7 +118,11 @@ test('only the latest completion of a save that wrote progress requests a refetc
   expect(release).not.toHaveBeenCalled()
 })
 
-test('a settled create refreshes the progress above its parent and releases a held reload', () => {
+test.each([
+  [false, 'release'],
+  [true, 'refetch']
+])('a settled create with repeated branch %s dispatches %s', (repeated, event) => {
+  branchShownElsewhere.mockReturnValueOnce(repeated)
   const tree = document.createElement('div')
   tree.dataset.parentId = '7'
   const release = jest.fn()
@@ -129,9 +134,11 @@ test('a settled create refreshes the progress above its parent and releases a he
   document.removeEventListener('creative-sync:release', release)
   document.removeEventListener('creative-sync:refetch', refetch)
 
-  expect(refreshProgressAbove).toHaveBeenCalledWith('7')
-  expect(release).toHaveBeenCalledTimes(1)
-  expect(refetch).not.toHaveBeenCalled()
+  expect(branchShownElsewhere).toHaveBeenCalledWith('7')
+  if (!repeated) expect(refreshProgressAbove).toHaveBeenCalledWith('7')
+  expect(refreshProgressAbove).toHaveBeenCalledTimes(repeated ? 0 : 1)
+  expect(release).toHaveBeenCalledTimes(event === 'release' ? 1 : 0)
+  expect(refetch).toHaveBeenCalledTimes(event === 'refetch' ? 1 : 0)
 })
 
 function settle(tree, progressChanged = false) {
