@@ -118,15 +118,7 @@ function appendPrimaryAgentButton(menu, user, labels) {
   menu.appendChild(button)
 }
 
-export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
-  const state = menuState(online, healthStatus, statusText, labels)
-  const root = document.createElement('div')
-  root.className = 'popup-menu-wrapper comment-user-menu'
-  root.dataset.controller = 'popup-menu comment-user-menu'
-  enableAgentModel(root, user)
-  root.dataset.commentUserMenuUserIdValue = user.id
-  root.dataset.commentUserMenuUserNameValue = user.name
-
+function menuTrigger(user, online, labels, draggable) {
   const trigger = document.createElement('button')
   trigger.type = 'button'
   trigger.className = 'popup-menu-toggle comment-user-menu-trigger'
@@ -142,10 +134,21 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
     handle.draggable = true
     handle.dataset.agentId = user.id
     handle.appendChild(trigger)
-    root.appendChild(handle)
-  } else {
-    root.appendChild(trigger)
+    return handle
   }
+  return trigger
+}
+
+export function createUserMenu({ user, online, healthStatus, statusText, labels, menuId, draggable = false }) {
+  const state = menuState(online, healthStatus, statusText, labels)
+  const root = document.createElement('div')
+  root.className = 'popup-menu-wrapper comment-user-menu'
+  root.dataset.controller = 'popup-menu comment-user-menu'
+  enableAgentModel(root, user)
+  root.dataset.commentUserMenuUserIdValue = user.id
+  root.dataset.commentUserMenuUserNameValue = user.name
+
+  root.appendChild(menuTrigger(user, online, labels, draggable))
 
   const menu = document.createElement('div')
   menu.id = menuId
