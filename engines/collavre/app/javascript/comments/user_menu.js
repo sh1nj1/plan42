@@ -136,7 +136,16 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', 'false')
   trigger.appendChild(avatarElement(user, 20, `avatar comment-presence-avatar${online ? '' : ' inactive'}`))
-  root.appendChild(trigger)
+  if (draggable) {
+    const handle = document.createElement('span')
+    handle.className = 'ai-agent-draggable'
+    handle.draggable = true
+    handle.dataset.agentId = user.id
+    handle.appendChild(trigger)
+    root.appendChild(handle)
+  } else {
+    root.appendChild(trigger)
+  }
 
   const menu = document.createElement('div')
   menu.id = menuId
@@ -144,6 +153,9 @@ export function createUserMenu({ user, online, healthStatus, statusText, labels,
   menu.dataset.popupMenuTarget = 'menu'
   menu.dataset.action = 'click->popup-menu#menuClick'
   menu.setAttribute('role', 'menu')
+  menu.addEventListener('dragstart', (event) => event.preventDefault())
+  // Keep the chat wheel handler from treating the profile as part of the message area.
+  menu.addEventListener('wheel', (event) => event.stopPropagation(), { passive: true })
   menu.appendChild(menuHeader(user, state, labels))
 
   const profile = document.createElement('a')
