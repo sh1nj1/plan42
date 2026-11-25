@@ -22,14 +22,14 @@ module Collavre
       end
 
       # Returns "skipped", "passed", "approved" or "flagged".
-      def call(texts, block_flagged:)
+      def call(texts, block_flagged:, unverified_context: false)
         return "skipped" if Current.screening
 
         # Taken first: a denial ends the turn even if screening was turned
         # off while it waited.
         decision = take_decision!
         return "skipped" unless Screening.enabled?
-        return "skipped" if Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
+        return "skipped" if !unverified_context && outside_scope?
 
         digest = Screening.digest(texts)
         if decision && decision["content_digest"] == digest
@@ -48,7 +48,39 @@ module Collavre
         end
       end
 
+      # Text that joins a turn after it was screened, such as an approval
+      # reason replayed into a resumed conversation. It cannot pause the turn
+      # (the turn is mid-conversation), so an unanswered screening flags it.
+      def screen_followup(texts, block_flagged:)
+        return "skipped" if Current.screening || !Screening.enabled?
+        return "skipped" if outside_scope?
+
+        case Gate.new.call(texts, agent: @agent, creative: @creative, task: @task).verdict
+        when "passed" then "passed"
+        when "blocked" then block!(:blocked_notice)
+        when "flagged" then apply_flag(block_flagged)
+        else flag_unanswered_followup!(texts, block_flagged)
+        end
+      end
+
+      def apply_flag(block_flagged)
+        block_flagged ? block!(:blocked_notice) : "flagged"
+      end
+
       private
+
+      def outside_scope?
+        Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
+      end
+
+      def flag_unanswered_followup!(texts, block_flagged)
+        block!(:blocked_notice) if block_flagged
+
+        @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
+          payload: { "verdict" => "flagged", "reason" => "followup_screening_error",
+                     "policy_version" => POLICY_VERSION, "content_digest" => Screening.digest(texts) })
+        "flagged"
+      end
 
       # The owner's answer to an earlier pause, removed from the task so it
       # is used once. An approval covers exactly the content it was asked
@@ -65,13 +97,10 @@ module Collavre
         decision.merge(pending.slice("content_digest", "residual"))
       end
 
-      def apply_flag(block_flagged)
-        block_flagged ? block!(:blocked_notice) : "flagged"
-      end
-
       def approved!(decision, digest)
         @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
           payload: { "verdict" => "owner_approved", "decided_by" => decision["decided_by"],
+                     "residual" => decision["residual"],
                      "policy_version" => POLICY_VERSION, "content_digest" => digest })
       end
 

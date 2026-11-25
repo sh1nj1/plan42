@@ -82,7 +82,7 @@ module Collavre
       def create_approval_comment(error, summary: nil)
         return unless @creative
 
-        approver = @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
+        approver = error.approver || @creative.user || User.find_by(id: @context.dig("comment", "user_id"))
         return unless approver
 
         action_payload = {

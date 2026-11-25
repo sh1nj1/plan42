@@ -35,6 +35,71 @@ module Collavre
 
       private
 
+      def check_screening_authorization!
+        return unless Screening.enabled? && @creative
+        return if Creatives::PermissionChecker.current_tree_allowed?(@creative.id, @agent, :feedback)
+
+        @task.cancel_if_active!
+        raise CancelledError
+      end
+
+      # Screens what this LLM turn hands the provider, after the session filter
+      # and before anything is recorded as delivered. A flagged turn proceeds
+      # only where every tool call passes through the server's approval gate
+      # (AiClient#check_tool_approval!), and each call then waits for the agent
+      # owner. Elsewhere (CLI Proxy, adapter vendors) it is blocked like a
+      # Claude Channel turn. A turn resumed from an approval snapshot replays
+      # what was screened, so it keeps its earlier flag.
+      def screen_llm_turn!(resolved)
+        pending = @task.pending_tool_call
+        @screening_flagged =
+          if ApprovalConversation.restoring_snapshot?(pending)
+            restore_screening_flag!(pending)
+          else
+            messages = resolved[:messages]
+            texts = Screening.texts_for(messages, owner_id: @agent.created_by_id)
+            screening_guard(messages).call(
+              texts, block_flagged: !server_gated_tools?, unverified_context: unverified_creative_context?(messages)
+            ) == "flagged"
+          end
+      end
+
+      def restore_screening_flag!(pending)
+        reason_flagged = screen_gate_reason(pending) == "flagged"
+        return false unless Screening.flagged?(@task) || reason_flagged
+
+        screening_guard.apply_flag(!server_gated_tools?) == "flagged"
+      end
+
+      # Rendered creative context and document quotes can include other
+      # authors' text. A session filter can drop the context but keep the quote.
+      def unverified_creative_context?(messages)
+        messages.any? { |message| message[:kind].in?(%i[creative_context context_creative referenced_creative]) } ||
+          (@original_comment&.creative_quote? && messages.any? { |message| message[:kind] == :trigger })
+      end
+
+      # An approval_request decision is replayed to the model as its tool
+      # result, reason included, and whoever decided wrote that reason.
+      def screen_gate_reason(pending)
+        decision = pending["kind"] == "approval_gate" && pending["decision"]
+        reason = decision && decision["reason"].presence
+        return "skipped" unless reason
+
+        decider = User.find_by(id: decision["decided_by"])
+        Screening::TurnGuard.new(task: @task, agent: @agent, creative: @creative, context: @context,
+                                 principal: workspace_user, authors: [ decider ].compact)
+                            .screen_followup([ { source: "approval_reason", text: reason } ], block_flagged: !server_gated_tools?)
+      end
+
+      # Every tool call can wait for the owner: the server runs the tools, and
+      # the owner exists and can read the creative to decide.
+      def server_gated_tools?
+        vendor = @agent.llm_vendor.to_s.strip.downcase
+        owner = @agent.creator
+        AiClient::VENDOR_TO_PROVIDER.key?(vendor) && vendor != "cli_proxy" &&
+          owner.present? && @creative&.has_permission?(owner, :read)
+      end
+
       def delegate_to_claude_channel
         log_action("start", { message: "Delegating to Claude Channel via MCP" })
 
@@ -55,17 +120,18 @@ module Collavre
         nil
       end
 
-      def screening_guard
+      def screening_guard(messages = [])
         Screening::TurnGuard.new(task: @task, agent: @agent, creative: @creative,
-                                 context: @context, principal: workspace_user, authors: screening_authors)
+                                 context: @context, principal: workspace_user, authors: screening_authors(messages))
       end
 
       # Who wrote the comments this turn carries: the anchor, the comments
-      # folded into it and a workflow's source message.
-      def screening_authors
+      # folded into it, a workflow's source message and retained chat history.
+      def screening_authors(messages)
         ids = [ @context.dig("comment", "id"), *Array(@context["merged_comment_ids"]),
                 Workflow::SourceMessage.comment_id(@context, @agent) ].compact
-        User.where(id: Comment.where(id: ids).select(:user_id)).to_a
+        history_ids = messages.filter_map { |message| message[:author_id] if message[:kind] == :chat_history }
+        User.where(id: Comment.where(id: ids).pluck(:user_id) | history_ids).to_a
       end
     end
   end

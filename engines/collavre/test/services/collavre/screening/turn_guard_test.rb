@@ -119,6 +119,17 @@ module Collavre
         assert_raises(CancelledError) { run_guard(0.1, block_flagged: true) }
       end
 
+      test "a flagged chunk survives screening approval and subsequent tool approval resumes" do
+        @texts.first[:text] = "x" * (Input::MAX_CHARS + 1)
+        error = assert_raises(ScreeningPendingError) { run_guard([ 0.6, Timeout::Error.new ]) }
+        assert_equal "flagged", error.residual
+        refute Screening.flagged?(@task.reload)
+
+        pend_decision!("approved", residual: error.residual)
+        assert_equal "flagged", run_guard(0.1)
+        assert Screening.flagged?(@task.reload)
+      end
+
       test "a failed notice still ends the turn cleanly" do
         @creative.comments.stub(:create!, ->(**) { raise ActiveRecord::RecordInvalid }) do
           assert_raises(CancelledError) { run_guard(0.99) }
