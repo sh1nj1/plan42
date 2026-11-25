@@ -38,8 +38,7 @@ export default class extends Controller {
     this.dnd.registerDragSource({ selector: '.ai-agent-draggable',
       onDragStart: ({ el, event }) => {
         const user = this.participantsData.find(user => String(user.id) === el.dataset.agentId)
-        // The wrapper also holds the profile popup; only the avatar may drag.
-        if (!user || event.target.closest?.('.comment-user-popup')) return false
+        if (!user) return false
         writeDragData(event.dataTransfer, { kind: 'agent', ids: [user.id],
           payload: { name: user.name, avatar_url: user.avatar_url } })
         event.dataTransfer.effectAllowed = 'copy'
@@ -559,16 +558,6 @@ export default class extends Controller {
         menuId: `participant-user-menu-${user.id}`,
         draggable: Boolean(user.ai_user)
       })
-
-      // AI agents are draggable to topic tabs
-      if (user.ai_user) {
-        wrapper.draggable = true
-        wrapper.classList.add('ai-agent-draggable')
-        wrapper.dataset.agentId = user.id
-        wrapper.dataset.agentName = user.name
-        wrapper.dataset.agentAvatarUrl = user.avatar_url
-
-      }
 
       this.participantsTarget.appendChild(wrapper)
     })
