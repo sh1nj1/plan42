@@ -58,11 +58,21 @@ module Collavre
         case Gate.new.call(texts, agent: @agent, creative: @creative, task: @task).verdict
         when "passed" then "passed"
         when "blocked" then block!(:blocked_notice)
-        else apply_flag(block_flagged)
+        when "flagged" then apply_flag(block_flagged)
+        else flag_unanswered_followup!(texts, block_flagged)
         end
       end
 
       private
+
+      def flag_unanswered_followup!(texts, block_flagged)
+        block!(:blocked_notice) if block_flagged
+
+        @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
+          payload: { "verdict" => "flagged", "reason" => "followup_screening_error",
+                     "policy_version" => POLICY_VERSION, "content_digest" => Screening.digest(texts) })
+        "flagged"
+      end
 
       # The owner's answer to an earlier pause, removed from the task so it
       # is used once. An approval covers exactly the content it was asked

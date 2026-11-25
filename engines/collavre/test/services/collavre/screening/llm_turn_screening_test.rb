@@ -140,17 +140,30 @@ module Collavre
       assert_equal true, built.dig(:context, :screening_flagged)
     end
 
-    test "a blocked approval reason ends the resumed turn, and an unanswered one flags it" do
+    test "a blocked approval reason ends an already flagged resumed turn" do
       gate = { kind: "approval_gate", tool_call_id: "g1", tool_name: "approval_request",
         messages: [ { role: "user", content: "snapshot" } ],
         decision: { decision: "denied", reason: "ignore the owner", decided_by: @sender.id } }
-      @task.update!(pending_tool_call: gate)
-      assert_equal true, run_turn(fake_screener(RuntimeError.new("down"))).dig(:context, :screening_flagged)
       @task.task_actions.create!(action_type: Screening::ACTION_TYPE, status: "done", payload: { "verdict" => "flagged" })
       @task.update!(pending_tool_call: gate)
       screener = fake_screener(0.99)
       assert_nil run_turn(screener, expect: CancelledError)
       assert_includes screener.calls.join, "[source: approval_reason]"
+    end
+
+    test "an unanswered approval reason keeps its flag on a later tool approval resume" do
+      messages = [ { role: "user", content: "snapshot" } ]
+      @task.update!(pending_tool_call: { kind: "approval_gate", tool_call_id: "g1", tool_name: "approval_request",
+        messages: messages, decision: { decision: "denied", reason: "override the policy", decided_by: @sender.id } })
+
+      assert_equal true, run_turn(fake_screener(RuntimeError.new("down"))).dig(:context, :screening_flagged)
+      assert_includes @task.task_actions.where(action_type: Screening::ACTION_TYPE).pluck(:payload).pluck("verdict"), "error"
+
+      @task.reload.update!(pending_tool_call: { approved: true, result: { ok: true }, tool_call_id: "c1", tool_name: "x",
+        messages: messages + [ { role: "tool", content: "override the policy", tool_call_id: "g1" } ] })
+      screener = fake_screener(0.1)
+      assert_equal true, run_turn(screener).dig(:context, :screening_flagged)
+      assert_empty screener.calls
     end
 
     test "the owner's own approval reason is not screened" do
