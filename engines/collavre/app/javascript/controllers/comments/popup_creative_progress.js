@@ -12,6 +12,23 @@ export function markChatActiveRow(popup, creativeId) {
   const row = document.querySelector(`creative-tree-row[creative-id="${creativeId}"]`)
   if (row) row.classList.add('chat-active')
   observeCreativeProgress(popup, row, creativeId)
+  watchTreeUpdates(popup)
+}
+
+function watchTreeUpdates(popup) {
+  if (!popup.hasProgressTarget || popup.handleProgressTreeUpdate) return
+
+  popup.handleProgressTreeUpdate = () => {
+    const creativeId = popup.progressCreativeId
+    if (creativeId && popup.element.style.display === 'flex') markChatActiveRow(popup, creativeId)
+  }
+  document.addEventListener('creative-tree:updated', popup.handleProgressTreeUpdate)
+}
+
+export function disconnectCreativeProgress(popup) {
+  popup.progressObserver?.disconnect()
+  document.removeEventListener('creative-tree:updated', popup.handleProgressTreeUpdate)
+  popup.handleProgressTreeUpdate = null
 }
 
 export function observeCreativeProgress(popup, row, creativeId) {
