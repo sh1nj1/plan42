@@ -84,7 +84,10 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
 
   if driver_name == "chrome"
     driven_by :selenium, using: :chrome, screen_size: [ 1920, 1080 ],
-              options: { service: SystemTestChromeLocator.chrome_service }
+              options: { service: SystemTestChromeLocator.chrome_service } do |options|
+      chrome_binary = SystemTestChromeLocator.chrome_binary
+      options.binary = chrome_binary if chrome_binary
+    end
   else
     driven_by driver_name.to_sym
   end

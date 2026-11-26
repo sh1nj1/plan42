@@ -1,4 +1,5 @@
 require "selenium-webdriver"
+require_relative "system_test_chrome_installation"
 
 module SystemTestChromeLocator
   module_function
@@ -13,24 +14,28 @@ module SystemTestChromeLocator
   end
 
   def chrome_binary
-    ENV["GOOGLE_CHROME_SHIM"] || ENV["CHROME_BIN"] || first_existing([ "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome" ]) || executable_path("chromium-browser") || executable_path("google-chrome-stable") || executable_path("google-chrome")
+    return SystemTestChromeInstallation.paths.first unless explicit_configuration?
+
+    ENV["GOOGLE_CHROME_SHIM"] || ENV["CHROME_BIN"] || %w[/usr/bin/google-chrome-stable /usr/bin/google-chrome].find { |path| File.executable?(path) } ||
+      executable_path("chromium-browser") || executable_path("google-chrome-stable") || executable_path("google-chrome")
   end
 
   def chromedriver_path
-    path = ENV["CHROMEDRIVER_PATH"] || first_existing([ "/usr/local/bin/chromedriver" ]) || executable_path("chromedriver")
+    return SystemTestChromeInstallation.paths.last unless explicit_configuration?
+
+    path = ENV["CHROMEDRIVER_PATH"]
     return path if path && File.file?(path) && File.executable?(path)
 
     raise Selenium::WebDriver::Error::NoSuchDriverError,
-          "Install a trusted chromedriver and set CHROMEDRIVER_PATH or add it to PATH. " \
-          "Automatic Selenium Manager downloads are disabled for system tests."
+          "Set CHROMEDRIVER_PATH to a compatible executable when configuring a custom browser or driver."
   end
 
   def chrome_service
     Selenium::WebDriver::Service.chrome(path: chromedriver_path)
   end
 
-  def first_existing(paths)
-    paths.find { |path| File.executable?(path) }
+  def explicit_configuration?
+    %w[CHROME_BIN GOOGLE_CHROME_SHIM CHROMEDRIVER_PATH].any? { |key| ENV.key?(key) }
   end
 
   def register_temp_dir(path)

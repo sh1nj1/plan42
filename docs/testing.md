@@ -25,6 +25,14 @@ bin/rails test:system
 > tests from the **host root**, not from inside the engine directory, or the load
 > path resolves incorrectly.
 
+On macOS (Apple Silicon or Intel) and Linux x86-64, system tests use the Chrome
+for Testing and ChromeDriver version pinned in
+[`chrome-version`](../engines/collavre/test/support/chrome-version). The first
+run downloads both binaries with `curl` and `unzip` into
+`$HOME/.cache/collavre/chrome-for-testing`. Later runs reuse
+the cached pair. CI reads the same version file. To use a custom installation,
+set `CHROME_BIN` and `CHROMEDRIVER_PATH` to compatible executables.
+
 ## Test Structure
 
 ```
