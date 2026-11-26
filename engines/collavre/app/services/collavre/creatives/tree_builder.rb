@@ -125,12 +125,14 @@ module Creatives
 
       prepare_level(creatives)
 
+      rendered = creatives.reject { |creative| skip_creative?(creative) }
+      descriptions = DescriptionImageDimensions.new(rendered, variation_id: raw_params["tags"]&.first)
       creatives.flat_map do |creative|
-        build_nodes_for_creative(creative, level: level)
+        build_nodes_for_creative(creative, level: level, descriptions: descriptions)
       end
     end
 
-    def build_nodes_for_creative(creative, level:)
+    def build_nodes_for_creative(creative, level:, descriptions:)
       if progress_map && progress_map.key?(creative.id.to_s)
         creative.filtered_progress = progress_map[creative.id.to_s]
       end
@@ -165,7 +167,7 @@ module Creatives
           github_source: creative.read_only_source?,
           sequence: creative.sequence,
           link_url: view_context.collavre.creative_path(creative),
-          templates: template_payload_for(creative, has_children: has_children, can_write: can_write),
+          templates: template_payload_for(creative, descriptions:, has_children: has_children, can_write: can_write),
           inline_editor_payload: inline_editor_payload_for(creative, can_write: can_write),
           children_container: children_container_payload(
             creative,
@@ -213,8 +215,8 @@ module Creatives
       end
     end
 
-    def template_payload_for(creative, has_children: nil, can_write: nil)
-      description_html = view_context.embed_youtube_iframe(creative.effective_description(raw_params["tags"]&.first))
+    def template_payload_for(creative, descriptions:, has_children: nil, can_write: nil)
+      description_html = view_context.embed_youtube_iframe(descriptions.html_for(creative))
       can_feedback = can_feedback?(creative)
       cron_tasks = cron_filter_active? ? cron_tasks_by_creative_id.fetch(creative.effective_origin.id, []) : []
       progress_options = {

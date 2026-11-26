@@ -27,8 +27,11 @@ const PURIFY_CONFIG = {
 
 // Sanitize creative description HTML for client-side rendering while keeping the
 // server-generated YouTube preview iframe intact.
-export function sanitizeDescriptionHtml(html) {
+export function sanitizeDescriptionHtml(html, { lazyImages = false } = {}) {
   const fragment = DOMPurify.sanitize(html ?? '', {...PURIFY_CONFIG, RETURN_DOM_FRAGMENT: true})
+  if (lazyImages) {
+    fragment.querySelectorAll('img').forEach((image) => image.setAttribute('loading', 'lazy'))
+  }
   decorateAttachmentLinks(fragment)
   const container = document.createElement('div')
   container.append(fragment)

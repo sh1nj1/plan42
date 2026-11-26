@@ -140,7 +140,7 @@ class CreativeTreeRow extends LitElement {
     // Always sanitize when setting new HTML. Uses the shared sanitizer so the
     // server-generated YouTube preview iframe survives (default DOMPurify config
     // strips all iframes, which is what broke the YouTube link preview).
-    const sanitized = sanitizeDescriptionHtml(value);
+    const sanitized = sanitizeDescriptionHtml(value, { lazyImages: true });
     this._descriptionHtml = sanitized;
     this.dataset.descriptionHtml = sanitized;
     this.requestUpdate("descriptionHtml", oldValue);
