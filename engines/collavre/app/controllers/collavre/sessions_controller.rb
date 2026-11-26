@@ -5,12 +5,9 @@ module Collavre
     allow_unauthenticated_access only: %i[ new create ]
     before_action -> { enforce_auth_provider!(:email) }, only: :create
 
-    # Read rate limiting from environment-driven configuration
-    limit_cfg = Rails.configuration.x.sessions_create_rate_limit || {}
-    rate_limit to: (limit_cfg[:to] || 10),
-               within: (limit_cfg[:within] || 3.minutes),
+    rate_limit(**Rails.configuration.x.sessions_create_rate_limit,
                only: :create,
-               with: -> { redirect_to new_session_url, alert: I18n.t("collavre.users.sessions.new.try_again_later") }
+               with: -> { redirect_to new_session_url, alert: I18n.t("collavre.users.sessions.new.try_again_later") })
 
     def new
     end

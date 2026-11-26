@@ -6,6 +6,9 @@ module Collavre
     included do
       allow_unauthenticated_access only: %i[new create exists]
       before_action -> { enforce_auth_provider!(:email) }, only: [ :new, :create ]
+      rate_limit(**Rails.configuration.x.sessions_create_rate_limit,
+                 only: :create,
+                 with: :redirect_when_signup_limited)
     end
 
     def new
@@ -83,6 +86,11 @@ module Collavre
     end
 
     private
+
+    def redirect_when_signup_limited
+      invite_token = params.slice(:invite_token).permit(:invite_token)[:invite_token]
+      redirect_to new_user_url(invite_token: invite_token), alert: I18n.t("errors.rate_limit_exceeded")
+    end
 
     def user_params
       params.require(:user).permit(:email, :password, :password_confirmation, :name)
