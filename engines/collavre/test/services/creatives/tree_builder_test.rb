@@ -80,6 +80,35 @@ module Creatives
       assert_equal [ 1 ], nodes.pluck(:level)
     end
 
+    test "reserves space for existing attachment images in rendered descriptions" do
+      png = Rails.root.join("engines/collavre/test/fixtures/files/small.png")
+      blob = File.open(png) do |io|
+        ActiveStorage::Blob.create_and_upload!(
+          io: io, filename: "attachment.png", content_type: "image/png",
+          metadata: { "width" => 1200, "height" => 800, "analyzed" => true }
+        )
+      end
+      public_path = "/public-assets/blobs/#{blob.signed_id}/attachment.png"
+      proxy_path = "https://example.test/rails/active_storage/blobs/proxy/#{blob.signed_id}/attachment.png"
+      html = <<~HTML
+        <img src="#{public_path}">
+        <img src="#{proxy_path}">
+        <img src="#{public_path}" width="200">
+        <img src="https://example.test/external.png">
+      HTML
+      creative = Creative.create!(user: @user, description: html)
+      creative.files.attach(blob) unless creative.files_blobs.include?(blob)
+      linked = Creative.create!(user: @user, origin: creative)
+      @view_context.define_singleton_method(:embed_youtube_iframe) { |content| content }
+
+      node = build_tree_builder.build([ linked ]).first
+      images = Nokogiri::HTML5.fragment(node.dig(:templates, :description_html)).css("img")
+
+      assert_equal [ [ "1200", "800" ], [ "1200", "800" ], [ "200", nil ], [ nil, nil ] ],
+        images.map { |image| [ image["width"], image["height"] ] }
+      assert_equal creative.description, node.dig(:inline_editor_payload, :description_raw_html)
+    end
+
     test "includes inline editor payload data" do
       creative = nil
       perform_enqueued_jobs do
