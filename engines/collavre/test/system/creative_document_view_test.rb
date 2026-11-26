@@ -288,19 +288,30 @@ class CreativeDocumentViewTest < ApplicationSystemTestCase
     field.click
     assert_selector "#{tree_selector(@first)} > #inline-edit-form", visible: true
 
-    # Below the last row there is no creative, only the page.
+    # Bring the blank space below the last row into the scrollable document pane.
+    find("main").scroll_to(:bottom)
     x, y = page.evaluate_script(<<~JS)
       (() => {
         const rect = document.getElementById('creatives').getBoundingClientRect();
         return [Math.round(rect.left + rect.width / 2), Math.round(rect.bottom + 12)];
       })()
     JS
-    assert_equal true, page.evaluate_script("document.elementFromPoint(#{x}, #{y}).closest('creative-tree-row') === null")
+    assert_equal true, page.evaluate_script(<<~JS, x, y)
+      (() => {
+        const target = document.elementFromPoint(arguments[0], arguments[1]);
+        const documentView = document.querySelector('.creative-document-view');
+        return Boolean(target?.closest('main')) &&
+          (documentView.contains(target) || target.contains(documentView)) &&
+          !target.closest('creative-tree-row');
+      })()
+    JS
     page.driver.browser.action.move_to_location(x, y).click.perform
 
     assert_no_selector ".lexical-content-editable", visible: true, wait: 10
     assert_selector content_selector(@first), text: "First paragraph edited"
-    assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+    page.document.synchronize(5, errors: [ Minitest::Assertion ]) do
+      assert_equal "First paragraph edited", ActionController::Base.helpers.strip_tags(@first.reload.description).strip
+    end
   end
 
   test "a link that leaves the page saves the open editor's draft first" do

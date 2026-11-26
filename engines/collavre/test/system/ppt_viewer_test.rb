@@ -272,7 +272,10 @@ class PptViewerTest < ApplicationSystemTestCase
     blob = ActiveStorage::Blob.create_and_upload!(io: File.open(File.expand_path("../fixtures/files/document_viewer.pdf", __dir__)), filename: "paper.pdf", content_type: "application/pdf")
     @creative.embed_attachment_blob!(blob)
     visit collavre.creatives_path(id: @creative.id)
-    within_frame(all("iframe.document-preview-frame").last) do
+    frame = find('iframe.document-preview-frame[title="paper.pdf"]')
+    # Pointer actions inside the iframe do not scroll the outer document pane.
+    page.document.scroll_to(frame, align: :center)
+    within_frame(frame) do
       assert_selector ".pdf-document canvas"
       assert_selector "#slide-controls", style: { opacity: "0" }, visible: :all
       find(".pdf-viewer").hover
