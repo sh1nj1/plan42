@@ -144,21 +144,3 @@ To prevent direct access to the origin server when using Cloudfront (or another 
 
 1. Set `ORIGIN_SHARED_SECRET` in your environment variables.
 2. Configure Cloudfront to send the custom header `X-Origin-Secret` with this value.
-
-### CloudFront viewer IP
-
-Add `CloudFront-Viewer-Address` to the CloudFront origin request policy for
-each behavior that routes dynamic requests to Rails. Keep the behavior's
-existing cookie, query string, and header settings. Use CloudFront's generated value, which includes
-the source port. Before enabling trust, verify that the origin receives the
-CloudFront-generated address even when a viewer sends a header with the same
-name.
-
-After the policy has propagated, set `TRUST_CLOUDFRONT_VIEWER_ADDRESS=true` in
-the deployment environment and deploy. Keep the origin secret configured and
-private. Rails uses the verified address for the request log, saved session IP,
-and the per-IP email signup and sign-in limits. Without a verified address it
-uses normal Rails IP resolution.
-
-Verify through CloudFront with a test account that the application request log
-and the new session record show the test client's public IP.

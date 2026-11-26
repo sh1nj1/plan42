@@ -21,7 +21,6 @@ require_relative "../lib/collavre_compat"
 # decryption error and Phase 3 `boot_safe:` rescues fall back to ENV — making
 # DB-backed S3 credentials silently downgrade to `:local` storage.
 require_relative "../lib/encryption_bootstrap"
-require_relative "../lib/middleware/cloudfront_viewer_ip"
 
 # Ensure .env values override existing ENV values when using dotenv's Rails integration
 if defined?(Dotenv::Rails)
@@ -30,8 +29,6 @@ end
 
 module Collavre
   class Application < Rails::Application
-    config.middleware.insert_after ActionDispatch::RemoteIp, CloudfrontViewerIp
-
     # closure_tree uses lock file if db is not MySQL or PostgreSQL. set FLOCK_DIR to tmp dir.
     # `||=` so a caller (e.g. the packaged desktop launcher, whose Rails.root is a
     # read-only .app bundle) can point it at a writable path before boot.
