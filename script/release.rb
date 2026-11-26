@@ -194,19 +194,16 @@ class Release
     success "[Step 3] Running tests..."
 
     warn "Running npm test..."
-    unless system("npm test")
-      rollback_on_failure("npm test failed")
-    end
+    rollback_on_failure("npm test failed") unless system("npm test")
+
+    warn "Running npm run build..."
+    rollback_on_failure("npm run build failed") unless system("npm run build")
 
     warn "Running rake test..."
-    unless system("bundle exec rake test")
-      rollback_on_failure("rake test failed")
-    end
+    rollback_on_failure("rake test failed") unless system("bundle exec rake test")
 
     warn "Running rake test:system..."
-    unless system("bundle exec rake test:system")
-      rollback_on_failure("rake test:system failed")
-    end
+    rollback_on_failure("rake test:system failed") unless system("bundle exec rake test:system")
 
     success "All tests passed!"
   end
