@@ -8,7 +8,14 @@ en:
         From: %{sender}
 
         %{excerpt}
-      also_flagged: "Another screener also flagged it: if approved, the turn is handled as flagged."
+      flagged_approval_request: |-
+        Prompt-injection screening flagged a message for %{agent}.
+        Approve to deliver it to %{agent}, or deny to drop it.
+
+        From: %{sender}
+
+        %{excerpt}
+      also_flagged: "Another screener also flagged this message."
       blocked_notice: "This message was not delivered to %{agent}: prompt-injection screening flagged it."
-      denied_notice: "This message was not delivered to %{agent}: the agent's owner declined to deliver it without screening."
+      denied_notice: "This message was not delivered to %{agent}: the agent owner declined delivery."
       unknown_sender: "an unverified sender"

@@ -7,16 +7,14 @@ module Collavre
     # as it was screened. See docs/prompt_injection_screening.md.
     module TurnScreening
       # AiAgentJob calls this before it marks a Claude Channel turn delegated,
-      # while the task is still running and can pause for approval. The local
-      # tools of a Claude Channel session are outside ApprovalGate, so a
-      # flagged turn is not delivered at all. The screened text is what #call
-      # delivers.
+      # while the task is still running and can pause for approval. The
+      # screened text is what #call delivers.
       def screen_channel_turn!
         generation = Orchestration::ExecutionFence.generation(@task)
         @creative = find_creative
         content = ClaudeChannelAdapter.trigger_content(@context, @agent)
         2.times do
-          screening_guard.call([ { source: "trigger", text: content } ], block_flagged: true)
+          screening_guard.call([ { source: "trigger", text: content } ])
           # Comments can leave this creative or topic while the screener runs.
           refreshed_content = Comment.uncached { ClaudeChannelAdapter.trigger_content(@context, @agent) }
           return @screened_channel_content = content if refreshed_content == content
@@ -43,25 +41,21 @@ module Collavre
         raise CancelledError
       end
 
-      # Screens what this LLM turn hands the provider, after the session filter
-      # and before anything is recorded as delivered. A flagged turn proceeds
-      # only where every tool call passes through the server's approval gate
-      # (AiClient#check_tool_approval!), and each call then waits for the agent
-      # owner. Elsewhere (CLI Proxy, adapter vendors) it is blocked like a
-      # Claude Channel turn. A turn resumed from an approval snapshot replays
-      # what was screened, so it keeps its earlier flag.
+      # Adapters receive newly resolved messages and do not replay RubyLLM snapshots.
+      def restoring_approval_snapshot?
+        AiClient::VENDOR_TO_PROVIDER.key?(@agent.llm_vendor.to_s.downcase) &&
+          ApprovalConversation.restoring_snapshot?(@task.pending_tool_call)
+      end
+
       def screen_llm_turn!(resolved)
-        pending = @task.pending_tool_call
-        @screening_flagged =
-          if ApprovalConversation.restoring_snapshot?(pending)
-            restore_screening_flag!(pending)
-          else
-            messages = resolved[:messages]
-            texts = Screening.texts_for(messages, owner_id: @agent.created_by_id)
-            screening_guard(messages).call(
-              texts, block_flagged: !server_gated_tools?, unverified_context: unverified_creative_context?(messages)
-            ) == "flagged"
-          end
+        if restoring_approval_snapshot?
+          @screening_flagged = restore_screening_flag!(@task.pending_tool_call)
+        else
+          messages = resolved[:messages]
+          texts = Screening.texts_for(messages, owner_id: @agent.created_by_id)
+          screening_guard(messages).call(texts, unverified_context: unverified_creative_context?(messages))
+          @screening_flagged = false
+        end
       end
 
       def restore_screening_flag!(pending)

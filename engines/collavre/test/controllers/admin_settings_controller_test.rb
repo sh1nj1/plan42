@@ -25,6 +25,60 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "https://new.example.com", SystemSetting.help_menu_link
   end
 
+  test "an administrator can configure screening" do
+    sign_in_as(@admin, password: "password")
+    patch collavre.admin_settings_path, params: { auth_providers: [ "email" ], screening_enabled: "1", screening_owner_turns: "1",
+      screening_threshold: "0.4", screening_block_threshold: "0.8" }
+
+    assert_redirected_to collavre.admin_settings_path
+    assert SystemSetting.screening_enabled?
+    assert SystemSetting.screening_owner_turns?
+    assert_equal 0.4, SystemSetting.screening_threshold
+    assert_equal 0.8, SystemSetting.screening_block_threshold
+
+    patch collavre.admin_settings_path, params: { auth_providers: [ "email" ], screening_enabled: "0", screening_owner_turns: "0",
+      screening_threshold: "0.5", screening_block_threshold: "0.9" }
+    assert_redirected_to collavre.admin_settings_path
+    refute SystemSetting.screening_enabled?
+    refute SystemSetting.screening_owner_turns?
+  end
+
+  test "Typesafe settings are editable as integrations and used by the system screener" do
+    sign_in_as(@admin, password: "password")
+    key = "administrative-typesafe-secret"
+    base = "https://judge.example.test"
+    patch collavre.bulk_update_admin_integrations_path, params: { integration_setting: {
+      typesafe_api_key: key, typesafe_api_base: base
+    } }
+    assert_redirected_to collavre.admin_integrations_path
+
+    follow_redirect!
+    assert_select "input[name='integration_setting[typesafe_api_key]'].masked-secret-field"
+    assert_select "input[name='integration_setting[typesafe_api_base]'][placeholder='#{base}']"
+    assert_not_includes response.body, key
+
+    agent = users(:ai_bot)
+    task = Collavre::Task.create!(name: "Screen", agent: agent, status: "running")
+    client = Object.new
+    def client.judge(*) = "judged"
+    Collavre::AiClient.stub(:new, ->(**options) {
+      assert_equal [ key, base ], options.values_at(:llm_api_key, :gateway_url)
+      client
+    }) do
+      assert_equal "judged", Collavre::Screening::Screener.system(agent: agent, task: task).judge("text")
+    end
+  end
+
+  test "invalid screening thresholds do not change settings" do
+    sign_in_as(@admin, password: "password")
+    patch collavre.admin_settings_path, params: { auth_providers: [ "email" ], screening_enabled: "1",
+      screening_threshold: "0.8", screening_block_threshold: "0.3" }
+
+    assert_response :unprocessable_entity
+    refute SystemSetting.screening_enabled?
+    assert_equal 0.5, SystemSetting.screening_threshold
+  end
+
   test "password_min_length is clamped to floor of 8" do
     sign_in_as(@admin, password: "password")
 

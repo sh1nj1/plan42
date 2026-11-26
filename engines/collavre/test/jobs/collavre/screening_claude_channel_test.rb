@@ -69,15 +69,27 @@ module Collavre
       assert task.reload.failed?
     end
 
-    test "flagged and blocked turns are not delivered and the sender is told" do
-      [ 0.6, 0.99 ].each do |probability|
-        Task.where(agent: @agent).destroy_all
-        broadcasts = with_screeners([ fake_screener(probability) ]) { capture_broadcasts { dispatch } }
-        assert_empty broadcasts
-        assert Task.find_by!(agent: @agent).failed?
-        assert_equal I18n.t("collavre.screening.blocked_notice", agent: @agent.display_name),
-                     @creative.comments.where(user: @agent).last.content
-      end
+    test "a flagged turn is delivered to the channel only after owner approval" do
+      broadcasts = with_screeners([ fake_screener(0.6) ]) { capture_broadcasts { dispatch } }
+      assert_empty broadcasts
+      task = Task.find_by!(agent: @agent)
+      assert task.pending_approval?
+      gate = @creative.comments.where.not(action: nil).last
+      assert_equal @owner, gate.approver
+      Comments::ApprovalGateDecision.new(gate, @owner).call("approved")
+
+      screener = fake_screener(0.99)
+      broadcasts = with_screeners([ screener ]) { capture_broadcasts { resume(task) } }
+      assert_empty screener.calls
+      assert_equal [ @comment.content ], broadcasts.map { |data| data.dig(:comment, :content) }.uniq
+    end
+
+    test "a blocked turn is not delivered and the sender is told" do
+      broadcasts = with_screeners([ fake_screener(0.99) ]) { capture_broadcasts { dispatch } }
+      assert_empty broadcasts
+      assert Task.find_by!(agent: @agent).failed?
+      assert_equal I18n.t("collavre.screening.blocked_notice", agent: @agent.display_name),
+                   @creative.comments.where(user: @agent).last.content
     end
 
     test "a passed turn is delivered as screened" do

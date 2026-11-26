@@ -7,6 +7,13 @@ ko:
       users: "사용자"
       orchestration: "AI 오케스트레이션"
     settings:
+      screening: "프롬프트 인젝션 검사"
+      screening_enabled: "검사 활성화"
+      screening_owner_turns: "발신자가 소유한 에이전트 요청도 검사"
+      screening_threshold: "주의 임계값 (소유자 승인)"
+      screening_block_threshold: "차단 임계값"
+      screening_credentials: "Typesafe API 키 및 기본 URL 관리"
+      screening_invalid_thresholds: "임계값은 0보다 크고 1 이하여야 합니다. 주의 임계값은 차단 임계값 이하여야 합니다."
       help_link: "도움말 메뉴 링크 URL"
       help_link_hint: "상단 내비게이션의 \"?\" 메뉴가 이 URL을 엽니다. 외부 사이트 URL은 새 탭에서, 이 사이트의 URL은 현재 창에서 엽니다. 비워두면 기본 전체 기능 페이지를 현재 창에서 엽니다."
       mcp_tool_approval: "MCP 도구 승인"

@@ -7,6 +7,13 @@ en:
       users: "Users"
       orchestration: "AI Orchestration"
     settings:
+      screening: "Prompt-injection screening"
+      screening_enabled: "Enable screening"
+      screening_owner_turns: "Screen requests to agents owned by the sender"
+      screening_threshold: "Flagged threshold (owner approval)"
+      screening_block_threshold: "Blocked threshold"
+      screening_credentials: "Manage Typesafe API key and base URL"
+      screening_invalid_thresholds: "Thresholds must be greater than 0 and at most 1. The flagged threshold must be at or below the blocked threshold."
       help_link: "Help Menu Link URL"
       help_link_hint: "The \"?\" menu opens this URL. A URL on another site opens in a new tab; one on this site opens in the current window. Leave blank to open the built-in features page in the current window."
       mcp_tool_approval: "MCP Tool Approval"

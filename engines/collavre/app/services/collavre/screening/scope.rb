@@ -9,6 +9,8 @@ module Collavre
     class Scope
       # :skip | :screen
       def self.for(agent:, context:, principal:, authors: [])
+        return :screen if SystemSetting.screening_owner_turns?
+
         # A carried-but-unverifiable principal (an AI-authored anchor) is not
         # the owner by default.
         return :screen if context&.key?("workspace_user_id") && principal.nil?
