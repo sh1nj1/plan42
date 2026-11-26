@@ -136,6 +136,39 @@ module CollavreTranslation
       assert_select '[data-controller="comment-translation-reader"]', count: 1
     end
 
+    test "shared comment markup gates lookups without a reader" do
+      render = -> { Collavre::CommentsController.render(partial: "collavre/comments/comment", locals: { comment: @comment.reload }) }
+      Collavre::Current.set(user: nil) do
+        html = render.call
+        assert_includes html, "data-comment-translation-template"
+        refute_includes html, "data-comment-translation-reader-gated"
+
+        users(:two).update!(auto_translation_enabled: false)
+        refute_includes render.call, "data-comment-translation-template"
+
+        @comment.update!(private: true)
+        assert_includes render.call, "data-comment-translation-template data-comment-translation-reader-gated"
+
+        @comment.update!(private: false)
+        Collavre::CreativeSharesCache.where(creative: @creative, user: nil).destroy_all
+        assert_includes render.call, "data-comment-translation-template data-comment-translation-reader-gated"
+      end
+    end
+
+    test "reader page exposes the reader preference to gated templates" do
+      get "/creatives", params: { id: @creative.id }
+      follow_redirect! if response.redirect?
+      assert_select '[data-comment-translation-reader-enabled-value="false"]', count: 1
+      reader = users(:three)
+      [ true, false ].each do |enabled|
+        reader.update!(auto_translation_enabled: enabled)
+        sign_in_as reader, password: "password"
+        get "/creatives", params: { id: @creative.id }
+        follow_redirect! if response.redirect?
+        assert_select "[data-comment-translation-reader-enabled-value=\"#{enabled}\"]", count: 1
+      end
+    end
+
     test "disabled engine does not mount reader controllers" do
       CollavreTranslation.model = ""
       get "/creatives", params: { id: @creative.id }

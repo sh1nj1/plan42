@@ -1,5 +1,8 @@
 <% unless !CollavreTranslation.enabled? || local_assigns[:streaming] || comment.content.blank? %>
-  <template data-comment-translation-template>
+  <%# Reader-neutral gate: public content follows its author, the rest is left to the reader page. %>
+  <% public_content = CollavreTranslation::ContentTranslationPolicy.public_content?(comment) %>
+  <% if !public_content || CollavreTranslation.enabled_for?(comment.user) %>
+  <template data-comment-translation-template<%= " data-comment-translation-reader-gated" unless public_content %>>
     <div data-comment-translation-url-value="<%= collavre_translation.comment_translation_path(comment_id: comment.id) %>"
        data-comment-translation-digest-value="<%= CollavreTranslation::Translation.digest(comment.content) %>"
        data-comment-translation-translate-value="<%= t('collavre_translation.translate') %>"
@@ -13,4 +16,5 @@
       </div>
     </div>
   </template>
+  <% end %>
 <% end %>
