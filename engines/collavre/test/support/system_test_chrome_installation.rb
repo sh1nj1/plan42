@@ -21,9 +21,7 @@ module SystemTestChromeInstallation
     platform = PLATFORMS.fetch([ RbConfig::CONFIG.fetch("host_os")[/\A[a-z]+/], RbConfig::CONFIG.fetch("host_cpu") ]) do
       raise "Chrome for Testing is unavailable on this platform. Set CHROME_BIN and CHROMEDRIVER_PATH to a compatible pair."
     end
-    cache_home = ENV.fetch("XDG_CACHE_HOME", "")
-    cache_home = File.join(Dir.home, ".cache") if cache_home.empty?
-    cache = File.join(cache_home, "collavre", "chrome-for-testing")
+    cache = File.join(Dir.home, ".cache", "collavre", "chrome-for-testing")
     FileUtils.mkdir_p(cache)
     destination = File.join(cache, "#{VERSION}-#{platform}")
     browser = if platform.start_with?("mac-")
