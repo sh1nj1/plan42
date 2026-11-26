@@ -5,24 +5,34 @@ require_relative "../support/system_test_chrome_locator"
 
 class SystemTestChromeLocatorTest < ActiveSupport::TestCase
   setup do
-    @original_driver = ENV.delete("CHROMEDRIVER_PATH")
+    @original_configuration = %w[CHROMEDRIVER_PATH CHROME_BIN GOOGLE_CHROME_SHIM].to_h do |key|
+      [ key, ENV.delete(key) ]
+    end
   end
 
   teardown do
-    @original_driver ? ENV["CHROMEDRIVER_PATH"] = @original_driver : ENV.delete("CHROMEDRIVER_PATH")
+    @original_configuration.each { |key, value| ENV[key] = value }
   end
 
-  test "missing driver fails instead of invoking Selenium Manager" do
-    SystemTestChromeLocator.stub(:first_existing, nil) do
-      SystemTestChromeLocator.stub(:executable_path, nil) do
-        Selenium::WebDriver::SeleniumManager.stub(:binary_paths, ->(*) { flunk "Manager must not run" }) do
-          error = assert_raises(Selenium::WebDriver::Error::NoSuchDriverError) do
-            SystemTestChromeLocator.chrome_service
-          end
-          assert_includes error.message, "CHROMEDRIVER_PATH"
-        end
+  test "default browser and driver come from the same managed installation" do
+    Tempfile.create("driver") do |file|
+      File.chmod(0o700, file.path)
+      SystemTestChromeInstallation.stub(:paths, [ "/cached/chrome", file.path ]) do
+        assert_equal "/cached/chrome", SystemTestChromeLocator.chrome_binary
+        service = SystemTestChromeLocator.chrome_service
+        finder = Selenium::WebDriver::DriverFinder.new(Selenium::WebDriver::Chrome::Options.new, service)
+        assert_equal file.path, finder.driver_path
       end
     end
+  end
+
+  test "explicit browser requires an explicit compatible driver" do
+    ENV["CHROME_BIN"] = "/custom/chrome"
+    assert_equal "/custom/chrome", SystemTestChromeLocator.chrome_binary
+    error = assert_raises(Selenium::WebDriver::Error::NoSuchDriverError) do
+      SystemTestChromeLocator.chrome_service
+    end
+    assert_includes error.message, "CHROMEDRIVER_PATH"
   end
 
   test "explicit invalid driver does not fall back to PATH or Manager" do
