@@ -16,11 +16,13 @@ module Collavre
       end
 
       def visible_removal_ids(changes)
-        candidates = changes.select do |change|
-          change.change_set.status == "draft" && change.operation == "destroy" &&
-            change.before["origin_id"].present? && change.after.empty?
-        end
+        candidates = changes.select { |change| removal_candidate?(change) }
         Creative.where(id: candidates.map(&:creative_id), user_id: @user&.id).select { |creative| removal_allowed?(creative) }.map(&:id)
+      end
+
+      def removal_candidate?(change)
+        change.change_set.status == "draft" && change.operation == "destroy" &&
+          change.before["origin_id"].present? && change.after.empty?
       end
 
       def removal_allowed?(creative)

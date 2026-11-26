@@ -25,6 +25,27 @@ module Collavre
         changes.select { |change| visible_ids.include?(change.creative_id) }
       end
 
+      # Judges every change on its own, exactly as `changes([ change ])` would,
+      # while resolving the lookups once for the whole list. Unlike #changes, a
+      # visible change never lends its visibility to another one in the list,
+      # so callers may split a long list into batches.
+      def independent_changes(changes)
+        changes = changes.to_a
+        existing_ids = Creative.unscoped.where(id: changes.map(&:creative_id).uniq).pluck(:id).to_set
+        orphaned = changes.reject { |change| existing_ids.include?(change.creative_id) }
+          .select { |change| historical_snapshot_visible?(change) }.to_set
+        readable = readable_ids(existing_ids.to_a + orphaned.filter_map { |change| historical_parent_id(change) })
+        removable = removable_changes(changes)
+
+        changes.select do |change|
+          if existing_ids.include?(change.creative_id)
+            readable.include?(change.creative_id) || removable.include?(change)
+          else
+            orphaned.include?(change) && readable.include?(historical_parent_id(change))
+          end
+        end
+      end
+
       def nodes(creatives)
         creatives = creatives.to_a.uniq(&:id)
         visible_ids = readable_ids(creatives.map(&:id))
@@ -40,6 +61,14 @@ module Collavre
       end
 
       private
+
+      # Draft link removals whose creative the viewer may still remove.
+      def removable_changes(changes)
+        authorization = DraftLinkAuthorization.new(user: user)
+        candidates = changes.select { |change| authorization.removal_candidate?(change) }
+        removable_ids = authorization.visible_removal_ids(candidates).to_set
+        candidates.select { |change| removable_ids.include?(change.creative_id) }.to_set
+      end
 
       def append_visible_descendants(missing, visible_ids, readable_parents)
         loop do

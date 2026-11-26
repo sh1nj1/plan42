@@ -208,6 +208,52 @@ module Collavre
       assert_not readable?(file, @owner)
     end
 
+    def query_count
+      count = 0
+      counter = ->(*, payload) { count += 1 unless payload[:name] == "SCHEMA" || payload[:cached] }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { ActiveRecord::Base.uncached { yield } }
+      count
+    end
+
+    def retain_in_changes(file, count)
+      count.times do
+        retain(history_change(@creative, before: { "description" => embed(file) }, after: { "description" => "<p>gone</p>" }), file)
+      end
+    end
+
+    test "history check cost does not grow with the number of retaining changes" do
+      few = blob
+      retain_in_changes(few, 2)
+      many = blob
+      retain_in_changes(many, 12)
+
+      readable?(few, nil) # warm one-time lookups before counting
+      few_queries = query_count { assert_not readable?(few, nil) }
+      many_queries = query_count { assert_not readable?(many, nil) }
+
+      assert_equal few_queries, many_queries
+    end
+
+    test "history check finds a readable snapshot in a later batch" do
+      file = blob
+      hidden = Creative.create!(description: "<p>hidden</p>", user: @stranger)
+      2.times do
+        retain(history_change(hidden, before: { "description" => embed(file) }, after: { "description" => "<p>x</p>" }), file)
+      end
+      retain_in_changes(file, 1)
+
+      original = BlobAccess::HISTORY_BATCH_SIZE
+      BlobAccess.send(:remove_const, :HISTORY_BATCH_SIZE)
+      BlobAccess.const_set(:HISTORY_BATCH_SIZE, 2)
+      begin
+        assert readable?(file, @owner)
+        assert_not readable?(file, @reader)
+      ensure
+        BlobAccess.send(:remove_const, :HISTORY_BATCH_SIZE)
+        BlobAccess.const_set(:HISTORY_BATCH_SIZE, original)
+      end
+    end
+
     test "avatar is readable by anyone" do
       @stranger.avatar.attach(blob("a.png"))
 

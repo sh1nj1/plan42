@@ -59,7 +59,7 @@ module Collavre
       return true if attachments.any? { |attachment| avatar?(attachment) }
 
       creative_ids = attachments.flat_map { |attachment| creative_ids_for(attachment) }
-      readable_creative?(creative_ids) || attachments.any? { |attachment| history_readable?(attachment) }
+      readable_creative?(creative_ids) || history_readable?(attachments)
     end
 
     private
@@ -93,17 +93,29 @@ module Collavre
       user.present? && [ comment.user_id, comment.approver_id ].include?(user.id)
     end
 
+    HISTORY_BATCH_SIZE = 500
+
     # A retained file is only as visible as the history that keeps it: the
     # change itself (live creative, actor-only for a hard delete, parent for a
     # draft create) and a snapshot state that references the file, judged by
     # the permission path recorded with that snapshot rather than the
     # creative's current placement.
-    def history_readable?(attachment)
-      return false unless attachment.record_type == Collavre::CreativeChange.name
+    #
+    # A frequently edited creative retains each embedded file once per change,
+    # so one blob can carry thousands of history attachments. They are judged
+    # in batches with shared lookups; a query per attachment kept a request
+    # (and its web thread) busy for tens of seconds.
+    def history_readable?(attachments)
+      change_ids = attachments.select { |attachment| attachment.record_type == Collavre::CreativeChange.name }
+        .map(&:record_id)
 
-      change = Collavre::CreativeChange.includes(:change_set).find_by(id: attachment.record_id)
-      return false unless change && history_visibility.changes([ change ]).any?
+      change_ids.each_slice(HISTORY_BATCH_SIZE).any? do |ids|
+        changes = Collavre::CreativeChange.includes(:change_set).where(id: ids)
+        history_visibility.independent_changes(changes).any? { |change| snapshot_readable?(change) }
+      end
+    end
 
+    def snapshot_readable?(change)
       %w[before after].any? do |state|
         references_blob?(change.public_send(state)) &&
           history_visibility.historical_snapshots_visible?([ change ], state)
@@ -117,7 +129,13 @@ module Collavre
       signed_ids.any? { |signed_id| signed_blob_id(signed_id) == blob.id }
     end
 
+    # Snapshots of one creative repeat the same signed ids, so resolve each once.
     def signed_blob_id(signed_id)
+      @signed_blob_ids ||= {}
+      @signed_blob_ids.fetch(signed_id) { @signed_blob_ids[signed_id] = find_signed_blob_id(signed_id) }
+    end
+
+    def find_signed_blob_id(signed_id)
       ActiveStorage::Blob.find_signed(signed_id)&.id
     rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
       nil
