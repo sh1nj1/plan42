@@ -5,7 +5,7 @@ module CollavreGithub
     # GitHub never delivers the relevant deliveries, so pr_monitor would attach
     # a channel that silently misses comments. `pull_request` is required by
     # the auto-attach + close detection paths.
-    CHANNEL_EVENTS = %w[issue_comment pull_request_review pull_request_review_comment].freeze
+    CHANNEL_EVENTS = PrDiscussionEvent::EVENTS.keys.freeze
 
     # `repository` carries the `renamed` action. Without it a rename is
     # invisible to this app: `repository_full_name` goes stale on every link at

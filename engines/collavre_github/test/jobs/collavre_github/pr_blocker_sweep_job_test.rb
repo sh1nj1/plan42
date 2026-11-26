@@ -15,6 +15,7 @@ module CollavreGithub
       @api = "https://api.github.com/repos/owner/repo"
       stub_pr(mergeable: false)
       stub_checks("sha1")
+      stub_discussion
     end
 
     test "all scheduled sweeps share a concurrency key" do
@@ -55,6 +56,72 @@ module CollavreGithub
       assert_equal %w[comment_created comment_created], dispatched.map(&:first)
       assert_equal [ conflict.id, checks.id ], dispatched.map { |_, payload| payload.dig(:comment, :id) }
       assert_equal [ @topic.id, @topic.id ], dispatched.map { |_, payload| payload.dig(:topic, :id) }
+    end
+
+    test "reconciles all three discussion events and shares webhook deduplication" do
+      stub_pr(mergeable: true)
+      recent = (@channel.created_at + 1.second).iso8601
+      author = { login: "reviewer" }
+      issue_comment = { id: 10, created_at: recent, body: "General feedback", user: author }
+      inline_comment = { id: 10, created_at: recent, body: "Inline feedback", user: author, path: "app.rb", line: 4 }
+      review = { id: 10, submitted_at: recent, state: "CHANGES_REQUESTED", body: "Review feedback", user: author }
+      stub_discussion(
+        comments: [ issue_comment, issue_comment.merge(id: 11, created_at: (@channel.created_at - 1.second).iso8601) ],
+        reviews: [ review, review.except(:submitted_at).merge(id: 11, state: "PENDING") ]
+      )
+
+      comments_url = "#{@api}/pulls/42/comments"
+      next_page = "#{comments_url}?page=2"
+      stub_request(:get, %r{#{comments_url}})
+        .to_return(json([]).tap do |response|
+          response[:headers]["Link"] = %(<#{next_page}>; rel="next")
+          response[:headers]["X-RateLimit-Remaining"] = "100"
+        end)
+      stub_request(:get, next_page).to_return(json([ inline_comment ]))
+
+      assert_difference -> { topic_comments.count }, 3 do
+        deliver("issue_comment", action: "created", issue: { pull_request: {} }, comment: issue_comment)
+        PrBlockerSweepJob.perform_now
+        PrBlockerSweepJob.perform_now
+        deliver("pull_request_review_comment", action: "created", comment: inline_comment)
+        deliver("pull_request_review", action: "submitted", review: review)
+      end
+
+      contents = topic_comments.pluck(:content)
+      assert_equal 1, contents.count { |content| content.include?("General feedback") }
+      assert_equal 1, contents.count { |content| content.include?("Inline feedback") }
+      assert_equal 1, contents.count { |content| content.include?("Review feedback") && content.include?("changes_requested") }
+    end
+
+    test "starts legacy channels after their last delivered message" do
+      earlier = @channel.created_at + 1.second
+      last_event = earlier + 1.second
+      @channel.update!(config: @channel.config.except("discussion_poll_since"), last_event_at: last_event)
+      author = { login: "alice" }
+      stub_pr(mergeable: true)
+      stub_discussion(comments: [
+        { id: 1, created_at: earlier.iso8601, user: author, body: "Old feedback" },
+        { id: 2, created_at: (last_event + 1.second).iso8601, user: author, body: "Missed feedback" }
+      ])
+
+      assert_difference -> { topic_comments.count }, 1 do
+        PrBlockerSweepJob.perform_now
+        PrBlockerSweepJob.perform_now
+      end
+      assert_includes topic_comments.last.content, "Missed feedback"
+      assert_equal last_event.iso8601(6), @channel.reload.config["discussion_poll_since"]
+    end
+
+    test "continues with other events if one discussion endpoint fails" do
+      stub_request(:get, %r{#{@api}/issues/42/comments}).to_return(status: 403)
+      stub_request(:get, %r{#{@api}/pulls/42/comments}).to_return(json([
+        { id: 15, created_at: (@channel.created_at + 1.second).iso8601, user: { login: "alice" }, body: "Inline feedback" }
+      ]))
+
+      assert_difference -> { topic_comments.count }, 2 do
+        PrBlockerSweepJob.perform_now
+      end
+      assert topic_comments.any? { |comment| comment.content.include?("Inline feedback") }
     end
 
     test "waits for mergeability and reports a conflict again after recovery" do
@@ -178,6 +245,18 @@ module CollavreGithub
 
     def topic_comments
       @creative.comments.where(topic_id: @topic.id)
+    end
+
+    def deliver(event, payload)
+      @channel.with_lock do
+        @channel.deliver_event!(event: event, payload: payload.deep_stringify_keys)
+      end
+    end
+
+    def stub_discussion(comments: [], inline: [], reviews: [])
+      stub_request(:get, %r{#{@api}/issues/42/comments}).to_return(json(comments))
+      stub_request(:get, %r{#{@api}/pulls/42/comments}).to_return(json(inline))
+      stub_request(:get, %r{#{@api}/pulls/42/reviews}).to_return(json(reviews))
     end
 
     def stub_pr(mergeable:, head: "sha1", state: "open")

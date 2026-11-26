@@ -39,6 +39,13 @@ module CollavreGithub
       nil
     end
 
+    def pull_request_discussion(repo_full_name, endpoint)
+      client.paginate("repos/#{repo_full_name}/#{endpoint}").map { |item| item.to_h.deep_stringify_keys }
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub PR discussion fetch failed: #{e.class}")
+      []
+    end
+
     def pull_request_check_runs(repo_full_name, sha)
       client.check_runs_for_ref(repo_full_name, sha).check_runs
     rescue Octokit::Error, Faraday::Error => e

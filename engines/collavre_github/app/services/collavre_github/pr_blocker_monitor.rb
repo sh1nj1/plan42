@@ -20,18 +20,28 @@ module CollavreGithub
       head = pr.head.sha
       return if head.blank?
 
-      failures = check_failures(client, repo, head)
-      channel.with_lock do
-        next unless monitoring?(repo, number)
-        next unless repository_link(repo)&.repository_id == link.repository_id
-
-        record_blockers(head, pr.mergeable, failures)
-      end
+      poll_updates(client, link, pr, repo, number)
     end
 
     private
 
     attr_reader :channel
+
+    def poll_updates(client, link, pr, repo, number)
+      since = channel.discussion_poll_since
+      discussion = PrDiscussionEvent.poll(client, repo, number, since: since)
+      failures = check_failures(client, repo, pr.head.sha)
+      channel.with_lock do
+        next unless monitoring?(repo, number)
+        next unless repository_link(repo)&.repository_id == link.repository_id
+
+        channel.start_discussion_tracking!(since)
+        record_blockers(pr.head.sha, pr.mergeable, failures)
+        discussion.each do |_timestamp, event, payload|
+          channel.deliver_event!(event: event, payload: payload)
+        end
+      end
+    end
 
     def monitoring?(repo, number)
       channel.active? && !channel.dismissed? && channel.pr_state == "open" &&

@@ -14,8 +14,9 @@ module CollavreGithub
       tool_description <<~DESC.strip
         Attach a GitHub PR monitor to a Collavre topic. After attachment,
         PR comments, reviews, merge conflicts, and failed CI checks are posted
-        as topic messages. Blocker checks run every five minutes for verified
-        repository links. Returns a typed channel reference. Idempotent.
+        as topic messages. Every five minutes, verified repository links are
+        checked for missed comments and reviews, merge conflicts, and failed
+        CI checks. Returns a typed channel reference. Idempotent.
       DESC
 
       tool_param :topic_id, description: "The Collavre topic id to attach the PR channel to."

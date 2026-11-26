@@ -12,7 +12,7 @@ en:
         details: Returns the combined patch of the changed files that have a text patch; files without one (such as binary or very large files) are left out. The result is truncated to max_length characters (default 10,000), so later files may be cut off in large PRs. Requires the Creative to have a connected GitHub repository.
       pr_monitor:
         summary: Follow a GitHub pull request in a topic.
-        details: PR comments, reviews, merge conflicts, and failed CI checks are posted as topic messages. Blocker checks run every five minutes for verified repository links. Calling it again for the same PR does not add a duplicate.
+        details: PR comments, reviews, merge conflicts, and failed CI checks are posted as topic messages. For verified repository links, polling checks every five minutes for missed comments and reviews, merge conflicts, and failed CI checks. Calling it again for the same PR does not add a duplicate.
       pr_state_set:
         summary: Fix a monitored pull request's state when GitHub's update was missed.
         details: |-

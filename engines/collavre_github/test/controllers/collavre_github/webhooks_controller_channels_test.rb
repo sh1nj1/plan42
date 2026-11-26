@@ -25,7 +25,7 @@ module CollavreGithub
       )
     end
 
-    test "issue_comment.created on monitored PR injects a comment into the topic" do
+    test "issue_comment.created injects once across distinct webhook deliveries" do
       payload = {
         action: "created",
         comment: {
@@ -40,13 +40,16 @@ module CollavreGithub
       sig = "sha256=" + OpenSSL::HMAC.hexdigest("SHA256", @link.webhook_secret, payload)
 
       assert_difference -> { Collavre::Comment.where(topic_id: @topic.id).count }, 1 do
-        post "/github/webhooks",
-          params: payload,
-          headers: {
-            "Content-Type" => "application/json",
-            "X-GitHub-Event" => "issue_comment",
-            "X-Hub-Signature-256" => sig
-          }
+        2.times do |index|
+          post "/github/webhooks",
+            params: payload,
+            headers: {
+              "Content-Type" => "application/json",
+              "X-GitHub-Event" => "issue_comment",
+              "X-GitHub-Delivery" => "delivery-#{index}",
+              "X-Hub-Signature-256" => sig
+            }
+        end
       end
       assert_response :ok
     end
