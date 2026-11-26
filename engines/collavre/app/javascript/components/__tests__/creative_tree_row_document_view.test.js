@@ -494,6 +494,18 @@ describe("creative-tree-row in document view", () => {
     expect(row.querySelector(".creative-drag-handle").getAttribute("aria-label")).toBe(`${name}: ${hint}`);
   });
 
+  test("renders existing description images with native lazy loading", async () => {
+    const row = await mountRow({
+      creativeId: "8",
+      descriptionHtml: '<p>Media</p><img src="/attachment.png" alt="Attachment">'
+    }, container());
+
+    const image = row.querySelector(".creative-content img");
+    expect(image.getAttribute("loading")).toBe("lazy");
+    expect(image.getAttribute("src")).toBe("/attachment.png");
+    expect(image.getAttribute("alt")).toBe("Attachment");
+  });
+
   test("extracting the handle name parses media in an inert template document", async () => {
     const { renderDragHandle } = await import("../creative_tree_row_document_view.js");
     const row = document.createElement("div");
