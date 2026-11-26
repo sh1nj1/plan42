@@ -13,9 +13,10 @@ module CollavreGithub
       tool_name "pr_monitor"
       tool_description <<~DESC.strip
         Attach a GitHub PR monitor to a Collavre topic. After attachment,
-        PR comments, review comments, and review submissions are injected
-        into the topic as chat messages. The response identifies the attached
-        topic and creative and uses a typed channel reference. Idempotent.
+        PR comments, reviews, merge conflicts, and failed CI checks are posted
+        as topic messages. Every five minutes, verified repository links are
+        checked for missed comments and reviews, merge conflicts, and failed
+        CI checks. Returns a typed channel reference. Idempotent.
       DESC
 
       tool_param :topic_id, description: "The Collavre topic id to attach the PR channel to."

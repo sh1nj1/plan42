@@ -366,13 +366,7 @@ module CollavreGithub
           channel.with_lock do
             next unless channel.active?
 
-            injected = channel.handle(event: event, payload: payload)
-            next if injected.nil?
-
-            channel.inject_into_topic!(injected)
-            # Detach AFTER injecting the closing message so the chip remains
-            # visible (now with merged/closed badge) until dismissed by the user.
-            channel.detach! if event == "pull_request" && payload["action"] == "closed"
+            channel.deliver_event!(event: event, payload: payload)
           end
         rescue => e
           # Isolate per-channel failures so one broken channel does not block

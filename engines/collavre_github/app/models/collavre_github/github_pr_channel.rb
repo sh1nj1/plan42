@@ -2,6 +2,7 @@ module CollavreGithub
   class GithubPrChannel < Collavre::Channel
     self.table_name = "channels"
 
+    before_create :initialize_discussion_tracking
     after_destroy_commit :broadcast_chips_changed
 
     def repo_full_name
@@ -136,20 +137,58 @@ module CollavreGithub
       )
     end
 
+    def blocker_message(key, **options)
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t(key, label: label, url: pr_url, **options),
+        label: label,
+        link: pr_url
+      )
+    end
+
+    def discussion_poll_since
+      config["discussion_poll_since"]&.to_time || last_event_at || created_at
+    end
+
+    def start_discussion_tracking!(since = discussion_poll_since)
+      return if config.key?("discussion_poll_since")
+
+      update!(config: config.merge("discussion_poll_since" => since.iso8601(6)))
+    end
+
+    # Both callers hold the channel lock so the message and its GitHub ID commit together.
+    def deliver_event!(event:, payload:)
+      definition = PrDiscussionEvent::EVENTS[event]
+      external_id = payload.dig(definition.resource, "id") if definition
+      key = "#{event}:#{external_id}" if external_id.present?
+      delivered = config.fetch("discussion_event_ids", [])
+      return if key && delivered.include?(key)
+
+      injected = handle(event: event, payload: payload)
+      return unless injected
+
+      start_discussion_tracking! if definition
+      inject_into_topic!(injected)
+      update!(config: config.merge("discussion_event_ids" => delivered + [ key ])) if key
+      detach! if event == "pull_request" && payload["action"] == "closed"
+    end
+
     def handle(event:, payload:)
-      case event
-      when "issue_comment"
-        handle_issue_comment(payload)
-      when "pull_request_review_comment"
-        handle_review_comment(payload)
-      when "pull_request_review"
-        handle_review_submitted(payload)
-      when "pull_request"
-        handle_pull_request(payload)
-      end
+      return handle_pull_request(payload) if event == "pull_request"
+
+      definition = PrDiscussionEvent::EVENTS[event]
+      return unless definition && payload["action"] == definition.action
+      return if event == "issue_comment" && !payload.dig("issue", "pull_request")
+
+      send(definition.handler, payload.fetch(definition.resource))
     end
 
     private
+
+    def initialize_discussion_tracking
+      # GitHub event timestamps have second precision.
+      self.config = config.reverse_merge("discussion_poll_since" => (created_at || Time.current).iso8601)
+    end
 
     def preferred_over?(other)
       (lifecycle_priority(self) <=> lifecycle_priority(other)) == 1
@@ -180,9 +219,7 @@ module CollavreGithub
       # message, so the chip stays visible until the closing comment lands.
     end
 
-    def handle_review_submitted(payload)
-      return nil unless payload["action"] == "submitted"
-      review = payload["review"]
+    def handle_review_submitted(review)
       body = review["body"].to_s
       return nil if body.strip.empty?
 
@@ -197,9 +234,7 @@ module CollavreGithub
       )
     end
 
-    def handle_review_comment(payload)
-      return nil unless payload["action"] == "created"
-      comment = payload["comment"]
+    def handle_review_comment(comment)
       author = comment.dig("user", "login")
       return nil if ignored_actor?(author)
       path = comment["path"]
@@ -222,11 +257,7 @@ module CollavreGithub
       )
     end
 
-    def handle_issue_comment(payload)
-      return nil unless payload["action"] == "created"
-      return nil unless payload.dig("issue", "pull_request") # PR comments only
-
-      comment = payload["comment"]
+    def handle_issue_comment(comment)
       author = comment.dig("user", "login")
       return nil if ignored_actor?(author)
       body = comment["body"].to_s

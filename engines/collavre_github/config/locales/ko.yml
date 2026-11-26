@@ -107,6 +107,8 @@ ko:
         review_submitted_message: "**@%{author}**님이 %{label}에 리뷰를 제출했습니다 (`%{state}`):\n\n%{body}"
         closed_message: "%{label}이(가) **%{verb}** 되었습니다. 채널을 해제합니다."
         attached_message: "%{label} 모니터링이 시작되었습니다.\n\n%{url}"
+        merge_conflict_message: "%{label}에 병합 충돌이 있습니다.\n\n%{url}"
+        failed_checks_message: "%{label}에서 CI 검사에 실패했습니다: %{checks}.\n\n%{url}/checks"
         reopened_message: "%{label}이(가) 재오픈되어 모니터링이 재개되었습니다.\n\n%{url}"
         auth_failure_message: "⚠️ `%{repo}` 저장소의 GitHub 웹훅 전달을 검증하지 못해 %{label}의 이벤트를 **수신하지 못하고 있습니다**.\n\n저장소 이름이 변경되었거나 웹훅 시크릿이 바뀐 경우입니다. 해당 저장소의 GitHub 연동 설정을 다시 실행하면 복구됩니다.\n\n%{url}"
         badge:
