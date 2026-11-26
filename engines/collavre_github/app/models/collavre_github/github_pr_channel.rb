@@ -136,6 +136,15 @@ module CollavreGithub
       )
     end
 
+    def blocker_message(key, **options)
+      Collavre::Channel::InjectedMessage.new(
+        speaker: channel_bot_user,
+        message: t(key, label: label, url: pr_url, **options),
+        label: label,
+        link: pr_url
+      )
+    end
+
     def handle(event:, payload:)
       case event
       when "issue_comment"

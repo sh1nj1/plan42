@@ -42,6 +42,10 @@ production: &production
     class: Collavre::ResumeSuspendedTasksJob
     queue: default
     schedule: every 5 minutes
+  github_pr_blocker_sweep:
+    class: CollavreGithub::PrBlockerSweepJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
@@ -95,6 +99,10 @@ desktop:
     class: Collavre::ResumeSuspendedTasksJob
     queue: default
     schedule: every 5 minutes
+  github_pr_blocker_sweep:
+    class: CollavreGithub::PrBlockerSweepJob
+    queue: default
+    schedule: every 5 minutes
   github_webhook_delivery_prune:
     class: CollavreGithub::WebhookDeliveryPruneJob
     queue: default
@@ -146,6 +154,10 @@ development:
     schedule: every 10 minutes
   resume_suspended_tasks:
     class: Collavre::ResumeSuspendedTasksJob
+    queue: default
+    schedule: every 5 minutes
+  github_pr_blocker_sweep:
+    class: CollavreGithub::PrBlockerSweepJob
     queue: default
     schedule: every 5 minutes
   github_webhook_delivery_prune:

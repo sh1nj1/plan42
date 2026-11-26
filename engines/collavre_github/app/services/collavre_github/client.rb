@@ -39,6 +39,22 @@ module CollavreGithub
       nil
     end
 
+    def pull_request_check_runs(repo_full_name, sha)
+      client.check_runs_for_ref(repo_full_name, sha).check_runs
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub check runs fetch failed: #{e.class}")
+      []
+    end
+
+    def pull_request_commit_statuses(repo_full_name, sha)
+      client.paginate("repos/#{repo_full_name}/commits/#{sha}/status") do |data, response|
+        data.statuses.concat(response.data.statuses)
+      end.statuses
+    rescue Octokit::Error, Faraday::Error => e
+      Rails.logger.warn("GitHub commit statuses fetch failed: #{e.class}")
+      []
+    end
+
     def pull_request_commit_messages(repo_full_name, number)
       client
         .pull_request_commits(repo_full_name, number)
