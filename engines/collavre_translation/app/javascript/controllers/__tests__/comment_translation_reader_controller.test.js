@@ -82,3 +82,25 @@ test('hydrates existing comments on reconnect without duplicate controllers', as
   expect(intersections).toHaveLength(1)
   expect(fetchMock).not.toHaveBeenCalled()
 })
+
+test('an OFF reader leaves reader-gated templates inert and still hydrates author-gated ones', async () => {
+  const gated = markup('private').replace('data-comment-translation-template', 'data-comment-translation-template data-comment-translation-reader-gated')
+  document.body.innerHTML = `<span data-controller="comment-translation-reader" data-comment-translation-reader-enabled-value="false" hidden></span>
+    ${gated}${markup('public').replace('comment_1', 'comment_2')}`
+  app = Application.start()
+  registerControllers(app)
+  await settle()
+  expect(document.querySelectorAll('template[data-comment-translation-reader-gated]')).toHaveLength(1)
+  expect(document.querySelectorAll('#comment_1 [data-controller="comment-translation"]')).toHaveLength(0)
+  expect(document.querySelectorAll('#comment_2 [data-controller="comment-translation"]')).toHaveLength(1)
+  expect(intersections).toHaveLength(1)
+})
+
+test('an ON reader hydrates reader-gated templates', async () => {
+  const gated = markup('private').replace('data-comment-translation-template', 'data-comment-translation-template data-comment-translation-reader-gated')
+  document.body.innerHTML = `<span data-controller="comment-translation-reader" data-comment-translation-reader-enabled-value="true" hidden></span>${gated}`
+  app = Application.start()
+  registerControllers(app)
+  await settle()
+  expect(document.querySelectorAll('[data-controller="comment-translation"]')).toHaveLength(1)
+})

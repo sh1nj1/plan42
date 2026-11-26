@@ -61,7 +61,10 @@ reader request. Shared live comment broadcasts contain inert templates;
 the request-rendered `comment-translation-reader` hydrates initial, appended and
 replaced templates. Endpoint policy is checked per source, before cache reads or
 job requests, so a public page containing private content does not bypass its
-reader preference. Disabled engines return 503 and disabled content policies
+reader preference. To avoid one refused lookup per visible comment, shared markup
+omits the template for public comments whose author disabled translation and marks
+the rest `data-comment-translation-reader-gated`; the reader page passes its own
+preference to the reader controller, which leaves gated templates inert when it is off. Disabled engines return 503 and disabled content policies
 return 403. Original content and AI context remain unchanged.
 
 User preferences are owned and migrated by this engine on the shared user table as
