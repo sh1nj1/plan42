@@ -40,6 +40,34 @@ class CreativeImageLightboxTest < ApplicationSystemTestCase
     assert_nil page.evaluate_script('document.documentElement.getAttribute("data-svg-script")')
   end
 
+  test "chat image attachment opens the image viewer" do
+    comment = @creative.comments.create!(user: @user, content: "Attached image")
+    comment.images.attach(@creative.files.first.blob)
+
+    visit collavre.creatives_path
+    within("#creative-#{@creative.id}") { find(".comments-btn").click }
+    thumbnail = find("#comment_#{comment.id} .comment-attachment-image")
+    assert_image_loaded(thumbnail)
+    thumbnail.click
+
+    assert_image_loaded(find(".image-lightbox-dialog[open] .image-lightbox-image"))
+    assert_selector ".image-lightbox-download-one"
+  end
+
+  test "inline chat images open the image viewer" do
+    urls = @creative.files.map { |image| Rails.application.routes.url_helpers.rails_blob_path(image, only_path: true) }
+    content = "![First](#{urls.first}) ![Second](#{urls.last})"
+    comment = @creative.comments.create!(user: @user, content: content)
+
+    visit collavre.creatives_path(id: @creative.id, open_comments: true)
+    find("#comment_#{comment.id} .comment-content img[alt='Second']").click
+
+    assert_image_loaded(find(".image-lightbox-dialog[open] .image-lightbox-image[alt='Second']"))
+    assert_selector ".image-lightbox-counter", text: "2 / 2"
+    find(".image-lightbox-prev").click
+    assert_selector ".image-lightbox-image[alt='First']"
+  end
+
   def assert_image_loaded(image)
     assert image
     assert page.evaluate_async_script(<<~JS, image)

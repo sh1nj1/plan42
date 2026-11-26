@@ -49,6 +49,7 @@ import CommentVersionController from "./comment_version_controller"
 import OrgChartController from "./org_chart_controller"
 import CommentBadgeController from "./comment_badge_controller"
 import ShareModalController from "./share_modal_controller"
+import CommentImageLightboxController from "./comment_image_lightbox_controller"
 import CreativeImageLightboxController from "./creative_image_lightbox_controller"
 import ImageLightboxController from "./image_lightbox_controller"
 import SearchPopupController from "./search_popup_controller"
@@ -128,6 +129,7 @@ export {
 
 function registerImageLightboxControllers(application) {
   application.register("image-lightbox", ImageLightboxController)
+  application.register("comment-image-lightbox", CommentImageLightboxController)
   application.register("creative-image-lightbox", CreativeImageLightboxController)
 }
 

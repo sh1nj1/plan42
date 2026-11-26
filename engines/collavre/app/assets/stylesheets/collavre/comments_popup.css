@@ -434,6 +434,10 @@ body.chat-fullscreen {
     border-radius: var(--radius-2);
 }
 
+.comment-content img[src]:not([src=""]) {
+    cursor: zoom-in;
+}
+
 .comment-content pre {
     white-space: pre-wrap;
     word-break: break-word;
