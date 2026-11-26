@@ -1,7 +1,26 @@
 <section class="tab-panel active">
   <%= tag.div(flash[:alert], class: "flash-alert") if flash[:alert] %>
   <%= form_with url: collavre.admin_settings_path, method: :patch, local: true, html: { class: 'profile-form' } do |f| %>
-    <%# system tab %>
+    <fieldset>
+      <legend><%= t('admin.settings.screening') %></legend>
+      <%= f.label :screening_enabled do %>
+        <%= f.check_box :screening_enabled, checked: SystemSetting.screening_enabled? %>
+        <%= t('admin.settings.screening_enabled') %>
+      <% end %>
+      <%= f.label :screening_owner_turns do %>
+        <%= f.check_box :screening_owner_turns, checked: SystemSetting.screening_owner_turns? %>
+        <%= t('admin.settings.screening_owner_turns') %>
+      <% end %>
+      <div>
+        <%= f.label :screening_threshold, t('admin.settings.screening_threshold') %>
+        <%= f.number_field :screening_threshold, value: SystemSetting.screening_threshold, min: 0, max: 1, step: 'any', required: true %>
+      </div>
+      <div>
+        <%= f.label :screening_block_threshold, t('admin.settings.screening_block_threshold') %>
+        <%= f.number_field :screening_block_threshold, value: SystemSetting.screening_block_threshold, min: 0, max: 1, step: 'any', required: true %>
+      </div>
+      <%= link_to t('admin.settings.screening_credentials'), collavre.admin_integrations_path %>
+    </fieldset>
     <div>
       <%= f.label :help_link, t('admin.settings.help_link') %>
       <%= f.text_field :help_link, value: @help_link, placeholder: "https://..." %>

@@ -14,7 +14,8 @@ module Collavre
 
       def self.system(agent:, task:)
         new(id: "system", vendor: "typesafe", model: SystemSetting.screening_model,
-            api_key: ENV["TYPESAFE_API_KEY"], gateway_url: ENV["TYPESAFE_API_BASE"].presence,
+            api_key: IntegrationSettings::Resolver.get(:typesafe_api_key),
+            gateway_url: IntegrationSettings::Resolver.get(:typesafe_api_base),
             usage_user: agent, task: task)
       end
 

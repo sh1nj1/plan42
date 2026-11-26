@@ -4,8 +4,7 @@ require "test_helper"
 require_relative "screening_test_support"
 
 module Collavre
-  # LLM turns are screened on the payload the provider will receive. A flagged
-  # turn keeps running only where the server gates every tool call.
+  # LLM turns are screened on the payload the provider will receive.
   class LlmTurnScreeningTest < ActiveSupport::TestCase
     include ScreeningTestSupport
     include ActiveJob::TestHelper
@@ -57,12 +56,12 @@ module Collavre
       )
       @task.update!(trigger_event_payload: payload)
 
-      screener = fake_screener(0.6)
+      screener = fake_screener(0.1)
       built = run_turn(screener)
 
       assert_includes screener.calls.join, "[source: chat_history]"
       assert_includes screener.calls.join, @comment.content
-      assert_equal true, built.dig(:context, :screening_flagged)
+      assert_equal false, built.dig(:context, :screening_flagged)
     end
 
     test "a linked creative is screened on an owner turn without collaborator history" do
@@ -76,12 +75,12 @@ module Collavre
         "comment" => { "id" => @comment.id, "content" => content }, "workspace_user_id" => @owner.id
       ))
 
-      screener = fake_screener(0.6)
+      screener = fake_screener(0.1)
       built = run_turn(screener)
 
       assert_includes screener.calls.join, "[source: referenced_creative]"
       assert_includes screener.calls.join, "Untrusted linked creative text"
-      assert_equal true, built.dig(:context, :screening_flagged)
+      assert_equal false, built.dig(:context, :screening_flagged)
     end
 
     test "a foreign creative quote is screened in an incremental OpenClaw owner turn" do
@@ -94,11 +93,11 @@ module Collavre
       ))
       screener = fake_screener(0.6)
 
-      assert_nil run_turn(screener, expect: CancelledError)
+      assert_nil run_turn(screener, expect: ScreeningPendingError)
       assert_includes screener.calls.join, "[source: trigger]"
       assert_includes screener.calls.join, "Untrusted quote title and excerpt"
       assert_not_includes screener.calls.join, "[source: creative_context]"
-      assert @task.reload.failed?
+      assert @task.reload.pending_approval?
     end
 
     test "a permission revoked during rendering prevents screening and delivery" do
@@ -117,15 +116,36 @@ module Collavre
       assert_empty screener.calls
     end
 
-    test "a flagged turn runs with every tool call gated on the agent owner" do
-      built = run_turn(fake_screener(0.6))
-      assert_equal true, built.dig(:context, :screening_flagged)
+    test "a flagged turn waits for owner approval before delivery" do
+      assert_nil run_turn(fake_screener(0.6), expect: ScreeningPendingError)
+      assert @task.reload.pending_approval?
+      assert_nil @task.reply_comment
+      gate = @creative.comments.where.not(action: nil).last
+      assert_equal @owner, gate.approver
+
+      Comments::ApprovalGateDecision.new(gate, @owner).call("approved")
+      @task.reload.update!(status: "running")
+      screener = fake_screener(0.99)
+      built = run_turn(screener)
+      assert_empty screener.calls
+      refute built.dig(:context, :screening_flagged)
+      refute Screening.flagged?(@task.reload)
+      assert_equal "Answer", @task.reply_comment.content
     end
 
-    test "a flagged turn is blocked where the server cannot gate tools" do
+    test "a flagged turn waits for approval on CLI Proxy too" do
       @agent.update_columns(llm_vendor: "cli_proxy")
-      assert_nil run_turn(fake_screener(0.6), expect: CancelledError)
-      assert @task.reload.failed?
+      assert_nil run_turn(fake_screener(0.6), expect: ScreeningPendingError)
+      assert @task.reload.pending_approval?
+    end
+
+    test "an OpenClaw turn screens fresh messages when a snapshot exists" do
+      @agent.update_columns(llm_vendor: "openclaw")
+      @task.update!(pending_tool_call: { approved: true, result: { ok: true }, tool_call_id: "c1", tool_name: "x",
+                                         messages: [ { role: "user", content: "snapshot" } ] })
+      screener = fake_screener(0.99)
+      assert_nil run_turn(screener, expect: CancelledError)
+      assert_includes screener.calls.join, @comment.content
     end
 
     test "a blocked turn never reaches the provider" do
@@ -171,7 +191,7 @@ module Collavre
       assert @task.reload.failed?
     end
 
-    test "a flagged turn is blocked when the owner could not decide its tool calls" do
+    test "a flagged turn is blocked when the owner cannot approve delivery" do
       perform_enqueued_jobs(only: PermissionCacheJob) { CreativeShare.find_by!(creative: @creative, user: @owner).destroy! }
       assert_not @creative.reload.has_permission?(@owner, :read)
       assert_nil run_turn(fake_screener(0.6), expect: CancelledError)

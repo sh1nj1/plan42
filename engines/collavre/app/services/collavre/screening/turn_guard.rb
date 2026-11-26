@@ -5,8 +5,7 @@ module Collavre
     # Screens one agent turn and applies the server policy to the verdict:
     #
     #   passed  -> deliver
-    #   flagged -> deliver with owner-approved tools, or block where the server
-    #              cannot gate tools (block_flagged:, e.g. Claude Channel)
+    #   flagged -> pause for the agent owner's approval before delivery
     #   error   -> pause for the agent owner's approval (ScreeningPendingError)
     #   blocked -> fail the task, tell the sender, raise CancelledError
     #
@@ -21,8 +20,7 @@ module Collavre
         @context, @principal, @authors = context || {}, principal, authors
       end
 
-      # Returns "skipped", "passed", "approved" or "flagged".
-      def call(texts, block_flagged:, unverified_context: false)
+      def call(texts, unverified_context: false)
         return "skipped" if Current.screening
 
         # Taken first: a denial ends the turn even if screening was turned
@@ -33,16 +31,14 @@ module Collavre
 
         digest = Screening.digest(texts)
         if decision && decision["content_digest"] == digest
+          renew_legacy_approval!(texts, digest, decision)
           approved!(decision, digest)
-          # The owner approved what a failed screener could not answer for;
-          # another screener's flag still applies.
-          return decision["residual"] == "flagged" ? apply_flag(block_flagged) : "approved"
+          return "approved"
         end
 
         verdict = Gate.new.call(texts, agent: @agent, creative: @creative, task: @task)
         case verdict.verdict
         when "passed" then "passed"
-        when "flagged" then apply_flag(block_flagged)
         when "blocked" then block!(:blocked_notice)
         else request_approval!(texts, digest, verdict)
         end
@@ -94,7 +90,15 @@ module Collavre
         return unless decision && decision["decided_by"] == pending["approver_id"]
         block!(:denied_notice) if decision["decision"] == "denied"
 
-        decision.merge(pending.slice("content_digest", "residual"))
+        decision.merge(pending.slice("content_digest", "residual", "policy_version"))
+      end
+
+      # Older prompts presented approval as permission to deliver with every
+      # tool separately gated. Ask again before delivering under the new policy.
+      def renew_legacy_approval!(texts, digest, decision)
+        return unless decision["residual"] == "flagged" && decision["policy_version"].nil?
+
+        request_approval!(texts, digest, Verdict.new(verdict: "flagged", residual: "flagged"))
       end
 
       def approved!(decision, digest)
@@ -120,7 +124,8 @@ module Collavre
       def approval_question(texts, verdict, approver)
         excerpt = texts.map { |entry| entry[:text].to_s }.join("\n\n").truncate(EXCERPT_CHARS)
         locale = approver.locale.presence || I18n.default_locale
-        question = I18n.t("collavre.screening.approval_request", locale: locale,
+        key = verdict.verdict == "flagged" ? "flagged_approval_request" : "approval_request"
+        question = I18n.t("collavre.screening.#{key}", locale: locale,
           agent: @agent.display_name, error: verdict.error || verdict.screener_id,
           sender: @principal&.display_name || I18n.t("collavre.screening.unknown_sender", locale: locale),
           excerpt: excerpt.gsub(/^/, "> "))

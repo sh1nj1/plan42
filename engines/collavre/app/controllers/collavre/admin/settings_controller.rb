@@ -91,6 +91,7 @@ module Collavre
           save_home_page_path("home_page_path_authenticated", params[:home_page_path_authenticated])
 
           save_auth_providers!
+          save_screening_settings! if params.key?(:screening_enabled)
         end
 
         redirect_to collavre.admin_settings_path, notice: t("admin.settings.updated")
@@ -101,6 +102,25 @@ module Collavre
       end
 
       private
+
+      def save_screening_settings!
+        flagged = Float(params[:screening_threshold], exception: false)
+        blocked = Float(params[:screening_block_threshold], exception: false)
+        unless flagged && blocked && flagged.positive? && flagged <= blocked && blocked <= 1
+          setting = SystemSetting.new
+          setting.errors.add(:base, t("admin.settings.screening_invalid_thresholds"))
+          raise ActiveRecord::RecordInvalid, setting
+        end
+
+        {
+          screening_enabled: params[:screening_enabled] == "1",
+          screening_owner_turns: params[:screening_owner_turns] == "1",
+          screening_threshold: flagged,
+          screening_block_threshold: blocked
+        }.each do |key, value|
+          SystemSetting.find_or_initialize_by(key: key).update!(value: value.to_s)
+        end
+      end
 
       def restore_form_state
         restore_access_form_state

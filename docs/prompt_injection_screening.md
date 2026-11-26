@@ -5,9 +5,12 @@ receives it, when the turn runs on behalf of someone other than the agent's
 owner. A shared agent runs on its owner's machine, credentials, and workspace,
 so another collaborator's message is untrusted input to that agent.
 
-Screening is off by default. Turn it on with the `screening_enabled` system
-setting after configuring `TYPESAFE_API_KEY` (and optionally
-`TYPESAFE_API_BASE`).
+Screening is off by default. Configure the Typesafe API key and optional base
+URL in **Admin Settings → Integrations → LLM API Keys**. Environment variables
+`TYPESAFE_API_KEY` and `TYPESAFE_API_BASE` provide the fallback values. Enable
+screening under **Admin Settings → System**. The same section controls the
+flagged and blocked thresholds and whether to screen owner requests. Owner
+request screening is off by default.
 
 ## Which turns are screened
 
@@ -24,7 +27,7 @@ while another person's agent wrote it.
 | Principal is another person | Screened |
 | Carried but unverifiable principal (`workspace_user_id: nil`) | Screened |
 | An author other than the owner, the agent, or the owner's other agents | Screened |
-| Owner principal and trusted authors, or a system turn with neither | Skipped |
+| Owner principal and trusted authors, or a system turn with neither | Skipped unless owner request screening is enabled |
 
 ## Who screens
 
@@ -48,12 +51,12 @@ times out, or answers malformed output yields `error`, never `passed`.
 Severity is `blocked > error > flagged > passed`: a definite block by one
 screener is not overridden by the owner's approval of another screener's error.
 
-| Verdict | LLM turn (server-run tools) | Claude Channel, CLI Proxy, adapter vendors |
-|---|---|---|
-| passed | Delivered | Delivered |
-| flagged | Delivered; every tool call waits for the agent owner | Not delivered: their tools run outside the server's approval gates |
-| error | Paused for the agent owner's approval | Paused for the agent owner's approval |
-| blocked | Not delivered; the task fails and the sender is told | Same |
+| Verdict | Delivery |
+|---|---|
+| passed | Delivered |
+| flagged | Paused for the agent owner's approval |
+| error | Paused for the agent owner's approval |
+| blocked | The task fails and the sender receives a notice |
 
 A notice that cannot be posted is logged; the turn still ends as blocked.
 
@@ -63,15 +66,15 @@ cached.
 
 ## Owner approval
 
-An `error` raises `ScreeningPendingError`. `AiAgent::ScreeningApprovalHandler`
+A `flagged` or `error` verdict raises `ScreeningPendingError`. `AiAgent::ScreeningApprovalHandler`
 pauses the task with `pending_tool_call.kind = "screening"` and posts an
 approval-gate comment whose approver is the **agent's owner**. The creative
 owner is not used: the sender may own the creative and must not approve their
 own turn. An owner who cannot read the creative cannot decide, so the turn is
 blocked instead of pausing until someone stops it.
 
-When one screener errors and another flags, the approval request says so, and
-an approved turn is still handled as flagged.
+When one screener errors and another flags, the approval request reports both
+verdicts. A single approval covers delivery of that content.
 
 Approving resumes the same task (`ApprovalGateResumeJob`). The approval
 applies only to content with the recorded digest; changed content is
@@ -85,17 +88,13 @@ payload (`SessionContextResolver` output) before it is recorded as delivered,
 so the screened content is what is sent. That includes the trigger, merged
 comments, creative context and history. The agent's own replies and the
 owner's history entries (`MessageBuilder` tags history with `:author_id`) are
-left out. Images are not screened.
+left out by default. Opting in to owner request screening includes the owner's
+history entries. Screening covers text.
 
-A flagged turn passes `screening_flagged: true` to `AiClient`.
-`check_tool_approval!` then requires approval for every tool call, with the
-agent's owner as approver (`ApprovalPendingError#approver`). A turn resumed
-from a tool-approval snapshot replays what was screened, so it keeps its flag
-from the turn's `screening` task actions instead of screening again. Only
-vendors whose tools run in the server's RubyLLM loop qualify, and only when
-the owner exists and can read the creative to decide. Otherwise a flagged turn
-is blocked. This covers CLI Proxy, adapter vendors, ownerless agents, and
-owners without read access.
+Approved delivery uses the usual tool approval policies. When RubyLLM
+replays a tool-approval snapshot, it keeps any flag from a legacy turn or a
+screened approval reason. A vendor adapter receiving freshly resolved
+messages screens those messages even if an older snapshot exists.
 
 An `approval_request` decision is replayed to the model as its tool result,
 including the decider's reason. When a resumed turn replays a reason written
@@ -106,6 +105,6 @@ turn, because the conversation is already under way.
 ## Claude Channel
 
 `AiAgentJob` screens a Claude Channel turn while it is still `running`,
-before it marks the task `delegated`, so an error can pause it for approval.
+before it marks the task `delegated`, so a flag or screening error can pause it for approval.
 The adapter then sends exactly the screened text
 (`ClaudeChannelAdapter.trigger_content`).

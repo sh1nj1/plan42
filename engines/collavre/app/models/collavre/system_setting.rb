@@ -85,7 +85,7 @@ module Collavre
         creatives_login_required home_page_path home_page_path_authenticated default_light_theme_id default_dark_theme_id
         display_level completion_mark llm_request_timeout_seconds ai_agent_turn_deadline_seconds
         creative_history_retention_count creative_history_retention_days
-        screening_enabled screening_model screening_threshold screening_block_threshold
+        screening_enabled screening_model screening_threshold screening_block_threshold screening_owner_turns
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -229,6 +229,10 @@ module Collavre
 
     def self.screening_enabled?
       cached_value("screening_enabled") == "true"
+    end
+
+    def self.screening_owner_turns?
+      cached_value("screening_owner_turns") == "true"
     end
 
     def self.screening_model

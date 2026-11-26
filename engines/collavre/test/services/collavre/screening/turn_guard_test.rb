@@ -24,8 +24,8 @@ module Collavre
         TurnGuard.new(task: @task, agent: @agent, creative: @creative, context: context, principal: principal)
       end
 
-      def run_guard(answers, block_flagged: false, **options)
-        with_screeners([ fake_screener(answers) ]) { guard(**options).call(@texts, block_flagged: block_flagged) }
+      def run_guard(answers, **options)
+        with_screeners([ fake_screener(answers) ]) { guard(**options).call(@texts) }
       end
 
       test "disabled screening and owner turns are skipped without a judge call" do
@@ -40,9 +40,9 @@ module Collavre
         Current.set(screening: true) { assert_equal "skipped", run_guard(0.99) }
       end
 
-      test "passed and flagged turns proceed where tools stay gated" do
+      test "passed turns proceed and flagged turns ask the owner" do
         assert_equal "passed", run_guard(0.1)
-        assert_equal "flagged", run_guard(0.6)
+        assert_raises(ScreeningPendingError) { run_guard(0.6) }
       end
 
       test "blocked turns fail, tell the sender and stop" do
@@ -53,9 +53,9 @@ module Collavre
         assert_includes notice.content, I18n.t("collavre.screening.blocked_notice", agent: @agent.display_name)
       end
 
-      test "flagged turns are blocked where tools cannot be gated" do
-        assert_raises(CancelledError) { run_guard(0.6, block_flagged: true) }
-        assert @task.reload.failed?
+      test "the owner-turn setting opts owner requests into screening" do
+        SystemSetting.create!(key: "screening_owner_turns", value: "true")
+        assert_equal "passed", run_guard(0.1, principal: @owner)
       end
 
       test "a screener error asks the agent owner, not the creative owner" do
@@ -79,7 +79,7 @@ module Collavre
 
         screener.stub(:judge, replace_attempt) do
           with_screeners([ screener ]) do
-            assert_raises(CancelledError) { guard.call(@texts, block_flagged: true) }
+            assert_raises(CancelledError) { guard.call(@texts) }
           end
         end
         assert @task.reload.running?
@@ -107,27 +107,32 @@ module Collavre
         assert @task.reload.failed?
       end
 
-      test "another screener's flag survives the owner's approval of an error" do
+      test "the owner sees another screener's flag before approving an error" do
         error = with_screeners([ fake_screener(RuntimeError.new("x")), fake_screener(0.6, id: "agent:2") ]) do
-          assert_raises(ScreeningPendingError) { guard.call(@texts, block_flagged: false) }
+          assert_raises(ScreeningPendingError) { guard.call(@texts) }
         end
         assert_equal "flagged", error.residual
         assert_includes error.question, I18n.t("collavre.screening.also_flagged")
         pend_decision!("approved", residual: "flagged")
-        assert_equal "flagged", run_guard(0.1)
-        pend_decision!("approved", residual: "flagged")
-        assert_raises(CancelledError) { run_guard(0.1, block_flagged: true) }
+        assert_equal "approved", run_guard(0.1)
       end
 
-      test "a flagged chunk survives screening approval and subsequent tool approval resumes" do
+      test "an approval from the legacy flagged tool policy needs renewed consent" do
+        pend_decision!("approved", residual: "flagged", policy_version: nil)
+        error = assert_raises(ScreeningPendingError) { run_guard(0.1) }
+        assert_equal Screening.digest(@texts), error.content_digest
+        assert_equal @owner, error.approver
+      end
+
+      test "approval covers a turn with both a flagged chunk and a screening error" do
         @texts.first[:text] = "x" * (Input::MAX_CHARS + 1)
         error = assert_raises(ScreeningPendingError) { run_guard([ 0.6, Timeout::Error.new ]) }
         assert_equal "flagged", error.residual
         refute Screening.flagged?(@task.reload)
 
         pend_decision!("approved", residual: error.residual)
-        assert_equal "flagged", run_guard(0.1)
-        assert Screening.flagged?(@task.reload)
+        assert_equal "approved", run_guard(0.1)
+        refute Screening.flagged?(@task.reload)
       end
 
       test "a failed notice still ends the turn cleanly" do
@@ -141,7 +146,7 @@ module Collavre
         assert_raises(CancelledError) do
           with_screeners([ fake_screener(0.99) ]) do
             TurnGuard.new(task: @task, agent: @agent, creative: @creative, context: {}, principal: @owner,
-                          authors: [ @sender ]).call(@texts, block_flagged: false)
+                          authors: [ @sender ]).call(@texts)
           end
         end
       end
@@ -163,7 +168,7 @@ module Collavre
       test "the owner's approval delivers exactly the content it covered, once" do
         pend_decision!("approved")
         screener = fake_screener(0.99)
-        result = with_screeners([ screener ]) { guard.call(@texts, block_flagged: true) }
+        result = with_screeners([ screener ]) { guard.call(@texts) }
         assert_equal "approved", result
         assert_empty screener.calls
         assert_nil @task.reload.pending_tool_call
@@ -187,7 +192,7 @@ module Collavre
 
       test "a decision by anyone but the recorded approver is ignored" do
         pend_decision!("approved", decided_by: @sender.id)
-        assert_equal "flagged", run_guard(0.6)
+        assert_raises(ScreeningPendingError) { run_guard(0.6) }
       end
 
       test "a block without a topic still fails the task" do
@@ -200,9 +205,9 @@ module Collavre
 
       private
 
-      def pend_decision!(decision, digest: Screening.digest(@texts), decided_by: @owner.id, residual: nil)
+      def pend_decision!(decision, digest: Screening.digest(@texts), decided_by: @owner.id, residual: nil, policy_version: POLICY_VERSION)
         @task.update!(pending_tool_call: { "kind" => PENDING_KIND, "tool_call_id" => "screening-1", "residual" => residual,
-          "content_digest" => digest, "approver_id" => @owner.id,
+          "content_digest" => digest, "approver_id" => @owner.id, "policy_version" => policy_version,
           "decision" => { "decision" => decision, "decided_by" => decided_by } })
       end
     end

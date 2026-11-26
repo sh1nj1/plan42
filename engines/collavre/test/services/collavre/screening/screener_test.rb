@@ -63,9 +63,11 @@ module Collavre
       def with_env(values)
         previous = values.keys.to_h { |key| [ key, ENV[key] ] }
         values.each { |key, value| ENV[key] = value }
+        Rails.cache.delete(IntegrationSetting.cache_key_for(:typesafe_api_base))
         yield
       ensure
         previous.each { |key, value| ENV[key] = value }
+        Rails.cache.delete(IntegrationSetting.cache_key_for(:typesafe_api_base))
       end
     end
   end
