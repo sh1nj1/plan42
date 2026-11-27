@@ -69,6 +69,22 @@ class AdminSettingsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "an administrator can choose the screening error policy" do
+    sign_in_as(@admin, password: "password")
+    params = { auth_providers: [ "email" ], screening_enabled: "1", screening_threshold: "0.5", screening_block_threshold: "0.9" }
+    patch collavre.admin_settings_path, params: params.merge(screening_error_policy: "pass")
+    assert_redirected_to collavre.admin_settings_path
+    assert_equal "pass", SystemSetting.screening_error_policy
+
+    follow_redirect!
+    assert_select "select[name='screening_error_policy'] option[selected][value='pass']"
+
+    patch collavre.admin_settings_path, params: params.merge(screening_error_policy: "allow")
+    assert_equal "pass", SystemSetting.screening_error_policy
+    patch collavre.admin_settings_path, params: params
+    assert_equal "pass", SystemSetting.screening_error_policy
+  end
+
   test "invalid screening thresholds do not change settings" do
     sign_in_as(@admin, password: "password")
     patch collavre.admin_settings_path, params: { auth_providers: [ "email" ], screening_enabled: "1",

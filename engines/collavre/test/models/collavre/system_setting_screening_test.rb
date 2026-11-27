@@ -22,6 +22,14 @@ module Collavre
       assert_equal 0.9, SystemSetting.screening_block_threshold
     end
 
+    test "the error policy defaults to owner approval and ignores unknown values" do
+      assert_equal "approval", SystemSetting.screening_error_policy
+      setting = SystemSetting.create!(key: "screening_error_policy", value: "pass")
+      assert_equal "pass", SystemSetting.screening_error_policy
+      setting.update!(value: "allow")
+      assert_equal "approval", SystemSetting.screening_error_policy
+    end
+
     test "the block threshold never sits below the flag threshold" do
       SystemSetting.create!(key: "screening_threshold", value: "0.8")
       SystemSetting.create!(key: "screening_block_threshold", value: "0.6")

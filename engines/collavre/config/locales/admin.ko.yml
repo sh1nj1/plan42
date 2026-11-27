@@ -12,6 +12,12 @@ ko:
       screening_owner_turns: "발신자가 소유한 에이전트 요청도 검사"
       screening_threshold: "주의 임계값 (소유자 승인)"
       screening_block_threshold: "차단 임계값"
+      screening_error_policy: "검사 실패 시 처리"
+      screening_error_policies:
+        approval: "에이전트 소유자에게 승인 요청"
+        pass: "검사 없이 전달"
+        block: "전달하지 않음"
+      screening_error_policy_hint: "검사기가 실패하거나 시간 초과되거나 잘못된 형식으로 응답할 때 적용됩니다. 검사 없이 전달을 선택하면 검사기를 사용할 수 없는 동안 메시지가 그대로 전달됩니다. 다른 검사기가 주의로 판정한 경우에는 소유자 승인을 요청합니다."
       screening_credentials: "Typesafe API 키 및 기본 URL 관리"
       screening_invalid_thresholds: "임계값은 0보다 크고 1 이하여야 합니다. 주의 임계값은 차단 임계값 이하여야 합니다."
       help_link: "도움말 메뉴 링크 URL"

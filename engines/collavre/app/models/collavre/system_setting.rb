@@ -62,6 +62,10 @@ module Collavre
     DEFAULT_SCREENING_MODEL = "jev-latest"
     DEFAULT_SCREENING_THRESHOLD = 0.5
     DEFAULT_SCREENING_BLOCK_THRESHOLD = 0.9
+    # What happens to a turn a screener could not answer for: ask the agent
+    # owner, deliver it unscreened, or refuse it.
+    SCREENING_ERROR_POLICIES = %w[approval pass block].freeze
+    DEFAULT_SCREENING_ERROR_POLICY = "approval"
 
     validates :key, presence: true, uniqueness: true
 
@@ -86,6 +90,7 @@ module Collavre
         display_level completion_mark llm_request_timeout_seconds ai_agent_turn_deadline_seconds
         creative_history_retention_count creative_history_retention_days
         screening_enabled screening_model screening_threshold screening_block_threshold screening_owner_turns
+        screening_error_policy
       ].each { |k| Rails.cache.delete("system_setting:#{k}") }
     end
 
@@ -245,6 +250,10 @@ module Collavre
 
     def self.screening_block_threshold
       [ probability_setting("screening_block_threshold", DEFAULT_SCREENING_BLOCK_THRESHOLD), screening_threshold ].max
+    end
+
+    def self.screening_error_policy
+      cached_value("screening_error_policy").presence_in(SCREENING_ERROR_POLICIES) || DEFAULT_SCREENING_ERROR_POLICY
     end
 
     def self.probability_setting(key, default)

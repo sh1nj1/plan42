@@ -116,7 +116,9 @@ module Collavre
           screening_enabled: params[:screening_enabled] == "1",
           screening_owner_turns: params[:screening_owner_turns] == "1",
           screening_threshold: flagged,
-          screening_block_threshold: blocked
+          screening_block_threshold: blocked,
+          screening_error_policy: params[:screening_error_policy].presence_in(SystemSetting::SCREENING_ERROR_POLICIES) ||
+            SystemSetting.screening_error_policy
         }.each do |key, value|
           SystemSetting.find_or_initialize_by(key: key).update!(value: value.to_s)
         end

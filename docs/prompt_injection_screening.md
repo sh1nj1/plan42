@@ -9,8 +9,8 @@ Screening is off by default. Configure the Typesafe API key and optional base
 URL in **Admin Settings → Integrations → LLM API Keys**. Environment variables
 `TYPESAFE_API_KEY` and `TYPESAFE_API_BASE` provide the fallback values. Enable
 screening under **Admin Settings → System**. The same section controls the
-flagged and blocked thresholds and whether to screen owner requests. Owner
-request screening is off by default.
+flagged and blocked thresholds, whether to screen owner requests, and what
+happens when screening fails. Owner request screening is off by default.
 
 ## Which turns are screened
 
@@ -55,10 +55,30 @@ screener is not overridden by the owner's approval of another screener's error.
 |---|---|
 | passed | Delivered |
 | flagged | Paused for the agent owner's approval |
-| error | Paused for the agent owner's approval |
+| error | Follows the error policy; by default paused for the agent owner's approval |
 | blocked | The task fails and the sender receives a notice |
 
 A notice that cannot be posted is logged; the turn still ends as blocked.
+
+### Error policy
+
+`screening_error_policy` decides what an `error` verdict does:
+
+| Policy | Delivery |
+|---|---|
+| `approval` (default) | Paused for the agent owner's approval |
+| `pass` | Delivered without screening |
+| `block` | The task fails and the sender receives a notice |
+
+`pass` waives only the screening that went unanswered. When another screener
+answered, its verdict stands: a flag still asks the owner and a block still
+ends the turn. The pass is recorded as a `screening` task action with
+`reason: "error_policy_pass"` next to the `error` verdict.
+
+`pass` fails open: content reaches the agent unscreened for as long as the
+screener is unavailable, and input that makes a screener fail or answer
+malformed output is delivered. Use it only where availability matters more
+than screening.
 
 Each screener's verdict is recorded as a `screening` task action with the
 model, policy version and a SHA-256 of the screened content. Verdicts are not
@@ -66,7 +86,8 @@ cached.
 
 ## Owner approval
 
-A `flagged` or `error` verdict raises `ScreeningPendingError`. `AiAgent::ScreeningApprovalHandler`
+A `flagged` verdict, or an `error` verdict under the `approval` error policy,
+raises `ScreeningPendingError`. `AiAgent::ScreeningApprovalHandler`
 pauses the task with `pending_tool_call.kind = "screening"` and posts an
 approval-gate comment whose approver is the **agent's owner**. The creative
 owner is not used: the sender may own the creative and must not approve their
@@ -98,8 +119,10 @@ messages screens those messages even if an older snapshot exists.
 
 An `approval_request` decision is replayed to the model as its tool result,
 including the decider's reason. When a resumed turn replays a reason written
-by someone other than the owner, the reason is screened. A flag or an
-unanswered screening flags the turn, and a block ends it. It cannot pause the
+by someone other than the owner, the reason is screened. A flag flags the
+turn and a block ends it. An unanswered screening follows the error policy:
+it flags the turn under `approval`, is waived under `pass`, and ends the turn
+under `block`. It cannot pause the
 turn, because the conversation is already under way.
 
 ## Claude Channel

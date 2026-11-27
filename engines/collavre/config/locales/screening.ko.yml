@@ -17,5 +17,6 @@ ko:
         %{excerpt}
       also_flagged: "다른 검사기도 이 메시지를 주의로 판정했습니다."
       blocked_notice: "프롬프트 인젝션 검사에서 위험한 내용으로 판정되어 이 메시지를 %{agent}에게 전달하지 않았습니다."
+      unscreened_notice: "프롬프트 인젝션 검사로 확인하지 못해 이 메시지를 %{agent}에게 전달하지 않았습니다."
       denied_notice: "에이전트 소유자가 거절하여 %{agent}에게 메시지를 전달하지 않았습니다."
       unknown_sender: "확인되지 않은 발신자"
