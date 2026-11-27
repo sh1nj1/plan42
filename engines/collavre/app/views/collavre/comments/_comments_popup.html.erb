@@ -204,7 +204,16 @@
   </div>
   <%= render Collavre::UserMentionMenuComponent.new(menu_id: 'mention-menu') %>
   <%= render Collavre::CommandMenuComponent.new(menu_id: 'command-menu') %>
-  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"><%= render 'collavre/comments/loading' %></div>
+  <div id="comments-list" data-comments--popup-target="list" data-comments--list-target="list"
+       data-controller="comment-image-lightbox" data-action="click->comment-image-lightbox#open"
+       data-comment-image-lightbox-i18n-close-value="<%= t('collavre.comments.lightbox.close') %>"
+       data-comment-image-lightbox-i18n-previous-value="<%= t('collavre.comments.lightbox.previous') %>"
+       data-comment-image-lightbox-i18n-next-value="<%= t('collavre.comments.lightbox.next') %>"
+       data-comment-image-lightbox-i18n-zoom-in-value="<%= t('collavre.comments.lightbox.zoom_in') %>"
+       data-comment-image-lightbox-i18n-zoom-out-value="<%= t('collavre.comments.lightbox.zoom_out') %>"
+       data-comment-image-lightbox-i18n-zoom-reset-value="<%= t('collavre.comments.lightbox.zoom_reset') %>">
+    <%= render 'collavre/comments/loading' %>
+  </div>
   <div id="typing-indicator-row">
     <button type="button" id="scroll-prev-msg-btn" class="scroll-prev-msg-btn" data-action="click->comments--list#scrollToPreviousMessage" title="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>" aria-label="<%= t('collavre.comments.scroll_to_prev', default: 'Previous message') %>">&#8963;</button>
     <div id="typing-scroll-viewport" data-comments--presence-target="scrollRow">
