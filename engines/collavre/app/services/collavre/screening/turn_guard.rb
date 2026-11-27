@@ -94,18 +94,19 @@ module Collavre
         "passed"
       end
 
+      # A flag is recorded even when a screener answered it: Gate audits only
+      # each screener's strictest verdict, so a screener that flagged one chunk
+      # and failed on another leaves no flag for a later resume to restore.
       def flag_unanswered_followup!(texts, block_flagged, verdict)
         policy = SystemSetting.screening_error_policy
         block!(:unscreened_notice) if policy == "block"
-        if policy == "pass"
-          return apply_flag(block_flagged) if verdict.residual == "flagged"
+        waived = policy == "pass"
+        return record_unscreened_pass!(Screening.digest(texts)) if waived && verdict.residual != "flagged"
 
-          return record_unscreened_pass!(Screening.digest(texts))
-        end
         block!(:blocked_notice) if block_flagged
 
         @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
-          payload: { "verdict" => "flagged", "reason" => "followup_screening_error",
+          payload: { "verdict" => "flagged", "reason" => waived ? "followup_residual_flag" : "followup_screening_error",
                      "policy_version" => POLICY_VERSION, "content_digest" => Screening.digest(texts) })
         "flagged"
       end

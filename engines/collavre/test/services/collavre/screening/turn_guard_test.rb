@@ -173,6 +173,18 @@ module Collavre
         end
       end
 
+      test "a follow-up one screener both flagged and failed on keeps its flag for later resumes" do
+        error_policy!("pass")
+        texts = [ { source: "approval_reason", text: "x" * (Input::MAX_CHARS + 1) } ]
+        result = with_screeners([ fake_screener([ 0.6, RuntimeError.new("x") ]) ]) do
+          guard.screen_followup(texts, block_flagged: false)
+        end
+
+        assert_equal "flagged", result
+        assert_equal "followup_residual_flag", screening_payloads.last["reason"]
+        assert Screening.flagged?(@task)
+      end
+
       test "an unanswered follow-up ends the turn under the block error policy" do
         error_policy!("block")
         with_screeners([ fake_screener(RuntimeError.new("x")) ]) do
