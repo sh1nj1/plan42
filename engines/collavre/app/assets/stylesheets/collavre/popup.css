@@ -153,13 +153,21 @@ body.chat-fullscreen #topic-list-modal {
   font-size: 1.1em;
 }
 
-.popup-box input:not([type="radio"]):not([type="checkbox"]),
+.popup-box input:not([type="radio"]):not([type="checkbox"]):not(.topic-input):not(.topic-edit-input),
 .popup-box select:not(.share-modal-permission-select) {
   width: 100%;
   box-sizing: border-box;
 }
 
 .popup-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  flex: 0 0 28px;
   position: absolute;
   top: 0.75em;
   right: 0.75em;

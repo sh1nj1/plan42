@@ -420,3 +420,20 @@ body {
   --notice-tip-duration: 350ms;
   --notice-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+/* Resolve helper aliases against the active theme, including custom themes. */
+:root,
+body {
+  --color-text-muted: var(--text-muted);
+  --text-secondary: var(--text-muted);
+  --color-brand-strong: #237a3b;
+}
+
+.text-muted,
+.form-text {
+  color: var(--text-muted);
+}
+
+.form-text {
+  font-size: var(--text-0);
+}
