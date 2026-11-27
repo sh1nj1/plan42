@@ -6,7 +6,8 @@ module Collavre
     #
     #   passed  -> deliver
     #   flagged -> pause for the agent owner's approval before delivery
-    #   error   -> pause for the agent owner's approval (ScreeningPendingError)
+    #   error   -> SystemSetting.screening_error_policy: pause for the agent
+    #              owner's approval (default), deliver unscreened, or block
     #   blocked -> fail the task, tell the sender, raise CancelledError
     #
     # The approver is always the agent's owner, never the creative owner: the
@@ -40,7 +41,8 @@ module Collavre
         case verdict.verdict
         when "passed" then "passed"
         when "blocked" then block!(:blocked_notice)
-        else request_approval!(texts, digest, verdict)
+        when "flagged" then request_approval!(texts, digest, verdict)
+        else resolve_unanswered!(texts, digest, verdict)
         end
       end
 
@@ -51,11 +53,12 @@ module Collavre
         return "skipped" if Current.screening || !Screening.enabled?
         return "skipped" if outside_scope?
 
-        case Gate.new.call(texts, agent: @agent, creative: @creative, task: @task).verdict
+        verdict = Gate.new.call(texts, agent: @agent, creative: @creative, task: @task)
+        case verdict.verdict
         when "passed" then "passed"
         when "blocked" then block!(:blocked_notice)
         when "flagged" then apply_flag(block_flagged)
-        else flag_unanswered_followup!(texts, block_flagged)
+        else flag_unanswered_followup!(texts, block_flagged, verdict)
         end
       end
 
@@ -69,11 +72,41 @@ module Collavre
         Scope.for(agent: @agent, context: @context, principal: @principal, authors: @authors) == :skip
       end
 
-      def flag_unanswered_followup!(texts, block_flagged)
+      # A screener that could not answer follows the configured error policy.
+      # Passing waives only the unanswered screening: a flag from a screener
+      # that did answer still asks the owner.
+      def resolve_unanswered!(texts, digest, verdict)
+        case SystemSetting.screening_error_policy
+        when "block" then block!(:unscreened_notice)
+        when "pass"
+          flagged = Verdict.new(verdict: "flagged", residual: "flagged")
+          return request_approval!(texts, digest, flagged) if verdict.residual == "flagged"
+
+          record_unscreened_pass!(digest)
+        else request_approval!(texts, digest, verdict)
+        end
+      end
+
+      def record_unscreened_pass!(digest)
+        @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
+          payload: { "verdict" => "passed", "reason" => "error_policy_pass",
+                     "policy_version" => POLICY_VERSION, "content_digest" => digest })
+        "passed"
+      end
+
+      # A flag is recorded even when a screener answered it: Gate audits only
+      # each screener's strictest verdict, so a screener that flagged one chunk
+      # and failed on another leaves no flag for a later resume to restore.
+      def flag_unanswered_followup!(texts, block_flagged, verdict)
+        policy = SystemSetting.screening_error_policy
+        block!(:unscreened_notice) if policy == "block"
+        waived = policy == "pass"
+        return record_unscreened_pass!(Screening.digest(texts)) if waived && verdict.residual != "flagged"
+
         block!(:blocked_notice) if block_flagged
 
         @task.task_actions.create!(action_type: ACTION_TYPE, status: "done",
-          payload: { "verdict" => "flagged", "reason" => "followup_screening_error",
+          payload: { "verdict" => "flagged", "reason" => waived ? "followup_residual_flag" : "followup_screening_error",
                      "policy_version" => POLICY_VERSION, "content_digest" => Screening.digest(texts) })
         "flagged"
       end

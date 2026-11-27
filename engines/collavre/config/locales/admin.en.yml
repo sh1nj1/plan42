@@ -12,6 +12,12 @@ en:
       screening_owner_turns: "Screen requests to agents owned by the sender"
       screening_threshold: "Flagged threshold (owner approval)"
       screening_block_threshold: "Blocked threshold"
+      screening_error_policy: "When screening fails"
+      screening_error_policies:
+        approval: "Ask the agent owner to approve"
+        pass: "Deliver without screening"
+        block: "Do not deliver"
+      screening_error_policy_hint: "Applies when a screener fails, times out or answers malformed output. Delivering without screening lets a message through whenever the screener is unavailable; a flag from another screener still asks the owner."
       screening_credentials: "Manage Typesafe API key and base URL"
       screening_invalid_thresholds: "Thresholds must be greater than 0 and at most 1. The flagged threshold must be at or below the blocked threshold."
       help_link: "Help Menu Link URL"

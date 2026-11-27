@@ -107,6 +107,92 @@ module Collavre
         assert @task.reload.failed?
       end
 
+      def error_policy!(policy)
+        SystemSetting.find_or_initialize_by(key: "screening_error_policy").update!(value: policy)
+      end
+
+      def screening_payloads
+        @task.task_actions.where(action_type: ACTION_TYPE).order(:id).pluck(:payload)
+      end
+
+      test "the pass error policy delivers an unanswered turn and audits why" do
+        error_policy!("pass")
+        assert_equal "passed", run_guard(RuntimeError.new("timeout"))
+        assert @task.reload.running?
+        assert_equal %w[error passed], screening_payloads.pluck("verdict")
+        assert_equal "error_policy_pass", screening_payloads.last["reason"]
+        assert_equal Screening.digest(@texts), screening_payloads.last["content_digest"]
+        refute Screening.flagged?(@task)
+      end
+
+      test "the pass error policy still asks the owner about another screener's flag" do
+        error_policy!("pass")
+        error = with_screeners([ fake_screener(RuntimeError.new("x")), fake_screener(0.6, id: "agent:2") ]) do
+          assert_raises(ScreeningPendingError) { guard.call(@texts) }
+        end
+        assert_equal "flagged", error.residual
+        assert_includes error.question, I18n.t("collavre.screening.flagged_approval_request",
+          agent: @agent.display_name, sender: @sender.display_name, excerpt: "").lines.first.strip
+      end
+
+      test "the pass error policy does not override another screener's block" do
+        error_policy!("pass")
+        with_screeners([ fake_screener(RuntimeError.new("x")), fake_screener(0.99, id: "agent:2") ]) do
+          assert_raises(CancelledError) { guard.call(@texts) }
+        end
+        assert @task.reload.failed?
+      end
+
+      test "the block error policy refuses an unanswered turn and tells the sender" do
+        error_policy!("block")
+        assert_raises(CancelledError) { run_guard(RuntimeError.new("timeout")) }
+        assert @task.reload.failed?
+        notice = @creative.comments.where(topic_id: @topic.id).last
+        assert_includes notice.content, I18n.t("collavre.screening.unscreened_notice", agent: @agent.display_name)
+      end
+
+      test "an unanswered follow-up flags the turn under the approval error policy" do
+        result = with_screeners([ fake_screener(RuntimeError.new("x")) ]) { guard.screen_followup(@texts, block_flagged: false) }
+        assert_equal "flagged", result
+        assert_equal "followup_screening_error", screening_payloads.last["reason"]
+        with_screeners([ fake_screener(RuntimeError.new("x")) ]) do
+          assert_raises(CancelledError) { guard.screen_followup(@texts, block_flagged: true) }
+        end
+      end
+
+      test "an unanswered follow-up passes under the pass error policy unless another screener flagged it" do
+        error_policy!("pass")
+        result = with_screeners([ fake_screener(RuntimeError.new("x")) ]) { guard.screen_followup(@texts, block_flagged: true) }
+        assert_equal "passed", result
+        assert_equal "error_policy_pass", screening_payloads.last["reason"]
+
+        screeners = -> { [ fake_screener(RuntimeError.new("x")), fake_screener(0.6, id: "agent:2") ] }
+        assert_equal "flagged", with_screeners(screeners.call) { guard.screen_followup(@texts, block_flagged: false) }
+        with_screeners(screeners.call) do
+          assert_raises(CancelledError) { guard.screen_followup(@texts, block_flagged: true) }
+        end
+      end
+
+      test "a follow-up one screener both flagged and failed on keeps its flag for later resumes" do
+        error_policy!("pass")
+        texts = [ { source: "approval_reason", text: "x" * (Input::MAX_CHARS + 1) } ]
+        result = with_screeners([ fake_screener([ 0.6, RuntimeError.new("x") ]) ]) do
+          guard.screen_followup(texts, block_flagged: false)
+        end
+
+        assert_equal "flagged", result
+        assert_equal "followup_residual_flag", screening_payloads.last["reason"]
+        assert Screening.flagged?(@task)
+      end
+
+      test "an unanswered follow-up ends the turn under the block error policy" do
+        error_policy!("block")
+        with_screeners([ fake_screener(RuntimeError.new("x")) ]) do
+          assert_raises(CancelledError) { guard.screen_followup(@texts, block_flagged: false) }
+        end
+        assert @task.reload.failed?
+      end
+
       test "the owner sees another screener's flag before approving an error" do
         error = with_screeners([ fake_screener(RuntimeError.new("x")), fake_screener(0.6, id: "agent:2") ]) do
           assert_raises(ScreeningPendingError) { guard.call(@texts) }

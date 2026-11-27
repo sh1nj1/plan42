@@ -17,5 +17,6 @@ en:
         %{excerpt}
       also_flagged: "Another screener also flagged this message."
       blocked_notice: "This message was not delivered to %{agent}: prompt-injection screening flagged it."
+      unscreened_notice: "This message was not delivered to %{agent}: prompt-injection screening could not check it."
       denied_notice: "This message was not delivered to %{agent}: the agent owner declined delivery."
       unknown_sender: "an unverified sender"
