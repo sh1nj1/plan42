@@ -26,7 +26,7 @@ class CliProxyInlineLoginTest < ActiveSupport::TestCase
     config.openai_api_key = "test-key"
     provider = RubyLLM::Providers::OpenAI.new(config)
     protocol = RubyLLM::Protocols::ChatCompletions.new(provider, model: nil)
-    handler = protocol.send(:handle_stream) { flunk "error must not be a completion chunk" }
+    handler = protocol.send(:build_on_data_handler) { flunk "error must not be a completion chunk" }
     env = Faraday::Env.from(status: 200)
     stream = "data: #{@body.to_json}\n\n"
     error = assert_raises(RubyLLM::BadRequestError) do
