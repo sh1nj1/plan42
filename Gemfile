@@ -71,7 +71,7 @@ gem "omniauth-rails_csrf_protection"
 gem "omniauth-github"
 gem "httparty"
 gem "octokit"
-gem "ruby_llm", "~> 2.1.0"
+gem "ruby_llm", "~> 2.2.3"
 gem "liquid"
 
 # :desktop too — config/boot.rb requires "dotenv" unconditionally, and the

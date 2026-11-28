@@ -13,9 +13,11 @@ failure path. General OpenAI API quota failures do not enter session recovery.
 
 Non-streaming responses carry HTTP 429 and a `Retry-After` delta in seconds.
 The installed proxy's streaming path already flushed HTTP 200 and sends an SSE
-error envelope with `type`/`code`; it drops `retryAfterSeconds`. RubyLLM 2.1.1
-preserves that envelope while rewriting the error status to 400. Classification
-therefore uses the structured error code rather than the HTTP status.
+error envelope with `type`/`code`; it drops `retryAfterSeconds`. RubyLLM 2.2.3
+preserves that envelope and derives a synthetic error status from its `code`
+(429 for `insufficient_quota` and `rate_limit_exceeded`, 400 for unmapped
+codes; 2.1 keyed on `type` and usually produced 400). Classification therefore
+uses the structured error code rather than the HTTP status.
 
 Valid delta seconds and HTTP-date headers schedule the original task for the
 reset plus 5–30 seconds of positive jitter. Past, invalid, absent or more than

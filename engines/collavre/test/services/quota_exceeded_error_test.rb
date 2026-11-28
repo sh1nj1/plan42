@@ -15,8 +15,21 @@ class QuotaExceededErrorTest < ActiveSupport::TestCase
     end
   end
 
-  test "recognizes the actual proxy SSE envelope with rewritten HTTP 400" do
+  test "recognizes the proxy SSE envelope whatever synthetic HTTP status it carries" do
     assert_instance_of Collavre::Quota::ExceededError, classify(status: 400)
+  end
+
+  test "real RubyLLM SSE parser keeps the quota envelope while mapping its code to HTTP 429" do
+    config = RubyLLM.config.dup
+    config.openai_api_key = "test-key"
+    protocol = RubyLLM::Protocols::ChatCompletions.new(RubyLLM::Providers::OpenAI.new(config), model: nil)
+    handler = protocol.send(:build_on_data_handler) { flunk "error must not be a completion chunk" }
+    body = { "error" => { "code" => "insufficient_quota", "type" => "invalid_request_error", "message" => "Usage limit reached" } }
+    error = assert_raises(RubyLLM::RateLimitError) do
+      handler.call("data: #{body.to_json}\n\n", 0, Faraday::Env.from(status: 200))
+    end
+    assert_equal 429, error.response.status
+    assert_instance_of Collavre::Quota::ExceededError, Collavre::Quota::ExceededError.from_response(error)
   end
 
   test "does not confuse rate limits billing or unstructured errors with session quota" do

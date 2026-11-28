@@ -31,7 +31,7 @@ module Collavre
 
     test "strips reasoning_content but keeps reasoning for a known-strict gateway (Cerebras)" do
       payload = provider_for("https://api.cerebras.ai/v1")
-                .send(:format_thinking, assistant_message)
+                .send(:render_thinking, assistant_message)
 
       assert_equal "chain of thought", payload[:reasoning]
       assert_not payload.key?(:reasoning_content),
@@ -40,14 +40,14 @@ module Collavre
 
     test "keeps reasoning_content for DeepSeek, which requires it in thinking mode" do
       payload = provider_for("https://api.deepseek.com/v1")
-                .send(:format_thinking, assistant_message)
+                .send(:render_thinking, assistant_message)
 
       assert_equal "chain of thought", payload[:reasoning_content],
                    "DeepSeek 400s when the replayed reasoning_content is missing; it must be preserved"
     end
 
     test "keeps both keys for hosted OpenAI (no gateway configured)" do
-      payload = provider_for(nil).send(:format_thinking, assistant_message)
+      payload = provider_for(nil).send(:render_thinking, assistant_message)
 
       assert_equal "chain of thought", payload[:reasoning]
       assert_equal "chain of thought", payload[:reasoning_content]
@@ -55,7 +55,7 @@ module Collavre
 
     test "keeps both keys when the base is the official OpenAI endpoint" do
       payload = provider_for("https://api.openai.com/v1")
-                .send(:format_thinking, assistant_message)
+                .send(:render_thinking, assistant_message)
 
       assert payload.key?(:reasoning_content),
              "hosted OpenAI requests must stay byte-identical"
@@ -63,7 +63,7 @@ module Collavre
 
     test "keeps reasoning_content for an unknown/unlisted custom gateway" do
       payload = provider_for("https://api.some-other-llm.example/v1")
-                .send(:format_thinking, assistant_message)
+                .send(:render_thinking, assistant_message)
 
       assert payload.key?(:reasoning_content),
              "the key is only dropped for denylisted hosts; unknown gateways are left untouched"
@@ -71,7 +71,7 @@ module Collavre
 
     test "keeps reasoning_content for a deceptive host that merely contains the Cerebras string" do
       payload = provider_for("https://api.cerebras.ai.evil.example/v1")
-                .send(:format_thinking, assistant_message)
+                .send(:render_thinking, assistant_message)
 
       assert payload.key?(:reasoning_content),
              "denylist match is on the exact parsed host, not a substring"
@@ -79,12 +79,12 @@ module Collavre
 
     test "no-op for messages without a replayed thinking block" do
       payload = provider_for("https://api.cerebras.ai/v1")
-                .send(:format_thinking, MessageDouble.new(:user, nil))
+                .send(:render_thinking, MessageDouble.new(:user, nil))
 
       assert_equal({}, payload)
     end
     test "native DeepSeek keeps its reasoning content even with a strict OpenAI base configured" do
-      payload = provider_for("https://api.cerebras.ai/v1", slug: "deepseek").send(:format_thinking, assistant_message)
+      payload = provider_for("https://api.cerebras.ai/v1", slug: "deepseek").send(:render_thinking, assistant_message)
       assert_equal "chain of thought", payload[:reasoning_content]
     end
   end

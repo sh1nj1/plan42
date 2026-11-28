@@ -8,7 +8,7 @@ module Collavre
     # `message.x_cli_events` on a non-streaming response. Each event is
     # `{ id, phase: "call"|"result", name, input, output, exitCode, ok, parentId }`.
     #
-    # RubyLLM (through 2.1.1) knows nothing of the key and drops it while
+    # RubyLLM (through 2.2.3) knows nothing of the key and drops it while
     # building the Chunk / Message, so this patch carries the raw events over as
     # `#cli_events` (always an Array of Hashes, empty when absent).
     module MessageCliEvents
